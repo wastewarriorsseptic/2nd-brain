@@ -174,12 +174,6 @@ from sqlalchemy import text
 def on_startup():
     run_automated_backup()
     safe_apply_migrations()
-    
-    # Wipe old database schema and recreate clean tables for PostgreSQL
-    if os.getenv("DATABASE_URL"):
-        with engine.begin() as conn:
-            conn.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
-            
     SQLModel.metadata.create_all(engine)
 
 # --- Authentication Routes ---
