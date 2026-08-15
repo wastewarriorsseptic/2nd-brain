@@ -54,7 +54,7 @@
             <div id="realms-container" class="space-y-6">
                 {% for realm in realms %}
                 <div class="realm-item" data-id="{{ realm.id }}">
-                    <div class="flex items-center justify-between group mb-1.5 px-1 py-0.5 rounded hover:bg-slate-700/40 transition">
+                    <div class="flex items-center justify-between group mb-1.5 px-2 py-1 rounded hover:bg-slate-700/40 transition">
                         <div class="flex items-center gap-2 flex-1 min-w-0 mr-2">
                             <!-- Realm Drag Handle -->
                             <span class="realm-handle text-slate-500 hover:text-indigo-400 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
@@ -75,9 +75,9 @@
                     </div>
 
                     <!-- Drag-and-Drop Buckets Container -->
-                    <nav class="buckets-container space-y-1 pl-2 border-l border-slate-700/60" data-realm-id="{{ realm.id }}">
+                    <nav class="buckets-container space-y-1 ml-2.5 pl-2 border-l border-slate-700/60" data-realm-id="{{ realm.id }}">
                         {% for bucket in realm.buckets %}
-                        <div class="bucket-item flex items-center justify-between group rounded-lg {% if selected_bucket_id == bucket.id %}bg-indigo-600 text-white font-medium{% else %}text-slate-300 hover:bg-slate-700/60{% endif %} px-2.5 py-1.5 transition" data-id="{{ bucket.id }}">
+                        <div class="bucket-item flex items-center justify-between group rounded-lg {% if selected_bucket_id == bucket.id %}bg-indigo-600 text-white font-medium{% else %}text-slate-300 hover:bg-slate-700/60{% endif %} px-2 py-1.5 transition" data-id="{{ bucket.id }}">
                             <div class="flex items-center gap-2 flex-1 min-w-0 mr-2">
                                 <!-- Bucket Drag Handle -->
                                 <span class="bucket-handle text-slate-500 hover:text-indigo-300 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
