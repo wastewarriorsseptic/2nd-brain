@@ -229,7 +229,7 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user:
-            return templates.TemplateResponse("index.html", {"request": request, "user": None})
+            return templates.TemplateResponse(request=request, name="index.html", context={"user": None})
 
         owned_realms = session.exec(select(Realm).where(Realm.user_id == user.id)).all()
         shared_realm_ids = session.exec(select(RealmShare.realm_id).where(RealmShare.user_id == user.id)).all()
@@ -253,9 +253,9 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
         items = session.exec(query.order_by(Item.due_date.asc())).all() if all_realm_ids else []
 
         return templates.TemplateResponse(
-            "index.html",
-            {
-                "request": request,
+            request=request,
+            name="index.html",
+            context={
                 "user": user,
                 "realms": realms,
                 "buckets": buckets,
