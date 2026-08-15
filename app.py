@@ -34,14 +34,15 @@ else:
     sqlite_url = f"sqlite:///{sqlite_file_name}"
     engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
 
-
-# --- Automatic Backup System ---
+# --- Safe Automated Backup ---
 def run_automated_backup():
-    if os.path.exists(sqlite_file_name):
-        os.makedirs("backups", exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = f"backups/brain_backup_{timestamp}.db"
-        shutil.copy(sqlite_file_name, backup_path)
+    # Only run file-based backups if using local SQLite
+    if not os.getenv("DATABASE_URL"):
+        sqlite_file_name = "brain.db"
+        if os.path.exists(sqlite_file_name):
+            os.makedirs("backups", exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            shutil.copy(sqlite_file_name, f"backups/brain_backup_{timestamp}.db")
 
 # --- Dynamic Safe Column Migrator ---
 def safe_apply_migrations():
