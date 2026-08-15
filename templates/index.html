@@ -467,13 +467,13 @@
             <div id="weekly-picker" class="hidden space-y-1.5">
                 <span class="text-xs font-medium text-slate-400">On these days:</span>
                 <div class="grid grid-cols-7 gap-1">
-                    <button type="button" onclick="toggleWeekday(this, 0)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300">S</button>
-                    <button type="button" onclick="toggleWeekday(this, 1)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300">M</button>
-                    <button type="button" onclick="toggleWeekday(this, 2)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300">T</button>
-                    <button type="button" onclick="toggleWeekday(this, 3)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300">W</button>
-                    <button type="button" onclick="toggleWeekday(this, 4)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300">T</button>
-                    <button type="button" onclick="toggleWeekday(this, 5)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300">F</button>
-                    <button type="button" onclick="toggleWeekday(this, 6)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300">S</button>
+                    <button type="button" onclick="toggleWeekday(this, 0)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300 transition-colors">S</button>
+                    <button type="button" onclick="toggleWeekday(this, 1)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300 transition-colors">M</button>
+                    <button type="button" onclick="toggleWeekday(this, 2)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300 transition-colors">T</button>
+                    <button type="button" onclick="toggleWeekday(this, 3)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300 transition-colors">W</button>
+                    <button type="button" onclick="toggleWeekday(this, 4)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300 transition-colors">T</button>
+                    <button type="button" onclick="toggleWeekday(this, 5)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300 transition-colors">F</button>
+                    <button type="button" onclick="toggleWeekday(this, 6)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300 transition-colors">S</button>
                 </div>
             </div>
 
@@ -481,7 +481,7 @@
                 <span class="text-xs font-medium text-slate-400">Each:</span>
                 <div class="grid grid-cols-7 gap-1 max-h-40 overflow-y-auto p-1 bg-slate-900/50 rounded-lg border border-slate-700/50">
                     {% for day in range(1, 32) %}
-                    <button type="button" onclick="toggleMonthDay(this, {{ day }})" class="mday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-1.5 rounded-md text-slate-300">{{ day }}</button>
+                    <button type="button" onclick="toggleMonthDay(this, {{ day }})" class="mday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-1.5 rounded-md text-slate-300 transition-colors">{{ day }}</button>
                     {% endfor %}
                 </div>
             </div>
@@ -491,7 +491,7 @@
                 <div class="grid grid-cols-4 gap-1.5">
                     {% set month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec'] %}
                     {% for mname in month_names %}
-                    <button type="button" onclick="toggleYearMonth(this, {{ loop.index }})" class="ymonth-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300">{{ mname }}</button>
+                    <button type="button" onclick="toggleYearMonth(this, {{ loop.index }})" class="ymonth-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300 transition-colors">{{ mname }}</button>
                     {% endfor %}
                 </div>
             </div>
@@ -577,6 +577,7 @@
         function toggleWeekday(btn, dayIdx) {
             btn.classList.toggle('bg-indigo-600');
             btn.classList.toggle('text-white');
+            btn.classList.toggle('bg-slate-900');
             if (selectedWeekdays.includes(dayIdx)) {
                 selectedWeekdays = selectedWeekdays.filter(d => d !== dayIdx);
             } else {
@@ -587,6 +588,7 @@
         function toggleMonthDay(btn, dayNum) {
             btn.classList.toggle('bg-indigo-600');
             btn.classList.toggle('text-white');
+            btn.classList.toggle('bg-slate-900');
             if (selectedMonthDays.includes(dayNum)) {
                 selectedMonthDays = selectedMonthDays.filter(d => d !== dayNum);
             } else {
@@ -597,6 +599,7 @@
         function toggleYearMonth(btn, monthNum) {
             btn.classList.toggle('bg-indigo-600');
             btn.classList.toggle('text-white');
+            btn.classList.toggle('bg-slate-900');
             if (selectedYearMonths.includes(monthNum)) {
                 selectedYearMonths = selectedYearMonths.filter(m => m !== monthNum);
             } else {
