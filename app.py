@@ -150,14 +150,16 @@ oauth.register(
 scheduler = BackgroundScheduler()
 scheduler.start()
 
-def send_email_alert(title: str, due_date: str, amount: Optional[float], description: str):
+def send_email_alert(title: str, due_date: str, amount: Optional[float], description: str, recipients: Optional[List[str]] = None):
     amount_str = f"<p><strong>Amount Due:</strong> ${amount:.2f}</p>" if amount else ""
+    target_emails = recipients if recipients else [NOTIFICATION_EMAIL]
+    
     resend.Emails.send({
-        "from": "Logos <onboarding@resend.dev>",  # <--- Changed "2nd Brain" to "Logos"
-        "to": [NOTIFICATION_EMAIL],
+        "from": "Logos <onboarding@resend.dev>",
+        "to": target_emails,
         "subject": f"{title}",
         "html": f"""
-            <h3>🧠 Logos Reminder</h3>  <!-- <--- Changed header text -->
+            <h3>🧠 Logos Notification</h3>
             <p><strong>Item:</strong> {title}</p>
             <p><strong>Due Date:</strong> {due_date}</p>
             {amount_str}
@@ -533,15 +535,49 @@ def delete_item(item_id: int = Form(...), delete_series: bool = Form(False)):
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/items/toggle-complete/")
-def toggle_item_complete(item_id: int = Form(...)):
+def toggle_item_complete(request: Request, item_id: int = Form(...)):
     with Session(engine) as session:
         item = session.get(Item, item_id)
         if item:
             was_completed = item.is_completed
             item.is_completed = not was_completed
             session.add(item)
-            
-            # Shift future uncompleted cards ONLY for interval/daily tasks
+
+            # When marking a task as complete, send an email to all Realm members
+            if not was_completed:
+                current_user = get_current_user(request, session)
+                completed_by = current_user.name if current_user else "A team member"
+                
+                realm = item.bucket.realm if item.bucket else None
+                recipients = []
+                
+                if realm:
+                    # 1. Add Realm Owner email
+                    if realm.user and realm.user.email:
+                        recipients.append(realm.user.email)
+                    
+                    # 2. Add Shared User emails
+                    shared_records = session.exec(
+                        select(RealmShare).where(RealmShare.realm_id == realm.id)
+                    ).all()
+                    for share in shared_records:
+                        shared_user = session.get(User, share.user_id)
+                        if shared_user and shared_user.email:
+                            recipients.append(shared_user.email)
+
+                # Deduplicate recipient list
+                recipients = list(set(recipients))
+
+                if recipients:
+                    send_email_alert(
+                        title=f"✅ Task Completed: {item.title}",
+                        due_date=item.due_date.strftime("%b %d, %Y"),
+                        amount=item.amount,
+                        description=f"Completed by {completed_by}. Notes: {item.description or 'None'}",
+                        recipients=recipients
+                    )
+
+            # Auto-shift future uncompleted cards for interval/daily tasks
             if not was_completed and item.recurring_group_id and item.recurrence_type == "daily":
                 today = datetime.now().date()
                 due_date_only = item.due_date.date()
@@ -562,7 +598,6 @@ def toggle_item_complete(item_id: int = Form(...)):
                         future_item.due_date += shift_delta
                         session.add(future_item)
                         
-                        # Reschedule all reminders for future items
                         for reminder in future_item.reminders:
                             reminder.remind_at += shift_delta
                             session.add(reminder)
