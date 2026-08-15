@@ -88,7 +88,7 @@
 
                             <!-- Fixed 3-Slot Grid for Bucket Icons (Invisible Placeholder + Pencil + Trash) -->
                             <div class="grid grid-cols-3 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-16 text-center">
-                                <div class="w-5"></div> <!-- Placeholder pushes Pencil under Pencil and Trash under Trash -->
+                                <div class="w-5"></div>
                                 <button data-id="{{ bucket.id }}" data-name="{{ bucket.name }}" data-icon="{{ bucket.icon }}" onclick="openEditBucket(this)" title="Edit Bucket" class="w-5 text-center text-xs hover:text-indigo-300">✏️</button>
                                 <form action="/buckets/delete/" method="POST" onsubmit="return confirm('Delete this Bucket and all its Tasks?');" class="inline w-5 text-center">
                                     <input type="hidden" name="bucket_id" value="{{ bucket.id }}">
@@ -156,10 +156,10 @@
                     {% set days_out = (item.due_date.date() - today).days %}
                     <div class="relative group">
                         <!-- Node Connector Dot -->
-                        <div class="absolute -left-[23px] md:-left-[31px] top-5 w-3.5 md:w-4 h-3.5 md:h-4 rounded-full border-2 border-slate-900 {% if item.is_completed %}bg-slate-600{% else %}bg-indigo-500 group-hover:scale-125{% endif %} transition-all"></div>
+                        <div class="absolute -left-[23px] md:-left-[31px] top-5 w-3.5 md:w-4 h-3.5 md:h-4 rounded-full border-2 border-slate-900 {% if item.is_completed %}bg-slate-600{% elif days_out < 0 %}bg-rose-500 animate-pulse{% else %}bg-indigo-500 group-hover:scale-125{% endif %} transition-all"></div>
                         
                         <!-- Timeline Card -->
-                        <div class="border rounded-xl p-4 md:p-5 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all {% if item.is_completed %}bg-slate-800/40 border-slate-700/40 opacity-50{% else %}bg-slate-800 border-slate-700{% endif %}">
+                        <div class="border rounded-xl p-4 md:p-5 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all {% if item.is_completed %}bg-slate-800/40 border-slate-700/40 opacity-50{% elif days_out < 0 %}bg-rose-950/20 border-rose-500/40{% else %}bg-slate-800 border-slate-700{% endif %}">
                             
                             <div class="flex items-start md:items-center gap-3 md:gap-4 flex-1">
                                 <!-- Completion Checkbox Form -->
@@ -183,8 +183,12 @@
                                         </span>
                                         {% endif %}
 
-                                        <!-- Relative Days Out Badge -->
-                                        {% if days_out == 0 %}
+                                        <!-- Relative Days Out / Overdue Badge -->
+                                        {% if not item.is_completed and days_out < 0 %}
+                                        <span class="bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[11px] md:text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                            ⚠️ Overdue ({{ days_out | abs }}d)
+                                        </span>
+                                        {% elif days_out == 0 %}
                                         <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] md:text-xs font-bold px-2 py-0.5 rounded-full">
                                             ⚡ Today
                                         </span>
@@ -193,8 +197,8 @@
                                             +{{ days_out }}d
                                         </span>
                                         {% else %}
-                                        <span class="bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[11px] md:text-xs font-bold px-2 py-0.5 rounded-full font-mono">
-                                            {{ days_out }}d
+                                        <span class="bg-slate-700/50 text-slate-400 border border-slate-600/30 text-[11px] md:text-xs font-semibold px-2 py-0.5 rounded-full font-mono">
+                                            Completed
                                         </span>
                                         {% endif %}
 
