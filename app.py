@@ -115,6 +115,11 @@ class Reminder(SQLModel, table=True):
     item_id: int = Field(foreign_key="item.id")
     item: Optional[Item] = Relationship(back_populates="reminders")
 
+class RealmShare(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    realm_id: int = Field(foreign_key="realm.id")
+    user_id: int = Field(foreign_key="user.id")
+
 # --- FastAPI & Middleware Setup ---
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
@@ -220,28 +225,33 @@ def logout(request: Request):
 def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optional[int] = None):
     with Session(engine) as session:
         user = get_current_user(request, session)
-        
-        # Unauthenticated state
         if not user:
-            return templates.TemplateResponse(
-                request=request, 
-                name="index.html", 
-                context={"user": None, "realms": [], "buckets": [], "items": []}
-            )
+            return templates.TemplateResponse(request=request, name="index.html", context={"user": None})
 
-        realms = session.exec(select(Realm).where(Realm.user_id == user.id).order_by(Realm.order.asc())).all()
-        buckets = session.exec(select(Bucket).join(Realm).where(Realm.user_id == user.id).order_by(Bucket.order.asc())).all()
+        # Owned realms
+        owned_realms = session.exec(select(Realm).where(Realm.user_id == user.id)).all()
+        
+        # Shared realms
+        shared_realm_ids = session.exec(select(RealmShare.realm_id).where(RealmShare.user_id == user.id)).all()
+        shared_realms = session.exec(select(Realm).where(Realm.id.in_(shared_realm_ids))).all() if shared_realm_ids else []
+
+        realms = list({r.id: r for r in owned_realms + shared_realms}.values())
+        realms.sort(key=lambda r: r.order)
+
+        # Build bucket and item queries across owned + shared realms
+        all_realm_ids = [r.id for r in realms]
+        buckets = session.exec(select(Bucket).where(Bucket.realm_id.in_(all_realm_ids)).order_by(Bucket.order.asc())).all() if all_realm_ids else []
 
         for realm in realms:
             realm.buckets.sort(key=lambda b: b.order)
 
-        query = select(Item).join(Bucket).join(Realm).where(Realm.user_id == user.id)
+        query = select(Item).join(Bucket).where(Bucket.realm_id.in_(all_realm_ids)) if all_realm_ids else select(Item).where(False)
         if bucket_id:
             query = query.where(Item.bucket_id == bucket_id)
         elif realm_id:
             query = query.where(Bucket.realm_id == realm_id)
 
-        items = session.exec(query.order_by(Item.due_date.asc())).all()
+        items = session.exec(query.order_by(Item.due_date.asc())).all() if all_realm_ids else []
 
         return templates.TemplateResponse(
             request=request,
@@ -303,6 +313,27 @@ def delete_realm(realm_id: int = Form(...)):
             session.delete(realm)
             session.commit()
     return RedirectResponse(url="/", status_code=303)
+
+@app.post("/realms/share/")
+def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(...)):
+    target_email = email.strip().lower()
+    with Session(engine) as session:
+        current_user = get_current_user(request, session)
+        target_user = session.exec(select(User).where(User.email == target_email)).first()
+        
+        if current_user and target_user:
+            existing = session.exec(
+                select(RealmShare).where(
+                    RealmShare.realm_id == realm_id, 
+                    RealmShare.user_id == target_user.id
+                )
+            ).first()
+            
+            if not existing:
+                session.add(RealmShare(realm_id=realm_id, user_id=target_user.id))
+                session.commit()
+
+    return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
 
 @app.post("/buckets/")
 def create_bucket(name: str = Form(...), icon: str = Form("📌"), realm_id: int = Form(...)):

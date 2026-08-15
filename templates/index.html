@@ -63,6 +63,7 @@
                             </a>
                         </div>
                         <div class="flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition">
+                            <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openShareRealm(this)" title="Share Realm" class="text-xs hover:text-indigo-300">👥</button>
                             <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openEditRealm(this)" title="Rename Realm" class="text-xs hover:text-indigo-300">✏️</button>
                             <form action="/realms/delete/" method="POST" onsubmit="return confirm('Delete this Realm along with all its Buckets and Tasks?');" class="inline">
                                 <input type="hidden" name="realm_id" value="{{ realm.id }}">
@@ -282,6 +283,28 @@
                             class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm">Cancel</button>
                     <button type="submit" 
                             class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Share Realm Modal -->
+    <div id="share-realm-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 class="text-xl font-bold mb-2">Share Realm</h3>
+            <p class="text-slate-400 text-xs mb-4">Enter your wife's Google email address to give her full shared access to this Realm.</p>
+            <form action="/realms/share/" method="POST" class="space-y-4">
+                <input type="hidden" name="realm_id" id="share-realm-id">
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-1">Email Address</label>
+                    <input type="email" name="email" required placeholder="wife@gmail.com" 
+                           class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="document.getElementById('share-realm-modal').classList.add('hidden')" 
+                            class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm">Cancel</button>
+                    <button type="submit" 
+                            class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium">Share</button>
                 </div>
             </form>
         </div>
@@ -590,6 +613,11 @@
             }
 
             document.getElementById('custom-repeat-modal').classList.add('hidden');
+        }
+
+        function openShareRealm(element) {
+            document.getElementById('share-realm-id').value = element.getAttribute('data-id');
+            document.getElementById('share-realm-modal').classList.remove('hidden');
         }
 
         function openEditRealm(element) {
