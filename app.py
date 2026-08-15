@@ -153,11 +153,11 @@ scheduler.start()
 def send_email_alert(title: str, due_date: str, amount: Optional[float], description: str):
     amount_str = f"<p><strong>Amount Due:</strong> ${amount:.2f}</p>" if amount else ""
     resend.Emails.send({
-        "from": "2nd Brain <onboarding@resend.dev>",
+        "from": "Logos <onboarding@resend.dev>",  # <--- Changed "2nd Brain" to "Logos"
         "to": [NOTIFICATION_EMAIL],
         "subject": f"{title}",
         "html": f"""
-            <h3>2nd Brain Reminder</h3>
+            <h3>🧠 Logos Reminder</h3>  <!-- <--- Changed header text -->
             <p><strong>Item:</strong> {title}</p>
             <p><strong>Due Date:</strong> {due_date}</p>
             {amount_str}
