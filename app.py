@@ -58,21 +58,22 @@ def safe_apply_migrations():
             
             cursor.execute("PRAGMA table_info(realm);")
             realm_cols = [col[1] for col in cursor.fetchall()]
-            if 'order' not in realm_cols:
-                cursor.execute("ALTER TABLE realm ADD COLUMN 'order' INTEGER DEFAULT 0;")
+            if 'sort_order' not in realm_cols:
+                cursor.execute('ALTER TABLE realm ADD COLUMN "sort_order" INTEGER DEFAULT 0;')
             if 'user_id' not in realm_cols:
-                cursor.execute("ALTER TABLE realm ADD COLUMN 'user_id' INTEGER;")
+                cursor.execute('ALTER TABLE realm ADD COLUMN "user_id" INTEGER;')
 
             cursor.execute("PRAGMA table_info(bucket);")
             bucket_cols = [col[1] for col in cursor.fetchall()]
-            if 'order' not in bucket_cols:
-                cursor.execute("ALTER TABLE bucket ADD COLUMN 'order' INTEGER DEFAULT 0;")
+            if 'sort_order' not in bucket_cols:
+                cursor.execute('ALTER TABLE bucket ADD COLUMN "sort_order" INTEGER DEFAULT 0;')
 
             conn.commit()
             conn.close()
 
 # --- Models ---
 class User(SQLModel, table=True):
+    __tablename__ = "users"
     id: Optional[int] = Field(default=None, primary_key=True)
     email: str = Field(unique=True, index=True)
     name: str = "User"
@@ -82,8 +83,8 @@ class Realm(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True)
     icon: str = "🔮"
-    order: int = Field(default=0)
-    user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    sort_order: int = Field(default=0)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id")
     user: Optional[User] = Relationship(back_populates="realms")
     buckets: List["Bucket"] = Relationship(back_populates="realm")
 
@@ -91,7 +92,7 @@ class Bucket(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True)
     icon: str = "📌"
-    order: int = Field(default=0)
+    sort_order: int = Field(default=0)
     realm_id: int = Field(foreign_key="realm.id")
     realm: Optional[Realm] = Relationship(back_populates="buckets")
     items: List["Item"] = Relationship(back_populates="bucket")
@@ -118,7 +119,7 @@ class Reminder(SQLModel, table=True):
 class RealmShare(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     realm_id: int = Field(foreign_key="realm.id")
-    user_id: int = Field(foreign_key="user.id")
+    user_id: int = Field(foreign_key="users.id")
 
 # --- FastAPI & Middleware Setup ---
 app = FastAPI()
@@ -176,7 +177,6 @@ def on_startup():
 # --- Authentication Routes ---
 @app.get("/login")
 async def login(request: Request):
-    # Explicitly pass the full HTTPS URL
     redirect_uri = "https://twond-brain-dzc0.onrender.com/auth/callback"
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
@@ -199,17 +199,16 @@ async def auth_callback(request: Request):
             session.commit()
             session.refresh(user)
 
-            # Create default realms for new user profile
-            personal = Realm(name="Personal", icon="🔮", order=0, user_id=user.id)
-            finance = Realm(name="Finance", icon="🔮", order=1, user_id=user.id)
+            personal = Realm(name="Personal", icon="🔮", sort_order=0, user_id=user.id)
+            finance = Realm(name="Finance", icon="🔮", sort_order=1, user_id=user.id)
             session.add_all([personal, finance])
             session.commit()
             session.refresh(personal)
             session.refresh(finance)
 
-            b1 = Bucket(name="Bills", icon="💳", realm_id=finance.id, order=0)
-            b2 = Bucket(name="Maintenance", icon="🛠️", realm_id=personal.id, order=0)
-            b3 = Bucket(name="Tasks", icon="📌", realm_id=personal.id, order=1)
+            b1 = Bucket(name="Bills", icon="💳", realm_id=finance.id, sort_order=0)
+            b2 = Bucket(name="Maintenance", icon="🛠️", realm_id=personal.id, sort_order=0)
+            b3 = Bucket(name="Tasks", icon="📌", realm_id=personal.id, sort_order=1)
             session.add_all([b1, b2, b3])
             session.commit()
 
@@ -228,24 +227,20 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user:
-            return templates.TemplateResponse(request=request, name="index.html", context={"user": None})
+            return templates.TemplateResponse("index.html", {"request": request, "user": None})
 
-        # Owned realms
         owned_realms = session.exec(select(Realm).where(Realm.user_id == user.id)).all()
-        
-        # Shared realms
         shared_realm_ids = session.exec(select(RealmShare.realm_id).where(RealmShare.user_id == user.id)).all()
         shared_realms = session.exec(select(Realm).where(Realm.id.in_(shared_realm_ids))).all() if shared_realm_ids else []
 
         realms = list({r.id: r for r in owned_realms + shared_realms}.values())
-        realms.sort(key=lambda r: r.order)
+        realms.sort(key=lambda r: r.sort_order)
 
-        # Build bucket and item queries across owned + shared realms
         all_realm_ids = [r.id for r in realms]
-        buckets = session.exec(select(Bucket).where(Bucket.realm_id.in_(all_realm_ids)).order_by(Bucket.order.asc())).all() if all_realm_ids else []
+        buckets = session.exec(select(Bucket).where(Bucket.realm_id.in_(all_realm_ids)).order_by(Bucket.sort_order.asc())).all() if all_realm_ids else []
 
         for realm in realms:
-            realm.buckets.sort(key=lambda b: b.order)
+            realm.buckets.sort(key=lambda b: b.sort_order)
 
         query = select(Item).join(Bucket).where(Bucket.realm_id.in_(all_realm_ids)) if all_realm_ids else select(Item).where(False)
         if bucket_id:
@@ -256,9 +251,9 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
         items = session.exec(query.order_by(Item.due_date.asc())).all() if all_realm_ids else []
 
         return templates.TemplateResponse(
-            request=request,
-            name="index.html",
-            context={
+            "index.html",
+            {
+                "request": request,
                 "user": user,
                 "realms": realms,
                 "buckets": buckets,
@@ -276,7 +271,7 @@ def create_realm(request: Request, name: str = Form(...)):
         user = get_current_user(request, session)
         if user:
             max_order = len(session.exec(select(Realm).where(Realm.user_id == user.id)).all())
-            session.add(Realm(name=name, icon="🔮", order=max_order, user_id=user.id))
+            session.add(Realm(name=name, icon="🔮", sort_order=max_order, user_id=user.id))
             session.commit()
     return RedirectResponse(url="/", status_code=303)
 
@@ -296,7 +291,7 @@ def reorder_realms(order: List[int] = Body(...)):
         for idx, realm_id in enumerate(order):
             realm = session.get(Realm, realm_id)
             if realm:
-                realm.order = idx
+                realm.sort_order = idx
                 session.add(realm)
         session.commit()
     return JSONResponse({"status": "ok"})
@@ -341,7 +336,7 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
 def create_bucket(name: str = Form(...), icon: str = Form("📌"), realm_id: int = Form(...)):
     with Session(engine) as session:
         max_order = len(session.exec(select(Bucket).where(Bucket.realm_id == realm_id)).all())
-        session.add(Bucket(name=name, icon=icon, realm_id=realm_id, order=max_order))
+        session.add(Bucket(name=name, icon=icon, realm_id=realm_id, sort_order=max_order))
         session.commit()
     return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
 
@@ -362,7 +357,7 @@ def reorder_buckets(order: List[int] = Body(...)):
         for idx, bucket_id in enumerate(order):
             bucket = session.get(Bucket, bucket_id)
             if bucket:
-                bucket.order = idx
+                bucket.sort_order = idx
                 session.add(bucket)
         session.commit()
     return JSONResponse({"status": "ok"})
@@ -461,23 +456,26 @@ def create_item(
                 for day in range(1, 4):
                     remind_time = target_due_date - timedelta(days=day)
                     session.add(Reminder(remind_at=remind_time, item_id=new_item.id))
-                    scheduler.add_job(
-                        send_email_alert, 'date', run_date=remind_time,
-                        args=[f"⏰ Daily Reminder ({day} days left): {title}", target_due_str, amount, description]
-                    )
+                    if remind_time > datetime.now():
+                        scheduler.add_job(
+                            send_email_alert, 'date', run_date=remind_time,
+                            args=[f"⏰ Daily Reminder ({day} days left): {title}", target_due_str, amount, description]
+                        )
             elif reminder_offset > 0:
                 remind_time = target_due_date - timedelta(days=reminder_offset)
                 session.add(Reminder(remind_at=remind_time, item_id=new_item.id))
-                scheduler.add_job(
-                    send_email_alert, 'date', run_date=remind_time,
-                    args=[f"⏰ Reminder ({reminder_offset} days away): {title}", target_due_str, amount, description]
-                )
+                if remind_time > datetime.now():
+                    scheduler.add_job(
+                        send_email_alert, 'date', run_date=remind_time,
+                        args=[f"⏰ Reminder ({reminder_offset} days away): {title}", target_due_str, amount, description]
+                    )
 
             session.add(Reminder(remind_at=target_due_date, item_id=new_item.id))
-            scheduler.add_job(
-                send_email_alert, 'date', run_date=target_due_date,
-                args=[f"🚨 Due Today: {title}", target_due_str, amount, description]
-            )
+            if target_due_date > datetime.now():
+                scheduler.add_job(
+                    send_email_alert, 'date', run_date=target_due_date,
+                    args=[f"🚨 Due Today: {title}", target_due_str, amount, description]
+                )
 
         session.commit()
 
