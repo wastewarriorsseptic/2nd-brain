@@ -168,12 +168,18 @@ def get_current_user(request: Request, session: Session) -> Optional[User]:
         return None
     return session.get(User, user_id)
 
+from sqlalchemy import text
+
 @app.on_event("startup")
 def on_startup():
     run_automated_backup()
     safe_apply_migrations()
-    # Rebuild PostgreSQL database schema to apply new columns
-    SQLModel.metadata.drop_all(engine)
+    
+    # Wipe old database schema and recreate clean tables for PostgreSQL
+    if os.getenv("DATABASE_URL"):
+        with engine.begin() as conn:
+            conn.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
+            
     SQLModel.metadata.create_all(engine)
 
 # --- Authentication Routes ---
