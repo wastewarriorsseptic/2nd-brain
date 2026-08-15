@@ -50,7 +50,10 @@ def run_automated_backup():
 
 # --- Dynamic Safe Column Migrator ---
 def safe_apply_migrations():
-    if not os.getenv("DATABASE_URL"):
+    if os.getenv("DATABASE_URL"):
+        with engine.begin() as conn:
+            conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS recurrence_type VARCHAR DEFAULT \'none\';'))
+    else:
         sqlite_file_name = "brain.db"
         if os.path.exists(sqlite_file_name):
             conn = sqlite3.connect(sqlite_file_name)
