@@ -63,13 +63,13 @@
                             </a>
                         </div>
 
-                        <!-- Far-Right Action Icons for Realms -->
-                        <div class="flex items-center gap-1.5 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition">
-                            <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openShareRealm(this)" title="Share Realm" class="text-xs hover:text-indigo-300">👥</button>
-                            <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openEditRealm(this)" title="Rename Realm" class="text-xs hover:text-indigo-300">✏️</button>
-                            <form action="/realms/delete/" method="POST" onsubmit="return confirm('Delete this Realm along with all its Buckets and Tasks?');" class="inline">
+                        <!-- Fixed 3-Slot Grid for Realm Icons (Share, Pencil, Trash) -->
+                        <div class="grid grid-cols-3 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-16 text-center">
+                            <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openShareRealm(this)" title="Share Realm" class="w-5 text-center text-xs hover:text-indigo-300">👥</button>
+                            <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openEditRealm(this)" title="Rename Realm" class="w-5 text-center text-xs hover:text-indigo-300">✏️</button>
+                            <form action="/realms/delete/" method="POST" onsubmit="return confirm('Delete this Realm along with all its Buckets and Tasks?');" class="inline w-5 text-center">
                                 <input type="hidden" name="realm_id" value="{{ realm.id }}">
-                                <button type="submit" title="Delete Realm" class="text-xs hover:text-red-400">🗑️</button>
+                                <button type="submit" title="Delete Realm" class="w-full text-xs hover:text-red-400">🗑️</button>
                             </form>
                         </div>
                     </div>
@@ -86,12 +86,13 @@
                                 </a>
                             </div>
 
-                            <!-- Far-Right Action Icons for Buckets -->
-                            <div class="flex items-center gap-1.5 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition">
-                                <button data-id="{{ bucket.id }}" data-name="{{ bucket.name }}" data-icon="{{ bucket.icon }}" onclick="openEditBucket(this)" title="Edit Bucket" class="text-xs hover:text-indigo-300">✏️</button>
-                                <form action="/buckets/delete/" method="POST" onsubmit="return confirm('Delete this Bucket and all its Tasks?');" class="inline">
+                            <!-- Fixed 3-Slot Grid for Bucket Icons (Invisible Placeholder + Pencil + Trash) -->
+                            <div class="grid grid-cols-3 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-16 text-center">
+                                <div class="w-5"></div> <!-- Placeholder pushes Pencil under Pencil and Trash under Trash -->
+                                <button data-id="{{ bucket.id }}" data-name="{{ bucket.name }}" data-icon="{{ bucket.icon }}" onclick="openEditBucket(this)" title="Edit Bucket" class="w-5 text-center text-xs hover:text-indigo-300">✏️</button>
+                                <form action="/buckets/delete/" method="POST" onsubmit="return confirm('Delete this Bucket and all its Tasks?');" class="inline w-5 text-center">
                                     <input type="hidden" name="bucket_id" value="{{ bucket.id }}">
-                                    <button type="submit" title="Delete Bucket" class="text-xs hover:text-red-400">🗑️</button>
+                                    <button type="submit" title="Delete Bucket" class="w-full text-xs hover:text-red-400">🗑️</button>
                                 </form>
                             </div>
                         </div>
