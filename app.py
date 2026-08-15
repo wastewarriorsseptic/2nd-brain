@@ -174,9 +174,11 @@ def on_startup():
     SQLModel.metadata.create_all(engine)
 
 # --- Authentication Routes ---
+# --- Authentication Routes ---
 @app.get("/login")
 async def login(request: Request):
-    redirect_uri = str(request.url_for('auth_callback'))
+    # Force HTTPS for Render proxy
+    redirect_uri = str(request.url_for('auth_callback')).replace("http://", "https://")
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
 @app.get("/auth/callback")
@@ -186,7 +188,7 @@ async def auth_callback(request: Request):
     if not user_info or not user_info.get('email'):
         return RedirectResponse(url="/")
 
-    email = user_info['email']
+    email = user_info['email'].lower()
     name = user_info.get('name', email.split('@')[0])
 
     with Session(engine) as session:
@@ -197,7 +199,7 @@ async def auth_callback(request: Request):
             session.commit()
             session.refresh(user)
 
-            # Create default realms for new user profile
+            # Create default starter realms for new user
             personal = Realm(name="Personal", icon="🔮", order=0, user_id=user.id)
             finance = Realm(name="Finance", icon="🔮", order=1, user_id=user.id)
             session.add_all([personal, finance])
