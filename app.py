@@ -174,16 +174,16 @@ def on_startup():
     SQLModel.metadata.create_all(engine)
 
 # --- Authentication Routes ---
-# --- Authentication Routes ---
 @app.get("/login")
 async def login(request: Request):
-    # Force HTTPS for Render proxy
-    redirect_uri = str(request.url_for('auth_callback')).replace("http://", "https://")
+    # Explicitly pass the full HTTPS URL
+    redirect_uri = "https://twond-brain-dzc0.onrender.com/auth/callback"
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
 @app.get("/auth/callback")
 async def auth_callback(request: Request):
-    token = await oauth.google.authorize_access_token(request)
+    redirect_uri = "https://twond-brain-dzc0.onrender.com/auth/callback"
+    token = await oauth.google.authorize_access_token(request, redirect_uri=redirect_uri)
     user_info = token.get('userinfo')
     if not user_info or not user_info.get('email'):
         return RedirectResponse(url="/")
@@ -199,7 +199,7 @@ async def auth_callback(request: Request):
             session.commit()
             session.refresh(user)
 
-            # Create default starter realms for new user
+            # Create default realms for new user profile
             personal = Realm(name="Personal", icon="🔮", order=0, user_id=user.id)
             finance = Realm(name="Finance", icon="🔮", order=1, user_id=user.id)
             session.add_all([personal, finance])
