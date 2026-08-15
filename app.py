@@ -172,6 +172,8 @@ def get_current_user(request: Request, session: Session) -> Optional[User]:
 def on_startup():
     run_automated_backup()
     safe_apply_migrations()
+    # Rebuild PostgreSQL database schema to apply new columns
+    SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
 
 # --- Authentication Routes ---
