@@ -39,6 +39,7 @@
                 ✨ Full Timeline
             </a>
 
+            {% if user %}
             <!-- Sidebar Header -->
             <div class="flex items-center justify-between mb-3 px-1">
                 <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Realms</span>
@@ -94,9 +95,11 @@
                 </div>
                 {% endfor %}
             </div>
+            {% endif %}
         </div>
 
         <!-- Action Buttons -->
+        {% if user %}
         <div class="mt-6">
             {% if selected_bucket_id %}
             <button onclick="document.getElementById('add-item-modal').classList.remove('hidden')" 
@@ -110,106 +113,135 @@
             </button>
             {% endif %}
         </div>
+        {% endif %}
     </aside>
 
     <!-- Main Content -->
     <main class="flex-1 p-4 md:p-8 overflow-y-auto">
-        <header class="flex justify-between items-center mb-6 md:mb-8">
+        <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 md:mb-8">
             <div>
                 <h2 class="text-2xl md:text-3xl font-bold">Timeline Dashboard</h2>
                 <p class="text-slate-400 text-xs md:text-sm">Chronological flow of due dates and upcoming reminders</p>
+            </div>
+
+            <!-- User Authentication Header Controls -->
+            <div class="flex items-center gap-3">
+                {% if user %}
+                <span class="text-sm font-medium text-slate-300 flex items-center gap-1.5">
+                    👤 {{ user.name }}
+                </span>
+                <a href="/logout" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+                    Sign Out
+                </a>
+                {% else %}
+                <a href="/login" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition shadow-lg flex items-center gap-2">
+                    🔑 Sign in with Google
+                </a>
+                {% endif %}
             </div>
         </header>
 
         <!-- Timeline View Container -->
         <div class="max-w-4xl mx-auto">
-            {% if items %}
-            <div class="timeline-container relative border-l-2 border-indigo-500/30 ml-3 md:ml-8 pl-4 md:pl-6 space-y-6 md:space-y-8">
-                {% for item in items %}
-                {% set days_out = (item.due_date.date() - today).days %}
-                <div class="relative group">
-                    <!-- Node Connector Dot -->
-                    <div class="absolute -left-[23px] md:-left-[31px] top-5 w-3.5 md:w-4 h-3.5 md:h-4 rounded-full border-2 border-slate-900 {% if item.is_completed %}bg-slate-600{% else %}bg-indigo-500 group-hover:scale-125{% endif %} transition-all"></div>
-                    
-                    <!-- Timeline Card -->
-                    <div class="border rounded-xl p-4 md:p-5 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all {% if item.is_completed %}bg-slate-800/40 border-slate-700/40 opacity-50{% else %}bg-slate-800 border-slate-700{% endif %}">
+            {% if user %}
+                {% if items %}
+                <div class="timeline-container relative border-l-2 border-indigo-500/30 ml-3 md:ml-8 pl-4 md:pl-6 space-y-6 md:space-y-8">
+                    {% for item in items %}
+                    {% set days_out = (item.due_date.date() - today).days %}
+                    <div class="relative group">
+                        <!-- Node Connector Dot -->
+                        <div class="absolute -left-[23px] md:-left-[31px] top-5 w-3.5 md:w-4 h-3.5 md:h-4 rounded-full border-2 border-slate-900 {% if item.is_completed %}bg-slate-600{% else %}bg-indigo-500 group-hover:scale-125{% endif %} transition-all"></div>
                         
-                        <div class="flex items-start md:items-center gap-3 md:gap-4 flex-1">
-                            <!-- Completion Checkbox Form -->
-                            <form action="/items/toggle-complete/" method="POST" class="inline shrink-0 mt-0.5 md:mt-0">
-                                <input type="hidden" name="item_id" value="{{ item.id }}">
-                                <button type="submit" 
-                                        title="{% if item.is_completed %}Mark Incomplete{% else %}Mark Complete{% endif %}"
-                                        class="w-6 h-6 rounded-lg border flex items-center justify-center transition {% if item.is_completed %}bg-emerald-500 border-emerald-500 text-slate-950 font-bold{% else %}border-slate-600 hover:border-emerald-400 text-transparent hover:text-emerald-400/50{% endif %}">
-                                    ✓
-                                </button>
-                            </form>
+                        <!-- Timeline Card -->
+                        <div class="border rounded-xl p-4 md:p-5 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all {% if item.is_completed %}bg-slate-800/40 border-slate-700/40 opacity-50{% else %}bg-slate-800 border-slate-700{% endif %}">
+                            
+                            <div class="flex items-start md:items-center gap-3 md:gap-4 flex-1">
+                                <!-- Completion Checkbox Form -->
+                                <form action="/items/toggle-complete/" method="POST" class="inline shrink-0 mt-0.5 md:mt-0">
+                                    <input type="hidden" name="item_id" value="{{ item.id }}">
+                                    <button type="submit" 
+                                            title="{% if item.is_completed %}Mark Incomplete{% else %}Mark Complete{% endif %}"
+                                            class="w-6 h-6 rounded-lg border flex items-center justify-center transition {% if item.is_completed %}bg-emerald-500 border-emerald-500 text-slate-950 font-bold{% else %}border-slate-600 hover:border-emerald-400 text-transparent hover:text-emerald-400/50{% endif %}">
+                                        ✓
+                                    </button>
+                                </form>
 
-                            <div class="flex-1 min-w-0">
-                                <div class="flex flex-wrap items-center gap-1.5 md:gap-2 mb-1.5">
-                                    <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[11px] md:text-xs font-semibold px-2 md:px-2.5 py-0.5 rounded-full flex items-center gap-1 truncate max-w-full">
-                                        🔮 {{ item.bucket.realm.name if item.bucket and item.bucket.realm else 'General' }} / {{ item.bucket.icon }} {{ item.bucket.name if item.bucket else '' }}
-                                    </span>
-                                    {% if item.recurring_group_id %}
-                                    <span class="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] md:text-xs font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
-                                        🔄 Recurring
-                                    </span>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex flex-wrap items-center gap-1.5 md:gap-2 mb-1.5">
+                                        <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[11px] md:text-xs font-semibold px-2 md:px-2.5 py-0.5 rounded-full flex items-center gap-1 truncate max-w-full">
+                                            🔮 {{ item.bucket.realm.name if item.bucket and item.bucket.realm else 'General' }} / {{ item.bucket.icon }} {{ item.bucket.name if item.bucket else '' }}
+                                        </span>
+                                        {% if item.recurring_group_id %}
+                                        <span class="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] md:text-xs font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                            🔄 Recurring
+                                        </span>
+                                        {% endif %}
+
+                                        <!-- Relative Days Out Badge -->
+                                        {% if days_out == 0 %}
+                                        <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] md:text-xs font-bold px-2 py-0.5 rounded-full">
+                                            ⚡ Today
+                                        </span>
+                                        {% elif days_out > 0 %}
+                                        <span class="bg-slate-700/80 text-slate-300 border border-slate-600/50 text-[11px] md:text-xs font-semibold px-2 py-0.5 rounded-full font-mono">
+                                            +{{ days_out }}d
+                                        </span>
+                                        {% else %}
+                                        <span class="bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[11px] md:text-xs font-bold px-2 py-0.5 rounded-full font-mono">
+                                            {{ days_out }}d
+                                        </span>
+                                        {% endif %}
+
+                                        <span class="text-[11px] md:text-xs text-indigo-300 font-mono font-medium">
+                                            📅 {{ item.due_date.strftime('%b %d, %Y') }}
+                                        </span>
+                                    </div>
+
+                                    <h3 class="text-lg md:text-xl font-semibold break-words {% if item.is_completed %}line-through text-slate-400{% else %}text-white{% endif %}">
+                                        {{ item.title }}
+                                    </h3>
+                                    {% if item.description %}
+                                    <p class="text-slate-400 text-xs md:text-sm mt-1 break-words {% if item.is_completed %}line-through opacity-70{% endif %}">
+                                        {{ item.description }}
+                                    </p>
                                     {% endif %}
-
-                                    <!-- Relative Days Out Badge -->
-                                    {% if days_out == 0 %}
-                                    <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] md:text-xs font-bold px-2 py-0.5 rounded-full">
-                                        ⚡ Today
-                                    </span>
-                                    {% elif days_out > 0 %}
-                                    <span class="bg-slate-700/80 text-slate-300 border border-slate-600/50 text-[11px] md:text-xs font-semibold px-2 py-0.5 rounded-full font-mono">
-                                        +{{ days_out }}d
-                                    </span>
-                                    {% else %}
-                                    <span class="bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[11px] md:text-xs font-bold px-2 py-0.5 rounded-full font-mono">
-                                        {{ days_out }}d
-                                    </span>
-                                    {% endif %}
-
-                                    <span class="text-[11px] md:text-xs text-indigo-300 font-mono font-medium">
-                                        📅 {{ item.due_date.strftime('%b %d, %Y') }}
-                                    </span>
                                 </div>
+                            </div>
 
-                                <h3 class="text-lg md:text-xl font-semibold break-words {% if item.is_completed %}line-through text-slate-400{% else %}text-white{% endif %}">
-                                    {{ item.title }}
-                                </h3>
-                                {% if item.description %}
-                                <p class="text-slate-400 text-xs md:text-sm mt-1 break-words {% if item.is_completed %}line-through opacity-70{% endif %}">
-                                    {{ item.description }}
-                                </p>
+                            <div class="flex items-center justify-between md:justify-end gap-4 border-t md:border-t-0 pt-3 md:pt-0 border-slate-700/50">
+                                {% if item.amount %}
+                                <span class="text-base md:text-lg font-bold {% if item.is_completed %}text-slate-500 line-through{% else %}text-emerald-400{% endif %}">
+                                    ${{ "%.2f"|format(item.amount) }}
+                                </span>
+                                {% else %}
+                                <div></div>
                                 {% endif %}
+
+                                <button onclick="openDeleteModal({{ item.id }}, {{ 'true' if item.recurring_group_id else 'false' }})" 
+                                        title="Delete Task" 
+                                        class="text-slate-500 hover:text-red-400 text-sm transition px-2 py-1 rounded hover:bg-slate-700/50">
+                                    🗑️
+                                </button>
                             </div>
                         </div>
-
-                        <div class="flex items-center justify-between md:justify-end gap-4 border-t md:border-t-0 pt-3 md:pt-0 border-slate-700/50">
-                            {% if item.amount %}
-                            <span class="text-base md:text-lg font-bold {% if item.is_completed %}text-slate-500 line-through{% else %}text-emerald-400{% endif %}">
-                                ${{ "%.2f"|format(item.amount) }}
-                            </span>
-                            {% else %}
-                            <div></div>
-                            {% endif %}
-
-                            <button onclick="openDeleteModal({{ item.id }}, {{ 'true' if item.recurring_group_id else 'false' }})" 
-                                    title="Delete Task" 
-                                    class="text-slate-500 hover:text-red-400 text-sm transition px-2 py-1 rounded hover:bg-slate-700/50">
-                                🗑️
-                            </button>
-                        </div>
                     </div>
+                    {% endfor %}
                 </div>
-                {% endfor %}
-            </div>
+                {% else %}
+                <div class="text-center py-12 md:py-16 bg-slate-800/50 border border-slate-700/50 rounded-xl px-4">
+                    <p class="text-slate-400 text-base md:text-lg font-medium">No timeline items found</p>
+                    <p class="text-slate-500 text-xs md:text-sm mt-1">Select a Realm to create Buckets, or select a Bucket to create Tasks.</p>
+                </div>
+                {% endif %}
             {% else %}
-            <div class="text-center py-12 md:py-16 bg-slate-800/50 border border-slate-700/50 rounded-xl px-4">
-                <p class="text-slate-400 text-base md:text-lg font-medium">No timeline items found</p>
-                <p class="text-slate-500 text-xs md:text-sm mt-1">Select a Realm to create Buckets, or select a Bucket to create Tasks.</p>
+            <!-- Unauthenticated State Card -->
+            <div class="text-center py-16 bg-slate-800/50 border border-slate-700/50 rounded-xl px-6 max-w-md mx-auto my-12">
+                <span class="text-5xl block mb-4">🔐</span>
+                <h3 class="text-2xl font-bold mb-2 text-white">Welcome to 2nd Brain</h3>
+                <p class="text-slate-400 text-sm mb-6">Sign in with your Google account to access your personal dashboard and task timeline.</p>
+                <a href="/login" class="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-3 rounded-xl transition shadow-lg w-full">
+                    🔑 Sign in with Google
+                </a>
             </div>
             {% endif %}
         </div>
