@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+sqlmodel
+apscheduler
+resend
+python-dotenv
+jinja2
+python-multipart
+psycopg2-binary

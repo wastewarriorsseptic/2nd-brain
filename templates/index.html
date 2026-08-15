@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2nd Brain - Timeline</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex">
+
+    <!-- Sidebar -->
+    <aside class="w-64 bg-slate-800 border-r border-slate-700 p-6 flex flex-col justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-indigo-400 mb-6 flex items-center gap-2">
+                🧠 2nd Brain
+            </h1>
+            
+            <a href="/" class="block px-3 py-2 rounded-lg text-sm font-semibold mb-6 transition {% if not selected_realm_id and not selected_bucket_id %}bg-indigo-600 text-white{% else %}text-slate-300 hover:bg-slate-700{% endif %}">
+                ✨ Full Timeline
+            </a>
+
+            <!-- Sidebar Header -->
+            <div class="flex items-center justify-between mb-3 px-1">
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Realms</span>
+                <button onclick="document.getElementById('add-realm-modal').classList.remove('hidden')" 
+                        title="Add Realm" 
+                        class="text-slate-400 hover:text-indigo-400 text-sm font-bold px-1.5 py-0.5 rounded transition hover:bg-slate-700">
+                    +
+                </button>
+            </div>
+
+            <!-- Drag-and-Drop Realms List -->
+            <div id="realms-container" class="space-y-6">
+                {% for realm in realms %}
+                <div class="realm-item" data-id="{{ realm.id }}">
+                    <div class="flex items-center justify-between group mb-1 px-1">
+                        <div class="flex items-center gap-2 flex-1">
+                            <!-- Realm Drag Handle -->
+                            <span class="realm-handle text-slate-500 hover:text-indigo-400 cursor-grab active:cursor-grabbing text-xs font-mono select-none px-1">⋮⋮</span>
+                            <a href="/?realm_id={{ realm.id }}" class="text-xs font-bold text-slate-300 hover:text-indigo-400 flex items-center gap-1.5">
+                                <span>🔮</span> {{ realm.name }}
+                            </a>
+                        </div>
+                        <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                            <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openEditRealm(this)" title="Rename Realm" class="text-xs hover:text-indigo-300">✏️</button>
+                            <form action="/realms/delete/" method="POST" onsubmit="return confirm('Delete this Realm along with all its Buckets and Tasks?');" class="inline">
+                                <input type="hidden" name="realm_id" value="{{ realm.id }}">
+                                <button type="submit" title="Delete Realm" class="text-xs hover:text-red-400">🗑️</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Drag-and-Drop Buckets Container -->
+                    <nav class="buckets-container space-y-1 pl-2 border-l border-slate-700/60" data-realm-id="{{ realm.id }}">
+                        {% for bucket in realm.buckets %}
+                        <div class="bucket-item flex items-center justify-between group rounded-lg {% if selected_bucket_id == bucket.id %}bg-indigo-600 text-white font-medium{% else %}text-slate-300 hover:bg-slate-700/60{% endif %} px-2 py-1.5 transition" data-id="{{ bucket.id }}">
+                            <div class="flex items-center gap-2 flex-1 overflow-hidden">
+                                <!-- Bucket Drag Handle -->
+                                <span class="bucket-handle text-slate-500 hover:text-indigo-300 cursor-grab active:cursor-grabbing text-xs font-mono select-none px-0.5">⋮⋮</span>
+                                <a href="/?bucket_id={{ bucket.id }}" class="block text-sm flex items-center gap-2 truncate flex-1">
+                                    <span>{{ bucket.icon }}</span> <span class="truncate">{{ bucket.name }}</span>
+                                </a>
+                            </div>
+                            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                                <button data-id="{{ bucket.id }}" data-name="{{ bucket.name }}" data-icon="{{ bucket.icon }}" onclick="openEditBucket(this)" title="Edit Bucket" class="text-xs hover:text-indigo-300">✏️</button>
+                                <form action="/buckets/delete/" method="POST" onsubmit="return confirm('Delete this Bucket and all its Tasks?');" class="inline">
+                                    <input type="hidden" name="bucket_id" value="{{ bucket.id }}">
+                                    <button type="submit" title="Delete Bucket" class="text-xs hover:text-red-400">🗑️</button>
+                                </form>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </nav>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="mt-6">
+            {% if selected_bucket_id %}
+            <button onclick="document.getElementById('add-item-modal').classList.remove('hidden')" 
+                    class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium py-2 rounded-lg transition shadow-lg">
+                + Add Task
+            </button>
+            {% elif selected_realm_id %}
+            <button onclick="document.getElementById('add-bucket-modal').classList.remove('hidden')" 
+                    class="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium py-2 rounded-lg transition">
+                + Add Bucket
+            </button>
+            {% endif %}
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 p-8 overflow-y-auto">
+        <header class="flex justify-between items-center mb-8">
+            <div>
+                <h2 class="text-3xl font-bold">Timeline Dashboard</h2>
+                <p class="text-slate-400 text-sm">Chronological flow of due dates and upcoming reminders</p>
+            </div>
+        </header>
+
+        <!-- Timeline View Container -->
+        <div class="max-w-4xl mx-auto">
+            {% if items %}
+            <div class="relative border-l-2 border-indigo-500/30 ml-4 md:ml-8 pl-6 space-y-8">
+                {% for item in items %}
+                {% set days_out = (item.due_date.date() - today).days %}
+                <div class="relative group">
+                    <!-- Node Connector Dot -->
+                    <div class="absolute -left-[31px] top-5 w-4 h-4 rounded-full border-2 border-slate-900 {% if item.is_completed %}bg-slate-600{% else %}bg-indigo-500 group-hover:scale-125{% endif %} transition-all"></div>
+                    
+                    <!-- Timeline Card -->
+                    <div class="border rounded-xl p-5 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all {% if item.is_completed %}bg-slate-800/40 border-slate-700/40 opacity-50{% else %}bg-slate-800 border-slate-700{% endif %}">
+                        
+                        <div class="flex items-center gap-4 flex-1">
+                            <!-- Completion Checkbox Form -->
+                            <form action="/items/toggle-complete/" method="POST" class="inline">
+                                <input type="hidden" name="item_id" value="{{ item.id }}">
+                                <button type="submit" 
+                                        title="{% if item.is_completed %}Mark Incomplete{% else %}Mark Complete{% endif %}"
+                                        class="w-6 h-6 rounded-lg border flex items-center justify-center transition {% if item.is_completed %}bg-emerald-500 border-emerald-500 text-slate-950 font-bold{% else %}border-slate-600 hover:border-emerald-400 text-transparent hover:text-emerald-400/50{% endif %}">
+                                    ✓
+                                </button>
+                            </form>
+
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-1.5">
+                                    <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-xs font-semibold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                                        🔮 {{ item.bucket.realm.name if item.bucket and item.bucket.realm else 'General' }} / {{ item.bucket.icon }} {{ item.bucket.name if item.bucket else '' }}
+                                    </span>
+                                    {% if item.recurring_group_id %}
+                                    <span class="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                        🔄 Recurring
+                                    </span>
+                                    {% endif %}
+
+                                    <!-- Relative Days Out Badge -->
+                                    {% if days_out == 0 %}
+                                    <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold px-2 py-0.5 rounded-full">
+                                        ⚡ Today
+                                    </span>
+                                    {% elif days_out > 0 %}
+                                    <span class="bg-slate-700/80 text-slate-300 border border-slate-600/50 text-xs font-semibold px-2 py-0.5 rounded-full font-mono">
+                                        +{{ days_out }}d
+                                    </span>
+                                    {% else %}
+                                    <span class="bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-bold px-2 py-0.5 rounded-full font-mono">
+                                        {{ days_out }}d
+                                    </span>
+                                    {% endif %}
+
+                                    <span class="text-xs text-indigo-300 font-mono font-medium">
+                                        📅 {{ item.due_date.strftime('%b %d, %Y') }}
+                                    </span>
+                                </div>
+
+                                <h3 class="text-xl font-semibold {% if item.is_completed %}line-through text-slate-400{% else %}text-white{% endif %}">
+                                    {{ item.title }}
+                                </h3>
+                                {% if item.description %}
+                                <p class="text-slate-400 text-sm mt-1 {% if item.is_completed %}line-through opacity-70{% endif %}">
+                                    {{ item.description }}
+                                </p>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-4 border-t md:border-t-0 pt-3 md:pt-0 border-slate-700/50">
+                            {% if item.amount %}
+                            <span class="text-lg font-bold {% if item.is_completed %}text-slate-500 line-through{% else %}text-emerald-400{% endif %}">
+                                ${{ "%.2f"|format(item.amount) }}
+                            </span>
+                            {% endif %}
+
+                            <button onclick="openDeleteModal({{ item.id }}, {{ 'true' if item.recurring_group_id else 'false' }})" 
+                                    title="Delete Task" 
+                                    class="text-slate-500 hover:text-red-400 text-sm transition px-2 py-1 rounded hover:bg-slate-700/50">
+                                🗑️
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center py-16 bg-slate-800/50 border border-slate-700/50 rounded-xl">
+                <p class="text-slate-400 text-lg font-medium">No timeline items found</p>
+                <p class="text-slate-500 text-sm mt-1">Select a Realm to create Buckets, or select a Bucket to create Tasks.</p>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+
+    <!-- Modals -->
+    <div id="add-realm-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 class="text-xl font-bold mb-4">Create New Realm</h3>
+            <form action="/realms/" method="POST" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-1">Realm Name</label>
+                    <input type="text" name="name" required placeholder="e.g. Health, Side Project" 
+                           class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="document.getElementById('add-realm-modal').classList.add('hidden')" 
+                            class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm">Cancel</button>
+                    <button type="submit" 
+                            class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium">Create Realm</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="edit-realm-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 class="text-xl font-bold mb-4">Rename Realm</h3>
+            <form action="/realms/update/" method="POST" class="space-y-4">
+                <input type="hidden" name="realm_id" id="edit-realm-id">
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-1">Realm Name</label>
+                    <input type="text" name="name" id="edit-realm-name" required 
+                           class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="document.getElementById('edit-realm-modal').classList.add('hidden')" 
+                            class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm">Cancel</button>
+                    <button type="submit" 
+                            class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="add-bucket-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 class="text-xl font-bold mb-4">Create New Bucket</h3>
+            <form action="/buckets/" method="POST" class="space-y-4">
+                <input type="hidden" name="realm_id" value="{{ selected_realm_id or '' }}">
+                <div class="grid grid-cols-3 gap-2">
+                    <div class="col-span-1">
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Emoji</label>
+                        <input type="text" name="icon" value="📌" required 
+                               class="w-full text-center bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Bucket Name</label>
+                        <input type="text" name="name" required placeholder="e.g. Subscriptions" 
+                               class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="document.getElementById('add-bucket-modal').classList.add('hidden')" 
+                            class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm">Cancel</button>
+                    <button type="submit" 
+                            class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium">Create Bucket</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="edit-bucket-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 class="text-xl font-bold mb-4">Edit Bucket</h3>
+            <form action="/buckets/update/" method="POST" class="space-y-4">
+                <input type="hidden" name="bucket_id" id="edit-bucket-id">
+                <div class="grid grid-cols-3 gap-2">
+                    <div class="col-span-1">
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Emoji</label>
+                        <input type="text" name="icon" id="edit-bucket-icon" required 
+                               class="w-full text-center bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Bucket Name</label>
+                        <input type="text" name="name" id="edit-bucket-name" required 
+                               class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="document.getElementById('edit-bucket-modal').classList.add('hidden')" 
+                            class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm">Cancel</button>
+                    <button type="submit" 
+                            class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Task Modal -->
+    <div id="add-item-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-md shadow-2xl">
+            <h3 class="text-xl font-bold mb-4">Add Task to 2nd Brain</h3>
+            <form action="/items/" method="POST" class="space-y-4">
+                <input type="hidden" name="bucket_id" value="{{ selected_bucket_id or '' }}">
+                <input type="hidden" name="recurrence_type" id="recurrence-type-input" value="none">
+                <input type="hidden" name="interval" id="interval-input" value="1">
+                <input type="hidden" name="weekdays" id="weekdays-input" value="">
+                <input type="hidden" name="month_days" id="month-days-input" value="">
+                <input type="hidden" name="months" id="months-input" value="">
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-1">Title</label>
+                    <input type="text" name="title" required placeholder="e.g. Standup Meeting or Rent" 
+                           class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Amount ($ optional)</label>
+                        <input type="number" step="0.01" name="amount" placeholder="0.00" 
+                               class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1">First Due Date</label>
+                        <input type="date" name="due_date" required 
+                               class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Repeat</label>
+                        <button type="button" onclick="document.getElementById('custom-repeat-modal').classList.remove('hidden')" 
+                                id="repeat-button-label"
+                                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-left text-slate-200 flex justify-between items-center hover:border-slate-500 transition">
+                            <span>Never</span>
+                            <span class="text-xs text-slate-500">⚙️</span>
+                        </button>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Email Reminder</label>
+                        <select name="reminder_offset" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                            <option value="0">On Due Date Only</option>
+                            <option value="1">1 Day Before</option>
+                            <option value="3">3 Days Before</option>
+                            <option value="5">5 Days Before</option>
+                            <option value="7">1 Week Before</option>
+                            <option value="14">2 Weeks Before</option>
+                            <option value="-1">Daily (3 Days Leading Up)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-1">Description / Notes</label>
+                    <textarea name="description" rows="2" 
+                              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200"></textarea>
+                </div>
+
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="document.getElementById('add-item-modal').classList.add('hidden')" 
+                            class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm">Cancel</button>
+                    <button type="submit" 
+                            class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium">Save Task</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Custom Recurrence Modal -->
+    <div id="custom-repeat-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 w-full max-w-sm shadow-2xl text-slate-200 space-y-4">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-700">
+                <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Recurrence</span>
+                <select id="modal-freq-select" onchange="toggleFrequencyView()" class="bg-slate-900 text-white text-sm border border-slate-600 rounded-lg px-2.5 py-1">
+                    <option value="none">Never</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="yearly">Yearly</option>
+                </select>
+            </div>
+
+            <div id="interval-row" class="flex items-center gap-2 text-sm">
+                <span>Every</span>
+                <input type="number" id="modal-interval" value="1" min="1" max="99" class="w-16 text-center bg-slate-900 border border-slate-700 rounded-lg py-1 text-sm text-white">
+                <span id="interval-unit-label">days</span>
+            </div>
+
+            <div id="weekly-picker" class="hidden space-y-1.5">
+                <span class="text-xs font-medium text-slate-400">On these days:</span>
+                <div class="grid grid-cols-7 gap-1">
+                    <button type="button" onclick="toggleWeekday(this, 0)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300">S</button>
+                    <button type="button" onclick="toggleWeekday(this, 1)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300">M</button>
+                    <button type="button" onclick="toggleWeekday(this, 2)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300">T</button>
+                    <button type="button" onclick="toggleWeekday(this, 3)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300">W</button>
+                    <button type="button" onclick="toggleWeekday(this, 4)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300">T</button>
+                    <button type="button" onclick="toggleWeekday(this, 5)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300">F</button>
+                    <button type="button" onclick="toggleWeekday(this, 6)" class="weekday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300">S</button>
+                </div>
+            </div>
+
+            <div id="monthly-picker" class="hidden space-y-1.5">
+                <span class="text-xs font-medium text-slate-400">Each:</span>
+                <div class="grid grid-cols-7 gap-1 max-h-40 overflow-y-auto p-1 bg-slate-900/50 rounded-lg border border-slate-700/50">
+                    {% for day in range(1, 32) %}
+                    <button type="button" onclick="toggleMonthDay(this, {{ day }})" class="mday-btn bg-slate-900 hover:bg-indigo-600 text-xs py-1.5 rounded-md text-slate-300">{{ day }}</button>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div id="yearly-picker" class="hidden space-y-1.5">
+                <span class="text-xs font-medium text-slate-400">In these months:</span>
+                <div class="grid grid-cols-4 gap-1.5">
+                    {% set month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec'] %}
+                    {% for mname in month_names %}
+                    <button type="button" onclick="toggleYearMonth(this, {{ loop.index }})" class="ymonth-btn bg-slate-900 hover:bg-indigo-600 text-xs py-2 rounded-lg text-slate-300">{{ mname }}</button>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-3 pt-3 border-t border-slate-700">
+                <button type="button" onclick="document.getElementById('custom-repeat-modal').classList.add('hidden')" class="px-4 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs">Cancel</button>
+                <button type="button" onclick="applyCustomRecurrence()" class="px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-medium">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Task Deletion Modal -->
+    <div id="delete-item-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 class="text-xl font-bold mb-2 text-white">Delete Task</h3>
+            <p class="text-slate-400 text-sm mb-6">Choose whether to remove only this occurrence or the entire recurring series.</p>
+            
+            <form action="/items/delete/" method="POST" class="space-y-3">
+                <input type="hidden" name="item_id" id="delete-item-id">
+                <input type="hidden" name="delete_series" id="delete-series-flag" value="false">
+
+                <button type="submit" onclick="document.getElementById('delete-series-flag').value='false'" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium py-2 rounded-lg transition">Delete Only This Task</button>
+                <button type="submit" id="delete-series-btn" onclick="document.getElementById('delete-series-flag').value='true'" class="w-full bg-red-600 hover:bg-red-500 text-white text-sm font-medium py-2 rounded-lg transition">Delete Entire Recurring Series</button>
+                <button type="button" onclick="document.getElementById('delete-item-modal').classList.add('hidden')" class="w-full text-slate-400 hover:text-white text-xs pt-2">Cancel</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const realmsContainer = document.getElementById('realms-container');
+            if (realmsContainer) {
+                new Sortable(realmsContainer, {
+                    handle: '.realm-handle',
+                    animation: 150,
+                    onEnd: () => {
+                        const realmOrder = Array.from(realmsContainer.children).map(el => parseInt(el.getAttribute('data-id'))).filter(Boolean);
+                        fetch('/realms/reorder/', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(realmOrder)
+                        });
+                    }
+                });
+            }
+
+            document.querySelectorAll('.buckets-container').forEach(container => {
+                new Sortable(container, {
+                    handle: '.bucket-handle',
+                    animation: 150,
+                    onEnd: () => {
+                        const bucketOrder = Array.from(container.children).map(el => parseInt(el.getAttribute('data-id'))).filter(Boolean);
+                        fetch('/buckets/reorder/', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(bucketOrder)
+                        });
+                    }
+                });
+            });
+        });
+
+        let selectedWeekdays = [];
+        let selectedMonthDays = [];
+        let selectedYearMonths = [];
+
+        function toggleFrequencyView() {
+            const freq = document.getElementById('modal-freq-select').value;
+            const unitLabel = document.getElementById('interval-unit-label');
+            const intervalRow = document.getElementById('interval-row');
+            
+            intervalRow.classList.toggle('hidden', freq === 'none');
+            document.getElementById('weekly-picker').classList.toggle('hidden', freq !== 'weekly');
+            document.getElementById('monthly-picker').classList.toggle('hidden', freq !== 'monthly');
+            document.getElementById('yearly-picker').classList.toggle('hidden', freq !== 'yearly');
+
+            if (freq === 'daily') unitLabel.innerText = 'days';
+            if (freq === 'weekly') unitLabel.innerText = 'weeks';
+            if (freq === 'monthly') unitLabel.innerText = 'months';
+            if (freq === 'yearly') unitLabel.innerText = 'years';
+        }
+
+        function toggleWeekday(btn, dayIdx) {
+            btn.classList.toggle('bg-indigo-600');
+            btn.classList.toggle('text-white');
+            if (selectedWeekdays.includes(dayIdx)) {
+                selectedWeekdays = selectedWeekdays.filter(d => d !== dayIdx);
+            } else {
+                selectedWeekdays.push(dayIdx);
+            }
+        }
+
+        function toggleMonthDay(btn, dayNum) {
+            btn.classList.toggle('bg-indigo-600');
+            btn.classList.toggle('text-white');
+            if (selectedMonthDays.includes(dayNum)) {
+                selectedMonthDays = selectedMonthDays.filter(d => d !== dayNum);
+            } else {
+                selectedMonthDays.push(dayNum);
+            }
+        }
+
+        function toggleYearMonth(btn, monthNum) {
+            btn.classList.toggle('bg-indigo-600');
+            btn.classList.toggle('text-white');
+            if (selectedYearMonths.includes(monthNum)) {
+                selectedYearMonths = selectedYearMonths.filter(m => m !== monthNum);
+            } else {
+                selectedYearMonths.push(monthNum);
+            }
+        }
+
+        function applyCustomRecurrence() {
+            const freq = document.getElementById('modal-freq-select').value;
+            const interval = document.getElementById('modal-interval').value;
+
+            document.getElementById('recurrence-type-input').value = freq;
+            document.getElementById('interval-input').value = interval;
+            document.getElementById('weekdays-input').value = selectedWeekdays.join(',');
+            document.getElementById('month-days-input').value = selectedMonthDays.join(',');
+            document.getElementById('months-input').value = selectedYearMonths.join(',');
+
+            const labelSpan = document.getElementById('repeat-button-label').querySelector('span');
+            if (freq === 'none') {
+                labelSpan.innerText = 'Never';
+            } else {
+                labelSpan.innerText = `${freq.charAt(0).toUpperCase() + freq.slice(1)} (Every ${interval})`;
+            }
+
+            document.getElementById('custom-repeat-modal').classList.add('hidden');
+        }
+
+        function openEditRealm(element) {
+            document.getElementById('edit-realm-id').value = element.getAttribute('data-id');
+            document.getElementById('edit-realm-name').value = element.getAttribute('data-name');
+            document.getElementById('edit-realm-modal').classList.remove('hidden');
+        }
+
+        function openEditBucket(element) {
+            document.getElementById('edit-bucket-id').value = element.getAttribute('data-id');
+            document.getElementById('edit-bucket-name').value = element.getAttribute('data-name');
+            document.getElementById('edit-bucket-icon').value = element.getAttribute('data-icon');
+            document.getElementById('edit-bucket-modal').classList.remove('hidden');
+        }
+
+        function openDeleteModal(itemId, isRecurring) {
+            document.getElementById('delete-item-id').value = itemId;
+            const seriesBtn = document.getElementById('delete-series-btn');
+            if (isRecurring) {
+                seriesBtn.classList.remove('hidden');
+            } else {
+                seriesBtn.classList.add('hidden');
+            }
+            document.getElementById('delete-item-modal').classList.remove('hidden');
+        }
+    </script>
+
+</body>
+</html>
