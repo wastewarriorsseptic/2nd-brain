@@ -5,6 +5,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from calendar import monthrange
 from typing import Optional, List
+
 from fastapi import FastAPI, Request, Form, Body
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -13,29 +14,33 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import resend
 from dotenv import load_dotenv
 
+from starlette.middleware.sessions import SessionMiddleware
+from authlib.integrations.starlette_client import OAuth
+
 load_dotenv()
 
-resend.api_key = os.getenv("RESEND_API_KEY", "re_your_api_key_here")
+resend.api_key = os.getenv("RESEND_API_KEY")
 NOTIFICATION_EMAIL = os.getenv("NOTIFICATION_EMAIL", "your-email@example.com")
+
+# --- OAuth & Session Configuration ---
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-brain-key-2026")
 
 # --- Database Setup (Render PostgreSQL with Local SQLite Fallback) ---
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
-    # Convert legacy postgres:// to postgresql:// required by SQLAlchemy
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 else:
-    # Local SQLite fallback
     sqlite_file_name = "brain.db"
     sqlite_url = f"sqlite:///{sqlite_file_name}"
     engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
 
 # --- Safe Automated Backup ---
 def run_automated_backup():
-    # Only execute file backups when running locally with SQLite
     if not os.getenv("DATABASE_URL"):
         sqlite_file_name = "brain.db"
         if os.path.exists(sqlite_file_name):
@@ -45,20 +50,19 @@ def run_automated_backup():
 
 # --- Dynamic Safe Column Migrator ---
 def safe_apply_migrations():
-    # Only run SQLite schema patches locally
     if not os.getenv("DATABASE_URL"):
         sqlite_file_name = "brain.db"
         if os.path.exists(sqlite_file_name):
             conn = sqlite3.connect(sqlite_file_name)
             cursor = conn.cursor()
             
-            # Ensure 'order' column exists in realm table
             cursor.execute("PRAGMA table_info(realm);")
             realm_cols = [col[1] for col in cursor.fetchall()]
             if 'order' not in realm_cols:
                 cursor.execute("ALTER TABLE realm ADD COLUMN 'order' INTEGER DEFAULT 0;")
+            if 'user_id' not in realm_cols:
+                cursor.execute("ALTER TABLE realm ADD COLUMN 'user_id' INTEGER;")
 
-            # Ensure 'order' column exists in bucket table
             cursor.execute("PRAGMA table_info(bucket);")
             bucket_cols = [col[1] for col in cursor.fetchall()]
             if 'order' not in bucket_cols:
@@ -68,11 +72,19 @@ def safe_apply_migrations():
             conn.close()
 
 # --- Models ---
+class User(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    email: str = Field(unique=True, index=True)
+    name: str = "User"
+    realms: List["Realm"] = Relationship(back_populates="user")
+
 class Realm(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True)
     icon: str = "🔮"
     order: int = Field(default=0)
+    user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    user: Optional[User] = Relationship(back_populates="realms")
     buckets: List["Bucket"] = Relationship(back_populates="realm")
 
 class Bucket(SQLModel, table=True):
@@ -92,7 +104,6 @@ class Item(SQLModel, table=True):
     due_date: datetime
     is_completed: bool = False
     recurring_group_id: Optional[str] = Field(default=None, index=True)
-    
     bucket_id: int = Field(foreign_key="bucket.id")
     bucket: Optional[Bucket] = Relationship(back_populates="items")
     reminders: List["Reminder"] = Relationship(back_populates="item")
@@ -101,9 +112,23 @@ class Reminder(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     remind_at: datetime
     email_sent: bool = False
-    
     item_id: int = Field(foreign_key="item.id")
     item: Optional[Item] = Relationship(back_populates="reminders")
+
+# --- FastAPI & Middleware Setup ---
+app = FastAPI()
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
+templates = Jinja2Templates(directory="templates")
+
+# --- OAuth Registration ---
+oauth = OAuth()
+oauth.register(
+    name='google',
+    client_id=GOOGLE_CLIENT_ID,
+    client_secret=GOOGLE_CLIENT_SECRET,
+    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+    client_kwargs={'scope': 'openid email profile'}
+)
 
 # --- Scheduler ---
 scheduler = BackgroundScheduler()
@@ -131,19 +156,45 @@ def add_months(sourcedate: datetime, months: int) -> datetime:
     day = min(sourcedate.day, monthrange(year, month)[1])
     return datetime(year, month, day, sourcedate.hour, sourcedate.minute, sourcedate.second)
 
-app = FastAPI()
-templates = Jinja2Templates(directory="templates")
+def get_current_user(request: Request, session: Session) -> Optional[User]:
+    user_id = request.session.get('user_id')
+    if not user_id:
+        return None
+    return session.get(User, user_id)
 
 @app.on_event("startup")
 def on_startup():
     run_automated_backup()
     safe_apply_migrations()
     SQLModel.metadata.create_all(engine)
-    
+
+# --- Authentication Routes ---
+@app.get("/login")
+async def login(request: Request):
+    redirect_uri = str(request.url_for('auth_callback'))
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+@app.get("/auth/callback")
+async def auth_callback(request: Request):
+    token = await oauth.google.authorize_access_token(request)
+    user_info = token.get('userinfo')
+    if not user_info or not user_info.get('email'):
+        return RedirectResponse(url="/")
+
+    email = user_info['email']
+    name = user_info.get('name', email.split('@')[0])
+
     with Session(engine) as session:
-        if not session.exec(select(Realm)).first():
-            personal = Realm(name="Personal", icon="🔮", order=0)
-            finance = Realm(name="Finance", icon="🔮", order=1)
+        user = session.exec(select(User).where(User.email == email)).first()
+        if not user:
+            user = User(email=email, name=name)
+            session.add(user)
+            session.commit()
+            session.refresh(user)
+
+            # Create default realms for new user profile
+            personal = Realm(name="Personal", icon="🔮", order=0, user_id=user.id)
+            finance = Realm(name="Finance", icon="🔮", order=1, user_id=user.id)
             session.add_all([personal, finance])
             session.commit()
             session.refresh(personal)
@@ -155,30 +206,50 @@ def on_startup():
             session.add_all([b1, b2, b3])
             session.commit()
 
+        request.session['user_id'] = user.id
+
+    return RedirectResponse(url="/", status_code=303)
+
+@app.get("/logout")
+def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse(url="/", status_code=303)
+
 # --- Dashboard Route ---
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optional[int] = None):
     with Session(engine) as session:
-        realms = session.exec(select(Realm).order_by(Realm.order.asc())).all()
-        buckets = session.exec(select(Bucket).order_by(Bucket.order.asc())).all()
+        user = get_current_user(request, session)
         
+        # Unauthenticated state
+        if not user:
+            return templates.TemplateResponse(
+                request=request, 
+                name="index.html", 
+                context={"user": None, "realms": [], "buckets": [], "items": []}
+            )
+
+        realms = session.exec(select(Realm).where(Realm.user_id == user.id).order_by(Realm.order.asc())).all()
+        buckets = session.exec(select(Bucket).join(Realm).where(Realm.user_id == user.id).order_by(Bucket.order.asc())).all()
+
         for realm in realms:
             realm.buckets.sort(key=lambda b: b.order)
 
-        query = select(Item)
+        query = select(Item).join(Bucket).join(Realm).where(Realm.user_id == user.id)
         if bucket_id:
             query = query.where(Item.bucket_id == bucket_id)
         elif realm_id:
-            query = query.join(Bucket).where(Bucket.realm_id == realm_id)
-            
+            query = query.where(Bucket.realm_id == realm_id)
+
         items = session.exec(query.order_by(Item.due_date.asc())).all()
-        
+
         return templates.TemplateResponse(
             request=request,
-            name="index.html", 
+            name="index.html",
             context={
-                "realms": realms, 
-                "buckets": buckets, 
+                "user": user,
+                "realms": realms,
+                "buckets": buckets,
                 "items": items,
                 "selected_realm_id": realm_id,
                 "selected_bucket_id": bucket_id,
@@ -188,11 +259,13 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
 
 # --- Realm & Bucket Endpoints ---
 @app.post("/realms/")
-def create_realm(name: str = Form(...)):
+def create_realm(request: Request, name: str = Form(...)):
     with Session(engine) as session:
-        max_order = len(session.exec(select(Realm)).all())
-        session.add(Realm(name=name, icon="🔮", order=max_order))
-        session.commit()
+        user = get_current_user(request, session)
+        if user:
+            max_order = len(session.exec(select(Realm).where(Realm.user_id == user.id)).all())
+            session.add(Realm(name=name, icon="🔮", order=max_order, user_id=user.id))
+            session.commit()
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/realms/update/")
