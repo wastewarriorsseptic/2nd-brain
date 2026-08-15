@@ -22,21 +22,20 @@ NOTIFICATION_EMAIL = os.getenv("NOTIFICATION_EMAIL", "your-email@example.com")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
-    # Render provides connection strings starting with postgres://, 
-    # but SQLAlchemy requires postgresql://
+    # Convert legacy postgres:// to postgresql:// required by SQLAlchemy
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
     
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 else:
-    # Fallback for local development
+    # Local SQLite fallback
     sqlite_file_name = "brain.db"
     sqlite_url = f"sqlite:///{sqlite_file_name}"
     engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
 
 # --- Safe Automated Backup ---
 def run_automated_backup():
-    # Only run file-based backups if using local SQLite
+    # Only execute file backups when running locally with SQLite
     if not os.getenv("DATABASE_URL"):
         sqlite_file_name = "brain.db"
         if os.path.exists(sqlite_file_name):
@@ -46,24 +45,27 @@ def run_automated_backup():
 
 # --- Dynamic Safe Column Migrator ---
 def safe_apply_migrations():
-    if os.path.exists(sqlite_file_name):
-        conn = sqlite3.connect(sqlite_file_name)
-        cursor = conn.cursor()
-        
-        # Ensure 'order' column exists in realm table
-        cursor.execute("PRAGMA table_info(realm);")
-        realm_cols = [col[1] for col in cursor.fetchall()]
-        if 'order' not in realm_cols:
-            cursor.execute("ALTER TABLE realm ADD COLUMN 'order' INTEGER DEFAULT 0;")
+    # Only run SQLite schema patches locally
+    if not os.getenv("DATABASE_URL"):
+        sqlite_file_name = "brain.db"
+        if os.path.exists(sqlite_file_name):
+            conn = sqlite3.connect(sqlite_file_name)
+            cursor = conn.cursor()
+            
+            # Ensure 'order' column exists in realm table
+            cursor.execute("PRAGMA table_info(realm);")
+            realm_cols = [col[1] for col in cursor.fetchall()]
+            if 'order' not in realm_cols:
+                cursor.execute("ALTER TABLE realm ADD COLUMN 'order' INTEGER DEFAULT 0;")
 
-        # Ensure 'order' column exists in bucket table
-        cursor.execute("PRAGMA table_info(bucket);")
-        bucket_cols = [col[1] for col in cursor.fetchall()]
-        if 'order' not in bucket_cols:
-            cursor.execute("ALTER TABLE bucket ADD COLUMN 'order' INTEGER DEFAULT 0;")
+            # Ensure 'order' column exists in bucket table
+            cursor.execute("PRAGMA table_info(bucket);")
+            bucket_cols = [col[1] for col in cursor.fetchall()]
+            if 'order' not in bucket_cols:
+                cursor.execute("ALTER TABLE bucket ADD COLUMN 'order' INTEGER DEFAULT 0;")
 
-        conn.commit()
-        conn.close()
+            conn.commit()
+            conn.close()
 
 # --- Models ---
 class Realm(SQLModel, table=True):
