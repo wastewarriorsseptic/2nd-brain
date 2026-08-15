@@ -29,7 +29,7 @@
 <body class="bg-slate-900 text-slate-100 min-h-screen flex">
 
     <!-- Sidebar -->
-    <aside class="w-64 bg-slate-800 border-r border-slate-700 p-6 flex flex-col justify-between shrink-0">
+    <aside class="w-72 bg-slate-800 border-r border-slate-700 p-6 flex flex-col justify-between shrink-0">
         <div>
             <h1 class="text-2xl font-bold text-indigo-400 mb-6 flex items-center gap-2">
                 🧠 2nd Brain
@@ -54,22 +54,22 @@
             <div id="realms-container" class="space-y-6">
                 {% for realm in realms %}
                 <div class="realm-item" data-id="{{ realm.id }}">
-                    <div class="flex items-center justify-between group mb-1 px-1 gap-1">
-                        <div class="flex items-center gap-2 flex-1 min-w-0">
+                    <div class="flex items-center justify-between group mb-1.5 px-1 py-0.5 rounded hover:bg-slate-700/40 transition">
+                        <div class="flex items-center gap-2 flex-1 min-w-0 mr-2">
                             <!-- Realm Drag Handle -->
-                            <span class="realm-handle text-slate-500 hover:text-indigo-400 cursor-grab active:cursor-grabbing text-xs font-mono select-none px-0.5 shrink-0">⋮⋮</span>
-                            <a href="/?realm_id={{ realm.id }}" class="text-xs font-bold text-slate-300 hover:text-indigo-400 flex items-center gap-1.5 truncate">
+                            <span class="realm-handle text-slate-500 hover:text-indigo-400 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
+                            <a href="/?realm_id={{ realm.id }}" class="text-xs font-bold text-slate-300 hover:text-indigo-400 flex items-center gap-1.5 min-w-0">
                                 <span class="shrink-0">🔮</span> <span class="truncate">{{ realm.name }}</span>
                             </a>
                         </div>
 
-                        <!-- Fixed 3-Column Action Slot for Realms -->
-                        <div class="flex items-center justify-end gap-1 shrink-0 opacity-100 md:opacity-0 group-hover:opacity-100 transition w-16">
-                            <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openShareRealm(this)" title="Share Realm" class="w-5 text-center text-xs hover:text-indigo-300 shrink-0">👥</button>
-                            <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openEditRealm(this)" title="Rename Realm" class="w-5 text-center text-xs hover:text-indigo-300 shrink-0">✏️</button>
-                            <form action="/realms/delete/" method="POST" onsubmit="return confirm('Delete this Realm along with all its Buckets and Tasks?');" class="inline w-5 text-center shrink-0">
+                        <!-- Far-Right Action Icons for Realms -->
+                        <div class="flex items-center gap-1.5 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition">
+                            <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openShareRealm(this)" title="Share Realm" class="text-xs hover:text-indigo-300">👥</button>
+                            <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openEditRealm(this)" title="Rename Realm" class="text-xs hover:text-indigo-300">✏️</button>
+                            <form action="/realms/delete/" method="POST" onsubmit="return confirm('Delete this Realm along with all its Buckets and Tasks?');" class="inline">
                                 <input type="hidden" name="realm_id" value="{{ realm.id }}">
-                                <button type="submit" title="Delete Realm" class="w-full text-xs hover:text-red-400">🗑️</button>
+                                <button type="submit" title="Delete Realm" class="text-xs hover:text-red-400">🗑️</button>
                             </form>
                         </div>
                     </div>
@@ -77,22 +77,21 @@
                     <!-- Drag-and-Drop Buckets Container -->
                     <nav class="buckets-container space-y-1 pl-2 border-l border-slate-700/60" data-realm-id="{{ realm.id }}">
                         {% for bucket in realm.buckets %}
-                        <div class="bucket-item flex items-center justify-between group rounded-lg {% if selected_bucket_id == bucket.id %}bg-indigo-600 text-white font-medium{% else %}text-slate-300 hover:bg-slate-700/60{% endif %} px-2 py-1.5 transition gap-1" data-id="{{ bucket.id }}">
-                            <div class="flex items-center gap-2 flex-1 min-w-0">
+                        <div class="bucket-item flex items-center justify-between group rounded-lg {% if selected_bucket_id == bucket.id %}bg-indigo-600 text-white font-medium{% else %}text-slate-300 hover:bg-slate-700/60{% endif %} px-2.5 py-1.5 transition" data-id="{{ bucket.id }}">
+                            <div class="flex items-center gap-2 flex-1 min-w-0 mr-2">
                                 <!-- Bucket Drag Handle -->
-                                <span class="bucket-handle text-slate-500 hover:text-indigo-300 cursor-grab active:cursor-grabbing text-xs font-mono select-none px-0.5 shrink-0">⋮⋮</span>
-                                <a href="/?bucket_id={{ bucket.id }}" class="block text-sm flex items-center gap-2 truncate flex-1 min-w-0">
+                                <span class="bucket-handle text-slate-500 hover:text-indigo-300 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
+                                <a href="/?bucket_id={{ bucket.id }}" class="text-sm flex items-center gap-2 min-w-0 flex-1">
                                     <span class="shrink-0">{{ bucket.icon }}</span> <span class="truncate">{{ bucket.name }}</span>
                                 </a>
                             </div>
 
-                            <!-- Fixed 3-Column Action Slot for Buckets (with spacer) -->
-                            <div class="flex items-center justify-end gap-1 shrink-0 opacity-100 md:opacity-0 group-hover:opacity-100 transition w-16">
-                                <span class="w-5 inline-block shrink-0"></span> <!-- Spacer aligns ✏️ under Share -->
-                                <button data-id="{{ bucket.id }}" data-name="{{ bucket.name }}" data-icon="{{ bucket.icon }}" onclick="openEditBucket(this)" title="Edit Bucket" class="w-5 text-center text-xs hover:text-indigo-300 shrink-0">✏️</button>
-                                <form action="/buckets/delete/" method="POST" onsubmit="return confirm('Delete this Bucket and all its Tasks?');" class="inline w-5 text-center shrink-0">
+                            <!-- Far-Right Action Icons for Buckets -->
+                            <div class="flex items-center gap-1.5 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition">
+                                <button data-id="{{ bucket.id }}" data-name="{{ bucket.name }}" data-icon="{{ bucket.icon }}" onclick="openEditBucket(this)" title="Edit Bucket" class="text-xs hover:text-indigo-300">✏️</button>
+                                <form action="/buckets/delete/" method="POST" onsubmit="return confirm('Delete this Bucket and all its Tasks?');" class="inline">
                                     <input type="hidden" name="bucket_id" value="{{ bucket.id }}">
-                                    <button type="submit" title="Delete Bucket" class="w-full text-xs hover:text-red-400">🗑️</button>
+                                    <button type="submit" title="Delete Bucket" class="text-xs hover:text-red-400">🗑️</button>
                                 </form>
                             </div>
                         </div>
