@@ -13,6 +13,7 @@ from sqlmodel import SQLModel, Field, Relationship, Session, create_engine, sele
 from sqlalchemy import text
 from apscheduler.schedulers.background import BackgroundScheduler
 import resend
+from resend.exceptions import ResendError
 from dotenv import load_dotenv
 
 from starlette.middleware.sessions import SessionMiddleware
@@ -20,7 +21,6 @@ from authlib.integrations.starlette_client import OAuth
 
 load_dotenv()
 
-resend.api_key = os.getenv("RESEND_API_KEY")
 NOTIFICATION_EMAIL = os.getenv("NOTIFICATION_EMAIL", "your-email@example.com")
 
 # --- OAuth & Session Configuration ---
@@ -151,21 +151,30 @@ scheduler = BackgroundScheduler()
 scheduler.start()
 
 def send_email_alert(title: str, due_date: str, amount: Optional[float], description: str, recipients: Optional[List[str]] = None):
+    api_key = os.getenv("RESEND_API_KEY")
+    if not api_key:
+        print("Skipping email dispatch: RESEND_API_KEY environment variable is missing.")
+        return
+
+    resend.api_key = api_key
     amount_str = f"<p><strong>Amount Due:</strong> ${amount:.2f}</p>" if amount else ""
     target_emails = recipients if recipients else [NOTIFICATION_EMAIL]
     
-    resend.Emails.send({
-        "from": "Logos <onboarding@resend.dev>",
-        "to": target_emails,
-        "subject": f"{title}",
-        "html": f"""
-            <h3>🧠 Logos Notification</h3>
-            <p><strong>Item:</strong> {title}</p>
-            <p><strong>Due Date:</strong> {due_date}</p>
-            {amount_str}
-            <p><strong>Notes:</strong> {description or 'None'}</p>
-        """
-    })
+    try:
+        resend.Emails.send({
+            "from": "Logos <onboarding@resend.dev>",
+            "to": target_emails,
+            "subject": f"{title}",
+            "html": f"""
+                <h3>🧠 Logos Notification</h3>
+                <p><strong>Item:</strong> {title}</p>
+                <p><strong>Due Date:</strong> {due_date}</p>
+                {amount_str}
+                <p><strong>Notes:</strong> {description or 'None'}</p>
+            """
+        })
+    except (ResendError, Exception) as e:
+        print(f"Resend notification error (non-fatal): {e}")
 
 def check_and_send_overdue_emails():
     with Session(engine) as session:
@@ -548,13 +557,16 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
                 current_user = get_current_user(request, session)
                 completed_by = current_user.name if current_user else "A team member"
                 
-                realm = item.bucket.realm if item.bucket else None
                 recipients = []
+                bucket = session.get(Bucket, item.bucket_id) if item.bucket_id else None
+                realm = session.get(Realm, bucket.realm_id) if bucket and bucket.realm_id else None
                 
                 if realm:
                     # 1. Add Realm Owner email
-                    if realm.user and realm.user.email:
-                        recipients.append(realm.user.email)
+                    if realm.user_id:
+                        owner = session.get(User, realm.user_id)
+                        if owner and owner.email:
+                            recipients.append(owner.email)
                     
                     # 2. Add Shared User emails
                     shared_records = session.exec(
