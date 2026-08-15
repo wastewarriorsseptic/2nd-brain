@@ -184,8 +184,7 @@ async def login(request: Request):
 
 @app.get("/auth/callback")
 async def auth_callback(request: Request):
-    redirect_uri = "https://twond-brain-dzc0.onrender.com/auth/callback"
-    token = await oauth.google.authorize_access_token(request, redirect_uri=redirect_uri)
+    token = await oauth.google.authorize_access_token(request)
     user_info = token.get('userinfo')
     if not user_info or not user_info.get('email'):
         return RedirectResponse(url="/")
