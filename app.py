@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request, Form, Body
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import SQLModel, Field, Relationship, Session, create_engine, select
+from sqlalchemy import text
 from apscheduler.schedulers.background import BackgroundScheduler
 import resend
 from dotenv import load_dotenv
