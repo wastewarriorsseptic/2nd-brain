@@ -68,6 +68,11 @@ def safe_apply_migrations():
             if 'sort_order' not in bucket_cols:
                 cursor.execute('ALTER TABLE bucket ADD COLUMN "sort_order" INTEGER DEFAULT 0;')
 
+            cursor.execute("PRAGMA table_info(item);")
+            item_cols = [col[1] for col in cursor.fetchall()]
+            if 'recurrence_type' not in item_cols:
+                cursor.execute('ALTER TABLE item ADD COLUMN "recurrence_type" VARCHAR DEFAULT "none";')
+
             conn.commit()
             conn.close()
 
@@ -105,6 +110,7 @@ class Item(SQLModel, table=True):
     due_date: datetime
     is_completed: bool = False
     recurring_group_id: Optional[str] = Field(default=None, index=True)
+    recurrence_type: Optional[str] = Field(default="none")
     bucket_id: int = Field(foreign_key="bucket.id")
     bucket: Optional[Bucket] = Relationship(back_populates="items")
     reminders: List["Reminder"] = Relationship(back_populates="item")
@@ -155,6 +161,27 @@ def send_email_alert(title: str, due_date: str, amount: Optional[float], descrip
         """
     })
 
+def check_and_send_overdue_emails():
+    with Session(engine) as session:
+        today = datetime.now().date()
+        overdue_items = session.exec(
+            select(Item).where(Item.is_completed == False, Item.due_date < datetime.now())
+        ).all()
+
+        for item in overdue_items:
+            days_overdue = (today - item.due_date.date()).days
+            if days_overdue > 0:
+                due_str = item.due_date.strftime("%b %d, %Y")
+                send_email_alert(
+                    title=f"⚠️ OVERDUE ({days_overdue}d): {item.title}",
+                    due_date=f"{due_str} ({days_overdue} day(s) overdue)",
+                    amount=item.amount,
+                    description=item.description
+                )
+
+# Daily cron at 8:00 AM for overdue notifications
+scheduler.add_job(check_and_send_overdue_emails, 'cron', hour=8, minute=0)
+
 def add_months(sourcedate: datetime, months: int) -> datetime:
     month = sourcedate.month - 1 + months
     year = sourcedate.year + month // 12
@@ -167,8 +194,6 @@ def get_current_user(request: Request, session: Session) -> Optional[User]:
     if not user_id:
         return None
     return session.get(User, user_id)
-
-from sqlalchemy import text
 
 @app.on_event("startup")
 def on_startup():
@@ -447,7 +472,8 @@ def create_item(
                 due_date=target_due_date,
                 amount=amount,
                 description=description,
-                recurring_group_id=group_id
+                recurring_group_id=group_id,
+                recurrence_type=recurrence_type
             )
             session.add(new_item)
             session.commit()
@@ -507,8 +533,46 @@ def toggle_item_complete(item_id: int = Form(...)):
     with Session(engine) as session:
         item = session.get(Item, item_id)
         if item:
-            item.is_completed = not item.is_completed
+            was_completed = item.is_completed
+            item.is_completed = not was_completed
             session.add(item)
+            
+            # Shift future uncompleted cards ONLY for interval/daily tasks
+            if not was_completed and item.recurring_group_id and item.recurrence_type == "daily":
+                today = datetime.now().date()
+                due_date_only = item.due_date.date()
+                days_diff = (today - due_date_only).days
+                
+                if days_diff != 0:
+                    future_items = session.exec(
+                        select(Item).where(
+                            Item.recurring_group_id == item.recurring_group_id,
+                            Item.is_completed == False,
+                            Item.id != item.id,
+                            Item.due_date > item.due_date
+                        )
+                    ).all()
+                    
+                    shift_delta = timedelta(days=days_diff)
+                    for future_item in future_items:
+                        future_item.due_date += shift_delta
+                        session.add(future_item)
+                        
+                        # Reschedule all reminders for future items
+                        for reminder in future_item.reminders:
+                            reminder.remind_at += shift_delta
+                            session.add(reminder)
+                            if reminder.remind_at > datetime.now():
+                                scheduler.add_job(
+                                    send_email_alert, 'date', run_date=reminder.remind_at,
+                                    args=[
+                                        f"⏰ Reminder: {future_item.title}", 
+                                        future_item.due_date.strftime("%Y-%m-%d"), 
+                                        future_item.amount, 
+                                        future_item.description
+                                    ]
+                                )
+
             session.commit()
             return RedirectResponse(url=f"/?bucket_id={item.bucket_id}", status_code=303)
     return RedirectResponse(url="/", status_code=303)
