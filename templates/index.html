@@ -32,7 +32,7 @@
     <aside class="w-72 bg-slate-800 border-r border-slate-700 p-6 flex flex-col justify-between shrink-0">
         <div>
             <h1 class="text-2xl font-bold text-indigo-400 mb-6 flex items-center justify-center gap-2 text-center">
-                Logos
+                🧠 Logos
             </h1>
             
             <a href="/" class="block px-3 py-2 rounded-lg text-sm font-semibold mb-6 transition {% if not selected_realm_id and not selected_bucket_id %}bg-indigo-600 text-white{% else %}text-slate-300 hover:bg-slate-700{% endif %}">
@@ -71,14 +71,14 @@
                                     <!-- Realm Drag Handle -->
                                     <span class="realm-handle text-slate-500 hover:text-indigo-400 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
                                     <a href="/?realm_id={{ realm.id }}" class="text-xs font-bold text-slate-300 hover:text-indigo-400 flex items-center gap-1.5 min-w-0">
-                                        <span class="shrink-0">🔮</span> <span class="truncate">{{ realm.name }}</span>
+                                        <span class="shrink-0">{{ realm.icon or '🔮' }}</span> <span class="truncate">{{ realm.name }}</span>
                                     </a>
                                 </div>
 
                                 <!-- Fixed 3-Slot Grid for Realm Icons (Share, Pencil, Trash) -->
                                 <div class="grid grid-cols-3 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-16 text-center">
                                     <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openShareRealm(this)" title="Share Realm" class="w-5 text-center text-xs hover:text-indigo-300">👥</button>
-                                    <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openEditRealm(this)" title="Rename Realm" class="w-5 text-center text-xs hover:text-indigo-300">✏️</button>
+                                    <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" data-icon="{{ realm.icon or '🔮' }}" onclick="openEditRealm(this)" title="Edit Realm" class="w-5 text-center text-xs hover:text-indigo-300">✏️</button>
                                     <form action="/realms/delete/" method="POST" onsubmit="return confirm('Delete this Realm along with all its Buckets and Tasks?');" class="inline w-5 text-center">
                                         <input type="hidden" name="realm_id" value="{{ realm.id }}">
                                         <button type="submit" title="Delete Realm" class="w-full text-xs hover:text-red-400">🗑️</button>
@@ -98,7 +98,7 @@
                                         </a>
                                     </div>
 
-                                    <!-- Fixed 3-Slot Grid for Bucket Icons (Invisible Placeholder + Pencil + Trash) -->
+                                    <!-- Fixed 3-Slot Grid for Bucket Icons -->
                                     <div class="grid grid-cols-3 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-16 text-center">
                                         <div class="w-5"></div>
                                         <button data-id="{{ bucket.id }}" data-name="{{ bucket.name }}" data-icon="{{ bucket.icon }}" onclick="openEditBucket(this)" title="Edit Bucket" class="w-5 text-center text-xs hover:text-indigo-300">✏️</button>
@@ -189,7 +189,7 @@
                                 <div class="flex-1 min-w-0">
                                     <div class="flex flex-wrap items-center gap-1.5 md:gap-2 mb-1.5">
                                         <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[11px] md:text-xs font-semibold px-2 md:px-2.5 py-0.5 rounded-full flex items-center gap-1 truncate max-w-full">
-                                            🔮 {{ item.bucket.realm.name if item.bucket and item.bucket.realm else 'General' }} / {{ item.bucket.icon }} {{ item.bucket.name if item.bucket else '' }}
+                                            {{ item.bucket.realm.icon or '🔮' }} {{ item.bucket.realm.name if item.bucket and item.bucket.realm else 'General' }} / {{ item.bucket.icon }} {{ item.bucket.name if item.bucket else '' }}
                                         </span>
                                         {% if item.recurring_group_id %}
                                         <span class="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] md:text-xs font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -276,10 +276,17 @@
         <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
             <h3 class="text-xl font-bold mb-4">Create New Realm</h3>
             <form action="/realms/" method="POST" class="space-y-4">
-                <div>
-                    <label class="block text-xs font-medium text-slate-400 mb-1">Realm Name</label>
-                    <input type="text" name="name" required placeholder="e.g. Health, Side Project" 
-                           class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                <div class="grid grid-cols-3 gap-2">
+                    <div class="col-span-1">
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Emoji</label>
+                        <input type="text" name="icon" value="🔮" required 
+                               class="w-full text-center bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Realm Name</label>
+                        <input type="text" name="name" required placeholder="e.g. Health, Coding" 
+                               class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                    </div>
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
                     <button type="button" onclick="document.getElementById('add-realm-modal').classList.add('hidden')" 
@@ -293,13 +300,20 @@
 
     <div id="edit-realm-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
         <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
-            <h3 class="text-xl font-bold mb-4">Rename Realm</h3>
+            <h3 class="text-xl font-bold mb-4">Edit Realm</h3>
             <form action="/realms/update/" method="POST" class="space-y-4">
                 <input type="hidden" name="realm_id" id="edit-realm-id">
-                <div>
-                    <label class="block text-xs font-medium text-slate-400 mb-1">Realm Name</label>
-                    <input type="text" name="name" id="edit-realm-name" required 
-                           class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                <div class="grid grid-cols-3 gap-2">
+                    <div class="col-span-1">
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Emoji</label>
+                        <input type="text" name="icon" id="edit-realm-icon" required 
+                               class="w-full text-center bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Realm Name</label>
+                        <input type="text" name="name" id="edit-realm-name" required 
+                               class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                    </div>
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
                     <button type="button" onclick="document.getElementById('edit-realm-modal').classList.add('hidden')" 
@@ -673,6 +687,7 @@
         function openEditRealm(element) {
             document.getElementById('edit-realm-id').value = element.getAttribute('data-id');
             document.getElementById('edit-realm-name').value = element.getAttribute('data-name');
+            document.getElementById('edit-realm-icon').value = element.getAttribute('data-icon') || '🔮';
             document.getElementById('edit-realm-modal').classList.remove('hidden');
         }
 

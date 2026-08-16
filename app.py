@@ -307,25 +307,25 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
 
 # --- Realm & Bucket Endpoints ---
 @app.post("/realms/")
-def create_realm(request: Request, name: str = Form(...)):
+def create_realm(request: Request, name: str = Form(...), icon: str = Form("🔮")):
     with Session(engine) as session:
         user = get_current_user(request, session)
         if user:
             max_order = len(session.exec(select(Realm).where(Realm.user_id == user.id)).all())
-            session.add(Realm(name=name, icon="🔮", sort_order=max_order, user_id=user.id))
+            session.add(Realm(name=name, icon=icon, sort_order=max_order, user_id=user.id))
             session.commit()
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/realms/update/")
-def update_realm(realm_id: int = Form(...), name: str = Form(...)):
+def update_realm(realm_id: int = Form(...), name: str = Form(...), icon: str = Form("🔮")):
     with Session(engine) as session:
         realm = session.get(Realm, realm_id)
         if realm:
             realm.name = name
+            realm.icon = icon
             session.add(realm)
             session.commit()
     return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
-
 @app.post("/realms/reorder/")
 def reorder_realms(order: List[int] = Body(...)):
     with Session(engine) as session:
