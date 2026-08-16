@@ -173,6 +173,11 @@ class RealmShare(SQLModel, table=True):
     realm_id: int = Field(foreign_key="realm.id")
     user_id: int = Field(foreign_key="users.id")
 
+class PendingInvite(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    realm_id: int = Field(foreign_key="realm.id")
+    email: str = Field(index=True)
+    
 # --- FastAPI & Middleware Setup ---
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
@@ -265,15 +270,24 @@ async def auth_callback(request: Request):
             finance = Realm(name="Finance", icon="🔮", sort_order=1, user_id=user.id)
             session.add_all([personal, finance])
             session.commit()
-            session.refresh(personal)
-            session.refresh(finance)
 
-            b1 = Bucket(name="Bills", icon="💳", realm_id=finance.id, sort_order=0)
-            b2 = Bucket(name="Maintenance", icon="🛠️", realm_id=personal.id, sort_order=0)
-            b3 = Bucket(name="Tasks", icon="📌", realm_id=personal.id, sort_order=1)
-            session.add_all([b1, b2, b3])
-            session.commit()
+        # Claim any pending invites for this email address
+        pending_invites = session.exec(
+            select(PendingInvite).where(PendingInvite.email == email)
+        ).all()
 
+        for invite in pending_invites:
+            existing_share = session.exec(
+                select(RealmShare).where(
+                    RealmShare.realm_id == invite.realm_id,
+                    RealmShare.user_id == user.id
+                )
+            ).first()
+            if not existing_share:
+                session.add(RealmShare(realm_id=invite.realm_id, user_id=user.id))
+            session.delete(invite)
+
+        session.commit()
         request.session['user_id'] = user.id
 
     return RedirectResponse(url="/", status_code=303)
@@ -386,11 +400,10 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
         if not realm:
             return RedirectResponse(url="/", status_code=303)
 
-        # Check if target user exists in database
         target_user = session.exec(select(User).where(User.email == target_email)).first()
 
-        # Link user to Realm if they exist
         if target_user:
+            # User exists: link them immediately
             existing = session.exec(
                 select(RealmShare).where(
                     RealmShare.realm_id == realm_id, 
@@ -400,13 +413,24 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
             if not existing:
                 session.add(RealmShare(realm_id=realm_id, user_id=target_user.id))
                 session.commit()
+        else:
+            # User does not exist yet: store pending invite
+            existing_pending = session.exec(
+                select(PendingInvite).where(
+                    PendingInvite.realm_id == realm_id,
+                    PendingInvite.email == target_email
+                )
+            ).first()
+            if not existing_pending:
+                session.add(PendingInvite(realm_id=realm_id, email=target_email))
+                session.commit()
 
-        # 1. Send Invitation Email to Recipient
+        # Send email invitation to recipient
         invitation_subject = f"🔮 You've been invited to collaborate on '{realm.name}' on TaskMonster!"
         invitation_body = f"""
             <h3>😈 TaskMonster Realm Invitation</h3>
             <p><strong>{current_user.name}</strong> ({current_user.email}) invited you to collaborate on the <strong>{realm.name}</strong> realm!</p>
-            <p>Log in to your account or create one with your email to start collaborating:</p>
+            <p>Click below to sign in with your Google email and claim access:</p>
             <p><a href="https://usetaskmonster.app/login" style="background-color: #6366f1; color: white; padding: 10px 18px; text-decoration: none; border-radius: 6px; display: inline-block;">Join {realm.name} on TaskMonster</a></p>
         """
         
@@ -420,12 +444,12 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
         except Exception as e:
             print(f"Failed to send invite email to recipient: {e}")
 
-        # 2. Send Confirmation Email to You (The Inviter)
+        # Send confirmation email to inviter
         confirmation_subject = f"📩 Invite Sent: {target_email} invited to '{realm.name}'"
         confirmation_body = f"""
             <h3>😈 Invitation Dispatched</h3>
             <p>Your invite to <strong>{target_email}</strong> for the <strong>{realm.name}</strong> realm has been sent!</p>
-            <p>Once they sign in at <a href="https://usetaskmonster.app">usetaskmonster.app</a>, they will automatically see this realm on their dashboard.</p>
+            <p>Once they log in with Google at <a href="https://usetaskmonster.app">usetaskmonster.app</a>, the realm will automatically appear on their dashboard.</p>
         """
 
         try:
