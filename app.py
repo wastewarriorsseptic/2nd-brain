@@ -715,3 +715,57 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
             return RedirectResponse(url=f"/?bucket_id={item.bucket_id}", status_code=303)
     return RedirectResponse(url="/", status_code=303)
     
+# --- Edit Task Endpoint ---
+@app.post("/items/update/")
+def update_item(
+    item_id: int = Form(...),
+    title: str = Form(...),
+    due_date: str = Form(...),
+    due_time: Optional[str] = Form(None),
+    amount: Optional[float] = Form(None),
+    description: Optional[str] = Form(None),
+    bucket_id: Optional[int] = Form(None),
+    update_series: bool = Form(False)
+):
+    hour, minute = 9, 0
+    if due_time and due_time.strip():
+        try:
+            time_obj = datetime.strptime(due_time.strip(), "%H:%M")
+            hour, minute = time_obj.hour, time_obj.minute
+        except ValueError:
+            pass
+
+    new_due_date = datetime.strptime(due_date, "%Y-%m-%d").replace(hour=hour, minute=minute, second=0)
+
+    with Session(engine) as session:
+        item = session.get(Item, item_id)
+        if not item:
+            return RedirectResponse(url="/", status_code=303)
+
+        target_bucket_id = bucket_id if bucket_id else item.bucket_id
+
+        # Update entire recurring series if requested
+        if update_series and item.recurring_group_id:
+            series_items = session.exec(
+                select(Item).where(Item.recurring_group_id == item.recurring_group_id)
+            ).all()
+
+            for series_item in series_items:
+                series_item.title = title
+                series_item.amount = amount
+                series_item.description = description
+                series_item.bucket_id = target_bucket_id
+                # Adjust time of day across the series while keeping each item's scheduled date
+                series_item.due_date = series_item.due_date.replace(hour=hour, minute=minute, second=0)
+                session.add(series_item)
+        else:
+            # Update single item
+            item.title = title
+            item.due_date = new_due_date
+            item.amount = amount
+            item.description = description
+            item.bucket_id = target_bucket_id
+            session.add(item)
+
+        session.commit()
+        return RedirectResponse(url=f"/?bucket_id={target_bucket_id}", status_code=303)
