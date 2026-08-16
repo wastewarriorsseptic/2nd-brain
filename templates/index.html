@@ -57,14 +57,14 @@
                 <!-- Clickable Card Header -->
                 <div class="flex items-center justify-between cursor-pointer select-none group" onclick="handleRealmsHeaderClick(event)">
                     <div class="flex items-center gap-2 min-w-0 flex-1 mr-2">
-                        <span id="realms-card-chevron" class="text-xs text-slate-400 group-hover:text-indigo-400 transition-transform duration-200 shrink-0 leading-none">▼</span>
-                        <a href="/" class="text-xs font-extrabold uppercase tracking-wider {% if not selected_realm_id and not selected_bucket_id %}text-indigo-400{% else %}text-slate-300 group-hover:text-white{% endif %} shrink-0 transition-colors leading-none">Realms</a>
-                        <span class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 flex items-center justify-center leading-none">
+                        <span id="realms-card-chevron" class="text-xs text-slate-400 group-hover:text-indigo-400 transition-transform duration-200 shrink-0">▼</span>
+                        <a href="/" class="text-xs font-extrabold uppercase tracking-wider {% if not selected_realm_id and not selected_bucket_id %}text-indigo-400{% else %}text-slate-300 group-hover:text-white{% endif %} shrink-0 transition-colors">Realms</a>
+                        <span class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">
                             {{ realms|length }}
                         </span>
 
-                        <!-- Perfectly Centered Dynamic Active Selection Badge -->
-                        <div id="card-selection-badge-container" class="flex items-center min-w-0">
+                        <!-- Dynamic Active Selection Badge -->
+                        <div id="card-selection-badge-container">
                             {% set ns = namespace(active_realm=None, active_bucket=None) %}
                             {% for r in realms %}
                                 {% if r.id == selected_realm_id %}
@@ -79,11 +79,11 @@
                             {% endfor %}
 
                             {% if ns.active_realm %}
-                            <span class="inline-flex items-center bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[130px] md:max-w-[200px] leading-none" title="{{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.name }}{% endif %}">
+                            <span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[130px] md:max-w-[200px]" title="{{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.name }}{% endif %}">
                                 {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.icon }} {{ ns.active_bucket.name }}{% endif %}
                             </span>
                             {% else %}
-                            <span class="inline-flex items-center bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 leading-none">
+                            <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">
                                 ✨ All Timelines
                             </span>
                             {% endif %}
@@ -180,8 +180,8 @@
     <main class="flex-1 p-3 md:p-8 overflow-y-auto">
         <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 md:mb-8">
             <div>
-                <h2 class="text-2xl md:text-3xl font-bold tracking-tight">Timeline Dashboard</h2>
-                <p class="text-slate-400 text-xs md:text-sm mt-0.5">Chronological flow of due dates and upcoming reminders</p>
+                <h2 class="text-2xl md:text-3xl font-bold tracking-tight">Timeline</h2>
+                <p class="text-slate-400 text-xs md:text-sm mt-0.5">Chronological flow of tasks due this month:</p>
             </div>
 
             <!-- User Authentication Header Controls -->
@@ -217,15 +217,14 @@
                 </div>
 
                 {% if items %}
-                <div id="timeline-list" class="timeline-container relative border-l-2 border-indigo-500/30 ml-3 md:ml-8 pl-4 md:pl-6 space-y-6 md:space-y-8 flex flex-col">
+                <div id="timeline-list" class="timeline-container relative border-l-2 border-indigo-500/30 ml-3 md:ml-8 pl-4 md:pl-6 space-y-6 md:space-y-8">
                     {% for item in items %}
                     {% set days_out = (item.due_date.date() - today).days %}
                     <div class="timeline-card-wrapper relative group" 
                          data-completed="{{ 'true' if item.is_completed else 'false' }}"
                          data-due-date="{{ item.due_date.strftime('%Y-%m-%d') }}"
                          data-realm-id="{{ item.bucket.realm.id if item.bucket and item.bucket.realm else '' }}"
-                         data-bucket-id="{{ item.bucket.id if item.bucket else '' }}"
-                         data-original-index="{{ loop.index0 }}">
+                         data-bucket-id="{{ item.bucket.id if item.bucket else '' }}">
                         <!-- Node Connector Dot -->
                         <div class="absolute -left-[23px] md:-left-[31px] top-5 w-3.5 md:w-4 h-3.5 md:h-4 rounded-full border-2 border-slate-900 {% if item.is_completed %}bg-slate-600{% elif days_out < 0 %}bg-rose-500 animate-pulse{% else %}bg-indigo-500 group-hover:scale-125{% endif %} transition-all"></div>
                         
@@ -698,17 +697,17 @@
                         const rName = activeRealmRow ? activeRealmRow.getAttribute('data-realm-name') : '';
                         const rIcon = activeRealmRow ? activeRealmRow.getAttribute('data-realm-icon') : '🔮';
 
-                        badgeContainer.innerHTML = `<span class="inline-flex items-center bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[130px] md:max-w-[200px] leading-none" title="${rName} / ${bName}">${rIcon} ${rName} / ${bIcon} ${bName}</span>`;
+                        badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[130px] md:max-w-[200px]" title="${rName} / ${bName}">${rIcon} ${rName} / ${bIcon} ${bName}</span>`;
                     }
                 } else if (currentSelectedRealmId !== null) {
                     const activeRealmRow = document.getElementById('realm-row-' + currentSelectedRealmId);
                     if (activeRealmRow) {
                         const rName = activeRealmRow.getAttribute('data-realm-name');
                         const rIcon = activeRealmRow.getAttribute('data-realm-icon');
-                        badgeContainer.innerHTML = `<span class="inline-flex items-center bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[130px] md:max-w-[200px] leading-none" title="${rName}">${rIcon} ${rName}</span>`;
+                        badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[130px] md:max-w-[200px]" title="${rName}">${rIcon} ${rName}</span>`;
                     }
                 } else {
-                    badgeContainer.innerHTML = `<span class="inline-flex items-center bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 leading-none">✨ All Timelines</span>`;
+                    badgeContainer.innerHTML = `<span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">✨ All Timelines</span>`;
                 }
             }
 
@@ -731,8 +730,7 @@
 
         function filterTimelineList() {
             const currentFilterMode = localStorage.getItem('timeline_filter_mode') || 'active';
-            const timelineList = document.getElementById('timeline-list');
-            const wrappers = Array.from(document.querySelectorAll('.timeline-card-wrapper'));
+            const wrappers = document.querySelectorAll('.timeline-card-wrapper');
             const emptyState = document.getElementById('timeline-empty-state');
             const emptyText = document.getElementById('timeline-empty-text');
             const loadMoreBtnContainer = document.getElementById('load-more-container');
@@ -746,24 +744,6 @@
             let visibleCount = 0;
             let hiddenFutureCount = 0;
 
-            // Sort wrappers: Completed tab sorts newest due dates first; Active tab sorts chronological order
-            wrappers.sort((a, b) => {
-                if (currentFilterMode === 'completed') {
-                    const dateA = new Date(a.getAttribute('data-due-date') + 'T00:00:00');
-                    const dateB = new Date(b.getAttribute('data-due-date') + 'T00:00:00');
-                    return dateB - dateA; // Descending (Most recently completed on top)
-                } else {
-                    const idxA = parseInt(a.getAttribute('data-original-index') || '0');
-                    const idxB = parseInt(b.getAttribute('data-original-index') || '0');
-                    return idxA - idxB; // Ascending original timeline order
-                }
-            });
-
-            // Re-append sorted card elements back into the container DOM
-            if (timelineList) {
-                wrappers.forEach(el => timelineList.appendChild(el));
-            }
-
             wrappers.forEach(el => {
                 const isCompleted = el.getAttribute('data-completed') === 'true';
                 const itemRealmId = el.getAttribute('data-realm-id') ? parseInt(el.getAttribute('data-realm-id')) : null;
@@ -775,7 +755,6 @@
                     itemDueDate = new Date(dueDateStr + 'T23:59:59');
                 }
 
-                // Check Selection Match
                 let matchesSelection = true;
                 if (currentSelectedBucketId !== null) {
                     matchesSelection = (itemBucketId === currentSelectedBucketId);
@@ -809,13 +788,11 @@
                 }
             });
 
-            // Update Badges
             const activeBadge = document.getElementById('active-count-badge');
             const completedBadge = document.getElementById('completed-count-badge');
             if (activeBadge) activeBadge.innerText = currentMonthActiveCount;
             if (completedBadge) completedBadge.innerText = currentMonthCompletedCount;
 
-            // Empty State Handling
             if (emptyState) {
                 if (visibleCount === 0) {
                     emptyState.classList.remove('hidden');
@@ -825,7 +802,6 @@
                 }
             }
 
-            // Show/Hide "Load More" Button
             if (loadMoreBtnContainer) {
                 if (hiddenFutureCount > 0) {
                     loadMoreBtnContainer.classList.remove('hidden');
@@ -970,7 +946,7 @@
             btn.classList.toggle('text-white');
             btn.classList.toggle('bg-slate-900');
             if (selectedYearMonths.includes(monthNum)) {
-                selectedYearMonths.push(monthNum);
+                selectedYearMonths = selectedYearMonths.filter(m => m !== monthNum);
             } else {
                 selectedYearMonths.push(monthNum);
             }
