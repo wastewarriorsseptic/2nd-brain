@@ -1076,9 +1076,9 @@
                     const idB = parseInt(b.getAttribute('data-item-id') || '0');
 
                     if (currentFilterMode === 'completed' && isCompletedA && isCompletedB) {
-                        // Reverse chronological order for completed view
-                        if (dateB - dateA !== 0) return dateB - dateA;
-                        return idB - idA;
+                        // Order completed tasks by highest ID first (most recently added/completed)
+                        if (idB - idA !== 0) return idB - idA;
+                        return dateB - dateA;
                     } else {
                         // Standard chronological order for active view
                         if (dateA - dateB !== 0) return dateA - dateB;
