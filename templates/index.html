@@ -40,8 +40,8 @@
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex">
 
-    <!-- Sidebar -->
-    <aside class="w-72 bg-slate-900 md:bg-slate-800 border-r-0 md:border-r border-slate-800/80 p-4 md:p-6 flex flex-col justify-between shrink-0 transition-colors">
+    <!-- Sidebar (Widened for desktop viewports) -->
+    <aside class="w-72 md:w-80 lg:w-96 bg-slate-900 md:bg-slate-800 border-r-0 md:border-r border-slate-800/80 p-4 md:p-6 flex flex-col justify-between shrink-0 transition-all">
         <div>
             <!-- Centered Logos Brand Header -->
             <div class="py-1 mb-2 md:mb-4 flex items-center justify-center">
@@ -79,7 +79,7 @@
                             {% endfor %}
 
                             {% if ns.active_realm %}
-                            <span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[110px] sm:max-w-[130px]" title="{{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.name }}{% endif %}">
+                            <span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[130px] md:max-w-[200px]" title="{{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.name }}{% endif %}">
                                 {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.icon }} {{ ns.active_bucket.name }}{% endif %}
                             </span>
                             {% else %}
@@ -110,7 +110,7 @@
                                     <span class="realm-handle {% if selected_realm_id == realm.id and not selected_bucket_id %}text-indigo-200{% else %}text-slate-500 hover:text-indigo-400{% endif %} cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
                                     <a href="{% if selected_realm_id == realm.id and not selected_bucket_id %}/{% else %}/?realm_id={{ realm.id }}{% endif %}" 
                                        onclick="selectRealm(event, {{ realm.id }})"
-                                       class="realm-link text-xs font-bold flex items-center gap-1.5 min-w-0 {% if selected_realm_id == realm.id and not selected_bucket_id %}text-white{% else %}text-slate-300 hover:text-indigo-400{% endif %}">
+                                       class="realm-link text-xs md:text-sm font-bold flex items-center gap-1.5 min-w-0 {% if selected_realm_id == realm.id and not selected_bucket_id %}text-white{% else %}text-slate-300 hover:text-indigo-400{% endif %}">
                                         <span class="shrink-0">{{ realm.icon or '🔮' }}</span> <span class="truncate">{{ realm.name }}</span>
                                     </a>
                                 </div>
@@ -659,11 +659,11 @@
 
                 if (currentSelectedRealmId === rowId && currentSelectedBucketId === null) {
                     row.className = "realm-item-row flex items-center justify-between group mb-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-150 bg-indigo-600 text-white font-semibold shadow-md";
-                    if (link) link.className = "realm-link text-xs font-bold flex items-center gap-1.5 min-w-0 text-white";
+                    if (link) link.className = "realm-link text-xs md:text-sm font-bold flex items-center gap-1.5 min-w-0 text-white";
                     if (handle) handle.className = "realm-handle text-indigo-200 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0";
                 } else {
                     row.className = "realm-item-row flex items-center justify-between group mb-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-150";
-                    if (link) link.className = "realm-link text-xs font-bold flex items-center gap-1.5 min-w-0 text-slate-300 hover:text-indigo-400";
+                    if (link) link.className = "realm-link text-xs md:text-sm font-bold flex items-center gap-1.5 min-w-0 text-slate-300 hover:text-indigo-400";
                     if (handle) handle.className = "realm-handle text-slate-500 hover:text-indigo-400 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0";
                 }
             });
@@ -691,14 +691,14 @@
                         const rName = activeRealmRow ? activeRealmRow.getAttribute('data-realm-name') : '';
                         const rIcon = activeRealmRow ? activeRealmRow.getAttribute('data-realm-icon') : '🔮';
 
-                        badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[110px] sm:max-w-[130px]" title="${rName} / ${bName}">${rIcon} ${rName} / ${bIcon} ${bName}</span>`;
+                        badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[130px] md:max-w-[200px]" title="${rName} / ${bName}">${rIcon} ${rName} / ${bIcon} ${bName}</span>`;
                     }
                 } else if (currentSelectedRealmId !== null) {
                     const activeRealmRow = document.getElementById('realm-row-' + currentSelectedRealmId);
                     if (activeRealmRow) {
                         const rName = activeRealmRow.getAttribute('data-realm-name');
                         const rIcon = activeRealmRow.getAttribute('data-realm-icon');
-                        badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[110px] sm:max-w-[130px]" title="${rName}">${rIcon} ${rName}</span>`;
+                        badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[130px] md:max-w-[200px]" title="${rName}">${rIcon} ${rName}</span>`;
                     }
                 } else {
                     badgeContainer.innerHTML = `<span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">✨ All Timelines</span>`;
