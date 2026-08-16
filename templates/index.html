@@ -55,18 +55,37 @@
                 
                 <!-- Clickable Card Header -->
                 <div class="flex items-center justify-between cursor-pointer select-none" onclick="toggleRealmsCard()">
-                    <div class="flex items-center gap-2">
-                        <span id="realms-card-chevron" class="text-xs text-slate-400 transition-transform duration-200">▼</span>
-                        <span class="text-xs font-bold uppercase tracking-wider text-slate-300">Realms</span>
-                        <span class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                    <div class="flex items-center gap-2 min-w-0 flex-1 mr-2">
+                        <span id="realms-card-chevron" class="text-xs text-slate-400 transition-transform duration-200 shrink-0">▼</span>
+                        <span class="text-xs font-bold uppercase tracking-wider text-slate-300 shrink-0">Realms</span>
+                        <span class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">
                             {{ realms|length }}
                         </span>
+
+                        <!-- Dynamic Active Selection Badge in Card Header -->
+                        {% set active_realm = None %}
+                        {% set active_bucket = None %}
+                        {% for r in realms %}
+                            {% if r.id == selected_realm_id %}{% set active_realm = r %}{% endif %}
+                            {% for b in r.buckets %}
+                                {% if b.id == selected_bucket_id %}
+                                    {% set active_bucket = b %}
+                                    {% set active_realm = r %}
+                                {% endif %}
+                            {% endfor %}
+                        {% endfor %}
+
+                        {% if active_realm %}
+                        <span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[110px] sm:max-w-[130px]" title="{{ active_realm.name }}{% if active_bucket %} / {{ active_bucket.name }}{% endif %}">
+                            {{ active_realm.icon or '🔮' }} {{ active_realm.name }}{% if active_bucket %} / {{ active_bucket.icon }} {{ active_bucket.name }}{% endif %}
+                        </span>
+                        {% endif %}
                     </div>
 
                     <!-- + Add Realm Button (stops collapse click event) -->
                     <button onclick="event.stopPropagation(); document.getElementById('add-realm-modal').classList.remove('hidden')" 
                             title="Add Realm" 
-                            class="text-slate-400 hover:text-indigo-400 text-sm font-bold px-2 py-0.5 rounded transition hover:bg-slate-700/80">
+                            class="text-slate-400 hover:text-indigo-400 text-sm font-bold px-2 py-0.5 rounded transition hover:bg-slate-700/80 shrink-0">
                         +
                     </button>
                 </div>
@@ -572,7 +591,7 @@
 
                 <button type="submit" onclick="document.getElementById('delete-series-flag').value='false'" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium py-2 rounded-lg transition">Delete Only This Task</button>
                 <button type="submit" id="delete-series-btn" onclick="document.getElementById('delete-series-flag').value='true'" class="w-full bg-red-600 hover:bg-red-500 text-white text-sm font-medium py-2 rounded-lg transition">Delete Entire Recurring Series</button>
-                <button type="button" onclick="document.getElementById('delete-item-modal').classList.add('hidden')" class="w-full text-slate-400 hover:text-white text-xs pt-2">Cancel</button>
+                <button type="button" onclick="onclick="document.getElementById('delete-item-modal').classList.add('hidden')" class="w-full text-slate-400 hover:text-white text-xs pt-2">Cancel</button>
             </form>
         </div>
     </div>
