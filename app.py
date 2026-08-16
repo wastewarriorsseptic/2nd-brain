@@ -431,12 +431,20 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
                 session.commit()
 
         # 1. Send Invitation Email to Recipient
-        invitation_subject = f"🔮 You've been invited to collaborate on '{realm.name}' on TaskMonster!"
+        iinvitation_subject = f"{current_user.name} invited you to collaborate on '{realm.name}'"
         invitation_body = f"""
-            <h3>😈 TaskMonster Realm Invitation</h3>
-            <p><strong>{current_user.name}</strong> ({current_user.email}) invited you to collaborate on the <strong>{realm.name}</strong> realm!</p>
-            <p>Click below to sign in with your Google email and claim access:</p>
-            <p><a href="https://usetaskmonster.app/login" style="background-color: #6366f1; color: white; padding: 10px 18px; text-decoration: none; border-radius: 6px; display: inline-block;">Join {realm.name} on TaskMonster</a></p>
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
+            <h2 style="color: #4f46e5; margin-top: 0;">TaskMonster Realm Invitation</h2>
+            <p>Hi there,</p>
+            <p><strong>{current_user.name}</strong> ({current_user.email}) has invited you to collaborate on the <strong>{realm.name}</strong> realm in TaskMonster.</p>
+            <p>TaskMonster lets you organize shared timelines, track upcoming tasks, and coordinate across realms in real time.</p>
+            <div style="margin: 28px 0;">
+                <a href="https://usetaskmonster.app/login" style="background-color: #6366f1; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">Accept Invitation</a>
+            </div>
+            <p style="font-size: 13px; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 32px;">
+                If you did not expect this invitation, you can safely ignore this email.
+            </p>
+        </div>
         """
         
         try:
