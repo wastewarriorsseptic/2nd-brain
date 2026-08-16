@@ -217,14 +217,15 @@
                 </div>
 
                 {% if items %}
-                <div id="timeline-list" class="timeline-container relative border-l-2 border-indigo-500/30 ml-3 md:ml-8 pl-4 md:pl-6 space-y-6 md:space-y-8">
+                <div id="timeline-list" class="timeline-container relative border-l-2 border-indigo-500/30 ml-3 md:ml-8 pl-4 md:pl-6 space-y-6 md:space-y-8 flex flex-col">
                     {% for item in items %}
                     {% set days_out = (item.due_date.date() - today).days %}
                     <div class="timeline-card-wrapper relative group" 
                          data-completed="{{ 'true' if item.is_completed else 'false' }}"
                          data-due-date="{{ item.due_date.strftime('%Y-%m-%d') }}"
                          data-realm-id="{{ item.bucket.realm.id if item.bucket and item.bucket.realm else '' }}"
-                         data-bucket-id="{{ item.bucket.id if item.bucket else '' }}">
+                         data-bucket-id="{{ item.bucket.id if item.bucket else '' }}"
+                         data-original-index="{{ loop.index0 }}">
                         <!-- Node Connector Dot -->
                         <div class="absolute -left-[23px] md:-left-[31px] top-5 w-3.5 md:w-4 h-3.5 md:h-4 rounded-full border-2 border-slate-900 {% if item.is_completed %}bg-slate-600{% elif days_out < 0 %}bg-rose-500 animate-pulse{% else %}bg-indigo-500 group-hover:scale-125{% endif %} transition-all"></div>
                         
@@ -730,7 +731,8 @@
 
         function filterTimelineList() {
             const currentFilterMode = localStorage.getItem('timeline_filter_mode') || 'active';
-            const wrappers = document.querySelectorAll('.timeline-card-wrapper');
+            const timelineList = document.getElementById('timeline-list');
+            const wrappers = Array.from(document.querySelectorAll('.timeline-card-wrapper'));
             const emptyState = document.getElementById('timeline-empty-state');
             const emptyText = document.getElementById('timeline-empty-text');
             const loadMoreBtnContainer = document.getElementById('load-more-container');
@@ -743,6 +745,24 @@
             let currentMonthCompletedCount = 0;
             let visibleCount = 0;
             let hiddenFutureCount = 0;
+
+            // Sort wrappers: Completed tab sorts newest due dates first; Active tab sorts chronological order
+            wrappers.sort((a, b) => {
+                if (currentFilterMode === 'completed') {
+                    const dateA = new Date(a.getAttribute('data-due-date') + 'T00:00:00');
+                    const dateB = new Date(b.getAttribute('data-due-date') + 'T00:00:00');
+                    return dateB - dateA; // Descending (Most recently completed on top)
+                } else {
+                    const idxA = parseInt(a.getAttribute('data-original-index') || '0');
+                    const idxB = parseInt(b.getAttribute('data-original-index') || '0');
+                    return idxA - idxB; // Ascending original timeline order
+                }
+            });
+
+            // Re-append sorted card elements back into the container DOM
+            if (timelineList) {
+                wrappers.forEach(el => timelineList.appendChild(el));
+            }
 
             wrappers.forEach(el => {
                 const isCompleted = el.getAttribute('data-completed') === 'true';
@@ -950,7 +970,7 @@
             btn.classList.toggle('text-white');
             btn.classList.toggle('bg-slate-900');
             if (selectedYearMonths.includes(monthNum)) {
-                selectedYearMonths = selectedYearMonths.filter(m => m !== monthNum);
+                selectedYearMonths.push(monthNum);
             } else {
                 selectedYearMonths.push(monthNum);
             }
