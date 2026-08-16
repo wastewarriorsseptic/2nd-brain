@@ -686,34 +686,34 @@
                 <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Title</label>
                     <input type="text" name="title" required placeholder="e.g. Standup Meeting or Rent" 
-                           class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                           class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
                 </div>
 
                 <!-- Amount ($ optional) -->
                 <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Amount ($ optional)</label>
                     <input type="number" step="0.01" name="amount" placeholder="0.00" 
-                           class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                           class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
                 </div>
 
                 <!-- Due Date -->
                 <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Due Date</label>
                     <input type="date" name="due_date" required 
-                           class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border appearance-none text-left">
+                           class="w-full min-w-0 h-[38px] min-h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border appearance-none text-left leading-normal">
                 </div>
 
                 <!-- Due Time (Optional) -->
                 <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Due Time (Optional)</label>
                     <input type="time" name="due_time" 
-                           class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border appearance-none text-left">
+                           class="w-full min-w-0 h-[38px] min-h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border appearance-none text-left leading-normal">
                 </div>
 
                 <!-- Email Reminder -->
                 <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Email Reminder</label>
-                    <select name="reminder_offset" class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition cursor-pointer box-border">
+                    <select name="reminder_offset" class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition cursor-pointer box-border">
                         <option value="0">Due Date Only</option>
                         <option value="1">1 Day Before</option>
                         <option value="3">3 Days Before</option>
@@ -729,7 +729,7 @@
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Repeat</label>
                     <button type="button" onclick="document.getElementById('custom-repeat-modal').classList.remove('hidden')" 
                             id="repeat-button-label"
-                            class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-left text-slate-200 flex justify-between items-center hover:border-slate-500 transition box-border">
+                            class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-left text-slate-200 flex justify-between items-center hover:border-slate-500 transition box-border">
                         <span>Never</span>
                         <span class="text-xs text-slate-500">⚙️</span>
                     </button>
