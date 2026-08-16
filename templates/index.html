@@ -175,16 +175,32 @@
         <!-- Timeline View Container -->
         <div class="max-w-4xl mx-auto">
             {% if user %}
+                
+                <!-- 50:50 Split Pill Toggle Button -->
+                <div class="w-full max-w-md mx-auto mb-8 p-1 bg-slate-800/90 border border-slate-700/80 rounded-full flex items-center shadow-inner select-none">
+                    <button id="pill-btn-active" onclick="setTimelineFilter('active')" 
+                            class="flex-1 py-2 text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-2 bg-indigo-600 text-white shadow-md">
+                        <span>⚡ Active Tasks</span>
+                        <span id="active-count-badge" class="bg-indigo-500/30 text-indigo-100 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-indigo-400/30">0</span>
+                    </button>
+
+                    <button id="pill-btn-completed" onclick="setTimelineFilter('completed')" 
+                            class="flex-1 py-2 text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200">
+                        <span>✅ Completed Tasks</span>
+                        <span id="completed-count-badge" class="bg-slate-700 text-slate-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">0</span>
+                    </button>
+                </div>
+
                 {% if items %}
                 <div class="timeline-container relative border-l-2 border-indigo-500/30 ml-3 md:ml-8 pl-4 md:pl-6 space-y-6 md:space-y-8">
                     {% for item in items %}
                     {% set days_out = (item.due_date.date() - today).days %}
-                    <div class="relative group">
+                    <div class="timeline-card-wrapper relative group" data-completed="{{ 'true' if item.is_completed else 'false' }}">
                         <!-- Node Connector Dot -->
                         <div class="absolute -left-[23px] md:-left-[31px] top-5 w-3.5 md:w-4 h-3.5 md:h-4 rounded-full border-2 border-slate-900 {% if item.is_completed %}bg-slate-600{% elif days_out < 0 %}bg-rose-500 animate-pulse{% else %}bg-indigo-500 group-hover:scale-125{% endif %} transition-all"></div>
                         
                         <!-- Timeline Card -->
-                        <div class="border rounded-xl p-4 md:p-5 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all {% if item.is_completed %}bg-slate-800/40 border-slate-700/40 opacity-50{% elif days_out < 0 %}bg-rose-950/20 border-rose-500/40{% else %}bg-slate-800 border-slate-700{% endif %}">
+                        <div class="border rounded-xl p-4 md:p-5 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all {% if item.is_completed %}bg-slate-800/40 border-slate-700/40 opacity-70{% elif days_out < 0 %}bg-rose-950/20 border-rose-500/40{% else %}bg-slate-800 border-slate-700{% endif %}">
                             
                             <div class="flex items-start md:items-center gap-3 md:gap-4 flex-1">
                                 <!-- Completion Checkbox Form -->
@@ -262,6 +278,12 @@
                     </div>
                     {% endfor %}
                 </div>
+
+                <!-- Empty State Message when switching tabs -->
+                <div id="timeline-empty-state" class="hidden text-center py-12 md:py-16 bg-slate-800/50 border border-slate-700/50 rounded-xl px-4">
+                    <p id="timeline-empty-text" class="text-slate-400 text-base md:text-lg font-medium">No active tasks</p>
+                </div>
+
                 {% else %}
                 <div class="text-center py-12 md:py-16 bg-slate-800/50 border border-slate-700/50 rounded-xl px-4">
                     <p class="text-slate-400 text-base md:text-lg font-medium">No timeline items found</p>
@@ -560,6 +582,58 @@
     </div>
 
     <script>
+        function setTimelineFilter(mode) {
+            localStorage.setItem('timeline_filter_mode', mode);
+
+            const btnActive = document.getElementById('pill-btn-active');
+            const btnCompleted = document.getElementById('pill-btn-completed');
+            const wrappers = document.querySelectorAll('.timeline-card-wrapper');
+            const emptyState = document.getElementById('timeline-empty-state');
+            const emptyText = document.getElementById('timeline-empty-text');
+
+            let activeCount = 0;
+            let completedCount = 0;
+            let visibleCount = 0;
+
+            wrappers.forEach(el => {
+                const isCompleted = el.getAttribute('data-completed') === 'true';
+                if (isCompleted) {
+                    completedCount++;
+                } else {
+                    activeCount++;
+                }
+
+                if ((mode === 'active' && !isCompleted) || (mode === 'completed' && isCompleted)) {
+                    el.classList.remove('hidden');
+                    visibleCount++;
+                } else {
+                    el.classList.add('hidden');
+                }
+            });
+
+            const activeBadge = document.getElementById('active-count-badge');
+            const completedBadge = document.getElementById('completed-count-badge');
+            if (activeBadge) activeBadge.innerText = activeCount;
+            if (completedBadge) completedBadge.innerText = completedCount;
+
+            if (mode === 'active') {
+                btnActive.className = "flex-1 py-2 text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-2 bg-indigo-600 text-white shadow-md";
+                btnCompleted.className = "flex-1 py-2 text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200";
+            } else {
+                btnCompleted.className = "flex-1 py-2 text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-2 bg-emerald-600 text-white shadow-md";
+                btnActive.className = "flex-1 py-2 text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200";
+            }
+
+            if (emptyState && wrappers.length > 0) {
+                if (visibleCount === 0) {
+                    emptyState.classList.remove('hidden');
+                    emptyText.innerText = mode === 'active' ? "🎉 All caught up! No active tasks." : "No completed tasks yet.";
+                } else {
+                    emptyState.classList.add('hidden');
+                }
+            }
+        }
+
         function toggleRealmsCard() {
             const body = document.getElementById('realms-card-body');
             const chevron = document.getElementById('realms-card-chevron');
@@ -575,6 +649,9 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            const savedMode = localStorage.getItem('timeline_filter_mode') || 'active';
+            setTimelineFilter(savedMode);
+
             const isExpanded = localStorage.getItem('realms_card_expanded');
             if (isExpanded === 'false') {
                 const body = document.getElementById('realms-card-body');
