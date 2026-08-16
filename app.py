@@ -429,6 +429,7 @@ def create_item(
     title: str = Form(...),
     bucket_id: int = Form(...),
     due_date: str = Form(...),
+    due_time: Optional[str] = Form(None),
     reminder_offset: int = Form(...),
     recurrence_type: str = Form("none"),
     interval: int = Form(1),
@@ -438,8 +439,17 @@ def create_item(
     amount: Optional[float] = Form(None),
     description: Optional[str] = Form(None)
 ):
-    # Anchor to 9:00 AM to eliminate UTC/Local midnight timezone day shifts
-    base_due_date = datetime.strptime(due_date, "%Y-%m-%d").replace(hour=9, minute=0, second=0)
+    # Parse due_time if provided, otherwise default to 9:00 AM
+    hour, minute = 9, 0
+    if due_time and due_time.strip():
+        try:
+            time_obj = datetime.strptime(due_time.strip(), "%H:%M")
+            hour, minute = time_obj.hour, time_obj.minute
+        except ValueError:
+            pass
+
+    # Anchor to specified time (or default 9:00 AM) to eliminate UTC/Local midnight timezone day shifts
+    base_due_date = datetime.strptime(due_date, "%Y-%m-%d").replace(hour=hour, minute=minute, second=0)
     group_id = str(uuid.uuid4()) if recurrence_type != "none" else None
     interval = max(1, interval)
 
@@ -472,20 +482,20 @@ def create_item(
             max_day_in_month = monthrange(m_date.year, m_date.month)[1]
             for mday in selected_month_days:
                 actual_day = min(mday, max_day_in_month)
-                target_dates.append(datetime(m_date.year, m_date.month, actual_day, 9, 0, 0))
+                target_dates.append(datetime(m_date.year, m_date.month, actual_day, hour, minute, 0))
     elif recurrence_type == "yearly":
         for i in range(0, 5, interval):
             target_year = base_due_date.year + i
             for m in selected_months:
                 max_day = monthrange(target_year, m)[1]
                 actual_day = min(base_due_date.day, max_day)
-                target_dates.append(datetime(target_year, m, actual_day, 9, 0, 0))
+                target_dates.append(datetime(target_year, m, actual_day, hour, minute, 0))
 
     target_dates = sorted(list(set(target_dates)))
 
     with Session(engine) as session:
         for target_due_date in target_dates:
-            target_due_str = target_due_date.strftime("%Y-%m-%d")
+            target_due_str = target_due_date.strftime("%Y-%m-%d %I:%M %p") if due_time and due_time.strip() else target_due_date.strftime("%Y-%m-%d")
             new_item = Item(
                 title=title,
                 bucket_id=bucket_id,

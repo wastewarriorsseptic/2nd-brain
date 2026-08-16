@@ -275,6 +275,9 @@
 
                                         <span class="text-[11px] md:text-xs text-indigo-300 font-mono font-medium">
                                             📅 {{ item.due_date.strftime('%b %d, %Y') }}
+                                            {% if item.due_date.strftime('%H:%M') != '09:00' %}
+                                                ⏰ {{ item.due_date.strftime('%I:%M %p') }}
+                                            {% endif %}
                                         </span>
                                     </div>
 
@@ -676,13 +679,9 @@
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                        <label class="block text-xs font-medium text-slate-400 mb-1">Repeat</label>
-                        <button type="button" onclick="document.getElementById('custom-repeat-modal').classList.remove('hidden')" 
-                                id="repeat-button-label"
-                                class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-left text-slate-200 flex justify-between items-center hover:border-slate-500 transition">
-                            <span>Never</span>
-                            <span class="text-xs text-slate-500">⚙️</span>
-                        </button>
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Due Time (Optional)</label>
+                        <input type="time" name="due_time" 
+                               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200">
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-slate-400 mb-1">Email Reminder</label>
@@ -696,6 +695,16 @@
                             <option value="-1">Daily (3 Days Leading Up)</option>
                         </select>
                     </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-1">Repeat</label>
+                    <button type="button" onclick="document.getElementById('custom-repeat-modal').classList.remove('hidden')" 
+                            id="repeat-button-label"
+                            class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-left text-slate-200 flex justify-between items-center hover:border-slate-500 transition">
+                        <span>Never</span>
+                        <span class="text-xs text-slate-500">⚙️</span>
+                    </button>
                 </div>
 
                 <div>
