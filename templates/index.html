@@ -57,14 +57,14 @@
                 <!-- Clickable Card Header -->
                 <div class="flex items-center justify-between cursor-pointer select-none group" onclick="handleRealmsHeaderClick(event)">
                     <div class="flex items-center gap-2 min-w-0 flex-1 mr-2">
-                        <span id="realms-card-chevron" class="text-xs text-slate-400 group-hover:text-indigo-400 transition-transform duration-200 shrink-0">▼</span>
-                        <a href="/" class="text-xs font-extrabold uppercase tracking-wider {% if not selected_realm_id and not selected_bucket_id %}text-indigo-400{% else %}text-slate-300 group-hover:text-white{% endif %} shrink-0 transition-colors">Realms</a>
-                        <span class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">
+                        <span id="realms-card-chevron" class="text-xs text-slate-400 group-hover:text-indigo-400 transition-transform duration-200 shrink-0 leading-none">▼</span>
+                        <a href="/" class="text-xs font-extrabold uppercase tracking-wider {% if not selected_realm_id and not selected_bucket_id %}text-indigo-400{% else %}text-slate-300 group-hover:text-white{% endif %} shrink-0 transition-colors leading-none">Realms</a>
+                        <span class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 flex items-center justify-center leading-none">
                             {{ realms|length }}
                         </span>
 
-                        <!-- Dynamic Active Selection Badge -->
-                        <div id="card-selection-badge-container">
+                        <!-- Perfectly Centered Dynamic Active Selection Badge -->
+                        <div id="card-selection-badge-container" class="flex items-center min-w-0">
                             {% set ns = namespace(active_realm=None, active_bucket=None) %}
                             {% for r in realms %}
                                 {% if r.id == selected_realm_id %}
@@ -79,11 +79,11 @@
                             {% endfor %}
 
                             {% if ns.active_realm %}
-                            <span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[130px] md:max-w-[200px]" title="{{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.name }}{% endif %}">
+                            <span class="inline-flex items-center bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[130px] md:max-w-[200px] leading-none" title="{{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.name }}{% endif %}">
                                 {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.icon }} {{ ns.active_bucket.name }}{% endif %}
                             </span>
                             {% else %}
-                            <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">
+                            <span class="inline-flex items-center bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 leading-none">
                                 ✨ All Timelines
                             </span>
                             {% endif %}
@@ -620,7 +620,7 @@
     <script>
         let currentSelectedRealmId = {% if selected_realm_id %}{{ selected_realm_id }}{% else %}null{% endif %};
         let currentSelectedBucketId = {% if selected_bucket_id %}{{ selected_bucket_id }}{% else %}null{% endif %};
-        let monthsHorizonCount = 3; // Initial display horizon (3 months into the future)
+        let monthsHorizonCount = 3;
 
         function selectRealm(event, realmId) {
             if (event) event.preventDefault();
@@ -697,17 +697,17 @@
                         const rName = activeRealmRow ? activeRealmRow.getAttribute('data-realm-name') : '';
                         const rIcon = activeRealmRow ? activeRealmRow.getAttribute('data-realm-icon') : '🔮';
 
-                        badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[130px] md:max-w-[200px]" title="${rName} / ${bName}">${rIcon} ${rName} / ${bIcon} ${bName}</span>`;
+                        badgeContainer.innerHTML = `<span class="inline-flex items-center bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[130px] md:max-w-[200px] leading-none" title="${rName} / ${bName}">${rIcon} ${rName} / ${bIcon} ${bName}</span>`;
                     }
                 } else if (currentSelectedRealmId !== null) {
                     const activeRealmRow = document.getElementById('realm-row-' + currentSelectedRealmId);
                     if (activeRealmRow) {
                         const rName = activeRealmRow.getAttribute('data-realm-name');
                         const rIcon = activeRealmRow.getAttribute('data-realm-icon');
-                        badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[130px] md:max-w-[200px]" title="${rName}">${rIcon} ${rName}</span>`;
+                        badgeContainer.innerHTML = `<span class="inline-flex items-center bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[130px] md:max-w-[200px] leading-none" title="${rName}">${rIcon} ${rName}</span>`;
                     }
                 } else {
-                    badgeContainer.innerHTML = `<span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">✨ All Timelines</span>`;
+                    badgeContainer.innerHTML = `<span class="inline-flex items-center bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 leading-none">✨ All Timelines</span>`;
                 }
             }
 
@@ -736,9 +736,7 @@
             const loadMoreBtnContainer = document.getElementById('load-more-container');
 
             const now = new Date();
-            // End of Current Month Date (For top pill counter badges)
             const endOfCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-            // Dynamic Horizon Date (For displaying upcoming tasks up to X months out)
             const endOfHorizonDate = new Date(now.getFullYear(), now.getMonth() + monthsHorizonCount, 0, 23, 59, 59);
 
             let currentMonthActiveCount = 0;
@@ -766,7 +764,6 @@
                 }
 
                 if (matchesSelection) {
-                    // Badge counters: strictly count items due by current month's end
                     if (itemDueDate <= endOfCurrentMonth) {
                         if (isCompleted) {
                             currentMonthCompletedCount++;
@@ -775,7 +772,6 @@
                         }
                     }
 
-                    // Display logic: show items up to current display horizon
                     const isWithinHorizon = itemDueDate <= endOfHorizonDate;
                     const matchesMode = (currentFilterMode === 'active' && !isCompleted) || (currentFilterMode === 'completed' && isCompleted);
 
@@ -793,7 +789,7 @@
                 }
             });
 
-            // Update Badges (Always reflect Current Month total)
+            // Update Badges
             const activeBadge = document.getElementById('active-count-badge');
             const completedBadge = document.getElementById('completed-count-badge');
             if (activeBadge) activeBadge.innerText = currentMonthActiveCount;
@@ -809,7 +805,7 @@
                 }
             }
 
-            // Show/Hide "Load More" Button based on future items
+            // Show/Hide "Load More" Button
             if (loadMoreBtnContainer) {
                 if (hiddenFutureCount > 0) {
                     loadMoreBtnContainer.classList.remove('hidden');
@@ -820,7 +816,7 @@
         }
 
         function loadMoreMonths() {
-            monthsHorizonCount += 3; // Extend display horizon by another 3 months
+            monthsHorizonCount += 3;
             filterTimelineList();
         }
 
