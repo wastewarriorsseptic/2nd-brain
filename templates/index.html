@@ -56,15 +56,15 @@
                 
                 <!-- Clickable Card Header -->
                 <div class="flex items-center justify-between cursor-pointer select-none group" onclick="handleRealmsHeaderClick(event)">
-                    <div class="flex items-center gap-2 min-w-0 flex-1 mr-2">
+                    <div class="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 mr-1">
                         <span id="realms-card-chevron" class="text-xs text-slate-400 group-hover:text-indigo-400 transition-transform duration-200 shrink-0">▼</span>
                         <a href="/" class="text-xs font-extrabold uppercase tracking-wider {% if not selected_realm_id and not selected_bucket_id %}text-indigo-400{% else %}text-slate-300 group-hover:text-white{% endif %} shrink-0 transition-colors">Realms</a>
                         <span class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">
                             {{ realms|length }}
                         </span>
 
-                        <!-- Dynamic Active Selection Badge -->
-                        <div id="card-selection-badge-container">
+                        <!-- Dynamic Active Selection Badge Container (Horizontally Locked) -->
+                        <div id="card-selection-badge-container" class="inline-flex items-center min-w-0 flex-1">
                             {% set ns = namespace(active_realm=None, active_bucket=None) %}
                             {% for r in realms %}
                                 {% if r.id == selected_realm_id %}
@@ -79,7 +79,7 @@
                             {% endfor %}
 
                             {% if ns.active_realm %}
-                            <span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[130px] md:max-w-[200px]" title="{{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.name }}{% endif %}">
+                            <span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate inline-block min-w-0 max-w-[110px] sm:max-w-[160px] md:max-w-[220px]" title="{{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.name }}{% endif %}">
                                 {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.icon }} {{ ns.active_bucket.name }}{% endif %}
                             </span>
                             {% else %}
@@ -684,7 +684,7 @@
                 }
             });
 
-            // Dynamically Update Card Header Badge
+            // Dynamically Update Card Header Badge (Horizontally Locked)
             const badgeContainer = document.getElementById('card-selection-badge-container');
             if (badgeContainer) {
                 if (currentSelectedBucketId !== null) {
@@ -697,14 +697,14 @@
                         const rName = activeRealmRow ? activeRealmRow.getAttribute('data-realm-name') : '';
                         const rIcon = activeRealmRow ? activeRealmRow.getAttribute('data-realm-icon') : '🔮';
 
-                        badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[130px] md:max-w-[200px]" title="${rName} / ${bName}">${rIcon} ${rName} / ${bIcon} ${bName}</span>`;
+                        badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate inline-block min-w-0 max-w-[110px] sm:max-w-[160px] md:max-w-[220px]" title="${rName} / ${bName}">${rIcon} ${rName} / ${bIcon} ${bName}</span>`;
                     }
                 } else if (currentSelectedRealmId !== null) {
                     const activeRealmRow = document.getElementById('realm-row-' + currentSelectedRealmId);
                     if (activeRealmRow) {
                         const rName = activeRealmRow.getAttribute('data-realm-name');
                         const rIcon = activeRealmRow.getAttribute('data-realm-icon');
-                        badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[130px] md:max-w-[200px]" title="${rName}">${rIcon} ${rName}</span>`;
+                        badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate inline-block min-w-0 max-w-[110px] sm:max-w-[160px] md:max-w-[220px]" title="${rName}">${rIcon} ${rName}</span>`;
                     }
                 } else {
                     badgeContainer.innerHTML = `<span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">✨ All Timelines</span>`;
