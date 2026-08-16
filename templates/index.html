@@ -348,9 +348,9 @@
             <h3 class="text-xl font-bold mb-4">Create New Realm</h3>
             <form action="/realms/" method="POST" class="space-y-4">
                 <div class="flex items-center gap-3">
-                    <div class="w-16 shrink-0">
+                    <div class="shrink-0">
                         <label class="block text-xs font-medium text-slate-400 mb-1">Emoji</label>
-                        <select name="icon" required class="w-full text-center bg-slate-900 border border-slate-700 rounded-xl px-1 py-2 text-xl text-slate-200 cursor-pointer">
+                        <select name="icon" required style="width: 55px; min-width: 55px; max-width: 55px;" class="text-center bg-slate-900 border border-slate-700 rounded-xl px-1 py-2 text-xl text-slate-200 cursor-pointer">
                             <option value="🔮">🔮</option>
                             <option value="⚡">⚡</option>
                             <option value="🎯">🎯</option>
@@ -416,9 +416,9 @@
             <form action="/realms/update/" method="POST" class="space-y-4">
                 <input type="hidden" name="realm_id" id="edit-realm-id">
                 <div class="flex items-center gap-3">
-                    <div class="w-16 shrink-0">
+                    <div class="shrink-0">
                         <label class="block text-xs font-medium text-slate-400 mb-1">Emoji</label>
-                        <select name="icon" id="edit-realm-icon" required class="w-full text-center bg-slate-900 border border-slate-700 rounded-xl px-1 py-2 text-xl text-slate-200 cursor-pointer">
+                        <select name="icon" id="edit-realm-icon" required style="width: 55px; min-width: 55px; max-width: 55px;" class="text-center bg-slate-900 border border-slate-700 rounded-xl px-1 py-2 text-xl text-slate-200 cursor-pointer">
                             <option value="🔮">🔮</option>
                             <option value="⚡">⚡</option>
                             <option value="🎯">🎯</option>
@@ -506,9 +506,9 @@
             <form action="/buckets/" method="POST" class="space-y-4">
                 <input type="hidden" name="realm_id" value="{{ selected_realm_id or '' }}">
                 <div class="flex items-center gap-3">
-                    <div class="w-16 shrink-0">
+                    <div class="shrink-0">
                         <label class="block text-xs font-medium text-slate-400 mb-1">Emoji</label>
-                        <select name="icon" required class="w-full text-center bg-slate-900 border border-slate-700 rounded-xl px-1 py-2 text-xl text-slate-200 cursor-pointer">
+                        <select name="icon" required style="width: 55px; min-width: 55px; max-width: 55px;" class="text-center bg-slate-900 border border-slate-700 rounded-xl px-1 py-2 text-xl text-slate-200 cursor-pointer">
                             <option value="📌">📌</option>
                             <option value="📂">📂</option>
                             <option value="📝">📝</option>
@@ -574,9 +574,9 @@
             <form action="/buckets/update/" method="POST" class="space-y-4">
                 <input type="hidden" name="bucket_id" id="edit-bucket-id">
                 <div class="flex items-center gap-3">
-                    <div class="w-16 shrink-0">
+                    <div class="shrink-0">
                         <label class="block text-xs font-medium text-slate-400 mb-1">Emoji</label>
-                        <select name="icon" id="edit-bucket-icon" required class="w-full text-center bg-slate-900 border border-slate-700 rounded-xl px-1 py-2 text-xl text-slate-200 cursor-pointer">
+                        <select name="icon" id="edit-bucket-icon" required style="width: 55px; min-width: 55px; max-width: 55px;" class="text-center bg-slate-900 border border-slate-700 rounded-xl px-1 py-2 text-xl text-slate-200 cursor-pointer">
                             <option value="📌">📌</option>
                             <option value="📂">📂</option>
                             <option value="📝">📝</option>
@@ -926,7 +926,6 @@
                     }
                 });
 
-                // Re-append elements in newly calculated order
                 wrappers.forEach(el => container.appendChild(el));
             }
 
