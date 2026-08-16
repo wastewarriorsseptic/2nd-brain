@@ -58,34 +58,36 @@
                 <div class="flex items-center justify-between cursor-pointer select-none group" onclick="handleRealmsHeaderClick(event)">
                     <div class="flex items-center gap-2 min-w-0 flex-1 mr-2">
                         <span id="realms-card-chevron" class="text-xs text-slate-400 group-hover:text-indigo-400 transition-transform duration-200 shrink-0">▼</span>
-                        <a href="/" class="text-xs font-extrabold uppercase tracking-wider {% if not selected_realm_id and not selected_bucket_id %}text-indigo-400{% else %}text-slate-300 group-hover:text-white{% endif %} shrink-0 transition-colors">Realms</a>
+                        <a href="/" onclick="selectRealm(event, null)" class="text-xs font-extrabold uppercase tracking-wider {% if not selected_realm_id and not selected_bucket_id %}text-indigo-400{% else %}text-slate-300 group-hover:text-white{% endif %} shrink-0 transition-colors">Realms</a>
                         <span class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">
                             {{ realms|length }}
                         </span>
 
-                        <!-- Dynamic Active Selection Badge -->
-                        {% set ns = namespace(active_realm=None, active_bucket=None) %}
-                        {% for r in realms %}
-                            {% if r.id == selected_realm_id %}
-                                {% set ns.active_realm = r %}
-                            {% endif %}
-                            {% for b in r.buckets %}
-                                {% if b.id == selected_bucket_id %}
-                                    {% set ns.active_bucket = b %}
+                        <!-- Dynamic Active Selection Badge Container -->
+                        <div id="card-selection-badge-container">
+                            {% set ns = namespace(active_realm=None, active_bucket=None) %}
+                            {% for r in realms %}
+                                {% if r.id == selected_realm_id %}
                                     {% set ns.active_realm = r %}
                                 {% endif %}
+                                {% for b in r.buckets %}
+                                    {% if b.id == selected_bucket_id %}
+                                        {% set ns.active_bucket = b %}
+                                        {% set ns.active_realm = r %}
+                                    {% endif %}
+                                {% endfor %}
                             {% endfor %}
-                        {% endfor %}
 
-                        {% if ns.active_realm %}
-                        <span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[110px] sm:max-w-[130px]" title="{{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.name }}{% endif %}">
-                            {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.icon }} {{ ns.active_bucket.name }}{% endif %}
-                        </span>
-                        {% else %}
-                        <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">
-                            ✨ All Timelines
-                        </span>
-                        {% endif %}
+                            {% if ns.active_realm %}
+                            <span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[110px] sm:max-w-[130px]" title="{{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.name }}{% endif %}">
+                                {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.icon }} {{ ns.active_bucket.name }}{% endif %}
+                            </span>
+                            {% else %}
+                            <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">
+                                ✨ All Timelines
+                            </span>
+                            {% endif %}
+                        </div>
                     </div>
 
                     <!-- + Add Realm Button -->
@@ -101,12 +103,14 @@
                     <div id="realms-container" class="space-y-3">
                         {% for realm in realms %}
                         <div class="realm-item" data-id="{{ realm.id }}">
-                            <!-- Highlighted Realm Header Row (Tapping selected Realm returns to '/') -->
-                            <div class="realm-item-row flex items-center justify-between group mb-1.5 px-2.5 py-1.5 rounded-xl transition {% if selected_realm_id == realm.id and not selected_bucket_id %}bg-indigo-600 text-white font-semibold shadow-md{% endif %}">
+                            <!-- Highlighted Realm Header Row -->
+                            <div id="realm-row-{{ realm.id }}" data-realm-name="{{ realm.name }}" data-realm-icon="{{ realm.icon or '🔮' }}"
+                                 class="realm-item-row flex items-center justify-between group mb-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-150 {% if selected_realm_id == realm.id and not selected_bucket_id %}bg-indigo-600 text-white font-semibold shadow-md{% endif %}">
                                 <div class="flex items-center gap-2 flex-1 min-w-0 mr-2">
                                     <span class="realm-handle {% if selected_realm_id == realm.id and not selected_bucket_id %}text-indigo-200{% else %}text-slate-500 hover:text-indigo-400{% endif %} cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
                                     <a href="{% if selected_realm_id == realm.id and not selected_bucket_id %}/{% else %}/?realm_id={{ realm.id }}{% endif %}" 
-                                       class="text-xs font-bold flex items-center gap-1.5 min-w-0 {% if selected_realm_id == realm.id and not selected_bucket_id %}text-white{% else %}text-slate-300 hover:text-indigo-400{% endif %}">
+                                       onclick="selectRealm(event, {{ realm.id }})"
+                                       class="realm-link text-xs font-bold flex items-center gap-1.5 min-w-0 {% if selected_realm_id == realm.id and not selected_bucket_id %}text-white{% else %}text-slate-300 hover:text-indigo-400{% endif %}">
                                         <span class="shrink-0">{{ realm.icon or '🔮' }}</span> <span class="truncate">{{ realm.name }}</span>
                                     </a>
                                 </div>
@@ -121,13 +125,16 @@
                                 </div>
                             </div>
 
-                            <!-- Buckets Container (Tapping selected Bucket returns to its parent Realm) -->
+                            <!-- Buckets Container -->
                             <nav class="buckets-container space-y-1 ml-2.5 pl-2 border-l border-slate-700/60" data-realm-id="{{ realm.id }}">
                                 {% for bucket in realm.buckets %}
-                                <div class="bucket-item bucket-item-row flex items-center justify-between group rounded-xl {% if selected_bucket_id == bucket.id %}bg-indigo-600 text-white font-medium shadow-md{% else %}text-slate-300{% endif %} px-2.5 py-1.5 transition" data-id="{{ bucket.id }}">
+                                <div id="bucket-row-{{ bucket.id }}" data-bucket-name="{{ bucket.name }}" data-bucket-icon="{{ bucket.icon }}" data-parent-realm-id="{{ realm.id }}"
+                                     class="bucket-item bucket-item-row flex items-center justify-between group rounded-xl {% if selected_bucket_id == bucket.id %}bg-indigo-600 text-white font-medium shadow-md{% else %}text-slate-300{% endif %} px-2.5 py-1.5 transition-all duration-150" data-id="{{ bucket.id }}">
                                     <div class="flex items-center gap-2 flex-1 min-w-0 mr-2">
                                         <span class="bucket-handle text-slate-500 hover:text-indigo-300 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
-                                        <a href="{% if selected_bucket_id == bucket.id %}/?realm_id={{ realm.id }}{% else %}/?bucket_id={{ bucket.id }}{% endif %}" class="text-sm flex items-center gap-2 min-w-0 flex-1">
+                                        <a href="{% if selected_bucket_id == bucket.id %}/?realm_id={{ realm.id }}{% else %}/?bucket_id={{ bucket.id }}{% endif %}" 
+                                           onclick="selectBucket(event, {{ bucket.id }}, {{ realm.id }})"
+                                           class="bucket-link text-sm flex items-center gap-2 min-w-0 flex-1">
                                             <span class="shrink-0">{{ bucket.icon }}</span> <span class="truncate">{{ bucket.name }}</span>
                                         </a>
                                     </div>
@@ -153,7 +160,7 @@
 
         <!-- Action Buttons -->
         {% if user %}
-        <div class="mt-3 md:mt-6">
+        <div id="action-button-container" class="mt-3 md:mt-6">
             {% if selected_bucket_id %}
             <button onclick="document.getElementById('add-item-modal').classList.remove('hidden')" 
                     class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold py-2.5 rounded-xl transition shadow-lg shadow-indigo-600/20">
@@ -210,10 +217,13 @@
                 </div>
 
                 {% if items %}
-                <div class="timeline-container relative border-l-2 border-indigo-500/30 ml-3 md:ml-8 pl-4 md:pl-6 space-y-6 md:space-y-8">
+                <div id="timeline-list" class="timeline-container relative border-l-2 border-indigo-500/30 ml-3 md:ml-8 pl-4 md:pl-6 space-y-6 md:space-y-8">
                     {% for item in items %}
                     {% set days_out = (item.due_date.date() - today).days %}
-                    <div class="timeline-card-wrapper relative group" data-completed="{{ 'true' if item.is_completed else 'false' }}">
+                    <div class="timeline-card-wrapper relative group" 
+                         data-completed="{{ 'true' if item.is_completed else 'false' }}"
+                         data-realm-id="{{ item.bucket.realm.id if item.bucket and item.bucket.realm else '' }}"
+                         data-bucket-id="{{ item.bucket.id if item.bucket else '' }}">
                         <!-- Node Connector Dot -->
                         <div class="absolute -left-[23px] md:-left-[31px] top-5 w-3.5 md:w-4 h-3.5 md:h-4 rounded-full border-2 border-slate-900 {% if item.is_completed %}bg-slate-600{% elif days_out < 0 %}bg-rose-500 animate-pulse{% else %}bg-indigo-500 group-hover:scale-125{% endif %} transition-all"></div>
                         
@@ -297,7 +307,7 @@
                     {% endfor %}
                 </div>
 
-                <!-- Empty State Message when switching tabs -->
+                <!-- Empty State Message when switching tabs/realms -->
                 <div id="timeline-empty-state" class="hidden text-center py-12 md:py-16 bg-slate-800/50 border border-slate-700/50 rounded-2xl px-4">
                     <p id="timeline-empty-text" class="text-slate-400 text-base md:text-lg font-medium">No active tasks</p>
                 </div>
@@ -457,7 +467,7 @@
         <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
             <h3 class="text-xl font-bold mb-4">Add Task to Logos</h3>
             <form action="/items/" method="POST" class="space-y-4">
-                <input type="hidden" name="bucket_id" value="{{ selected_bucket_id or '' }}">
+                <input type="hidden" name="bucket_id" id="task-modal-bucket-id" value="{{ selected_bucket_id or '' }}">
                 <input type="hidden" name="recurrence_type" id="recurrence-type-input" value="none">
                 <input type="hidden" name="interval" id="interval-input" value="1">
                 <input type="hidden" name="weekdays" id="weekdays-input" value="">
@@ -600,6 +610,176 @@
     </div>
 
     <script>
+        let currentSelectedRealmId = {% if selected_realm_id %}{{ selected_realm_id }}{% else %}null{% endif %};
+        let currentSelectedBucketId = {% if selected_bucket_id %}{{ selected_bucket_id }}{% else %}null{% endif %};
+
+        function selectRealm(event, realmId) {
+            if (event) event.preventDefault();
+
+            if (currentSelectedRealmId === realmId && currentSelectedBucketId === null) {
+                // Tapping already selected realm -> deselect back to all
+                currentSelectedRealmId = null;
+                currentSelectedBucketId = null;
+                history.pushState(null, '', '/');
+            } else {
+                currentSelectedRealmId = realmId;
+                currentSelectedBucketId = null;
+                if (realmId === null) {
+                    history.pushState(null, '', '/');
+                } else {
+                    history.pushState(null, '', '/?realm_id=' + realmId);
+                }
+            }
+            updateSelectionUI();
+        }
+
+        function selectBucket(event, bucketId, parentRealmId) {
+            if (event) event.preventDefault();
+
+            if (currentSelectedBucketId === bucketId) {
+                // Tapping already selected bucket -> deselect back to parent realm
+                currentSelectedRealmId = parentRealmId;
+                currentSelectedBucketId = null;
+                history.pushState(null, '', '/?realm_id=' + parentRealmId);
+            } else {
+                currentSelectedRealmId = parentRealmId;
+                currentSelectedBucketId = bucketId;
+                history.pushState(null, '', '/?bucket_id=' + bucketId);
+            }
+            updateSelectionUI();
+        }
+
+        function updateSelectionUI() {
+            // Update Realm Row Highlights
+            document.querySelectorAll('.realm-item-row').forEach(row => {
+                const rowId = parseInt(row.id.replace('realm-row-', ''));
+                const link = row.querySelector('.realm-link');
+                const handle = row.querySelector('.realm-handle');
+
+                if (currentSelectedRealmId === rowId && currentSelectedBucketId === null) {
+                    row.className = "realm-item-row flex items-center justify-between group mb-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-150 bg-indigo-600 text-white font-semibold shadow-md";
+                    if (link) link.className = "realm-link text-xs font-bold flex items-center gap-1.5 min-w-0 text-white";
+                    if (handle) handle.className = "realm-handle text-indigo-200 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0";
+                } else {
+                    row.className = "realm-item-row flex items-center justify-between group mb-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-150";
+                    if (link) link.className = "realm-link text-xs font-bold flex items-center gap-1.5 min-w-0 text-slate-300 hover:text-indigo-400";
+                    if (handle) handle.className = "realm-handle text-slate-500 hover:text-indigo-400 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0";
+                }
+            });
+
+            // Update Bucket Row Highlights
+            document.querySelectorAll('.bucket-item-row').forEach(row => {
+                const rowId = parseInt(row.id.replace('bucket-row-', ''));
+                if (currentSelectedBucketId === rowId) {
+                    row.className = "bucket-item bucket-item-row flex items-center justify-between group rounded-xl bg-indigo-600 text-white font-medium shadow-md px-2.5 py-1.5 transition-all duration-150";
+                } else {
+                    row.className = "bucket-item bucket-item-row flex items-center justify-between group rounded-xl text-slate-300 px-2.5 py-1.5 transition-all duration-150";
+                }
+            });
+
+            // Update Card Header Badge
+            const badgeContainer = document.getElementById('card-selection-badge-container');
+            if (badgeContainer) {
+                if (currentSelectedBucketId !== null) {
+                    const activeBucketRow = document.getElementById('bucket-row-' + currentSelectedBucketId);
+                    if (activeBucketRow) {
+                        const bName = activeBucketRow.getAttribute('data-bucket-name');
+                        const bIcon = activeBucketRow.getAttribute('data-bucket-icon');
+                        const parentRId = activeBucketRow.getAttribute('data-parent-realm-id');
+                        const activeRealmRow = document.getElementById('realm-row-' + parentRId);
+                        const rName = activeRealmRow ? activeRealmRow.getAttribute('data-realm-name') : '';
+                        const rIcon = activeRealmRow ? activeRealmRow.getAttribute('data-realm-icon') : '🔮';
+
+                        badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[110px] sm:max-w-[130px]" title="${rName} / ${bName}">${rIcon} ${rName} / ${bIcon} ${bName}</span>`;
+                    }
+                } else if (currentSelectedRealmId !== null) {
+                    const activeRealmRow = document.getElementById('realm-row-' + currentSelectedRealmId);
+                    if (activeRealmRow) {
+                        const rName = activeRealmRow.getAttribute('data-realm-name');
+                        const rIcon = activeRealmRow.getAttribute('data-realm-icon');
+                        badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[110px] sm:max-w-[130px]" title="${rName}">${rIcon} ${rName}</span>`;
+                    }
+                } else {
+                    badgeContainer.innerHTML = `<span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">✨ All Timelines</span>`;
+                }
+            }
+
+            // Update Action Buttons
+            const actionContainer = document.getElementById('action-button-container');
+            const modalBucketInput = document.getElementById('task-modal-bucket-id');
+            if (actionContainer) {
+                if (currentSelectedBucketId !== null) {
+                    if (modalBucketInput) modalBucketInput.value = currentSelectedBucketId;
+                    actionContainer.innerHTML = `<button onclick="document.getElementById('add-item-modal').classList.remove('hidden')" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold py-2.5 rounded-xl transition shadow-lg shadow-indigo-600/20">+ Add Task</button>`;
+                } else if (currentSelectedRealmId !== null) {
+                    actionContainer.innerHTML = `<button onclick="document.getElementById('add-bucket-modal').classList.remove('hidden')" class="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700/70 text-slate-200 text-sm font-semibold py-2.5 rounded-xl transition shadow-md">+ Add Bucket</button>`;
+                } else {
+                    actionContainer.innerHTML = '';
+                }
+            }
+
+            // Filter Timeline List Client-Side Without Reload
+            filterTimelineList();
+        }
+
+        function filterTimelineList() {
+            const currentFilterMode = localStorage.getItem('timeline_filter_mode') || 'active';
+            const wrappers = document.querySelectorAll('.timeline-card-wrapper');
+            const emptyState = document.getElementById('timeline-empty-state');
+            const emptyText = document.getElementById('timeline-empty-text');
+
+            let activeCount = 0;
+            let completedCount = 0;
+            let visibleCount = 0;
+
+            wrappers.forEach(el => {
+                const isCompleted = el.getAttribute('data-completed') === 'true';
+                const itemRealmId = el.getAttribute('data-realm-id') ? parseInt(el.getAttribute('data-realm-id')) : null;
+                const itemBucketId = el.getAttribute('data-bucket-id') ? parseInt(el.getAttribute('data-bucket-id')) : null;
+
+                // Match filter condition
+                let matchesSelection = true;
+                if (currentSelectedBucketId !== null) {
+                    matchesSelection = (itemBucketId === currentSelectedBucketId);
+                } else if (currentSelectedRealmId !== null) {
+                    matchesSelection = (itemRealmId === currentSelectedRealmId);
+                }
+
+                if (matchesSelection) {
+                    if (isCompleted) {
+                        completedCount++;
+                    } else {
+                        activeCount++;
+                    }
+
+                    if ((currentFilterMode === 'active' && !isCompleted) || (currentFilterMode === 'completed' && isCompleted)) {
+                        el.classList.remove('hidden');
+                        visibleCount++;
+                    } else {
+                        el.classList.add('hidden');
+                    }
+                } else {
+                    el.classList.add('hidden');
+                }
+            });
+
+            // Update Badges
+            const activeBadge = document.getElementById('active-count-badge');
+            const completedBadge = document.getElementById('completed-count-badge');
+            if (activeBadge) activeBadge.innerText = activeCount;
+            if (completedBadge) completedBadge.innerText = completedCount;
+
+            // Empty State Handling
+            if (emptyState) {
+                if (visibleCount === 0) {
+                    emptyState.classList.remove('hidden');
+                    emptyText.innerText = currentFilterMode === 'active' ? "🎉 All caught up! No active tasks." : "No completed tasks yet.";
+                } else {
+                    emptyState.classList.add('hidden');
+                }
+            }
+        }
+
         function handleRealmsHeaderClick(event) {
             toggleRealmsCard();
         }
@@ -625,34 +805,6 @@
 
             const btnActive = document.getElementById('pill-btn-active');
             const btnCompleted = document.getElementById('pill-btn-completed');
-            const wrappers = document.querySelectorAll('.timeline-card-wrapper');
-            const emptyState = document.getElementById('timeline-empty-state');
-            const emptyText = document.getElementById('timeline-empty-text');
-
-            let activeCount = 0;
-            let completedCount = 0;
-            let visibleCount = 0;
-
-            wrappers.forEach(el => {
-                const isCompleted = el.getAttribute('data-completed') === 'true';
-                if (isCompleted) {
-                    completedCount++;
-                } else {
-                    activeCount++;
-                }
-
-                if ((mode === 'active' && !isCompleted) || (mode === 'completed' && isCompleted)) {
-                    el.classList.remove('hidden');
-                    visibleCount++;
-                } else {
-                    el.classList.add('hidden');
-                }
-            });
-
-            const activeBadge = document.getElementById('active-count-badge');
-            const completedBadge = document.getElementById('completed-count-badge');
-            if (activeBadge) activeBadge.innerText = activeCount;
-            if (completedBadge) completedBadge.innerText = completedCount;
 
             if (mode === 'active') {
                 btnActive.className = "flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-indigo-600 text-white shadow-md min-w-0";
@@ -662,14 +814,7 @@
                 btnActive.className = "flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 min-w-0";
             }
 
-            if (emptyState && wrappers.length > 0) {
-                if (visibleCount === 0) {
-                    emptyState.classList.remove('hidden');
-                    emptyText.innerText = mode === 'active' ? "🎉 All caught up! No active tasks." : "No completed tasks yet.";
-                } else {
-                    emptyState.classList.add('hidden');
-                }
-            }
+            filterTimelineList();
         }
 
         document.addEventListener('DOMContentLoaded', () => {
