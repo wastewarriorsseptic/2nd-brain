@@ -216,11 +216,16 @@ def on_startup():
     safe_apply_migrations()
     SQLModel.metadata.create_all(engine)
 
-# --- Authentication Routes ---
+# In main.py / OAuth login route handler
 @app.get("/login")
 async def login(request: Request):
-    redirect_uri = "https://twond-brain-dzc0.onrender.com/auth/callback"
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+    # Pass prompt="select_account" to force account chooser
+    redirect_uri = request.url_for("auth_callback")
+    return await oauth.google.authorize_redirect(
+        request, 
+        redirect_uri, 
+        prompt="select_account"  # <--- FORCES ACCOUNT SELECTION SCREEN
+    )
 
 @app.get("/auth/callback")
 async def auth_callback(request: Request):
