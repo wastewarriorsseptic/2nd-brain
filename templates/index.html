@@ -40,66 +40,80 @@
             </a>
 
             {% if user %}
-            <!-- Sidebar Header -->
-            <div class="flex items-center justify-between mb-3 px-1">
-                <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Realms</span>
-                <button onclick="document.getElementById('add-realm-modal').classList.remove('hidden')" 
-                        title="Add Realm" 
-                        class="text-slate-400 hover:text-indigo-400 text-sm font-bold px-1.5 py-0.5 rounded transition hover:bg-slate-700">
-                    +
-                </button>
-            </div>
-
-            <!-- Drag-and-Drop Realms List -->
-            <div id="realms-container" class="space-y-6">
-                {% for realm in realms %}
-                <div class="realm-item" data-id="{{ realm.id }}">
-                    <div class="flex items-center justify-between group mb-1.5 px-2 py-1 rounded hover:bg-slate-700/40 transition">
-                        <div class="flex items-center gap-2 flex-1 min-w-0 mr-2">
-                            <!-- Realm Drag Handle -->
-                            <span class="realm-handle text-slate-500 hover:text-indigo-400 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
-                            <a href="/?realm_id={{ realm.id }}" class="text-xs font-bold text-slate-300 hover:text-indigo-400 flex items-center gap-1.5 min-w-0">
-                                <span class="shrink-0">🔮</span> <span class="truncate">{{ realm.name }}</span>
-                            </a>
-                        </div>
-
-                        <!-- Fixed 3-Slot Grid for Realm Icons (Share, Pencil, Trash) -->
-                        <div class="grid grid-cols-3 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-16 text-center">
-                            <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openShareRealm(this)" title="Share Realm" class="w-5 text-center text-xs hover:text-indigo-300">👥</button>
-                            <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openEditRealm(this)" title="Rename Realm" class="w-5 text-center text-xs hover:text-indigo-300">✏️</button>
-                            <form action="/realms/delete/" method="POST" onsubmit="return confirm('Delete this Realm along with all its Buckets and Tasks?');" class="inline w-5 text-center">
-                                <input type="hidden" name="realm_id" value="{{ realm.id }}">
-                                <button type="submit" title="Delete Realm" class="w-full text-xs hover:text-red-400">🗑️</button>
-                            </form>
-                        </div>
+            <!-- Unique Collapsible Card for Realms -->
+            <div class="bg-slate-800/80 border border-slate-700/60 rounded-xl p-3.5 mb-4 shadow-md transition-all">
+                
+                <!-- Clickable Card Header -->
+                <div class="flex items-center justify-between cursor-pointer select-none" onclick="toggleRealmsCard()">
+                    <div class="flex items-center gap-2">
+                        <span id="realms-card-chevron" class="text-xs text-slate-400 transition-transform duration-200">▼</span>
+                        <span class="text-xs font-bold uppercase tracking-wider text-slate-300">Realms</span>
+                        <span class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                            {{ realms|length }}
+                        </span>
                     </div>
 
-                    <!-- Drag-and-Drop Buckets Container -->
-                    <nav class="buckets-container space-y-1 ml-2.5 pl-2 border-l border-slate-700/60" data-realm-id="{{ realm.id }}">
-                        {% for bucket in realm.buckets %}
-                        <div class="bucket-item flex items-center justify-between group rounded-lg {% if selected_bucket_id == bucket.id %}bg-indigo-600 text-white font-medium{% else %}text-slate-300 hover:bg-slate-700/60{% endif %} px-2 py-1.5 transition" data-id="{{ bucket.id }}">
-                            <div class="flex items-center gap-2 flex-1 min-w-0 mr-2">
-                                <!-- Bucket Drag Handle -->
-                                <span class="bucket-handle text-slate-500 hover:text-indigo-300 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
-                                <a href="/?bucket_id={{ bucket.id }}" class="text-sm flex items-center gap-2 min-w-0 flex-1">
-                                    <span class="shrink-0">{{ bucket.icon }}</span> <span class="truncate">{{ bucket.name }}</span>
-                                </a>
+                    <!-- + Add Realm Button (stops collapse click event) -->
+                    <button onclick="event.stopPropagation(); document.getElementById('add-realm-modal').classList.remove('hidden')" 
+                            title="Add Realm" 
+                            class="text-slate-400 hover:text-indigo-400 text-sm font-bold px-2 py-0.5 rounded transition hover:bg-slate-700/80">
+                        +
+                    </button>
+                </div>
+
+                <!-- Collapsible Realms & Buckets Body -->
+                <div id="realms-card-body" class="mt-4 space-y-4">
+                    <div id="realms-container" class="space-y-4">
+                        {% for realm in realms %}
+                        <div class="realm-item" data-id="{{ realm.id }}">
+                            <div class="flex items-center justify-between group mb-1.5 px-2 py-1 rounded hover:bg-slate-700/40 transition">
+                                <div class="flex items-center gap-2 flex-1 min-w-0 mr-2">
+                                    <!-- Realm Drag Handle -->
+                                    <span class="realm-handle text-slate-500 hover:text-indigo-400 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
+                                    <a href="/?realm_id={{ realm.id }}" class="text-xs font-bold text-slate-300 hover:text-indigo-400 flex items-center gap-1.5 min-w-0">
+                                        <span class="shrink-0">🔮</span> <span class="truncate">{{ realm.name }}</span>
+                                    </a>
+                                </div>
+
+                                <!-- Fixed 3-Slot Grid for Realm Icons (Share, Pencil, Trash) -->
+                                <div class="grid grid-cols-3 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-16 text-center">
+                                    <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openShareRealm(this)" title="Share Realm" class="w-5 text-center text-xs hover:text-indigo-300">👥</button>
+                                    <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openEditRealm(this)" title="Rename Realm" class="w-5 text-center text-xs hover:text-indigo-300">✏️</button>
+                                    <form action="/realms/delete/" method="POST" onsubmit="return confirm('Delete this Realm along with all its Buckets and Tasks?');" class="inline w-5 text-center">
+                                        <input type="hidden" name="realm_id" value="{{ realm.id }}">
+                                        <button type="submit" title="Delete Realm" class="w-full text-xs hover:text-red-400">🗑️</button>
+                                    </form>
+                                </div>
                             </div>
 
-                            <!-- Fixed 3-Slot Grid for Bucket Icons (Invisible Placeholder + Pencil + Trash) -->
-                            <div class="grid grid-cols-3 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-16 text-center">
-                                <div class="w-5"></div>
-                                <button data-id="{{ bucket.id }}" data-name="{{ bucket.name }}" data-icon="{{ bucket.icon }}" onclick="openEditBucket(this)" title="Edit Bucket" class="w-5 text-center text-xs hover:text-indigo-300">✏️</button>
-                                <form action="/buckets/delete/" method="POST" onsubmit="return confirm('Delete this Bucket and all its Tasks?');" class="inline w-5 text-center">
-                                    <input type="hidden" name="bucket_id" value="{{ bucket.id }}">
-                                    <button type="submit" title="Delete Bucket" class="w-full text-xs hover:text-red-400">🗑️</button>
-                                </form>
-                            </div>
+                            <!-- Drag-and-Drop Buckets Container -->
+                            <nav class="buckets-container space-y-1 ml-2.5 pl-2 border-l border-slate-700/60" data-realm-id="{{ realm.id }}">
+                                {% for bucket in realm.buckets %}
+                                <div class="bucket-item flex items-center justify-between group rounded-lg {% if selected_bucket_id == bucket.id %}bg-indigo-600 text-white font-medium{% else %}text-slate-300 hover:bg-slate-700/60{% endif %} px-2 py-1.5 transition" data-id="{{ bucket.id }}">
+                                    <div class="flex items-center gap-2 flex-1 min-w-0 mr-2">
+                                        <!-- Bucket Drag Handle -->
+                                        <span class="bucket-handle text-slate-500 hover:text-indigo-300 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
+                                        <a href="/?bucket_id={{ bucket.id }}" class="text-sm flex items-center gap-2 min-w-0 flex-1">
+                                            <span class="shrink-0">{{ bucket.icon }}</span> <span class="truncate">{{ bucket.name }}</span>
+                                        </a>
+                                    </div>
+
+                                    <!-- Fixed 3-Slot Grid for Bucket Icons (Invisible Placeholder + Pencil + Trash) -->
+                                    <div class="grid grid-cols-3 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-16 text-center">
+                                        <div class="w-5"></div>
+                                        <button data-id="{{ bucket.id }}" data-name="{{ bucket.name }}" data-icon="{{ bucket.icon }}" onclick="openEditBucket(this)" title="Edit Bucket" class="w-5 text-center text-xs hover:text-indigo-300">✏️</button>
+                                        <form action="/buckets/delete/" method="POST" onsubmit="return confirm('Delete this Bucket and all its Tasks?');" class="inline w-5 text-center">
+                                            <input type="hidden" name="bucket_id" value="{{ bucket.id }}">
+                                            <button type="submit" title="Delete Bucket" class="w-full text-xs hover:text-red-400">🗑️</button>
+                                        </form>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </nav>
                         </div>
                         {% endfor %}
-                    </nav>
+                    </div>
                 </div>
-                {% endfor %}
             </div>
             {% endif %}
         </div>
@@ -521,7 +535,31 @@
     </div>
 
     <script>
+        function toggleRealmsCard() {
+            const body = document.getElementById('realms-card-body');
+            const chevron = document.getElementById('realms-card-chevron');
+            if (body.classList.contains('hidden')) {
+                body.classList.remove('hidden');
+                chevron.style.transform = 'rotate(0deg)';
+                localStorage.setItem('realms_card_expanded', 'true');
+            } else {
+                body.classList.add('hidden');
+                chevron.style.transform = 'rotate(-90deg)';
+                localStorage.setItem('realms_card_expanded', 'false');
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
+            const isExpanded = localStorage.getItem('realms_card_expanded');
+            if (isExpanded === 'false') {
+                const body = document.getElementById('realms-card-body');
+                const chevron = document.getElementById('realms-card-chevron');
+                if (body && chevron) {
+                    body.classList.add('hidden');
+                    chevron.style.transform = 'rotate(-90deg)';
+                }
+            }
+
             const realmsContainer = document.getElementById('realms-container');
             if (realmsContainer) {
                 new Sortable(realmsContainer, {
