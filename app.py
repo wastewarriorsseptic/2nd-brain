@@ -459,11 +459,17 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
             print(f"Failed to send invite email to recipient ({target_email}): {e}", flush=True)
 
         # 2. Send Confirmation Email to Inviter
-        confirmation_subject = f"📩 Invite Sent: {target_email} invited to '{realm.name}'"
+        confirmation_subject = f"Invitation Sent: {target_email} invited to '{realm.name}'"
         confirmation_body = f"""
-            <h3>😈 Invitation Dispatched</h3>
-            <p>Your invite to <strong>{target_email}</strong> for the <strong>{realm.name}</strong> realm has been sent!</p>
-            <p>Once they log in with Google at <a href="https://usetaskmonster.app">usetaskmonster.app</a>, the realm will automatically appear on their dashboard.</p>
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
+            <h2 style="color: #4f46e5; margin-top: 0;">Invitation Dispatched</h2>
+            <p>Hi {current_user.name},</p>
+            <p>Your invitation to <strong>{target_email}</strong> for the <strong>{realm.name}</strong> realm has been successfully sent.</p>
+            <p>Once they log in with Google at <a href="https://usetaskmonster.app" style="color: #6366f1; font-weight: 600; text-decoration: none;">usetaskmonster.app</a>, the shared realm will automatically appear on their dashboard timeline.</p>
+            <p style="font-size: 13px; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 32px;">
+                TaskMonster System Notification
+            </p>
+        </div>
         """
 
         try:
