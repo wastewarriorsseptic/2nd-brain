@@ -223,6 +223,7 @@
                     <div class="timeline-card-wrapper relative group" 
                          data-completed="{{ 'true' if item.is_completed else 'false' }}"
                          data-due-date="{{ item.due_date.strftime('%Y-%m-%d') }}"
+                         data-item-id="{{ item.id }}"
                          data-realm-id="{{ item.bucket.realm.id if item.bucket and item.bucket.realm else '' }}"
                          data-bucket-id="{{ item.bucket.id if item.bucket else '' }}">
                         <!-- Node Connector Dot -->
@@ -894,7 +895,8 @@
 
         function filterTimelineList() {
             const currentFilterMode = localStorage.getItem('timeline_filter_mode') || 'active';
-            const wrappers = document.querySelectorAll('.timeline-card-wrapper');
+            const container = document.getElementById('timeline-list');
+            const wrappers = Array.from(document.querySelectorAll('.timeline-card-wrapper'));
             const emptyState = document.getElementById('timeline-empty-state');
             const emptyText = document.getElementById('timeline-empty-text');
             const loadMoreBtnContainer = document.getElementById('load-more-container');
@@ -902,6 +904,31 @@
             const now = new Date();
             const endOfCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
             const endOfHorizonDate = new Date(now.getFullYear(), now.getMonth() + monthsHorizonCount, 0, 23, 59, 59);
+
+            // Dynamically Sort Completed Tasks Most-Recently-Completed First
+            if (container) {
+                wrappers.sort((a, b) => {
+                    const isCompletedA = a.getAttribute('data-completed') === 'true';
+                    const isCompletedB = b.getAttribute('data-completed') === 'true';
+                    const dateA = new Date(a.getAttribute('data-due-date') + 'T00:00:00');
+                    const dateB = new Date(b.getAttribute('data-due-date') + 'T00:00:00');
+                    const idA = parseInt(a.getAttribute('data-item-id') || '0');
+                    const idB = parseInt(b.getAttribute('data-item-id') || '0');
+
+                    if (currentFilterMode === 'completed' && isCompletedA && isCompletedB) {
+                        // Reverse chronological order for completed view
+                        if (dateB - dateA !== 0) return dateB - dateA;
+                        return idB - idA;
+                    } else {
+                        // Standard chronological order for active view
+                        if (dateA - dateB !== 0) return dateA - dateB;
+                        return idA - idB;
+                    }
+                });
+
+                // Re-append elements in newly calculated order
+                wrappers.forEach(el => container.appendChild(el));
+            }
 
             let currentMonthActiveCount = 0;
             let currentMonthCompletedCount = 0;
