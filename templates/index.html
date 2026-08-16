@@ -64,28 +64,30 @@
                         </span>
 
                         <!-- Dynamic Active Selection Badge -->
-                        {% set ns = namespace(active_realm=None, active_bucket=None) %}
-                        {% for r in realms %}
-                            {% if r.id == selected_realm_id %}
-                                {% set ns.active_realm = r %}
-                            {% endif %}
-                            {% for b in r.buckets %}
-                                {% if b.id == selected_bucket_id %}
-                                    {% set ns.active_bucket = b %}
+                        <div id="card-selection-badge-container">
+                            {% set ns = namespace(active_realm=None, active_bucket=None) %}
+                            {% for r in realms %}
+                                {% if r.id == selected_realm_id %}
                                     {% set ns.active_realm = r %}
                                 {% endif %}
+                                {% for b in r.buckets %}
+                                    {% if b.id == selected_bucket_id %}
+                                        {% set ns.active_bucket = b %}
+                                        {% set ns.active_realm = r %}
+                                    {% endif %}
+                                {% endfor %}
                             {% endfor %}
-                        {% endfor %}
 
-                        {% if ns.active_realm %}
-                        <span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[110px] sm:max-w-[130px]" title="{{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.name }}{% endif %}">
-                            {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.icon }} {{ ns.active_bucket.name }}{% endif %}
-                        </span>
-                        {% else %}
-                        <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">
-                            ✨ All Timelines
-                        </span>
-                        {% endif %}
+                            {% if ns.active_realm %}
+                            <span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[110px] sm:max-w-[130px]" title="{{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.name }}{% endif %}">
+                                {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.icon }} {{ ns.active_bucket.name }}{% endif %}
+                            </span>
+                            {% else %}
+                            <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">
+                                ✨ All Timelines
+                            </span>
+                            {% endif %}
+                        </div>
                     </div>
 
                     <!-- + Add Realm Button -->
@@ -676,7 +678,7 @@
                 }
             });
 
-            // Update Card Header Badge
+            // Dynamically Update Card Header Badge
             const badgeContainer = document.getElementById('card-selection-badge-container');
             if (badgeContainer) {
                 if (currentSelectedBucketId !== null) {
@@ -821,7 +823,7 @@
                 btnActive.className = "flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-indigo-600 text-white shadow-md min-w-0";
                 btnCompleted.className = "flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 min-w-0";
             } else {
-                btnCompleted.className = "flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-2 bg-emerald-600 text-white shadow-md min-w-0";
+                btnCompleted.className = "flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-emerald-600 text-white shadow-md min-w-0";
                 btnActive.className = "flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 min-w-0";
             }
 
