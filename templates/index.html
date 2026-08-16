@@ -40,7 +40,7 @@
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex">
 
-    <!-- Sidebar (Widened for desktop viewports) -->
+    <!-- Sidebar -->
     <aside class="w-72 md:w-80 lg:w-96 bg-slate-900 md:bg-slate-800 border-r-0 md:border-r border-slate-800/80 p-4 md:p-6 flex flex-col justify-between shrink-0 transition-all">
         <div>
             <!-- Centered Logos Brand Header -->
@@ -308,9 +308,16 @@
                     {% endfor %}
                 </div>
 
+                <!-- Load More Months Button -->
+                <div id="load-more-container" class="mt-8 text-center hidden">
+                    <button onclick="loadMoreMonths()" class="bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-indigo-500/30 font-semibold px-6 py-2.5 rounded-xl transition shadow-lg text-sm flex items-center justify-center gap-2 mx-auto">
+                        <span>👇 Load More Tasks (+3 Months)</span>
+                    </button>
+                </div>
+
                 <!-- Empty State Message -->
                 <div id="timeline-empty-state" class="hidden text-center py-12 md:py-16 bg-slate-800/50 border border-slate-700/50 rounded-2xl px-4">
-                    <p id="timeline-empty-text" class="text-slate-400 text-base md:text-lg font-medium">No active tasks due this month</p>
+                    <p id="timeline-empty-text" class="text-slate-400 text-base md:text-lg font-medium">No active tasks found</p>
                 </div>
 
                 {% else %}
@@ -613,12 +620,12 @@
     <script>
         let currentSelectedRealmId = {% if selected_realm_id %}{{ selected_realm_id }}{% else %}null{% endif %};
         let currentSelectedBucketId = {% if selected_bucket_id %}{{ selected_bucket_id }}{% else %}null{% endif %};
+        let monthsHorizonCount = 3; // Initial display horizon (3 months into the future)
 
         function selectRealm(event, realmId) {
             if (event) event.preventDefault();
 
             if (currentSelectedRealmId === realmId && currentSelectedBucketId === null) {
-                // Tapping already selected realm -> deselect back to all
                 currentSelectedRealmId = null;
                 currentSelectedBucketId = null;
                 history.pushState(null, '', '/');
@@ -638,7 +645,6 @@
             if (event) event.preventDefault();
 
             if (currentSelectedBucketId === bucketId) {
-                // Tapping already selected bucket -> deselect back to parent realm
                 currentSelectedRealmId = parentRealmId;
                 currentSelectedBucketId = null;
                 history.pushState(null, '', '/?realm_id=' + parentRealmId);
@@ -719,7 +725,6 @@
                 }
             }
 
-            // Filter Timeline List Client-Side
             filterTimelineList();
         }
 
@@ -728,14 +733,18 @@
             const wrappers = document.querySelectorAll('.timeline-card-wrapper');
             const emptyState = document.getElementById('timeline-empty-state');
             const emptyText = document.getElementById('timeline-empty-text');
+            const loadMoreBtnContainer = document.getElementById('load-more-container');
 
-            // End of Current Month Date Calculation
             const now = new Date();
+            // End of Current Month Date (For top pill counter badges)
             const endOfCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+            // Dynamic Horizon Date (For displaying upcoming tasks up to X months out)
+            const endOfHorizonDate = new Date(now.getFullYear(), now.getMonth() + monthsHorizonCount, 0, 23, 59, 59);
 
-            let activeCount = 0;
-            let completedCount = 0;
+            let currentMonthActiveCount = 0;
+            let currentMonthCompletedCount = 0;
             let visibleCount = 0;
+            let hiddenFutureCount = 0;
 
             wrappers.forEach(el => {
                 const isCompleted = el.getAttribute('data-completed') === 'true';
@@ -743,14 +752,12 @@
                 const itemBucketId = el.getAttribute('data-bucket-id') ? parseInt(el.getAttribute('data-bucket-id')) : null;
                 const dueDateStr = el.getAttribute('data-due-date');
 
-                // Filter by End of Current Month Window
-                let isDueByEndOfMonth = true;
+                let itemDueDate = new Date();
                 if (dueDateStr) {
-                    const itemDueDate = new Date(dueDateStr + 'T23:59:59');
-                    isDueByEndOfMonth = itemDueDate <= endOfCurrentMonth;
+                    itemDueDate = new Date(dueDateStr + 'T23:59:59');
                 }
 
-                // Match Selection Condition
+                // Check Selection Match
                 let matchesSelection = true;
                 if (currentSelectedBucketId !== null) {
                     matchesSelection = (itemBucketId === currentSelectedBucketId);
@@ -758,39 +765,63 @@
                     matchesSelection = (itemRealmId === currentSelectedRealmId);
                 }
 
-                if (matchesSelection && isDueByEndOfMonth) {
-                    if (isCompleted) {
-                        completedCount++;
-                    } else {
-                        activeCount++;
+                if (matchesSelection) {
+                    // Badge counters: strictly count items due by current month's end
+                    if (itemDueDate <= endOfCurrentMonth) {
+                        if (isCompleted) {
+                            currentMonthCompletedCount++;
+                        } else {
+                            currentMonthActiveCount++;
+                        }
                     }
 
-                    if ((currentFilterMode === 'active' && !isCompleted) || (currentFilterMode === 'completed' && isCompleted)) {
+                    // Display logic: show items up to current display horizon
+                    const isWithinHorizon = itemDueDate <= endOfHorizonDate;
+                    const matchesMode = (currentFilterMode === 'active' && !isCompleted) || (currentFilterMode === 'completed' && isCompleted);
+
+                    if (matchesMode && isWithinHorizon) {
                         el.classList.remove('hidden');
                         visibleCount++;
                     } else {
                         el.classList.add('hidden');
+                        if (matchesMode && !isWithinHorizon) {
+                            hiddenFutureCount++;
+                        }
                     }
                 } else {
                     el.classList.add('hidden');
                 }
             });
 
-            // Update Badges
+            // Update Badges (Always reflect Current Month total)
             const activeBadge = document.getElementById('active-count-badge');
             const completedBadge = document.getElementById('completed-count-badge');
-            if (activeBadge) activeBadge.innerText = activeCount;
-            if (completedBadge) completedBadge.innerText = completedCount;
+            if (activeBadge) activeBadge.innerText = currentMonthActiveCount;
+            if (completedBadge) completedBadge.innerText = currentMonthCompletedCount;
 
             // Empty State Handling
             if (emptyState) {
                 if (visibleCount === 0) {
                     emptyState.classList.remove('hidden');
-                    emptyText.innerText = currentFilterMode === 'active' ? "🎉 All caught up! No active tasks due this month." : "No completed tasks due this month.";
+                    emptyText.innerText = currentFilterMode === 'active' ? "🎉 All caught up! No active tasks found." : "No completed tasks found.";
                 } else {
                     emptyState.classList.add('hidden');
                 }
             }
+
+            // Show/Hide "Load More" Button based on future items
+            if (loadMoreBtnContainer) {
+                if (hiddenFutureCount > 0) {
+                    loadMoreBtnContainer.classList.remove('hidden');
+                } else {
+                    loadMoreBtnContainer.classList.add('hidden');
+                }
+            }
+        }
+
+        function loadMoreMonths() {
+            monthsHorizonCount += 3; // Extend display horizon by another 3 months
+            filterTimelineList();
         }
 
         function handleRealmsHeaderClick(event) {
