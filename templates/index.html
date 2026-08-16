@@ -176,16 +176,16 @@
         <div class="max-w-4xl mx-auto">
             {% if user %}
                 
-                <!-- 50:50 Split Pill Toggle Button (Flat Center Seam) -->
-                <div class="w-full max-w-md mx-auto mb-8 p-1 bg-slate-800/90 border border-slate-700/80 rounded-full flex items-center shadow-inner select-none">
+                <!-- Softened Segmented Pill Toggle -->
+                <div class="w-full max-w-md mx-auto mb-8 p-1 bg-slate-800/90 border border-slate-700/80 rounded-full flex items-center shadow-inner select-none gap-0.5">
                     <button id="pill-btn-active" onclick="setTimelineFilter('active')" 
-                            class="flex-1 py-2 text-xs md:text-sm font-bold rounded-l-full rounded-r-none transition-all duration-200 flex items-center justify-center gap-2 bg-indigo-600 text-white shadow-md">
+                            class="flex-1 py-2 text-xs md:text-sm font-bold rounded-l-full rounded-r-md transition-all duration-200 flex items-center justify-center gap-2 bg-indigo-600 text-white shadow-md">
                         <span>⚡ Active Tasks</span>
                         <span id="active-count-badge" class="bg-indigo-500/30 text-indigo-100 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-indigo-400/30">0</span>
                     </button>
 
                     <button id="pill-btn-completed" onclick="setTimelineFilter('completed')" 
-                            class="flex-1 py-2 text-xs md:text-sm font-bold rounded-r-full rounded-l-none transition-all duration-200 flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200">
+                            class="flex-1 py-2 text-xs md:text-sm font-bold rounded-r-full rounded-l-md transition-all duration-200 flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200">
                         <span>✅ Completed Tasks</span>
                         <span id="completed-count-badge" class="bg-slate-700 text-slate-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">0</span>
                     </button>
@@ -617,11 +617,11 @@
             if (completedBadge) completedBadge.innerText = completedCount;
 
             if (mode === 'active') {
-                btnActive.className = "flex-1 py-2 text-xs md:text-sm font-bold rounded-l-full rounded-r-none transition-all duration-200 flex items-center justify-center gap-2 bg-indigo-600 text-white shadow-md";
-                btnCompleted.className = "flex-1 py-2 text-xs md:text-sm font-bold rounded-r-full rounded-l-none transition-all duration-200 flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200";
+                btnActive.className = "flex-1 py-2 text-xs md:text-sm font-bold rounded-l-full rounded-r-md transition-all duration-200 flex items-center justify-center gap-2 bg-indigo-600 text-white shadow-md";
+                btnCompleted.className = "flex-1 py-2 text-xs md:text-sm font-bold rounded-r-full rounded-l-md transition-all duration-200 flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200";
             } else {
-                btnCompleted.className = "flex-1 py-2 text-xs md:text-sm font-bold rounded-r-full rounded-l-none transition-all duration-200 flex items-center justify-center gap-2 bg-emerald-600 text-white shadow-md";
-                btnActive.className = "flex-1 py-2 text-xs md:text-sm font-bold rounded-l-full rounded-r-none transition-all duration-200 flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200";
+                btnCompleted.className = "flex-1 py-2 text-xs md:text-sm font-bold rounded-r-full rounded-l-md transition-all duration-200 flex items-center justify-center gap-2 bg-emerald-600 text-white shadow-md";
+                btnActive.className = "flex-1 py-2 text-xs md:text-sm font-bold rounded-l-full rounded-r-md transition-all duration-200 flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200";
             }
 
             if (emptyState && wrappers.length > 0) {
