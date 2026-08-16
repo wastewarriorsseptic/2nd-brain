@@ -390,6 +390,13 @@ def delete_realm(realm_id: int = Form(...)):
 @app.post("/realms/share/")
 def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(...)):
     target_email = email.strip().lower()
+    api_key = os.getenv("RESEND_API_KEY")
+    
+    if not api_key:
+        print("Skipping invite emails: RESEND_API_KEY is missing.", flush=True)
+        return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
+
+    resend.api_key = api_key
     
     with Session(engine) as session:
         current_user = get_current_user(request, session)
@@ -403,7 +410,6 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
         target_user = session.exec(select(User).where(User.email == target_email)).first()
 
         if target_user:
-            # User exists: link them immediately
             existing = session.exec(
                 select(RealmShare).where(
                     RealmShare.realm_id == realm_id, 
@@ -414,7 +420,6 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
                 session.add(RealmShare(realm_id=realm_id, user_id=target_user.id))
                 session.commit()
         else:
-            # User does not exist yet: store pending invite
             existing_pending = session.exec(
                 select(PendingInvite).where(
                     PendingInvite.realm_id == realm_id,
@@ -425,7 +430,7 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
                 session.add(PendingInvite(realm_id=realm_id, email=target_email))
                 session.commit()
 
-        # Send email invitation to recipient
+        # 1. Send Invitation Email to Recipient
         invitation_subject = f"🔮 You've been invited to collaborate on '{realm.name}' on TaskMonster!"
         invitation_body = f"""
             <h3>😈 TaskMonster Realm Invitation</h3>
@@ -441,10 +446,11 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
                 "subject": invitation_subject,
                 "html": invitation_body
             })
+            print(f"Invite email successfully sent to {target_email}", flush=True)
         except Exception as e:
-            print(f"Failed to send invite email to recipient: {e}")
+            print(f"Failed to send invite email to recipient ({target_email}): {e}", flush=True)
 
-        # Send confirmation email to inviter
+        # 2. Send Confirmation Email to Inviter
         confirmation_subject = f"📩 Invite Sent: {target_email} invited to '{realm.name}'"
         confirmation_body = f"""
             <h3>😈 Invitation Dispatched</h3>
@@ -459,8 +465,9 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
                 "subject": confirmation_subject,
                 "html": confirmation_body
             })
+            print(f"Confirmation email successfully sent to inviter ({current_user.email})", flush=True)
         except Exception as e:
-            print(f"Failed to send confirmation email to inviter: {e}")
+            print(f"Failed to send confirmation email to inviter ({current_user.email}): {e}", flush=True)
 
     return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
 
