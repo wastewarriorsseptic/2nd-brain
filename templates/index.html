@@ -194,18 +194,18 @@
         <div class="max-w-4xl mx-auto">
             {% if user %}
                 
-                <!-- Single-Line Segmented Pill Control -->
-                <div class="w-full max-w-lg mx-auto mb-6 md:mb-8 p-1 bg-slate-800/90 border border-slate-700/80 rounded-full flex items-center shadow-inner select-none gap-1">
+                <!-- Perfectly Fitted Filter Control -->
+                <div class="w-full max-w-md mx-auto mb-6 md:mb-8 p-1 bg-slate-800/90 border border-slate-700/80 rounded-full flex items-center shadow-inner select-none gap-1">
                     <button id="pill-btn-active" onclick="setTimelineFilter('active')" 
-                            class="flex-1 px-3 sm:px-5 py-2 text-xs sm:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 sm:gap-2 bg-indigo-600 text-white shadow-md whitespace-nowrap">
-                        <span class="whitespace-nowrap">⚡ Active Tasks</span>
-                        <span id="active-count-badge" class="bg-indigo-500/30 text-indigo-100 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-indigo-400/30 shrink-0">0</span>
+                            class="flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-indigo-600 text-white shadow-md min-w-0">
+                        <span class="truncate">⚡ Active</span>
+                        <span id="active-count-badge" class="bg-indigo-500/30 text-indigo-100 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full border border-indigo-400/30 shrink-0">0</span>
                     </button>
 
                     <button id="pill-btn-completed" onclick="setTimelineFilter('completed')" 
-                            class="flex-1 px-3 sm:px-5 py-2 text-xs sm:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 sm:gap-2 text-slate-400 hover:text-slate-200 whitespace-nowrap">
-                        <span class="whitespace-nowrap">✅ Completed Tasks</span>
-                        <span id="completed-count-badge" class="bg-slate-700 text-slate-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0">0</span>
+                            class="flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 min-w-0">
+                        <span class="truncate">✅ Completed</span>
+                        <span id="completed-count-badge" class="bg-slate-700 text-slate-300 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full shrink-0">0</span>
                     </button>
                 </div>
 
@@ -655,11 +655,11 @@
             if (completedBadge) completedBadge.innerText = completedCount;
 
             if (mode === 'active') {
-                btnActive.className = "flex-1 px-3 sm:px-5 py-2 text-xs sm:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 sm:gap-2 bg-indigo-600 text-white shadow-md whitespace-nowrap";
-                btnCompleted.className = "flex-1 px-3 sm:px-5 py-2 text-xs sm:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 sm:gap-2 text-slate-400 hover:text-slate-200 whitespace-nowrap";
+                btnActive.className = "flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-indigo-600 text-white shadow-md min-w-0";
+                btnCompleted.className = "flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 min-w-0";
             } else {
-                btnCompleted.className = "flex-1 px-3 sm:px-5 py-2 text-xs sm:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 sm:gap-2 bg-emerald-600 text-white shadow-md whitespace-nowrap";
-                btnActive.className = "flex-1 px-3 sm:px-5 py-2 text-xs sm:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 sm:gap-2 text-slate-400 hover:text-slate-200 whitespace-nowrap";
+                btnCompleted.className = "flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-emerald-600 text-white shadow-md min-w-0";
+                btnActive.className = "flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 min-w-0";
             }
 
             if (emptyState && wrappers.length > 0) {
