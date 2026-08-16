@@ -521,7 +521,7 @@ def create_item(
 
         session.commit()
 
-    return RedirectResponse(url=f"/?bucket_id={bucket_id}", status_code=303)    return RedirectResponse(url=f"/?bucket_id={bucket_id}", status_code=303)
+    return RedirectResponse(url=f"/?bucket_id={bucket_id}", status_code=303)
 
 @app.post("/items/delete/")
 def delete_item(item_id: int = Form(...), delete_series: bool = Form(False)):
