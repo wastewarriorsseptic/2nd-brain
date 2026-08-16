@@ -430,19 +430,21 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
                 session.add(PendingInvite(realm_id=realm_id, email=target_email))
                 session.commit()
 
-        # 1. Send Invitation Email to Recipient
-        invitation_subject = f"{current_user.name} invited you to collaborate on '{realm.name}'"
+        # 1. Send Invitation Email to Recipient (Optimized for Spam Filters)
+        invitation_subject = f"Collaborate with {current_user.name} on TaskMonster"
         invitation_body = f"""
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
-            <h2 style="color: #4f46e5; margin-top: 0;">TaskMonster Realm Invitation</h2>
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 8px;">
             <p>Hi there,</p>
-            <p><strong>{current_user.name}</strong> ({current_user.email}) has invited you to collaborate on the <strong>{realm.name}</strong> realm in TaskMonster.</p>
-            <p>TaskMonster lets you organize shared timelines, track upcoming tasks, and coordinate across realms in real time.</p>
-            <div style="margin: 28px 0;">
-                <a href="https://usetaskmonster.app/login" style="background-color: #6366f1; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">Accept Invitation</a>
+            <p><strong>{current_user.name}</strong> ({current_user.email}) invited you to join the <strong>{realm.name}</strong> realm on TaskMonster so you can manage shared tasks and timelines together.</p>
+            <div style="margin: 24px 0;">
+                <a href="https://usetaskmonster.app/login" style="background-color: #6366f1; color: #ffffff; padding: 12px 22px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">Open {realm.name} Realm</a>
             </div>
-            <p style="font-size: 13px; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 32px;">
-                If you did not expect this invitation, you can safely ignore this email.
+            <p style="font-size: 13px; color: #4b5563;">
+                Or copy and paste this link into your browser:<br>
+                <a href="https://usetaskmonster.app/login" style="color: #6366f1;">https://usetaskmonster.app/login</a>
+            </p>
+            <p style="font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 28px;">
+                Sent via TaskMonster. You received this because {current_user.email} added your address.
             </p>
         </div>
         """
@@ -450,6 +452,7 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
         try:
             resend.Emails.send({
                 "from": "TaskMonster <notifications@usetaskmonster.app>",
+                "reply_to": current_user.email,  # <--- CRITICAL: Tells Gmail a real person sent this
                 "to": [target_email],
                 "subject": invitation_subject,
                 "html": invitation_body
@@ -457,7 +460,7 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
             print(f"Invite email successfully sent to {target_email}", flush=True)
         except Exception as e:
             print(f"Failed to send invite email to recipient ({target_email}): {e}", flush=True)
-
+            
         # 2. Send Confirmation Email to Inviter
         confirmation_subject = f"Invitation Sent: {target_email} invited to '{realm.name}'"
         confirmation_body = f"""
