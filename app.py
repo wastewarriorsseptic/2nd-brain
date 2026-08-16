@@ -433,7 +433,8 @@ def create_item(
     amount: Optional[float] = Form(None),
     description: Optional[str] = Form(None)
 ):
-    base_due_date = datetime.strptime(due_date, "%Y-%m-%d")
+    # Anchor to 9:00 AM to eliminate UTC/Local midnight timezone day shifts
+    base_due_date = datetime.strptime(due_date, "%Y-%m-%d").replace(hour=9, minute=0, second=0)
     group_id = str(uuid.uuid4()) if recurrence_type != "none" else None
     interval = max(1, interval)
 
@@ -463,22 +464,17 @@ def create_item(
     elif recurrence_type == "monthly":
         for i in range(0, 12, interval):
             m_date = add_months(base_due_date, i)
-            # Find the maximum valid day for this specific month (28, 29, 30, or 31)
             max_day_in_month = monthrange(m_date.year, m_date.month)[1]
-            
             for mday in selected_month_days:
-                # Clamp the target day so 31 becomes 30 (or 28/29 in Feb)
                 actual_day = min(mday, max_day_in_month)
-                target_dates.append(
-                    datetime(m_date.year, m_date.month, actual_day, base_due_date.hour, base_due_date.minute)
-                )
+                target_dates.append(datetime(m_date.year, m_date.month, actual_day, 9, 0, 0))
     elif recurrence_type == "yearly":
         for i in range(0, 5, interval):
+            target_year = base_due_date.year + i
             for m in selected_months:
-                try:
-                    target_dates.append(datetime(base_due_date.year + i, m, base_due_date.day, base_due_date.hour, base_due_date.minute))
-                except ValueError:
-                    pass
+                max_day = monthrange(target_year, m)[1]
+                actual_day = min(base_due_date.day, max_day)
+                target_dates.append(datetime(target_year, m, actual_day, 9, 0, 0))
 
     target_dates = sorted(list(set(target_dates)))
 
@@ -525,7 +521,7 @@ def create_item(
 
         session.commit()
 
-    return RedirectResponse(url=f"/?bucket_id={bucket_id}", status_code=303)
+    return RedirectResponse(url=f"/?bucket_id={bucket_id}", status_code=303)    return RedirectResponse(url=f"/?bucket_id={bucket_id}", status_code=303)
 
 @app.post("/items/delete/")
 def delete_item(item_id: int = Form(...), delete_series: bool = Form(False)):
@@ -556,7 +552,7 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
             item.is_completed = not was_completed
             session.add(item)
 
-            # When marking a task as complete, send an email to all Realm members
+            # Send email notification when marking complete
             if not was_completed:
                 current_user = get_current_user(request, session)
                 completed_by = current_user.name if current_user else "A team member"
@@ -566,13 +562,11 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
                 realm = session.get(Realm, bucket.realm_id) if bucket and bucket.realm_id else None
                 
                 if realm:
-                    # 1. Add Realm Owner email
                     if realm.user_id:
                         owner = session.get(User, realm.user_id)
                         if owner and owner.email:
                             recipients.append(owner.email)
                     
-                    # 2. Add Shared User emails
                     shared_records = session.exec(
                         select(RealmShare).where(RealmShare.realm_id == realm.id)
                     ).all()
@@ -581,7 +575,6 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
                         if shared_user and shared_user.email:
                             recipients.append(shared_user.email)
 
-                # Deduplicate recipient list
                 recipients = list(set(recipients))
 
                 if recipients:
@@ -593,41 +586,7 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
                         recipients=recipients
                     )
 
-            # Auto-shift future uncompleted cards for interval/daily tasks
-            if not was_completed and item.recurring_group_id and item.recurrence_type == "daily":
-                today = datetime.now().date()
-                due_date_only = item.due_date.date()
-                days_diff = (today - due_date_only).days
-                
-                if days_diff != 0:
-                    future_items = session.exec(
-                        select(Item).where(
-                            Item.recurring_group_id == item.recurring_group_id,
-                            Item.is_completed == False,
-                            Item.id != item.id,
-                            Item.due_date > item.due_date
-                        )
-                    ).all()
-                    
-                    shift_delta = timedelta(days=days_diff)
-                    for future_item in future_items:
-                        future_item.due_date += shift_delta
-                        session.add(future_item)
-                        
-                        for reminder in future_item.reminders:
-                            reminder.remind_at += shift_delta
-                            session.add(reminder)
-                            if reminder.remind_at > datetime.now():
-                                scheduler.add_job(
-                                    send_email_alert, 'date', run_date=reminder.remind_at,
-                                    args=[
-                                        f"⏰ Reminder: {future_item.title}", 
-                                        future_item.due_date.strftime("%Y-%m-%d"), 
-                                        future_item.amount, 
-                                        future_item.description
-                                    ]
-                                )
-
             session.commit()
             return RedirectResponse(url=f"/?bucket_id={item.bucket_id}", status_code=303)
     return RedirectResponse(url="/", status_code=303)
+    
