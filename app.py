@@ -431,7 +431,7 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
                 session.commit()
 
         # 1. Send Invitation Email to Recipient
-        iinvitation_subject = f"{current_user.name} invited you to collaborate on '{realm.name}'"
+        invitation_subject = f"{current_user.name} invited you to collaborate on '{realm.name}'"
         invitation_body = f"""
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
             <h2 style="color: #4f46e5; margin-top: 0;">TaskMonster Realm Invitation</h2>
