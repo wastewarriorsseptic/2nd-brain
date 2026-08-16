@@ -649,7 +649,30 @@
     <!-- Task Modal -->
     <div id="add-item-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
         <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
-            <h3 class="text-xl font-bold mb-4">Add Task to Logos</h3>
+            <div class="flex items-center justify-between mb-4 pb-2 border-b border-slate-700/60">
+                <h3 class="text-xl font-bold">Add Task to Logos</h3>
+                <div id="modal-destination-badge">
+                    {% set ns = namespace(active_realm=None, active_bucket=None) %}
+                    {% for r in realms %}
+                        {% if r.id == selected_realm_id %}
+                            {% set ns.active_realm = r %}
+                        {% endif %}
+                        {% for b in r.buckets %}
+                            {% if b.id == selected_bucket_id %}
+                                {% set ns.active_bucket = b %}
+                                {% set ns.active_realm = r %}
+                            {% endif %}
+                        {% endfor %}
+                    {% endfor %}
+
+                    {% if ns.active_realm and ns.active_bucket %}
+                    <span class="bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1">
+                        {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }} / {{ ns.active_bucket.icon }} {{ ns.active_bucket.name }}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+
             <form action="/items/" method="POST" class="space-y-4">
                 <input type="hidden" name="bucket_id" id="task-modal-bucket-id" value="{{ selected_bucket_id or '' }}">
                 <input type="hidden" name="recurrence_type" id="recurrence-type-input" value="none">
@@ -664,7 +687,7 @@
                            class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200">
                 </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-medium text-slate-400 mb-1">Amount ($ optional)</label>
                         <input type="number" step="0.01" name="amount" placeholder="0.00" 
@@ -677,7 +700,7 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-medium text-slate-400 mb-1">Due Time (Optional)</label>
                         <input type="time" name="due_time" 
@@ -877,29 +900,40 @@
                 }
             });
 
-            // Dynamically Update Card Header Badge
+            // Dynamically Update Card Header Badge and Task Modal Destination
             const badgeContainer = document.getElementById('card-selection-badge-container');
-            if (badgeContainer) {
-                if (currentSelectedBucketId !== null) {
-                    const activeBucketRow = document.getElementById('bucket-row-' + currentSelectedBucketId);
-                    if (activeBucketRow) {
-                        const bName = activeBucketRow.getAttribute('data-bucket-name');
-                        const bIcon = activeBucketRow.getAttribute('data-bucket-icon');
-                        const parentRId = activeBucketRow.getAttribute('data-parent-realm-id');
-                        const activeRealmRow = document.getElementById('realm-row-' + parentRId);
-                        const rName = activeRealmRow ? activeRealmRow.getAttribute('data-realm-name') : '';
-                        const rIcon = activeRealmRow ? activeRealmRow.getAttribute('data-realm-icon') : '🔮';
+            const modalBadgeContainer = document.getElementById('modal-destination-badge');
 
+            if (currentSelectedBucketId !== null) {
+                const activeBucketRow = document.getElementById('bucket-row-' + currentSelectedBucketId);
+                if (activeBucketRow) {
+                    const bName = activeBucketRow.getAttribute('data-bucket-name');
+                    const bIcon = activeBucketRow.getAttribute('data-bucket-icon');
+                    const parentRId = activeBucketRow.getAttribute('data-parent-realm-id');
+                    const activeRealmRow = document.getElementById('realm-row-' + parentRId);
+                    const rName = activeRealmRow ? activeRealmRow.getAttribute('data-realm-name') : '';
+                    const rIcon = activeRealmRow ? activeRealmRow.getAttribute('data-realm-icon') : '🔮';
+
+                    const badgeHtml = `<span class="bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1">${rIcon} ${rName} / ${bIcon} ${bName}</span>`;
+                    
+                    if (badgeContainer) {
                         badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate inline-block min-w-0 max-w-[110px] sm:max-w-[160px] md:max-w-[220px]" title="${rName} / ${bName}">${rIcon} ${rName} / ${bIcon} ${bName}</span>`;
                     }
-                } else if (currentSelectedRealmId !== null) {
-                    const activeRealmRow = document.getElementById('realm-row-' + currentSelectedRealmId);
-                    if (activeRealmRow) {
-                        const rName = activeRealmRow.getAttribute('data-realm-name');
-                        const rIcon = activeRealmRow.getAttribute('data-realm-icon');
+                    if (modalBadgeContainer) {
+                        modalBadgeContainer.innerHTML = badgeHtml;
+                    }
+                }
+            } else if (currentSelectedRealmId !== null) {
+                const activeRealmRow = document.getElementById('realm-row-' + currentSelectedRealmId);
+                if (activeRealmRow) {
+                    const rName = activeRealmRow.getAttribute('data-realm-name');
+                    const rIcon = activeRealmRow.getAttribute('data-realm-icon');
+                    if (badgeContainer) {
                         badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate inline-block min-w-0 max-w-[110px] sm:max-w-[160px] md:max-w-[220px]" title="${rName}">${rIcon} ${rName}</span>`;
                     }
-                } else {
+                }
+            } else {
+                if (badgeContainer) {
                     badgeContainer.innerHTML = `<span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">✨ All Timelines</span>`;
                 }
             }
