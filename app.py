@@ -463,11 +463,15 @@ def create_item(
     elif recurrence_type == "monthly":
         for i in range(0, 12, interval):
             m_date = add_months(base_due_date, i)
+            # Find the maximum valid day for this specific month (28, 29, 30, or 31)
+            max_day_in_month = monthrange(m_date.year, m_date.month)[1]
+            
             for mday in selected_month_days:
-                try:
-                    target_dates.append(datetime(m_date.year, m_date.month, mday, m_date.hour, m_date.minute))
-                except ValueError:
-                    pass
+                # Clamp the target day so 31 becomes 30 (or 28/29 in Feb)
+                actual_day = min(mday, max_day_in_month)
+                target_dates.append(
+                    datetime(m_date.year, m_date.month, actual_day, base_due_date.hour, base_due_date.minute)
+                )
     elif recurrence_type == "yearly":
         for i in range(0, 5, interval):
             for m in selected_months:
