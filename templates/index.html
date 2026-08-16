@@ -58,36 +58,34 @@
                 <div class="flex items-center justify-between cursor-pointer select-none group" onclick="handleRealmsHeaderClick(event)">
                     <div class="flex items-center gap-2 min-w-0 flex-1 mr-2">
                         <span id="realms-card-chevron" class="text-xs text-slate-400 group-hover:text-indigo-400 transition-transform duration-200 shrink-0">▼</span>
-                        <a href="/" onclick="selectRealm(event, null)" class="text-xs font-extrabold uppercase tracking-wider {% if not selected_realm_id and not selected_bucket_id %}text-indigo-400{% else %}text-slate-300 group-hover:text-white{% endif %} shrink-0 transition-colors">Realms</a>
+                        <a href="/" class="text-xs font-extrabold uppercase tracking-wider {% if not selected_realm_id and not selected_bucket_id %}text-indigo-400{% else %}text-slate-300 group-hover:text-white{% endif %} shrink-0 transition-colors">Realms</a>
                         <span class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">
                             {{ realms|length }}
                         </span>
 
-                        <!-- Dynamic Active Selection Badge Container -->
-                        <div id="card-selection-badge-container">
-                            {% set ns = namespace(active_realm=None, active_bucket=None) %}
-                            {% for r in realms %}
-                                {% if r.id == selected_realm_id %}
+                        <!-- Dynamic Active Selection Badge -->
+                        {% set ns = namespace(active_realm=None, active_bucket=None) %}
+                        {% for r in realms %}
+                            {% if r.id == selected_realm_id %}
+                                {% set ns.active_realm = r %}
+                            {% endif %}
+                            {% for b in r.buckets %}
+                                {% if b.id == selected_bucket_id %}
+                                    {% set ns.active_bucket = b %}
                                     {% set ns.active_realm = r %}
                                 {% endif %}
-                                {% for b in r.buckets %}
-                                    {% if b.id == selected_bucket_id %}
-                                        {% set ns.active_bucket = b %}
-                                        {% set ns.active_realm = r %}
-                                    {% endif %}
-                                {% endfor %}
                             {% endfor %}
+                        {% endfor %}
 
-                            {% if ns.active_realm %}
-                            <span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[110px] sm:max-w-[130px]" title="{{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.name }}{% endif %}">
-                                {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.icon }} {{ ns.active_bucket.name }}{% endif %}
-                            </span>
-                            {% else %}
-                            <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">
-                                ✨ All Timelines
-                            </span>
-                            {% endif %}
-                        </div>
+                        {% if ns.active_realm %}
+                        <span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[110px] sm:max-w-[130px]" title="{{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.name }}{% endif %}">
+                            {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.icon }} {{ ns.active_bucket.name }}{% endif %}
+                        </span>
+                        {% else %}
+                        <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">
+                            ✨ All Timelines
+                        </span>
+                        {% endif %}
                     </div>
 
                     <!-- + Add Realm Button -->
@@ -222,6 +220,7 @@
                     {% set days_out = (item.due_date.date() - today).days %}
                     <div class="timeline-card-wrapper relative group" 
                          data-completed="{{ 'true' if item.is_completed else 'false' }}"
+                         data-due-date="{{ item.due_date.strftime('%Y-%m-%d') }}"
                          data-realm-id="{{ item.bucket.realm.id if item.bucket and item.bucket.realm else '' }}"
                          data-bucket-id="{{ item.bucket.id if item.bucket else '' }}">
                         <!-- Node Connector Dot -->
@@ -307,9 +306,9 @@
                     {% endfor %}
                 </div>
 
-                <!-- Empty State Message when switching tabs/realms -->
+                <!-- Empty State Message -->
                 <div id="timeline-empty-state" class="hidden text-center py-12 md:py-16 bg-slate-800/50 border border-slate-700/50 rounded-2xl px-4">
-                    <p id="timeline-empty-text" class="text-slate-400 text-base md:text-lg font-medium">No active tasks</p>
+                    <p id="timeline-empty-text" class="text-slate-400 text-base md:text-lg font-medium">No active tasks due this month</p>
                 </div>
 
                 {% else %}
@@ -718,7 +717,7 @@
                 }
             }
 
-            // Filter Timeline List Client-Side Without Reload
+            // Filter Timeline List Client-Side
             filterTimelineList();
         }
 
@@ -728,6 +727,10 @@
             const emptyState = document.getElementById('timeline-empty-state');
             const emptyText = document.getElementById('timeline-empty-text');
 
+            // End of Current Month Date Calculation
+            const now = new Date();
+            const endOfCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
             let activeCount = 0;
             let completedCount = 0;
             let visibleCount = 0;
@@ -736,8 +739,16 @@
                 const isCompleted = el.getAttribute('data-completed') === 'true';
                 const itemRealmId = el.getAttribute('data-realm-id') ? parseInt(el.getAttribute('data-realm-id')) : null;
                 const itemBucketId = el.getAttribute('data-bucket-id') ? parseInt(el.getAttribute('data-bucket-id')) : null;
+                const dueDateStr = el.getAttribute('data-due-date');
 
-                // Match filter condition
+                // Filter by End of Current Month Window
+                let isDueByEndOfMonth = true;
+                if (dueDateStr) {
+                    const itemDueDate = new Date(dueDateStr + 'T23:59:59');
+                    isDueByEndOfMonth = itemDueDate <= endOfCurrentMonth;
+                }
+
+                // Match Selection Condition
                 let matchesSelection = true;
                 if (currentSelectedBucketId !== null) {
                     matchesSelection = (itemBucketId === currentSelectedBucketId);
@@ -745,7 +756,7 @@
                     matchesSelection = (itemRealmId === currentSelectedRealmId);
                 }
 
-                if (matchesSelection) {
+                if (matchesSelection && isDueByEndOfMonth) {
                     if (isCompleted) {
                         completedCount++;
                     } else {
@@ -773,7 +784,7 @@
             if (emptyState) {
                 if (visibleCount === 0) {
                     emptyState.classList.remove('hidden');
-                    emptyText.innerText = currentFilterMode === 'active' ? "🎉 All caught up! No active tasks." : "No completed tasks yet.";
+                    emptyText.innerText = currentFilterMode === 'active' ? "🎉 All caught up! No active tasks due this month." : "No completed tasks due this month.";
                 } else {
                     emptyState.classList.add('hidden');
                 }
@@ -810,7 +821,7 @@
                 btnActive.className = "flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-indigo-600 text-white shadow-md min-w-0";
                 btnCompleted.className = "flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 min-w-0";
             } else {
-                btnCompleted.className = "flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-emerald-600 text-white shadow-md min-w-0";
+                btnCompleted.className = "flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-2 bg-emerald-600 text-white shadow-md min-w-0";
                 btnActive.className = "flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 min-w-0";
             }
 
