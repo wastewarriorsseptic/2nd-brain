@@ -41,28 +41,25 @@
     <!-- Sidebar -->
     <aside class="w-72 bg-slate-800 border-r border-slate-700 p-6 flex flex-col justify-between shrink-0">
         <div>
+            <!-- Centered Brand Header -->
             <h1 class="text-2xl font-bold text-indigo-400 mb-6 flex items-center justify-center gap-2 text-center">
                 🧠 Logos
             </h1>
-            
-            <a href="/" class="block px-3 py-2 rounded-lg text-sm font-semibold mb-6 transition {% if not selected_realm_id and not selected_bucket_id %}bg-indigo-600 text-white{% else %}text-slate-300 hover:bg-slate-700{% endif %}">
-                ✨ Full Timeline
-            </a>
 
             {% if user %}
-            <!-- Unique Collapsible Card for Realms -->
+            <!-- Unique Collapsible Card for Realms & Full Timeline -->
             <div class="bg-slate-800/80 border border-slate-700/60 rounded-xl p-3.5 mb-4 shadow-md transition-all">
                 
-                <!-- Clickable Card Header -->
-                <div class="flex items-center justify-between cursor-pointer select-none" onclick="toggleRealmsCard()">
+                <!-- Clickable Card Header: Shows Selection / Full Timeline & Toggles Card -->
+                <div class="flex items-center justify-between cursor-pointer select-none group" onclick="handleRealmsHeaderClick(event)">
                     <div class="flex items-center gap-2 min-w-0 flex-1 mr-2">
-                        <span id="realms-card-chevron" class="text-xs text-slate-400 transition-transform duration-200 shrink-0">▼</span>
-                        <span class="text-xs font-bold uppercase tracking-wider text-slate-300 shrink-0">Realms</span>
+                        <span id="realms-card-chevron" class="text-xs text-slate-400 group-hover:text-indigo-400 transition-transform duration-200 shrink-0">▼</span>
+                        <a href="/" class="text-xs font-bold uppercase tracking-wider {% if not selected_realm_id and not selected_bucket_id %}text-indigo-400 font-extrabold{% else %}text-slate-300 group-hover:text-white{% endif %} shrink-0">Realms</a>
                         <span class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">
                             {{ realms|length }}
                         </span>
 
-                        <!-- Dynamic Active Selection Badge in Card Header -->
+                        <!-- Dynamic Active Selection Badge -->
                         {% set ns = namespace(active_realm=None, active_bucket=None) %}
                         {% for r in realms %}
                             {% if r.id == selected_realm_id %}
@@ -80,10 +77,14 @@
                         <span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate min-w-0 max-w-[110px] sm:max-w-[130px]" title="{{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.name }}{% endif %}">
                             {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.icon }} {{ ns.active_bucket.name }}{% endif %}
                         </span>
+                        {% else %}
+                        <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">
+                            ✨ All Timelines
+                        </span>
                         {% endif %}
                     </div>
 
-                    <!-- + Add Realm Button (stops collapse click event) -->
+                    <!-- + Add Realm Button (stops collapse & navigation) -->
                     <button onclick="event.stopPropagation(); document.getElementById('add-realm-modal').classList.remove('hidden')" 
                             title="Add Realm" 
                             class="text-slate-400 hover:text-indigo-400 text-sm font-bold px-2 py-0.5 rounded transition hover:bg-slate-700/80 shrink-0">
@@ -99,14 +100,12 @@
                             <!-- Highlighted Realm Header Row -->
                             <div class="realm-item-row flex items-center justify-between group mb-1.5 px-2 py-1.5 rounded-lg transition {% if selected_realm_id == realm.id and not selected_bucket_id %}bg-indigo-600 text-white font-semibold shadow-md{% endif %}">
                                 <div class="flex items-center gap-2 flex-1 min-w-0 mr-2">
-                                    <!-- Realm Drag Handle -->
                                     <span class="realm-handle {% if selected_realm_id == realm.id and not selected_bucket_id %}text-indigo-200{% else %}text-slate-500 hover:text-indigo-400{% endif %} cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
                                     <a href="/?realm_id={{ realm.id }}" class="text-xs font-bold flex items-center gap-1.5 min-w-0 {% if selected_realm_id == realm.id and not selected_bucket_id %}text-white{% else %}text-slate-300 hover:text-indigo-400{% endif %}">
                                         <span class="shrink-0">{{ realm.icon or '🔮' }}</span> <span class="truncate">{{ realm.name }}</span>
                                     </a>
                                 </div>
 
-                                <!-- Fixed 3-Slot Grid for Realm Icons (Share, Pencil, Trash) -->
                                 <div class="grid grid-cols-3 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-16 text-center">
                                     <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openShareRealm(this)" title="Share Realm" class="w-5 text-center text-xs hover:text-indigo-300">👥</button>
                                     <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" data-icon="{{ realm.icon or '🔮' }}" onclick="openEditRealm(this)" title="Edit Realm" class="w-5 text-center text-xs hover:text-indigo-300">✏️</button>
@@ -117,19 +116,17 @@
                                 </div>
                             </div>
 
-                            <!-- Drag-and-Drop Buckets Container -->
+                            <!-- Buckets Container -->
                             <nav class="buckets-container space-y-1 ml-2.5 pl-2 border-l border-slate-700/60" data-realm-id="{{ realm.id }}">
                                 {% for bucket in realm.buckets %}
                                 <div class="bucket-item bucket-item-row flex items-center justify-between group rounded-lg {% if selected_bucket_id == bucket.id %}bg-indigo-600 text-white font-medium shadow-md{% else %}text-slate-300{% endif %} px-2 py-1.5 transition" data-id="{{ bucket.id }}">
                                     <div class="flex items-center gap-2 flex-1 min-w-0 mr-2">
-                                        <!-- Bucket Drag Handle -->
                                         <span class="bucket-handle text-slate-500 hover:text-indigo-300 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
                                         <a href="/?bucket_id={{ bucket.id }}" class="text-sm flex items-center gap-2 min-w-0 flex-1">
                                             <span class="shrink-0">{{ bucket.icon }}</span> <span class="truncate">{{ bucket.name }}</span>
                                         </a>
                                     </div>
 
-                                    <!-- Fixed 3-Slot Grid for Bucket Icons -->
                                     <div class="grid grid-cols-3 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-16 text-center">
                                         <div class="w-5"></div>
                                         <button data-id="{{ bucket.id }}" data-name="{{ bucket.name }}" data-icon="{{ bucket.icon }}" onclick="openEditBucket(this)" title="Edit Bucket" class="w-5 text-center text-xs hover:text-indigo-300">✏️</button>
@@ -175,7 +172,7 @@
                 <p class="text-slate-400 text-xs md:text-sm">Chronological flow of due dates and upcoming reminders</p>
             </div>
 
-            <!-- User Authentication Header Controls (Only visible when logged in) -->
+            <!-- User Authentication Header Controls -->
             {% if user %}
             <div class="flex items-center gap-3">
                 <span class="text-sm font-medium text-slate-300 flex items-center gap-1.5">
@@ -192,7 +189,7 @@
         <div class="max-w-4xl mx-auto">
             {% if user %}
                 
-                <!-- Fully Rounded Segmented Pill Control with Internal Padding -->
+                <!-- Fully Rounded Segmented Pill Control -->
                 <div class="w-full max-w-md mx-auto mb-8 p-1 bg-slate-800/90 border border-slate-700/80 rounded-full flex items-center shadow-inner select-none gap-1">
                     <button id="pill-btn-active" onclick="setTimelineFilter('active')" 
                             class="flex-1 px-4 md:px-5 py-2 text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-2 bg-indigo-600 text-white shadow-md">
@@ -598,6 +595,27 @@
     </div>
 
     <script>
+        function handleRealmsHeaderClick(event) {
+            // Tapping the card header navigates to "/" if clicking the link text, or toggles collapse
+            toggleRealmsCard();
+        }
+
+        function toggleRealmsCard() {
+            const body = document.getElementById('realms-card-body');
+            const chevron = document.getElementById('realms-card-chevron');
+            if (body) {
+                if (body.classList.contains('hidden')) {
+                    body.classList.remove('hidden');
+                    chevron.style.transform = 'rotate(0deg)';
+                    localStorage.setItem('realms_card_expanded', 'true');
+                } else {
+                    body.classList.add('hidden');
+                    chevron.style.transform = 'rotate(-90deg)';
+                    localStorage.setItem('realms_card_expanded', 'false');
+                }
+            }
+        }
+
         function setTimelineFilter(mode) {
             localStorage.setItem('timeline_filter_mode', mode);
 
@@ -647,20 +665,6 @@
                 } else {
                     emptyState.classList.add('hidden');
                 }
-            }
-        }
-
-        function toggleRealmsCard() {
-            const body = document.getElementById('realms-card-body');
-            const chevron = document.getElementById('realms-card-chevron');
-            if (body.classList.contains('hidden')) {
-                body.classList.remove('hidden');
-                chevron.style.transform = 'rotate(0deg)';
-                localStorage.setItem('realms_card_expanded', 'true');
-            } else {
-                body.classList.add('hidden');
-                chevron.style.transform = 'rotate(-90deg)';
-                localStorage.setItem('realms_card_expanded', 'false');
             }
         }
 
