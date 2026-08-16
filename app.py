@@ -19,6 +19,24 @@ from dotenv import load_dotenv
 from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
 
+import resend
+import os
+
+resend.api_key = os.environ.get("RESEND_API_KEY")
+
+def send_email_alert(target_emails, title, body):
+    try:
+        response = resend.Emails.send({
+            "from": "TaskMonster <notifications@usetaskmonster.app>",
+            "to": target_emails,
+            "subject": f"TaskMonster: {title}",
+            "html": f"<p>{body}</p>"
+        })
+        return response
+    except Exception as e:
+        print(f"Error sending email: {e}")
+        return None
+    
 load_dotenv()
 
 NOTIFICATION_EMAIL = os.getenv("NOTIFICATION_EMAIL", "your-email@example.com")
