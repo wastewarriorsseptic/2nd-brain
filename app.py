@@ -376,21 +376,67 @@ def delete_realm(realm_id: int = Form(...)):
 @app.post("/realms/share/")
 def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(...)):
     target_email = email.strip().lower()
+    
     with Session(engine) as session:
         current_user = get_current_user(request, session)
+        if not current_user:
+            return RedirectResponse(url="/", status_code=303)
+
+        realm = session.get(Realm, realm_id)
+        if not realm:
+            return RedirectResponse(url="/", status_code=303)
+
+        # Check if target user exists in database
         target_user = session.exec(select(User).where(User.email == target_email)).first()
-        
-        if current_user and target_user:
+
+        # Link user to Realm if they exist
+        if target_user:
             existing = session.exec(
                 select(RealmShare).where(
                     RealmShare.realm_id == realm_id, 
                     RealmShare.user_id == target_user.id
                 )
             ).first()
-            
             if not existing:
                 session.add(RealmShare(realm_id=realm_id, user_id=target_user.id))
                 session.commit()
+
+        # 1. Send Invitation Email to Recipient
+        invitation_subject = f"🔮 You've been invited to collaborate on '{realm.name}' on TaskMonster!"
+        invitation_body = f"""
+            <h3>😈 TaskMonster Realm Invitation</h3>
+            <p><strong>{current_user.name}</strong> ({current_user.email}) invited you to collaborate on the <strong>{realm.name}</strong> realm!</p>
+            <p>Log in to your account or create one with your email to start collaborating:</p>
+            <p><a href="https://usetaskmonster.app/login" style="background-color: #6366f1; color: white; padding: 10px 18px; text-decoration: none; border-radius: 6px; display: inline-block;">Join {realm.name} on TaskMonster</a></p>
+        """
+        
+        try:
+            resend.Emails.send({
+                "from": "TaskMonster <notifications@usetaskmonster.app>",
+                "to": [target_email],
+                "subject": invitation_subject,
+                "html": invitation_body
+            })
+        except Exception as e:
+            print(f"Failed to send invite email to recipient: {e}")
+
+        # 2. Send Confirmation Email to You (The Inviter)
+        confirmation_subject = f"📩 Invite Sent: {target_email} invited to '{realm.name}'"
+        confirmation_body = f"""
+            <h3>😈 Invitation Dispatched</h3>
+            <p>Your invite to <strong>{target_email}</strong> for the <strong>{realm.name}</strong> realm has been sent!</p>
+            <p>Once they sign in at <a href="https://usetaskmonster.app">usetaskmonster.app</a>, they will automatically see this realm on their dashboard.</p>
+        """
+
+        try:
+            resend.Emails.send({
+                "from": "TaskMonster <notifications@usetaskmonster.app>",
+                "to": [current_user.email],
+                "subject": confirmation_subject,
+                "html": confirmation_body
+            })
+        except Exception as e:
+            print(f"Failed to send confirmation email to inviter: {e}")
 
     return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
 
