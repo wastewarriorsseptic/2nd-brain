@@ -19,27 +19,51 @@ from dotenv import load_dotenv
 from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
 
-import resend
-import os
-
-resend.api_key = os.environ.get("RESEND_API_KEY")
-
-def send_email_alert(target_emails, title, body):
-    try:
-        response = resend.Emails.send({
-            "from": "TaskMonster <notifications@usetaskmonster.app>",
-            "to": target_emails,
-            "subject": f"TaskMonster: {title}",
-            "html": f"<p>{body}</p>"
-        })
-        return response
-    except Exception as e:
-        print(f"Error sending email: {e}")
-        return None
-    
+# Load environment variables
 load_dotenv()
 
 NOTIFICATION_EMAIL = os.getenv("NOTIFICATION_EMAIL", "your-email@example.com")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+
+if RESEND_API_KEY:
+    resend.api_key = RESEND_API_KEY
+
+
+def send_email_alert(
+    title: str,
+    due_date: str,
+    amount: Optional[float],
+    description: str,
+    recipients: Optional[List[str]] = None,
+):
+    if not resend.api_key:
+        print("Skipping email dispatch: RESEND_API_KEY is missing.")
+        return None
+
+    amount_str = (
+        f"<p><strong>Amount Due:</strong> ${amount:.2f}</p>" if amount else ""
+    )
+    target_emails = recipients if recipients else [NOTIFICATION_EMAIL]
+
+    try:
+        response = resend.Emails.send(
+            {
+                "from": "TaskMonster <notifications@usetaskmonster.app>",
+                "to": target_emails,
+                "subject": title,
+                "html": f"""
+                <h3>😈 TaskMonster Notification</h3>
+                <p><strong>Item:</strong> {title}</p>
+                <p><strong>Due Date:</strong> {due_date}</p>
+                {amount_str}
+                <p><strong>Notes:</strong> {description or 'None'}</p>
+            """,
+            }
+        )
+        return response
+    except (ResendError, Exception) as e:
+        print(f"Resend notification error (non-fatal): {e}")
+        return None
 
 # --- OAuth & Session Configuration ---
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
@@ -167,32 +191,6 @@ oauth.register(
 # --- Scheduler ---
 scheduler = BackgroundScheduler()
 scheduler.start()
-
-def send_email_alert(title: str, due_date: str, amount: Optional[float], description: str, recipients: Optional[List[str]] = None):
-    api_key = os.getenv("RESEND_API_KEY")
-    if not api_key:
-        print("Skipping email dispatch: RESEND_API_KEY environment variable is missing.")
-        return
-
-    resend.api_key = api_key
-    amount_str = f"<p><strong>Amount Due:</strong> ${amount:.2f}</p>" if amount else ""
-    target_emails = recipients if recipients else [NOTIFICATION_EMAIL]
-    
-    try:
-        resend.Emails.send({
-            "from": "Logos <onboarding@resend.dev>",
-            "to": target_emails,
-            "subject": f"{title}",
-            "html": f"""
-                <h3>🧠 Logos Notification</h3>
-                <p><strong>Item:</strong> {title}</p>
-                <p><strong>Due Date:</strong> {due_date}</p>
-                {amount_str}
-                <p><strong>Notes:</strong> {description or 'None'}</p>
-            """
-        })
-    except (ResendError, Exception) as e:
-        print(f"Resend notification error (non-fatal): {e}")
 
 def check_and_send_overdue_emails():
     with Session(engine) as session:
