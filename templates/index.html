@@ -48,7 +48,7 @@
                 <div class="flex items-center justify-between cursor-pointer select-none group" onclick="handleRealmsHeaderClick(event)">
                     <div class="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 mr-1">
                         <span id="realms-card-chevron" class="text-xs text-slate-400 group-hover:text-indigo-400 transition-transform duration-200 shrink-0">▼</span>
-                        <a href="/" class="text-xs font-extrabold uppercase tracking-wider {% if not selected_realm_id and not selected_bucket_id %}text-indigo-400{% else %}text-slate-300 group-hover:text-white{% endif %} shrink-0 transition-colors">Realms</a>
+                        <a href="/" onclick="selectRealm(event, null)" class="text-xs font-extrabold uppercase tracking-wider {% if not selected_realm_id and not selected_bucket_id %}text-indigo-400{% else %}text-slate-300 group-hover:text-white{% endif %} shrink-0 transition-colors">Realms</a>
                         <span class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">
                             {{ realms|length }}
                         </span>
@@ -944,7 +944,6 @@
                 }
             }
 
-            // Sync hidden input in Add Bucket modal
             const addBucketRealmInput = document.getElementById('add-bucket-realm-id');
             if (addBucketRealmInput) {
                 addBucketRealmInput.value = currentSelectedRealmId || '';
@@ -966,7 +965,6 @@
                 history.pushState(null, '', '/?bucket_id=' + bucketId);
             }
 
-            // Sync hidden input in Add Bucket modal
             const addBucketRealmInput = document.getElementById('add-bucket-realm-id');
             if (addBucketRealmInput) {
                 addBucketRealmInput.value = currentSelectedRealmId || '';
@@ -976,7 +974,6 @@
         }
 
         function updateSelectionUI() {
-            // Update Realm Row Highlights
             document.querySelectorAll('.realm-item-row').forEach(row => {
                 const rowId = parseInt(row.id.replace('realm-row-', ''));
                 const link = row.querySelector('.realm-link');
@@ -993,7 +990,6 @@
                 }
             });
 
-            // Update Bucket Row Highlights
             document.querySelectorAll('.bucket-item-row').forEach(row => {
                 const rowId = parseInt(row.id.replace('bucket-row-', ''));
                 if (currentSelectedBucketId === rowId) {
@@ -1003,7 +999,6 @@
                 }
             });
 
-            // Dynamically Update Card Header Badge and Task Modal Destination
             const badgeContainer = document.getElementById('card-selection-badge-container');
             const modalBadgeContainer = document.getElementById('modal-destination-badge');
 
@@ -1041,7 +1036,6 @@
                 }
             }
 
-            // Update Action Buttons
             const actionContainer = document.getElementById('action-button-container');
             const modalBucketInput = document.getElementById('task-modal-bucket-id');
             if (actionContainer) {
@@ -1070,7 +1064,6 @@
             const endOfCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
             const endOfHorizonDate = new Date(now.getFullYear(), now.getMonth() + monthsHorizonCount, 0, 23, 59, 59);
 
-            // Dynamically Sort Completed Tasks Most-Recently-Completed First
             if (container) {
                 wrappers.sort((a, b) => {
                     const isCompletedA = a.getAttribute('data-completed') === 'true';
@@ -1084,12 +1077,10 @@
                         const timeA = a.getAttribute('data-completed-at') ? new Date(a.getAttribute('data-completed-at')) : new Date(0);
                         const timeB = b.getAttribute('data-completed-at') ? new Date(b.getAttribute('data-completed-at')) : new Date(0);
                         
-                        // Sort by most-recently-completed timestamp strictly at the top
                         if (timeB - timeA !== 0) return timeB - timeA;
                         if (idB - idA !== 0) return idB - idA;
                         return dateB - dateA;
                     } else {
-                        // Standard chronological order for active view
                         if (dateA - dateB !== 0) return dateA - dateB;
                         return idA - idB;
                     }
@@ -1213,7 +1204,6 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            // --- Auto-detect and sync timezone ---
             const localTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
             const savedTZ = "{{ user.timezone if user else '' }}";
 
@@ -1222,7 +1212,6 @@
                 formData.append('timezone', localTZ);
                 fetch('/users/timezone/', { method: 'POST', body: formData });
             }
-            // -------------------------------------
 
             const savedMode = localStorage.getItem('timeline_filter_mode') || 'active';
             setTimelineFilter(savedMode);
