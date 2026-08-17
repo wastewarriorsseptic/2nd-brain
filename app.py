@@ -452,6 +452,7 @@ def logout(request: Request):
     return RedirectResponse(url="/", status_code=303)
 
 # --- Dashboard Route ---
+# --- Dashboard Route ---
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optional[int] = None):
     with Session(engine) as session:
@@ -467,12 +468,23 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
         realms.sort(key=lambda r: r.sort_order)
 
         all_realm_ids = [r.id for r in realms]
+
+        # Attach collaborators and pending invites to owned realms
+        for realm in realms:
+            if realm.user_id == user.id:
+                shares = session.exec(select(RealmShare).where(RealmShare.realm_id == realm.id)).all()
+                member_user_ids = [s.user_id for s in shares]
+                realm.collaborators = session.exec(select(User).where(User.id.in_(member_user_ids))).all() if member_user_ids else []
+                realm.pending_invites = session.exec(select(PendingInvite).where(PendingInvite.realm_id == realm.id)).all()
+            else:
+                realm.collaborators = []
+                realm.pending_invites = []
+
         buckets = session.exec(select(Bucket).where(Bucket.realm_id.in_(all_realm_ids)).order_by(Bucket.sort_order.asc())).all() if all_realm_ids else []
 
         for realm in realms:
             realm.buckets.sort(key=lambda b: b.sort_order)
 
-        # Always fetch all items for all user realms so client-side switching is instant and complete
         query = select(Item).join(Bucket).where(Bucket.realm_id.in_(all_realm_ids)) if all_realm_ids else select(Item).where(False)
         items = session.exec(query.order_by(Item.due_date.asc())).all() if all_realm_ids else []
 
@@ -985,3 +997,39 @@ def sync_user_timezone(request: Request, timezone: str = Form(...)):
             session.commit()
             request.session['user_timezone'] = user.timezone
     return JSONResponse({"status": "ok"})
+
+@app.post("/realms/unshare/")
+def unshare_realm(request: Request, realm_id: int = Form(...), user_id: int = Form(...)):
+    with Session(engine) as session:
+        current_user = get_current_user(request, session)
+        realm = session.get(Realm, realm_id)
+
+        # Ensure only the realm owner can revoke access
+        if current_user and realm and realm.user_id == current_user.id:
+            share_record = session.exec(
+                select(RealmShare).where(
+                    RealmShare.realm_id == realm_id,
+                    RealmShare.user_id == user_id
+                )
+            ).first()
+            if share_record:
+                session.delete(share_record)
+                session.commit()
+
+    return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
+
+
+@app.post("/realms/cancel-invite/")
+def cancel_pending_invite(request: Request, invite_id: int = Form(...), realm_id: int = Form(...)):
+    with Session(engine) as session:
+        current_user = get_current_user(request, session)
+        realm = session.get(Realm, realm_id)
+
+        # Ensure only the realm owner can cancel pending invites
+        if current_user and realm and realm.user_id == current_user.id:
+            invite = session.get(PendingInvite, invite_id)
+            if invite:
+                session.delete(invite)
+                session.commit()
+
+    return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
