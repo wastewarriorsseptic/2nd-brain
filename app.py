@@ -217,12 +217,19 @@ scheduler.start()
 
 def check_and_send_overdue_emails():
     with Session(engine) as session:
-        today = get_user_today_date()
         overdue_items = session.exec(
             select(Item).where(Item.is_completed == False, Item.due_date < datetime.now())
         ).all()
 
         for item in overdue_items:
+            # Fetch bucket owner/realm to determine target user's local date
+            bucket = session.get(Bucket, item.bucket_id)
+            realm = session.get(Realm, bucket.realm_id) if bucket else None
+            user = session.get(User, realm.user_id) if (realm and realm.user_id) else None
+            
+            user_tz = user.timezone if (user and user.timezone) else "UTC"
+            today = get_user_today_date(user_tz)
+
             days_overdue = (today - item.due_date.date()).days
             if days_overdue > 0:
                 due_str = item.due_date.strftime("%b %d, %Y")
@@ -237,7 +244,7 @@ def check_and_send_overdue_emails():
 scheduler.add_job(check_and_send_overdue_emails, 'cron', hour=8, minute=0)
 
 def send_daily_snapshot_emails():
-    """Generates and sends a daily snapshot email to every registered user."""
+    """Runs hourly; sends a snapshot only if it is currently 7:00 AM in the user's local time zone."""
     if not resend.api_key:
         print("Skipping snapshot emails: RESEND_API_KEY is missing.", flush=True)
         return
@@ -247,7 +254,18 @@ def send_daily_snapshot_emails():
 
         for user in users:
             user_tz = user.timezone or "UTC"
-            user_today = get_user_today_date(user_tz)
+            
+            # Check current local hour for this specific user
+            try:
+                user_now = datetime.now(ZoneInfo(user_tz))
+            except Exception:
+                user_now = datetime.now(ZoneInfo("UTC"))
+
+            # Strictly trigger ONLY during the user's local 7:00 AM hour
+            if user_now.hour != 7:
+                continue
+
+            user_today = user_now.date()
             yesterday = user_today - timedelta(days=1)
             tomorrow = user_today + timedelta(days=1)
 
@@ -262,7 +280,7 @@ def send_daily_snapshot_emails():
             if not realm_ids:
                 continue
 
-            # Query all items across the user's accessible realms
+            # Query all items across user's accessible realms
             all_items = session.exec(
                 select(Item).join(Bucket).where(Bucket.realm_id.in_(realm_ids))
             ).all()
@@ -332,12 +350,12 @@ def send_daily_snapshot_emails():
                     "subject": f"☕ Your Daily Snapshot - {user_today.strftime('%b %d')}",
                     "html": email_body
                 })
-                print(f"Snapshot email successfully sent to {user.email}", flush=True)
+                print(f"Snapshot email successfully sent to {user.email} for local time {user_tz}", flush=True)
             except Exception as e:
                 print(f"Failed to send snapshot email to {user.email}: {e}", flush=True)
 
-# Schedule Snapshot Email daily at 7:00 AM local server time
-scheduler.add_job(send_daily_snapshot_emails, 'cron', hour=7, minute=0)
+# Schedule worker to check EVERY HOURLY MARK (at :00)
+scheduler.add_job(send_daily_snapshot_emails, 'cron', minute=0)
 
 def add_months(sourcedate: datetime, months: int) -> datetime:
     month = sourcedate.month - 1 + months
