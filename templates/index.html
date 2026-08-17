@@ -953,6 +953,13 @@
                     history.pushState(null, '', '/?realm_id=' + realmId);
                 }
             }
+
+            // Sync hidden input in Add Bucket modal
+            const addBucketRealmInput = document.getElementById('add-bucket-realm-id');
+            if (addBucketRealmInput) {
+                addBucketRealmInput.value = currentSelectedRealmId || '';
+            }
+
             updateSelectionUI();
         }
 
@@ -968,6 +975,13 @@
                 currentSelectedBucketId = bucketId;
                 history.pushState(null, '', '/?bucket_id=' + bucketId);
             }
+
+            // Sync hidden input in Add Bucket modal
+            const addBucketRealmInput = document.getElementById('add-bucket-realm-id');
+            if (addBucketRealmInput) {
+                addBucketRealmInput.value = currentSelectedRealmId || '';
+            }
+
             updateSelectionUI();
         }
 
