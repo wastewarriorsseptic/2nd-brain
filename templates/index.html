@@ -1209,6 +1209,17 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            // --- Auto-detect and sync timezone ---
+            const localTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            const savedTZ = "{{ user.timezone if user else '' }}";
+
+            if (localTZ && localTZ !== savedTZ) {
+                const formData = new FormData();
+                formData.append('timezone', localTZ);
+                fetch('/users/timezone/', { method: 'POST', body: formData });
+            }
+            // -------------------------------------
+
             const savedMode = localStorage.getItem('timeline_filter_mode') || 'active';
             setTimelineFilter(savedMode);
 

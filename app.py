@@ -5,6 +5,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from calendar import monthrange
 from typing import Optional, List
+from zoneinfo import ZoneInfo  # Built-in IANA timezone support
 
 from fastapi import FastAPI, Request, Form, Body
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -27,7 +28,6 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 
 if RESEND_API_KEY:
     resend.api_key = RESEND_API_KEY
-
 
 def send_email_alert(
     title: str,
@@ -91,9 +91,12 @@ def run_automated_backup():
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             shutil.copy(sqlite_file_name, f"backups/brain_backup_{timestamp}.db")
 
-# Helper for US Eastern Date
-def get_local_today_date():
-    return (datetime.now(timezone.utc) - timedelta(hours=4)).date()
+# --- Dynamic Date Helper ---
+def get_user_today_date(tz_name: str = "UTC"):
+    try:
+        return datetime.now(ZoneInfo(tz_name)).date()
+    except Exception:
+        return datetime.now(ZoneInfo("UTC")).date()
 
 # --- Dynamic Safe Column Migrator ---
 def safe_apply_migrations():
@@ -101,6 +104,7 @@ def safe_apply_migrations():
         with engine.begin() as conn:
             conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS recurrence_type VARCHAR DEFAULT \'none\';'))
             conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;'))
+            conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT \'UTC\';'))
     else:
         sqlite_file_name = "brain.db"
         if os.path.exists(sqlite_file_name):
@@ -126,6 +130,11 @@ def safe_apply_migrations():
             if 'completed_at' not in item_cols:
                 cursor.execute('ALTER TABLE item ADD COLUMN "completed_at" TIMESTAMP;')
 
+            cursor.execute("PRAGMA table_info(users);")
+            user_cols = [col[1] for col in cursor.fetchall()]
+            if 'timezone' not in user_cols:
+                cursor.execute('ALTER TABLE users ADD COLUMN "timezone" VARCHAR DEFAULT "UTC";')
+
             conn.commit()
             conn.close()
 
@@ -135,6 +144,7 @@ class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     email: str = Field(unique=True, index=True)
     name: str = "User"
+    timezone: str = Field(default="UTC")
     realms: List["Realm"] = Relationship(back_populates="user")
 
 class Realm(SQLModel, table=True):
@@ -207,7 +217,7 @@ scheduler.start()
 
 def check_and_send_overdue_emails():
     with Session(engine) as session:
-        today = get_local_today_date()
+        today = get_user_today_date()
         overdue_items = session.exec(
             select(Item).where(Item.is_completed == False, Item.due_date < datetime.now())
         ).all()
@@ -332,6 +342,8 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
 
         items = session.exec(query.order_by(Item.due_date.asc())).all() if all_realm_ids else []
 
+        user_tz = user.timezone if (user and user.timezone) else request.session.get('user_timezone', 'UTC')
+
         return templates.TemplateResponse(
             request=request,
             name="index.html",
@@ -342,7 +354,7 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
                 "items": items,
                 "selected_realm_id": realm_id,
                 "selected_bucket_id": bucket_id,
-                "today": get_local_today_date()
+                "today": get_user_today_date(user_tz)
             }
         )
 
@@ -809,3 +821,14 @@ def update_item(
 
         session.commit()
         return RedirectResponse(url=f"/?bucket_id={target_bucket_id}", status_code=303)
+
+@app.post("/users/timezone/")
+def sync_user_timezone(request: Request, timezone: str = Form(...)):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if user and timezone:
+            user.timezone = timezone.strip()
+            session.add(user)
+            session.commit()
+            request.session['user_timezone'] = user.timezone
+    return JSONResponse({"status": "ok"})
