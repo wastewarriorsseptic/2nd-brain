@@ -76,12 +76,18 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL:
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    engine = create_engine(
+        DATABASE_URL,
+        pool_size=10,
+        max_overflow=20,
+        pool_recycle=300,
+        pool_pre_ping=True
+    )
 else:
     sqlite_file_name = "brain.db"
     sqlite_url = f"sqlite:///{sqlite_file_name}"
     engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
-
+    
 # --- Safe Automated Backup ---
 def run_automated_backup():
     if not os.getenv("DATABASE_URL"):
