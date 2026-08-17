@@ -2,7 +2,7 @@ import os
 import shutil
 import uuid
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from calendar import monthrange
 from typing import Optional, List
 
@@ -91,6 +91,10 @@ def run_automated_backup():
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             shutil.copy(sqlite_file_name, f"backups/brain_backup_{timestamp}.db")
 
+# Helper for US Eastern Date
+def get_local_today_date():
+    return (datetime.now(timezone.utc) - timedelta(hours=4)).date()
+
 # --- Dynamic Safe Column Migrator ---
 def safe_apply_migrations():
     if os.getenv("DATABASE_URL"):
@@ -158,7 +162,7 @@ class Item(SQLModel, table=True):
     amount: Optional[float] = None
     due_date: datetime
     is_completed: bool = False
-    completed_at: Optional[datetime] = Field(default=None)  # <--- Timestamp sorting
+    completed_at: Optional[datetime] = Field(default=None)
     recurring_group_id: Optional[str] = Field(default=None, index=True)
     recurrence_type: Optional[str] = Field(default="none")
     bucket_id: int = Field(foreign_key="bucket.id")
@@ -203,7 +207,7 @@ scheduler.start()
 
 def check_and_send_overdue_emails():
     with Session(engine) as session:
-        today = datetime.now().date()
+        today = get_local_today_date()
         overdue_items = session.exec(
             select(Item).where(Item.is_completed == False, Item.due_date < datetime.now())
         ).all()
@@ -338,7 +342,7 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
                 "items": items,
                 "selected_realm_id": realm_id,
                 "selected_bucket_id": bucket_id,
-                "today": datetime.now().date()
+                "today": get_local_today_date()
             }
         )
 
@@ -433,7 +437,6 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
                 session.add(PendingInvite(realm_id=realm_id, email=target_email))
                 session.commit()
 
-        # 1. Send Invitation Email to Recipient
         invitation_subject = f"Collaborate with {current_user.name} on TaskMonster"
         invitation_body = f"""
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 8px;">
@@ -464,7 +467,6 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
         except Exception as e:
             print(f"Failed to send invite email to recipient ({target_email}): {e}", flush=True)
 
-        # 2. Send Confirmation Email to Inviter
         confirmation_subject = f"Invitation Sent: {target_email} invited to '{realm.name}'"
         confirmation_body = f"""
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
@@ -650,7 +652,6 @@ def create_item(
                     args=[f"🚨 Due Today: {title}", target_due_str, amount, description]
                 )
 
-        # Notify collaborators in shared Realm
         recipients = []
         bucket = session.get(Bucket, bucket_id)
         realm = session.get(Realm, bucket.realm_id) if bucket else None
@@ -714,7 +715,6 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
             was_completed = item.is_completed
             item.is_completed = not was_completed
 
-            # Stamp completed_at time when checking off, clear if unchecking
             if not was_completed:
                 item.completed_at = datetime.now()
             else:
@@ -722,7 +722,6 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
 
             session.add(item)
 
-            # Send email notification when marking complete
             if not was_completed:
                 current_user = get_current_user(request, session)
                 completed_by = current_user.name if current_user else "A team member"
@@ -760,7 +759,6 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
             return RedirectResponse(url=f"/?bucket_id={item.bucket_id}", status_code=303)
     return RedirectResponse(url="/", status_code=303)
 
-# --- Edit Task Endpoint ---
 @app.post("/items/update/")
 def update_item(
     item_id: int = Form(...),
@@ -789,7 +787,6 @@ def update_item(
 
         target_bucket_id = bucket_id if bucket_id else item.bucket_id
 
-        # Update entire recurring series if requested
         if update_series and item.recurring_group_id:
             series_items = session.exec(
                 select(Item).where(Item.recurring_group_id == item.recurring_group_id)
@@ -803,7 +800,6 @@ def update_item(
                 series_item.due_date = series_item.due_date.replace(hour=hour, minute=minute, second=0)
                 session.add(series_item)
         else:
-            # Update single item
             item.title = title
             item.due_date = new_due_date
             item.amount = amount
