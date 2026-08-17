@@ -1226,6 +1226,9 @@
                 }
             }
 
+            // Sync initial state and UI filter on load
+            updateSelectionUI();
+
             const realmsContainer = document.getElementById('realms-container');
             if (realmsContainer) {
                 new Sortable(realmsContainer, {

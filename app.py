@@ -461,12 +461,8 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
         for realm in realms:
             realm.buckets.sort(key=lambda b: b.sort_order)
 
+        # Always fetch all items for all user realms so client-side switching is instant and complete
         query = select(Item).join(Bucket).where(Bucket.realm_id.in_(all_realm_ids)) if all_realm_ids else select(Item).where(False)
-        if bucket_id:
-            query = query.where(Item.bucket_id == bucket_id)
-        elif realm_id:
-            query = query.where(Bucket.realm_id == realm_id)
-
         items = session.exec(query.order_by(Item.due_date.asc())).all() if all_realm_ids else []
 
         user_tz = user.timezone if (user and user.timezone) else request.session.get('user_timezone', 'UTC')
