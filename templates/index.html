@@ -495,21 +495,30 @@
 
     <!-- Share Realm Modal -->
     <div id="share-realm-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-            <h3 class="text-xl font-bold mb-2">Share Realm</h3>
-            <p class="text-slate-400 text-xs mb-4">Enter a collaborator's Google email address to invite them to join and manage this Realm with you.</p>
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 class="text-xl font-bold mb-1 text-white">Share Realm</h3>
+            <p class="text-slate-400 text-xs mb-4">Invite collaborators or manage existing member access.</p>
+
+            <!-- Active Members & Pending Invites Container -->
+            <div id="share-modal-members-section" class="mb-5 space-y-3 hidden">
+                <div class="border-t border-slate-700/60 pt-3">
+                    <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-2">Members & Invites</span>
+                    <div id="share-modal-members-list" class="space-y-2 max-h-40 overflow-y-auto pr-1"></div>
+                </div>
+            </div>
+
             <form action="/realms/share/" method="POST" class="space-y-4">
                 <input type="hidden" name="realm_id" id="share-realm-id">
                 <div>
-                    <label class="block text-xs font-medium text-slate-400 mb-1">Email Address</label>
+                    <label class="block text-xs font-medium text-slate-400 mb-1">Invite New Collaborator</label>
                     <input type="email" name="email" required placeholder="collaborator@gmail.com" 
-                           class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200">
+                           class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500">
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
                     <button type="button" onclick="document.getElementById('share-realm-modal').classList.add('hidden')" 
-                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Cancel</button>
+                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium">Cancel</button>
                     <button type="submit" 
-                            class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold">Share</button>
+                            class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">Send Invite</button>
                 </div>
             </form>
         </div>
@@ -1334,8 +1343,77 @@
             document.getElementById('custom-repeat-modal').classList.add('hidden');
         }
 
+        // Store realm access data for rendering inside share modal
+        const realmCollaboratorData = {
+            {% for realm in realms %}
+            "{{ realm.id }}": {
+                isOwner: {{ 'true' if realm.user_id == user.id else 'false' }},
+                collaborators: [
+                    {% for col in realm.collaborators %}
+                    { id: {{ col.id }}, email: "{{ col.email }}", name: "{{ col.name }}" },
+                    {% endfor %}
+                ],
+                pendingInvites: [
+                    {% for inv in realm.pending_invites %}
+                    { id: {{ inv.id }}, email: "{{ inv.email }}" },
+                    {% endfor %}
+                ]
+            },
+            {% endfor %}
+        };
+
         function openShareRealm(element) {
-            document.getElementById('share-realm-id').value = element.getAttribute('data-id');
+            const realmId = element.getAttribute('data-id');
+            document.getElementById('share-realm-id').value = realmId;
+
+            const membersSection = document.getElementById('share-modal-members-section');
+            const membersList = document.getElementById('share-modal-members-list');
+            const data = realmCollaboratorData[realmId];
+
+            membersList.innerHTML = '';
+
+            if (data && data.isOwner && (data.collaborators.length > 0 || data.pendingInvites.length > 0)) {
+                membersSection.classList.remove('hidden');
+
+                // Render Active Members
+                data.collaborators.forEach(col => {
+                    const row = document.createElement('div');
+                    row.className = "flex items-center justify-between bg-slate-900/80 px-3 py-2 rounded-xl border border-slate-700/50 text-xs";
+                    row.innerHTML = `
+                        <div class="truncate mr-2">
+                            <span class="font-bold text-slate-200 block truncate">${col.name}</span>
+                            <span class="text-slate-400 text-[11px] truncate">${col.email}</span>
+                        </div>
+                        <form action="/realms/unshare/" method="POST" onsubmit="return confirm('Remove access for ${col.email}?');">
+                            <input type="hidden" name="realm_id" value="${realmId}">
+                            <input type="hidden" name="user_id" value="${col.id}">
+                            <button type="submit" class="bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/30 px-2 py-1 rounded-lg text-[10px] font-semibold transition">Un-invite</button>
+                        </form>
+                    `;
+                    membersList.appendChild(row);
+                });
+
+                // Render Pending Invites
+                data.pendingInvites.forEach(inv => {
+                    const row = document.createElement('div');
+                    row.className = "flex items-center justify-between bg-amber-500/10 px-3 py-2 rounded-xl border border-amber-500/20 text-xs";
+                    row.innerHTML = `
+                        <div class="truncate mr-2">
+                            <span class="font-semibold text-amber-300 truncate block">${inv.email}</span>
+                            <span class="text-amber-400/70 text-[10px]">⏳ Pending Invite</span>
+                        </div>
+                        <form action="/realms/cancel-invite/" method="POST" onsubmit="return confirm('Cancel invitation for ${inv.email}?');">
+                            <input type="hidden" name="realm_id" value="${realmId}">
+                            <input type="hidden" name="invite_id" value="${inv.id}">
+                            <button type="submit" class="bg-amber-500/20 hover:bg-amber-500 text-amber-200 hover:text-white border border-amber-500/30 px-2 py-1 rounded-lg text-[10px] font-semibold transition">Cancel</button>
+                        </form>
+                    `;
+                    membersList.appendChild(row);
+                });
+            } else {
+                membersSection.classList.add('hidden');
+            }
+
             document.getElementById('share-realm-modal').classList.remove('hidden');
         }
 
