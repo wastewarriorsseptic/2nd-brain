@@ -222,6 +222,7 @@
                     {% set days_out = (item.due_date.date() - today).days %}
                     <div class="timeline-card-wrapper relative group" 
                          data-completed="{{ 'true' if item.is_completed else 'false' }}"
+                         data-completed-at="{{ item.completed_at.isoformat() if item.completed_at else '' }}"
                          data-due-date="{{ item.due_date.strftime('%Y-%m-%d') }}"
                          data-item-id="{{ item.id }}"
                          data-realm-id="{{ item.bucket.realm.id if item.bucket and item.bucket.realm else '' }}"
@@ -1076,7 +1077,11 @@
                     const idB = parseInt(b.getAttribute('data-item-id') || '0');
 
                     if (currentFilterMode === 'completed' && isCompletedA && isCompletedB) {
-                        // Order completed tasks by highest ID first (most recently added/completed)
+                        const timeA = a.getAttribute('data-completed-at') ? new Date(a.getAttribute('data-completed-at')) : new Date(0);
+                        const timeB = b.getAttribute('data-completed-at') ? new Date(b.getAttribute('data-completed-at')) : new Date(0);
+                        
+                        // Sort by most-recently-completed timestamp strictly at the top
+                        if (timeB - timeA !== 0) return timeB - timeA;
                         if (idB - idA !== 0) return idB - idA;
                         return dateB - dateA;
                     } else {

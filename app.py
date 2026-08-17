@@ -37,7 +37,7 @@ def send_email_alert(
     recipients: Optional[List[str]] = None,
 ):
     if not resend.api_key:
-        print("Skipping email dispatch: RESEND_API_KEY is missing.")
+        print("Skipping email dispatch: RESEND_API_KEY is missing.", flush=True)
         return None
 
     amount_str = (
@@ -62,7 +62,7 @@ def send_email_alert(
         )
         return response
     except (ResendError, Exception) as e:
-        print(f"Resend notification error (non-fatal): {e}")
+        print(f"Resend notification error (non-fatal): {e}", flush=True)
         return None
 
 # --- OAuth & Session Configuration ---
@@ -96,6 +96,7 @@ def safe_apply_migrations():
     if os.getenv("DATABASE_URL"):
         with engine.begin() as conn:
             conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS recurrence_type VARCHAR DEFAULT \'none\';'))
+            conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;'))
     else:
         sqlite_file_name = "brain.db"
         if os.path.exists(sqlite_file_name):
@@ -118,6 +119,8 @@ def safe_apply_migrations():
             item_cols = [col[1] for col in cursor.fetchall()]
             if 'recurrence_type' not in item_cols:
                 cursor.execute('ALTER TABLE item ADD COLUMN "recurrence_type" VARCHAR DEFAULT "none";')
+            if 'completed_at' not in item_cols:
+                cursor.execute('ALTER TABLE item ADD COLUMN "completed_at" TIMESTAMP;')
 
             conn.commit()
             conn.close()
@@ -155,6 +158,7 @@ class Item(SQLModel, table=True):
     amount: Optional[float] = None
     due_date: datetime
     is_completed: bool = False
+    completed_at: Optional[datetime] = Field(default=None)  # <--- Timestamp sorting
     recurring_group_id: Optional[str] = Field(default=None, index=True)
     recurrence_type: Optional[str] = Field(default="none")
     bucket_id: int = Field(foreign_key="bucket.id")
@@ -177,7 +181,7 @@ class PendingInvite(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     realm_id: int = Field(foreign_key="realm.id")
     email: str = Field(index=True)
-    
+
 # --- FastAPI & Middleware Setup ---
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
@@ -237,15 +241,13 @@ def on_startup():
     safe_apply_migrations()
     SQLModel.metadata.create_all(engine)
 
-# In main.py / OAuth login route handler
 @app.get("/login")
 async def login(request: Request):
-    # Pass prompt="select_account" to force account chooser
     redirect_uri = request.url_for("auth_callback")
     return await oauth.google.authorize_redirect(
         request, 
         redirect_uri, 
-        prompt="select_account"  # <--- FORCES ACCOUNT SELECTION SCREEN
+        prompt="select_account"
     )
 
 @app.get("/auth/callback")
@@ -361,6 +363,7 @@ def update_realm(realm_id: int = Form(...), name: str = Form(...), icon: str = F
             session.add(realm)
             session.commit()
     return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
+
 @app.post("/realms/reorder/")
 def reorder_realms(order: List[int] = Body(...)):
     with Session(engine) as session:
@@ -430,7 +433,7 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
                 session.add(PendingInvite(realm_id=realm_id, email=target_email))
                 session.commit()
 
-        # 1. Send Invitation Email to Recipient (Optimized for Spam Filters)
+        # 1. Send Invitation Email to Recipient
         invitation_subject = f"Collaborate with {current_user.name} on TaskMonster"
         invitation_body = f"""
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 8px;">
@@ -452,7 +455,7 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
         try:
             resend.Emails.send({
                 "from": "TaskMonster <notifications@usetaskmonster.app>",
-                "reply_to": current_user.email,  # <--- CRITICAL: Tells Gmail a real person sent this
+                "reply_to": current_user.email,
                 "to": [target_email],
                 "subject": invitation_subject,
                 "html": invitation_body
@@ -460,7 +463,7 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
             print(f"Invite email successfully sent to {target_email}", flush=True)
         except Exception as e:
             print(f"Failed to send invite email to recipient ({target_email}): {e}", flush=True)
-            
+
         # 2. Send Confirmation Email to Inviter
         confirmation_subject = f"Invitation Sent: {target_email} invited to '{realm.name}'"
         confirmation_body = f"""
@@ -535,6 +538,153 @@ def delete_bucket(bucket_id: int = Form(...)):
 
 # --- Item Endpoints ---
 @app.post("/items/")
+def create_item(
+    request: Request,
+    title: str = Form(...),
+    bucket_id: int = Form(...),
+    due_date: str = Form(...),
+    due_time: Optional[str] = Form(None),
+    reminder_offset: int = Form(...),
+    recurrence_type: str = Form("none"),
+    interval: int = Form(1),
+    weekdays: Optional[str] = Form(""),
+    month_days: Optional[str] = Form(""),
+    months: Optional[str] = Form(""),
+    amount: Optional[float] = Form(None),
+    description: Optional[str] = Form(None)
+):
+    hour, minute = 9, 0
+    if due_time and due_time.strip():
+        try:
+            time_obj = datetime.strptime(due_time.strip(), "%H:%M")
+            hour, minute = time_obj.hour, time_obj.minute
+        except ValueError:
+            pass
+
+    base_due_date = datetime.strptime(due_date, "%Y-%m-%d").replace(hour=hour, minute=minute, second=0)
+    group_id = str(uuid.uuid4()) if recurrence_type != "none" else None
+    interval = max(1, interval)
+
+    selected_weekdays = [int(x) for x in weekdays.split(",") if x.strip()] if weekdays else [(base_due_date.weekday() + 1) % 7]
+    selected_month_days = [int(x) for x in month_days.split(",") if x.strip()] if month_days else [base_due_date.day]
+    selected_months = [int(x) for x in months.split(",") if x.strip()] if months else [base_due_date.month]
+
+    target_dates = []
+    if recurrence_type == "none":
+        target_dates.append(base_due_date)
+    elif recurrence_type == "daily":
+        curr = base_due_date
+        max_date = base_due_date + timedelta(days=180)
+        while curr <= max_date:
+            target_dates.append(curr)
+            curr += timedelta(days=interval)
+    elif recurrence_type == "weekly":
+        curr = base_due_date
+        max_date = base_due_date + timedelta(days=365)
+        while curr <= max_date:
+            wday = (curr.weekday() + 1) % 7
+            if wday in selected_weekdays:
+                target_dates.append(curr)
+            curr += timedelta(days=1)
+            if wday == 6 and interval > 1:
+                curr += timedelta(weeks=interval - 1)
+    elif recurrence_type == "monthly":
+        for i in range(0, 12, interval):
+            m_date = add_months(base_due_date, i)
+            max_day_in_month = monthrange(m_date.year, m_date.month)[1]
+            for mday in selected_month_days:
+                actual_day = min(mday, max_day_in_month)
+                target_dates.append(datetime(m_date.year, m_date.month, actual_day, hour, minute, 0))
+    elif recurrence_type == "yearly":
+        for i in range(0, 5, interval):
+            target_year = base_due_date.year + i
+            for m in selected_months:
+                max_day = monthrange(target_year, m)[1]
+                actual_day = min(base_due_date.day, max_day)
+                target_dates.append(datetime(target_year, m, actual_day, hour, minute, 0))
+
+    target_dates = sorted(list(set(target_dates)))
+
+    with Session(engine) as session:
+        current_user = get_current_user(request, session)
+        created_by_name = current_user.name if current_user else "A collaborator"
+        created_by_email = current_user.email if current_user else None
+
+        for target_due_date in target_dates:
+            target_due_str = target_due_date.strftime("%Y-%m-%d %I:%M %p") if due_time and due_time.strip() else target_due_date.strftime("%Y-%m-%d")
+            new_item = Item(
+                title=title,
+                bucket_id=bucket_id,
+                due_date=target_due_date,
+                amount=amount,
+                description=description,
+                recurring_group_id=group_id,
+                recurrence_type=recurrence_type
+            )
+            session.add(new_item)
+            session.commit()
+            session.refresh(new_item)
+
+            if reminder_offset == -1:
+                for day in range(1, 4):
+                    remind_time = target_due_date - timedelta(days=day)
+                    session.add(Reminder(remind_at=remind_time, item_id=new_item.id))
+                    if remind_time > datetime.now():
+                        scheduler.add_job(
+                            send_email_alert, 'date', run_date=remind_time,
+                            args=[f"⏰ Daily Reminder ({day} days left): {title}", target_due_str, amount, description]
+                        )
+            elif reminder_offset > 0:
+                remind_time = target_due_date - timedelta(days=reminder_offset)
+                session.add(Reminder(remind_at=remind_time, item_id=new_item.id))
+                if remind_time > datetime.now():
+                    scheduler.add_job(
+                        send_email_alert, 'date', run_date=remind_time,
+                        args=[f"⏰ Reminder ({reminder_offset} days away): {title}", target_due_str, amount, description]
+                    )
+
+            session.add(Reminder(remind_at=target_due_date, item_id=new_item.id))
+            if target_due_date > datetime.now():
+                scheduler.add_job(
+                    send_email_alert, 'date', run_date=target_due_date,
+                    args=[f"🚨 Due Today: {title}", target_due_str, amount, description]
+                )
+
+        # Notify collaborators in shared Realm
+        recipients = []
+        bucket = session.get(Bucket, bucket_id)
+        realm = session.get(Realm, bucket.realm_id) if bucket else None
+
+        if realm:
+            if realm.user_id:
+                owner = session.get(User, realm.user_id)
+                if owner and owner.email:
+                    recipients.append(owner.email)
+
+            shared_records = session.exec(
+                select(RealmShare).where(RealmShare.realm_id == realm.id)
+            ).all()
+            for share in shared_records:
+                shared_user = session.get(User, share.user_id)
+                if shared_user and shared_user.email:
+                    recipients.append(shared_user.email)
+
+        recipients = [e for e in set(recipients) if e != created_by_email]
+
+        if recipients:
+            first_due_str = target_dates[0].strftime("%b %d, %Y")
+            recurrence_note = f" (Recurring: {recurrence_type})" if recurrence_type != "none" else ""
+            send_email_alert(
+                title=f"New Task Added: {title}",
+                due_date=f"{first_due_str}{recurrence_note}",
+                amount=amount,
+                description=f"Added by {created_by_name}. Notes: {description or 'None'}",
+                recipients=recipients
+            )
+
+        session.commit()
+
+    return RedirectResponse(url=f"/?bucket_id={bucket_id}", status_code=303)
 
 @app.post("/items/delete/")
 def delete_item(item_id: int = Form(...), delete_series: bool = Form(False)):
@@ -563,6 +713,13 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
         if item:
             was_completed = item.is_completed
             item.is_completed = not was_completed
+
+            # Stamp completed_at time when checking off, clear if unchecking
+            if not was_completed:
+                item.completed_at = datetime.now()
+            else:
+                item.completed_at = None
+
             session.add(item)
 
             # Send email notification when marking complete
@@ -602,7 +759,7 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
             session.commit()
             return RedirectResponse(url=f"/?bucket_id={item.bucket_id}", status_code=303)
     return RedirectResponse(url="/", status_code=303)
-    
+
 # --- Edit Task Endpoint ---
 @app.post("/items/update/")
 def update_item(
@@ -643,7 +800,6 @@ def update_item(
                 series_item.amount = amount
                 series_item.description = description
                 series_item.bucket_id = target_bucket_id
-                # Adjust time of day across the series while keeping each item's scheduled date
                 series_item.due_date = series_item.due_date.replace(hour=hour, minute=minute, second=0)
                 session.add(series_item)
         else:
