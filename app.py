@@ -236,6 +236,109 @@ def check_and_send_overdue_emails():
 # Daily cron at 8:00 AM for overdue notifications
 scheduler.add_job(check_and_send_overdue_emails, 'cron', hour=8, minute=0)
 
+def send_daily_snapshot_emails():
+    """Generates and sends a daily snapshot email to every registered user."""
+    if not resend.api_key:
+        print("Skipping snapshot emails: RESEND_API_KEY is missing.", flush=True)
+        return
+
+    with Session(engine) as session:
+        users = session.exec(select(User)).all()
+
+        for user in users:
+            user_tz = user.timezone or "UTC"
+            user_today = get_user_today_date(user_tz)
+            yesterday = user_today - timedelta(days=1)
+            tomorrow = user_today + timedelta(days=1)
+
+            # Get user's realms (owned + shared)
+            owned_realms = session.exec(select(Realm).where(Realm.user_id == user.id)).all()
+            shared_ids = session.exec(select(RealmShare.realm_id).where(RealmShare.user_id == user.id)).all()
+            shared_realms = session.exec(select(Realm).where(Realm.id.in_(shared_ids))).all() if shared_ids else []
+            
+            all_realms = list({r.id: r for r in owned_realms + shared_realms}.values())
+            realm_ids = [r.id for r in all_realms]
+
+            if not realm_ids:
+                continue
+
+            # Query all items across the user's accessible realms
+            all_items = session.exec(
+                select(Item).join(Bucket).where(Bucket.realm_id.in_(realm_ids))
+            ).all()
+
+            # Categorize Items
+            completed_yesterday = [
+                item for item in all_items 
+                if item.is_completed and item.completed_at and item.completed_at.date() == yesterday
+            ]
+
+            due_today = [
+                item for item in all_items 
+                if not item.is_completed and item.due_date.date() == user_today
+            ]
+
+            due_tomorrow = [
+                item for item in all_items 
+                if not item.is_completed and item.due_date.date() == tomorrow
+            ]
+
+            # Don't send empty emails if there's no activity
+            if not completed_yesterday and not due_today and not due_tomorrow:
+                continue
+
+            # Format HTML Sections
+            def format_item_list(items, empty_msg):
+                if not items:
+                    return f"<p style='color: #9ca3af; font-size: 13px;'>{empty_msg}</p>"
+                html = "<ul style='padding-left: 20px; margin: 8px 0; color: #374151; font-size: 14px;'>"
+                for item in items:
+                    amount_str = f" (${item.amount:.2f})" if item.amount else ""
+                    realm_str = f" <span style='color: #6b7280; font-size: 12px;'>[{item.bucket.realm.name} / {item.bucket.name}]</span>" if item.bucket else ""
+                    html += f"<li style='margin-bottom: 6px;'><strong>{item.title}</strong>{amount_str}{realm_str}</li>"
+                html += "</ul>"
+                return html
+
+            completed_html = format_item_list(completed_yesterday, "No tasks completed yesterday.")
+            today_html = format_item_list(due_today, "No tasks due today!")
+            tomorrow_html = format_item_list(due_tomorrow, "Nothing scheduled for tomorrow.")
+
+            email_body = f"""
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background-color: #ffffff;">
+                <h2 style="color: #6366f1; margin-top: 0; font-size: 20px;">😈 TaskMonster Daily Snapshot</h2>
+                <p style="font-size: 14px; color: #4b5563;">Here is your task breakdown for <strong>{user_today.strftime('%A, %b %d')}</strong>:</p>
+                
+                <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 16px 0;" />
+                
+                <h3 style="color: #059669; font-size: 15px; margin-bottom: 4px;">✅ Completed Yesterday</h3>
+                {completed_html}
+
+                <h3 style="color: #4f46e5; font-size: 15px; margin-bottom: 4px; margin-top: 16px;">⚡ Due Today</h3>
+                {today_html}
+
+                <h3 style="color: #d97706; font-size: 15px; margin-bottom: 4px; margin-top: 16px;">📅 Due Tomorrow</h3>
+                {tomorrow_html}
+
+                <div style="margin-top: 24px; text-align: center;">
+                    <a href="https://usetaskmonster.app" style="background-color: #6366f1; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; display: inline-block;">Open TaskMonster</a>
+                </div>
+            </div>
+            """
+
+            try:
+                resend.Emails.send({
+                    "from": "TaskMonster <notifications@usetaskmonster.app>",
+                    "to": [user.email],
+                    "subject": f"☕ Your Daily Snapshot - {user_today.strftime('%b %d')}",
+                    "html": email_body
+                })
+                print(f"Snapshot email successfully sent to {user.email}", flush=True)
+            except Exception as e:
+                print(f"Failed to send snapshot email to {user.email}: {e}", flush=True)
+
+# Schedule Snapshot Email daily at 7:00 AM local server time
+scheduler.add_job(send_daily_snapshot_emails, 'cron', hour=7, minute=0)
+
 def add_months(sourcedate: datetime, months: int) -> datetime:
     month = sourcedate.month - 1 + months
     year = sourcedate.year + month // 12
@@ -312,9 +415,6 @@ async def auth_callback(request: Request):
 def logout(request: Request):
     request.session.clear()
     return RedirectResponse(url="/", status_code=303)
-
-# Schedule Snapshot Email daily at 7:00 AM local server time
-scheduler.add_job(send_daily_snapshot_emails, 'cron', hour=7, minute=0)
 
 # --- Dashboard Route ---
 @app.get("/", response_class=HTMLResponse)
@@ -507,106 +607,6 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
             print(f"Failed to send confirmation email to inviter ({current_user.email}): {e}", flush=True)
 
     return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
-
-def send_daily_snapshot_emails():
-    """Generates and sends a daily snapshot email to every registered user."""
-    if not resend.api_key:
-        print("Skipping snapshot emails: RESEND_API_KEY is missing.", flush=True)
-        return
-
-    with Session(engine) as session:
-        users = session.exec(select(User)).all()
-
-        for user in users:
-            user_tz = user.timezone or "UTC"
-            user_today = get_user_today_date(user_tz)
-            yesterday = user_today - timedelta(days=1)
-            tomorrow = user_today + timedelta(days=1)
-
-            # Get user's realms (owned + shared)
-            owned_realms = session.exec(select(Realm).where(Realm.user_id == user.id)).all()
-            shared_ids = session.exec(select(RealmShare.realm_id).where(RealmShare.user_id == user.id)).all()
-            shared_realms = session.exec(select(Realm).where(Realm.id.in_(shared_ids))).all() if shared_ids else []
-            
-            all_realms = list({r.id: r for r in owned_realms + shared_realms}.values())
-            realm_ids = [r.id for r in all_realms]
-
-            if not realm_ids:
-                continue
-
-            # Query all items across the user's accessible realms
-            all_items = session.exec(
-                select(Item).join(Bucket).where(Bucket.realm_id.in_(realm_ids))
-            ).all()
-
-            # Categorize Items
-            completed_yesterday = [
-                item for item in all_items 
-                if item.is_completed and item.completed_at and item.completed_at.date() == yesterday
-            ]
-
-            due_today = [
-                item for item in all_items 
-                if not item.is_completed and item.due_date.date() == user_today
-            ]
-
-            due_tomorrow = [
-                item for item in all_items 
-                if not item.is_completed and item.due_date.date() == tomorrow
-            ]
-
-            # Don't send empty emails if there's no activity
-            if not completed_yesterday and not due_today and not due_tomorrow:
-                continue
-
-            # Format HTML Sections
-            def format_item_list(items, empty_msg):
-                if not items:
-                    return f"<p style='color: #9ca3af; font-size: 13px;'>{empty_msg}</p>"
-                html = "<ul style='padding-left: 20px; margin: 8px 0; color: #374151; font-size: 14px;'>"
-                for item in items:
-                    amount_str = f" (${item.amount:.2f})" if item.amount else ""
-                    realm_str = f" <span style='color: #6b7280; font-size: 12px;'>[{item.bucket.realm.name} / {item.bucket.name}]</span>" if item.bucket else ""
-                    html += f"<li style='margin-bottom: 6px;'><strong>{item.title}</strong>{amount_str}{realm_str}</li>"
-                html += "</ul>"
-                return html
-
-            completed_html = format_item_list(completed_yesterday, "No tasks completed yesterday.")
-            today_html = format_item_list(due_today, "No tasks due today!")
-            tomorrow_html = format_item_list(due_tomorrow, "Nothing scheduled for tomorrow.")
-
-            email_body = f"""
-            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background-color: #ffffff;">
-                <h2 style="color: #6366f1; margin-top: 0; font-size: 20px;">😈 TaskMonster Daily Snapshot</h2>
-                <p style="font-size: 14px; color: #4b5563;">Here is your task breakdown for <strong>{user_today.strftime('%A, %b %d')}</strong>:</p>
-                
-                <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 16px 0;" />
-                
-                <h3 style="color: #059669; font-size: 15px; margin-bottom: 4px;">✅ Completed Yesterday</h3>
-                {completed_html}
-
-                <h3 style="color: #4f46e5; font-size: 15px; margin-bottom: 4px; margin-top: 16px;">⚡ Due Today</h3>
-                {today_html}
-
-                <h3 style="color: #d97706; font-size: 15px; margin-bottom: 4px; margin-top: 16px;">📅 Due Tomorrow</h3>
-                {tomorrow_html}
-
-                <div style="margin-top: 24px; text-align: center;">
-                    <a href="https://usetaskmonster.app" style="background-color: #6366f1; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; display: inline-block;">Open TaskMonster</a>
-                </div>
-            </div>
-            """
-
-            try:
-                resend.Emails.send({
-                    "from": "TaskMonster <notifications@usetaskmonster.app>",
-                    "to": [user.email],
-                    "subject": f"☕ Your Daily Snapshot - {user_today.strftime('%b %d')}",
-                    "html": email_body
-                })
-                print(f"Snapshot email successfully sent to {user.email}", flush=True)
-            except Exception as e:
-                print(f"Failed to send snapshot email to {user.email}: {e}", flush=True)
 
 @app.post("/buckets/")
 def create_bucket(name: str = Form(...), icon: str = Form("📌"), realm_id: int = Form(...)):
