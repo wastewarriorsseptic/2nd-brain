@@ -1343,18 +1343,18 @@
             document.getElementById('custom-repeat-modal').classList.add('hidden');
         }
 
-        // Store realm access data for rendering inside share modal
+        // Store realm access data for rendering inside share modal safely via context maps
         const realmCollaboratorData = {
             {% for realm in realms %}
             "{{ realm.id }}": {
-                isOwner: {{ 'true' if realm.user_id == user.id else 'false' }},
+                isOwner: {{ 'true' if realm.user_id and user and realm.user_id == user.id else 'false' }},
                 collaborators: [
-                    {% for col in realm.collaborators %}
+                    {% for col in collaborators_map.get(realm.id, []) if collaborators_map %}
                     { id: {{ col.id }}, email: "{{ col.email }}", name: "{{ col.name }}" },
                     {% endfor %}
                 ],
                 pendingInvites: [
-                    {% for inv in realm.pending_invites %}
+                    {% for inv in pending_invites_map.get(realm.id, []) if pending_invites_map %}
                     { id: {{ inv.id }}, email: "{{ inv.email }}" },
                     {% endfor %}
                 ]
