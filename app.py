@@ -291,11 +291,22 @@ def send_daily_snapshot_emails():
                 select(Item).join(Bucket).where(Bucket.realm_id.in_(realm_ids))
             ).all()
 
-            # Categorize Items
-            completed_yesterday = [
-                item for item in all_items 
-                if item.is_completed and item.completed_at and item.completed_at.date() == yesterday
-            ]
+            # Categorize Items (Timezone-Aware Completed Yesterday)
+            completed_yesterday = []
+            for item in all_items:
+                if item.is_completed and item.completed_at:
+                    dt = item.completed_at
+                    # Ensure UTC awareness if naive
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    
+                    try:
+                        local_completed_date = dt.astimezone(ZoneInfo(user_tz)).date()
+                    except Exception:
+                        local_completed_date = dt.date()
+
+                    if local_completed_date == yesterday:
+                        completed_yesterday.append(item)
 
             due_today = [
                 item for item in all_items 
