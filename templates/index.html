@@ -26,16 +26,6 @@
                 margin-left: 1rem !important;
             }
         }
-
-        /* Restrict hover background effects strictly to devices with real pointers/mice */
-        @media (hover: hover) {
-            .realm-item-row:hover {
-                background-color: rgba(51, 65, 85, 0.4);
-            }
-            .bucket-item-row:hover {
-                background-color: rgba(51, 65, 85, 0.6);
-            }
-        }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex">
@@ -107,10 +97,10 @@
                             <div id="realm-row-{{ realm.id }}" data-realm-name="{{ realm.name }}" data-realm-icon="{{ realm.icon or '🔮' }}"
                                  class="realm-item-row flex items-center justify-between group mb-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-150 {% if selected_realm_id == realm.id and not selected_bucket_id %}bg-indigo-600 text-white font-semibold shadow-md{% endif %}">
                                 <div class="flex items-center gap-2 flex-1 min-w-0 mr-2">
-                                    <span class="realm-handle {% if selected_realm_id == realm.id and not selected_bucket_id %}text-indigo-200{% else %}text-slate-500 hover:text-indigo-400{% endif %} cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
+                                    <span class="realm-handle {% if selected_realm_id == realm.id and not selected_bucket_id %}text-indigo-200{% else %}text-slate-500{% endif %} cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
                                     <a href="{% if selected_realm_id == realm.id and not selected_bucket_id %}/{% else %}/?realm_id={{ realm.id }}{% endif %}" 
                                        onclick="selectRealm(event, {{ realm.id }})"
-                                       class="realm-link text-xs md:text-sm font-bold flex items-center gap-1.5 min-w-0 {% if selected_realm_id == realm.id and not selected_bucket_id %}text-white{% else %}text-slate-300 hover:text-indigo-400{% endif %}">
+                                       class="realm-link text-xs md:text-sm font-bold flex items-center gap-1.5 min-w-0 {% if selected_realm_id == realm.id and not selected_bucket_id %}text-white{% else %}text-slate-300{% endif %}">
                                         <span class="shrink-0">{{ realm.icon or '🔮' }}</span> <span class="truncate">{{ realm.name }}</span>
                                     </a>
                                 </div>
@@ -131,7 +121,7 @@
                                 <div id="bucket-row-{{ bucket.id }}" data-bucket-name="{{ bucket.name }}" data-bucket-icon="{{ bucket.icon }}" data-parent-realm-id="{{ realm.id }}"
                                      class="bucket-item bucket-item-row flex items-center justify-between group rounded-xl {% if selected_bucket_id == bucket.id %}bg-indigo-600 text-white font-medium shadow-md{% else %}text-slate-300{% endif %} px-2.5 py-1.5 transition-all duration-150" data-id="{{ bucket.id }}">
                                     <div class="flex items-center gap-2 flex-1 min-w-0 mr-2">
-                                        <span class="bucket-handle text-slate-500 hover:text-indigo-300 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
+                                        <span class="bucket-handle text-slate-500 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
                                         <a href="{% if selected_bucket_id == bucket.id %}/?realm_id={{ realm.id }}{% else %}/?bucket_id={{ bucket.id }}{% endif %}" 
                                            onclick="selectBucket(event, {{ bucket.id }}, {{ realm.id }})"
                                            class="bucket-link text-sm flex items-center gap-2 min-w-0 flex-1">
@@ -998,8 +988,8 @@
                     if (handle) handle.className = "realm-handle text-indigo-200 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0";
                 } else {
                     row.className = "realm-item-row flex items-center justify-between group mb-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-150";
-                    if (link) link.className = "realm-link text-xs md:text-sm font-bold flex items-center gap-1.5 min-w-0 text-slate-300 hover:text-indigo-400";
-                    if (handle) handle.className = "realm-handle text-slate-500 hover:text-indigo-400 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0";
+                    if (link) link.className = "realm-link text-xs md:text-sm font-bold flex items-center gap-1.5 min-w-0 text-slate-300";
+                    if (handle) handle.className = "realm-handle text-slate-500 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0";
                 }
             });
 
