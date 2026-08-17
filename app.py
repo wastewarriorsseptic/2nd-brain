@@ -451,7 +451,7 @@ def logout(request: Request):
     request.session.clear()
     return RedirectResponse(url="/", status_code=303)
 
-# --- Dashboard Route ---
+
 # --- Dashboard Route ---
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optional[int] = None):
@@ -469,16 +469,19 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
 
         all_realm_ids = [r.id for r in realms]
 
-        # Attach collaborators and pending invites to owned realms
+        # Use separate dictionaries to store collaborator data safely
+        collaborators_map = {}
+        pending_invites_map = {}
+
         for realm in realms:
             if realm.user_id == user.id:
                 shares = session.exec(select(RealmShare).where(RealmShare.realm_id == realm.id)).all()
                 member_user_ids = [s.user_id for s in shares]
-                realm.collaborators = session.exec(select(User).where(User.id.in_(member_user_ids))).all() if member_user_ids else []
-                realm.pending_invites = session.exec(select(PendingInvite).where(PendingInvite.realm_id == realm.id)).all()
+                collaborators_map[realm.id] = session.exec(select(User).where(User.id.in_(member_user_ids))).all() if member_user_ids else []
+                pending_invites_map[realm.id] = session.exec(select(PendingInvite).where(PendingInvite.realm_id == realm.id)).all()
             else:
-                realm.collaborators = []
-                realm.pending_invites = []
+                collaborators_map[realm.id] = []
+                pending_invites_map[realm.id] = []
 
         buckets = session.exec(select(Bucket).where(Bucket.realm_id.in_(all_realm_ids)).order_by(Bucket.sort_order.asc())).all() if all_realm_ids else []
 
@@ -500,6 +503,8 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
                 "items": items,
                 "selected_realm_id": realm_id,
                 "selected_bucket_id": bucket_id,
+                "collaborators_map": collaborators_map,
+                "pending_invites_map": pending_invites_map,
                 "today": get_user_today_date(user_tz)
             }
         )
