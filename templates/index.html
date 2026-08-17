@@ -507,12 +507,12 @@
     <div id="share-realm-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
         <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
             <h3 class="text-xl font-bold mb-2">Share Realm</h3>
-            <p class="text-slate-400 text-xs mb-4">Enter your wife's Google email address to give her full shared access to this Realm.</p>
+            <p class="text-slate-400 text-xs mb-4">Enter a collaborator's Google email address to invite them to join and manage this Realm with you.</p>
             <form action="/realms/share/" method="POST" class="space-y-4">
                 <input type="hidden" name="realm_id" id="share-realm-id">
                 <div>
                     <label class="block text-xs font-medium text-slate-400 mb-1">Email Address</label>
-                    <input type="email" name="email" required placeholder="wife@gmail.com" 
+                    <input type="email" name="email" required placeholder="collaborator@gmail.com" 
                            class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200">
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
