@@ -633,12 +633,31 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
     return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
 
 @app.post("/buckets/")
-def create_bucket(name: str = Form(...), icon: str = Form("📌"), realm_id: int = Form(...)):
+def create_bucket(
+    request: Request,
+    name: str = Form(...),
+    icon: str = Form("📌"),
+    realm_id: Optional[int] = Form(None)
+):
     with Session(engine) as session:
-        max_order = len(session.exec(select(Bucket).where(Bucket.realm_id == realm_id)).all())
-        session.add(Bucket(name=name, icon=icon, realm_id=realm_id, sort_order=max_order))
-        session.commit()
-    return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/", status_code=303)
+
+        # Fallback to the user's first available realm if realm_id is missing or empty
+        target_realm_id = realm_id
+        if not target_realm_id:
+            first_realm = session.exec(select(Realm).where(Realm.user_id == user.id)).first()
+            if first_realm:
+                target_realm_id = first_realm.id
+
+        if target_realm_id:
+            max_order = len(session.exec(select(Bucket).where(Bucket.realm_id == target_realm_id)).all())
+            session.add(Bucket(name=name, icon=icon, realm_id=target_realm_id, sort_order=max_order))
+            session.commit()
+            return RedirectResponse(url=f"/?realm_id={target_realm_id}", status_code=303)
+
+    return RedirectResponse(url="/", status_code=303)
 
 @app.post("/buckets/update/")
 def update_bucket(bucket_id: int = Form(...), name: str = Form(...), icon: str = Form("📌")):

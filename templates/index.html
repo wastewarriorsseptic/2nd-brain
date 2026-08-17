@@ -530,7 +530,7 @@
         <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
             <h3 class="text-xl font-bold mb-4">Create New Bucket</h3>
             <form action="/buckets/" method="POST" class="space-y-4">
-                <input type="hidden" name="realm_id" value="{{ selected_realm_id or '' }}">
+                <input type="hidden" name="realm_id" id="add-bucket-realm-id" value="{% if selected_realm_id %}{{ selected_realm_id }}{% endif %}">
                 <div class="flex items-center gap-3">
                     <div class="shrink-0 relative">
                         <label class="block text-xs font-medium text-slate-400 mb-1">Emoji</label>
