@@ -40,22 +40,6 @@
             </div>
 
             {% if user %}
-            <div id="action-button-container" class="mb-3 md:mb-4">
-                {% if selected_bucket_id %}
-                <button onclick="document.getElementById('add-item-modal').classList.remove('hidden')" 
-                        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold py-2.5 rounded-xl transition shadow-lg shadow-indigo-600/20">
-                    + Add Task
-                </button>
-                {% elif selected_realm_id %}
-                <button onclick="document.getElementById('add-bucket-modal').classList.remove('hidden')" 
-                        class="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700/70 text-slate-200 text-sm font-semibold py-2.5 rounded-xl transition shadow-md">
-                    + Add Bucket
-                </button>
-                {% endif %}
-            </div>
-            {% endif %}
-
-            {% if user %}
             <div class="bg-slate-800/90 border border-slate-700/50 rounded-2xl p-3 mb-2 md:mb-4 shadow-xl transition-all backdrop-blur-md">
                 
                 <div class="flex items-center justify-between cursor-pointer select-none group" onclick="handleRealmsHeaderClick(event)">
@@ -114,7 +98,13 @@
                                     </a>
                                 </div>
 
-                                <div class="grid grid-cols-3 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-16 text-center">
+                                <div class="grid grid-cols-4 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-20 text-center items-center">
+                                    {% if selected_realm_id == realm.id and not selected_bucket_id %}
+                                    <button onclick="event.stopPropagation(); document.getElementById('add-bucket-modal').classList.remove('hidden')" 
+                                            title="Add Bucket to {{ realm.name }}" class="w-5 text-center text-xs font-bold text-white hover:text-indigo-200">➕</button>
+                                    {% else %}
+                                    <div class="w-5"></div>
+                                    {% endif %}
                                     <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" onclick="openShareRealm(this)" title="Share Realm" class="w-5 text-center text-xs hover:text-indigo-300">👥</button>
                                     <button data-id="{{ realm.id }}" data-name="{{ realm.name }}" data-icon="{{ realm.icon or '🔮' }}" onclick="openEditRealm(this)" title="Edit Realm" class="w-5 text-center text-xs hover:text-indigo-300">✏️</button>
                                     <form action="/realms/delete/" method="POST" onsubmit="return confirm('Delete this Realm along with all its Buckets and Tasks?');" class="inline w-5 text-center">
@@ -137,8 +127,13 @@
                                         </a>
                                     </div>
 
-                                    <div class="grid grid-cols-3 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-16 text-center">
+                                    <div class="grid grid-cols-3 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-16 text-center items-center">
+                                        {% if selected_bucket_id == bucket.id %}
+                                        <button onclick="event.stopPropagation(); document.getElementById('add-item-modal').classList.remove('hidden')" 
+                                                title="Add Task to {{ bucket.name }}" class="w-5 text-center text-xs font-bold text-white hover:text-indigo-200">➕</button>
+                                        {% else %}
                                         <div class="w-5"></div>
+                                        {% endif %}
                                         <button data-id="{{ bucket.id }}" data-name="{{ bucket.name }}" data-icon="{{ bucket.icon }}" onclick="openEditBucket(this)" title="Edit Bucket" class="w-5 text-center text-xs hover:text-indigo-300">✏️</button>
                                         <form action="/buckets/delete/" method="POST" onsubmit="return confirm('Delete this Bucket and all its Tasks?');" class="inline w-5 text-center">
                                             <input type="hidden" name="bucket_id" value="{{ bucket.id }}">
@@ -334,7 +329,6 @@
             </div>
         </div>
 
-        <!-- Discreet Footer Link -->
         <footer class="mt-12 mb-2 text-center">
             <a href="/privacy" target="_blank" class="text-[11px] text-slate-500 hover:text-indigo-400 transition-colors">
                 Privacy Policy
@@ -975,24 +969,41 @@
                 const rowId = parseInt(row.id.replace('realm-row-', ''));
                 const link = row.querySelector('.realm-link');
                 const handle = row.querySelector('.realm-handle');
+                const gridDiv = row.querySelector('.grid');
 
                 if (currentSelectedRealmId === rowId && currentSelectedBucketId === null) {
                     row.className = "realm-item-row flex items-center justify-between group mb-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-150 bg-indigo-600 text-white font-semibold shadow-md";
                     if (link) link.className = "realm-link text-xs md:text-sm font-bold flex items-center gap-1.5 min-w-0 text-white";
                     if (handle) handle.className = "realm-handle text-indigo-200 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0";
+                    if (gridDiv) {
+                        gridDiv.className = "grid grid-cols-4 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-20 text-center items-center";
+                        gridDiv.children[0].outerHTML = `<button onclick="event.stopPropagation(); document.getElementById('add-bucket-modal').classList.remove('hidden')" title="Add Bucket" class="w-5 text-center text-xs font-bold text-white hover:text-indigo-200">➕</button>`;
+                    }
                 } else {
                     row.className = "realm-item-row flex items-center justify-between group mb-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-150";
                     if (link) link.className = "realm-link text-xs md:text-sm font-bold flex items-center gap-1.5 min-w-0 text-slate-300";
                     if (handle) handle.className = "realm-handle text-slate-500 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0";
+                    if (gridDiv) {
+                        gridDiv.className = "grid grid-cols-4 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-20 text-center items-center";
+                        gridDiv.children[0].outerHTML = `<div class="w-5"></div>`;
+                    }
                 }
             });
 
             document.querySelectorAll('.bucket-item-row').forEach(row => {
                 const rowId = parseInt(row.id.replace('bucket-row-', ''));
+                const gridDiv = row.querySelector('.grid');
+
                 if (currentSelectedBucketId === rowId) {
                     row.className = "bucket-item bucket-item-row flex items-center justify-between group rounded-xl bg-indigo-600 text-white font-medium shadow-md px-2.5 py-1.5 transition-all duration-150";
+                    if (gridDiv) {
+                        gridDiv.children[0].outerHTML = `<button onclick="event.stopPropagation(); document.getElementById('add-item-modal').classList.remove('hidden')" title="Add Task" class="w-5 text-center text-xs font-bold text-white hover:text-indigo-200">➕</button>`;
+                    }
                 } else {
                     row.className = "bucket-item bucket-item-row flex items-center justify-between group rounded-xl text-slate-300 px-2.5 py-1.5 transition-all duration-150";
+                    if (gridDiv) {
+                        gridDiv.children[0].outerHTML = `<div class="w-5"></div>`;
+                    }
                 }
             });
 
@@ -1033,17 +1044,9 @@
                 }
             }
 
-            const actionContainer = document.getElementById('action-button-container');
             const modalBucketInput = document.getElementById('task-modal-bucket-id');
-            if (actionContainer) {
-                if (currentSelectedBucketId !== null) {
-                    if (modalBucketInput) modalBucketInput.value = currentSelectedBucketId;
-                    actionContainer.innerHTML = `<button onclick="document.getElementById('add-item-modal').classList.remove('hidden')" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold py-2.5 rounded-xl transition shadow-lg shadow-indigo-600/20">+ Add Task</button>`;
-                } else if (currentSelectedRealmId !== null) {
-                    actionContainer.innerHTML = `<button onclick="document.getElementById('add-bucket-modal').classList.remove('hidden')" class="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700/70 text-slate-200 text-sm font-semibold py-2.5 rounded-xl transition shadow-md">+ Add Bucket</button>`;
-                } else {
-                    actionContainer.innerHTML = '';
-                }
+            if (modalBucketInput) {
+                modalBucketInput.value = currentSelectedBucketId || '';
             }
 
             filterTimelineList();
@@ -1223,7 +1226,6 @@
                 }
             }
 
-            // Sync initial state and UI filter on load
             updateSelectionUI();
 
             const realmsContainer = document.getElementById('realms-container');
