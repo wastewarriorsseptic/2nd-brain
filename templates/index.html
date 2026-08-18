@@ -159,178 +159,187 @@
         <div></div>
     </aside>
 
-    <main class="flex-1 p-3 md:p-8 overflow-y-auto">
-        <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 md:mb-8">
-            <div>
-                <h2 class="text-2xl md:text-3xl font-bold tracking-tight">Timeline</h2>
-                <p class="text-slate-400 text-xs md:text-sm mt-0.5">Chronological flow of tasks due this month:</p>
-            </div>
-
-            {% if user %}
-            <div class="flex items-center gap-3">
-                <span class="text-sm font-medium text-slate-300 flex items-center gap-1.5">
-                    👤 {{ user.name }}
-                </span>
-                <a href="/logout" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/80 text-xs font-semibold px-3 py-1.5 rounded-xl transition">
-                    Sign Out
-                </a>
-            </div>
-            {% endif %}
-        </header>
-
-        <div class="max-w-4xl mx-auto">
-            {% if user %}
-                
-                <div class="w-full max-w-md mx-auto mb-6 md:mb-8 p-1 bg-slate-800/90 border border-slate-700/80 rounded-full flex items-center shadow-inner select-none gap-1">
-                    <button id="pill-btn-active" onclick="setTimelineFilter('active')" 
-                            class="flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-indigo-600 text-white shadow-md min-w-0">
-                        <span class="truncate">⚡ Active</span>
-                        <span id="active-count-badge" class="bg-indigo-500/30 text-indigo-100 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full border border-indigo-400/30 shrink-0">0</span>
-                    </button>
-
-                    <button id="pill-btn-completed" onclick="setTimelineFilter('completed')" 
-                            class="flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 min-w-0">
-                        <span class="truncate">✅ Completed</span>
-                        <span id="completed-count-badge" class="bg-slate-700 text-slate-300 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full shrink-0">0</span>
-                    </button>
+    <main class="flex-1 p-3 md:p-8 overflow-y-auto flex flex-col justify-between">
+        <div>
+            <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 md:mb-8">
+                <div>
+                    <h2 class="text-2xl md:text-3xl font-bold tracking-tight">Timeline</h2>
+                    <p class="text-slate-400 text-xs md:text-sm mt-0.5">Chronological flow of tasks due this month:</p>
                 </div>
 
-                {% if items %}
-                <div id="timeline-list" class="timeline-container relative border-l-2 border-indigo-500/30 ml-3 md:ml-8 pl-4 md:pl-6 space-y-6 md:space-y-8">
-                    {% for item in items %}
-                    {% set days_out = (item.due_date.date() - today).days %}
-                    <div class="timeline-card-wrapper relative group" 
-                         data-completed="{{ 'true' if item.is_completed else 'false' }}"
-                         data-completed-at="{{ item.completed_at.isoformat() if item.completed_at else '' }}"
-                         data-due-date="{{ item.due_date.strftime('%Y-%m-%d') }}"
-                         data-item-id="{{ item.id }}"
-                         data-realm-id="{{ item.bucket.realm.id if item.bucket and item.bucket.realm else '' }}"
-                         data-bucket-id="{{ item.bucket.id if item.bucket else '' }}">
-                        <div class="absolute -left-[23px] md:-left-[31px] top-5 w-3.5 md:w-4 h-3.5 md:h-4 rounded-full border-2 border-slate-900 {% if item.is_completed %}bg-slate-600{% elif days_out < 0 %}bg-rose-500 animate-pulse{% else %}bg-indigo-500 group-hover:scale-125{% endif %} transition-all"></div>
-                        
-                        <div class="border rounded-2xl p-4 md:p-5 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all {% if item.is_completed %}bg-slate-800/40 border-slate-700/40 opacity-70{% elif days_out < 0 %}bg-rose-950/20 border-rose-500/40{% else %}bg-slate-800/90 border-slate-700/80{% endif %}">
+                {% if user %}
+                <div class="flex items-center gap-3">
+                    <span class="text-sm font-medium text-slate-300 flex items-center gap-1.5">
+                        👤 {{ user.name }}
+                    </span>
+                    <a href="/logout" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/80 text-xs font-semibold px-3 py-1.5 rounded-xl transition">
+                        Sign Out
+                    </a>
+                </div>
+                {% endif %}
+            </header>
+
+            <div class="max-w-4xl mx-auto">
+                {% if user %}
+                    
+                    <div class="w-full max-w-md mx-auto mb-6 md:mb-8 p-1 bg-slate-800/90 border border-slate-700/80 rounded-full flex items-center shadow-inner select-none gap-1">
+                        <button id="pill-btn-active" onclick="setTimelineFilter('active')" 
+                                class="flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-indigo-600 text-white shadow-md min-w-0">
+                            <span class="truncate">⚡ Active</span>
+                            <span id="active-count-badge" class="bg-indigo-500/30 text-indigo-100 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full border border-indigo-400/30 shrink-0">0</span>
+                        </button>
+
+                        <button id="pill-btn-completed" onclick="setTimelineFilter('completed')" 
+                                class="flex-1 px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs md:text-sm font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 min-w-0">
+                            <span class="truncate">✅ Completed</span>
+                            <span id="completed-count-badge" class="bg-slate-700 text-slate-300 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full shrink-0">0</span>
+                        </button>
+                    </div>
+
+                    {% if items %}
+                    <div id="timeline-list" class="timeline-container relative border-l-2 border-indigo-500/30 ml-3 md:ml-8 pl-4 md:pl-6 space-y-6 md:space-y-8">
+                        {% for item in items %}
+                        {% set days_out = (item.due_date.date() - today).days %}
+                        <div class="timeline-card-wrapper relative group" 
+                             data-completed="{{ 'true' if item.is_completed else 'false' }}"
+                             data-completed-at="{{ item.completed_at.isoformat() if item.completed_at else '' }}"
+                             data-due-date="{{ item.due_date.strftime('%Y-%m-%d') }}"
+                             data-item-id="{{ item.id }}"
+                             data-realm-id="{{ item.bucket.realm.id if item.bucket and item.bucket.realm else '' }}"
+                             data-bucket-id="{{ item.bucket.id if item.bucket else '' }}">
+                            <div class="absolute -left-[23px] md:-left-[31px] top-5 w-3.5 md:w-4 h-3.5 md:h-4 rounded-full border-2 border-slate-900 {% if item.is_completed %}bg-slate-600{% elif days_out < 0 %}bg-rose-500 animate-pulse{% else %}bg-indigo-500 group-hover:scale-125{% endif %} transition-all"></div>
                             
-                            <div class="flex items-start md:items-center gap-3 md:gap-4 flex-1">
-                                <form action="/items/toggle-complete/" method="POST" class="inline shrink-0 mt-0.5 md:mt-0" onsubmit="triggerTaskConfetti(event, this)">
-                                    <input type="hidden" name="item_id" value="{{ item.id }}">
-                                    <button type="submit" 
-                                            title="{% if item.is_completed %}Mark Incomplete{% else %}Mark Complete{% endif %}"
-                                            class="w-6 h-6 rounded-lg border flex items-center justify-center transition {% if item.is_completed %}bg-emerald-500 border-emerald-500 text-slate-950 font-bold{% else %}border-slate-600 hover:border-emerald-400 text-transparent hover:text-emerald-400/50{% endif %}">
-                                        ✓
-                                    </button>
-                                </form>
+                            <div class="border rounded-2xl p-4 md:p-5 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all {% if item.is_completed %}bg-slate-800/40 border-slate-700/40 opacity-70{% elif days_out < 0 %}bg-rose-950/20 border-rose-500/40{% else %}bg-slate-800/90 border-slate-700/80{% endif %}">
+                                
+                                <div class="flex items-start md:items-center gap-3 md:gap-4 flex-1">
+                                    <form action="/items/toggle-complete/" method="POST" class="inline shrink-0 mt-0.5 md:mt-0" onsubmit="triggerTaskConfetti(event, this)">
+                                        <input type="hidden" name="item_id" value="{{ item.id }}">
+                                        <button type="submit" 
+                                                title="{% if item.is_completed %}Mark Incomplete{% else %}Mark Complete{% endif %}"
+                                                class="w-6 h-6 rounded-lg border flex items-center justify-center transition {% if item.is_completed %}bg-emerald-500 border-emerald-500 text-slate-950 font-bold{% else %}border-slate-600 hover:border-emerald-400 text-transparent hover:text-emerald-400/50{% endif %}">
+                                            ✓
+                                        </button>
+                                    </form>
 
-                                <div class="flex-1 min-w-0">
-                                    <div class="flex flex-wrap items-center gap-1.5 md:gap-2 mb-1.5">
-                                        <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[11px] md:text-xs font-semibold px-2 md:px-2.5 py-0.5 rounded-full flex items-center gap-1 truncate max-w-full">
-                                            {{ item.bucket.realm.icon or '🔮' }} {{ item.bucket.realm.name if item.bucket and item.bucket.realm else 'General' }} / {{ item.bucket.icon }} {{ item.bucket.name if item.bucket else '' }}
-                                        </span>
-                                        {% if item.recurring_group_id %}
-                                        <span class="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] md:text-xs font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
-                                            🔄 Recurring
-                                        </span>
-                                        {% endif %}
-
-                                        {% if not item.is_completed and days_out < 0 %}
-                                        <span class="bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[11px] md:text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                                            ⚠️ Overdue ({{ days_out | abs }}d)
-                                        </span>
-                                        {% elif days_out == 0 %}
-                                        <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] md:text-xs font-bold px-2 py-0.5 rounded-full">
-                                            ⚡ Today
-                                        </span>
-                                        {% elif days_out > 0 %}
-                                        <span class="bg-slate-700/80 text-slate-300 border border-slate-600/50 text-[11px] md:text-xs font-semibold px-2 py-0.5 rounded-full font-mono">
-                                            +{{ days_out }}d
-                                        </span>
-                                        {% else %}
-                                        <span class="bg-slate-700/50 text-slate-400 border border-slate-600/30 text-[11px] md:text-xs font-semibold px-2 py-0.5 rounded-full font-mono">
-                                            Completed
-                                        </span>
-                                        {% endif %}
-
-                                        <span class="text-[11px] md:text-xs text-indigo-300 font-mono font-medium">
-                                            📅 {{ item.due_date.strftime('%b %d, %Y') }}
-                                            {% if item.due_date.strftime('%H:%M') != '09:00' %}
-                                                ⏰ {{ item.due_date.strftime('%I:%M %p') }}
+                                    <div class="flex-1 min-w-0">
+                                        <div class="flex flex-wrap items-center gap-1.5 md:gap-2 mb-1.5">
+                                            <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[11px] md:text-xs font-semibold px-2 md:px-2.5 py-0.5 rounded-full flex items-center gap-1 truncate max-w-full">
+                                                {{ item.bucket.realm.icon or '🔮' }} {{ item.bucket.realm.name if item.bucket and item.bucket.realm else 'General' }} / {{ item.bucket.icon }} {{ item.bucket.name if item.bucket else '' }}
+                                            </span>
+                                            {% if item.recurring_group_id %}
+                                            <span class="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] md:text-xs font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                🔄 Recurring
+                                            </span>
                                             {% endif %}
-                                        </span>
+
+                                            {% if not item.is_completed and days_out < 0 %}
+                                            <span class="bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[11px] md:text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                ⚠️ Overdue ({{ days_out | abs }}d)
+                                            </span>
+                                            {% elif days_out == 0 %}
+                                            <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] md:text-xs font-bold px-2 py-0.5 rounded-full">
+                                                ⚡ Today
+                                            </span>
+                                            {% elif days_out > 0 %}
+                                            <span class="bg-slate-700/80 text-slate-300 border border-slate-600/50 text-[11px] md:text-xs font-semibold px-2 py-0.5 rounded-full font-mono">
+                                                +{{ days_out }}d
+                                            </span>
+                                            {% else %}
+                                            <span class="bg-slate-700/50 text-slate-400 border border-slate-600/30 text-[11px] md:text-xs font-semibold px-2 py-0.5 rounded-full font-mono">
+                                                Completed
+                                            </span>
+                                            {% endif %}
+
+                                            <span class="text-[11px] md:text-xs text-indigo-300 font-mono font-medium">
+                                                📅 {{ item.due_date.strftime('%b %d, %Y') }}
+                                                {% if item.due_date.strftime('%H:%M') != '09:00' %}
+                                                    ⏰ {{ item.due_date.strftime('%I:%M %p') }}
+                                                {% endif %}
+                                            </span>
+                                        </div>
+
+                                        <h3 class="text-lg md:text-xl font-semibold break-words {% if item.is_completed %}line-through text-slate-400{% else %}text-white{% endif %}">
+                                            {{ item.title }}
+                                        </h3>
+                                        {% if item.description %}
+                                        <p class="text-slate-400 text-xs md:text-sm mt-1 break-words {% if item.is_completed %}line-through opacity-70{% endif %}">
+                                            {{ item.description }}
+                                        </p>
+                                        {% endif %}
                                     </div>
-
-                                    <h3 class="text-lg md:text-xl font-semibold break-words {% if item.is_completed %}line-through text-slate-400{% else %}text-white{% endif %}">
-                                        {{ item.title }}
-                                    </h3>
-                                    {% if item.description %}
-                                    <p class="text-slate-400 text-xs md:text-sm mt-1 break-words {% if item.is_completed %}line-through opacity-70{% endif %}">
-                                        {{ item.description }}
-                                    </p>
-                                    {% endif %}
                                 </div>
-                            </div>
 
-                            <div class="flex items-center justify-between md:justify-end gap-4 border-t md:border-t-0 pt-3 md:pt-0 border-slate-700/50">
-                                {% if item.amount %}
-                                <span class="text-base md:text-lg font-bold {% if item.is_completed %}text-slate-500 line-through{% else %}text-emerald-400{% endif %}">
-                                    ${{ "%.2f"|format(item.amount) }}
-                                </span>
-                                {% else %}
-                                <div></div>
-                                {% endif %}
+                                <div class="flex items-center justify-between md:justify-end gap-4 border-t md:border-t-0 pt-3 md:pt-0 border-slate-700/50">
+                                    {% if item.amount %}
+                                    <span class="text-base md:text-lg font-bold {% if item.is_completed %}text-slate-500 line-through{% else %}text-emerald-400{% endif %}">
+                                        ${{ "%.2f"|format(item.amount) }}
+                                    </span>
+                                    {% else %}
+                                    <div></div>
+                                    {% endif %}
 
-                                <div class="flex items-center gap-1">
-                                    <button onclick="openEditItem(this)"
-                                            data-id="{{ item.id }}"
-                                            data-title="{{ item.title }}"
-                                            data-due-date="{{ item.due_date.strftime('%Y-%m-%d') }}"
-                                            data-due-time="{% if item.due_date.strftime('%H:%M') != '09:00' %}{{ item.due_date.strftime('%H:%M') }}{% endif %}"
-                                            data-amount="{{ item.amount or '' }}"
-                                            data-description="{{ item.description or '' }}"
-                                            data-recurring="{{ 'true' if item.recurring_group_id else 'false' }}"
-                                            data-bucket-id="{{ item.bucket_id }}"
-                                            title="Edit Task" 
-                                            class="text-slate-500 hover:text-indigo-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-700/50">
-                                        ✏️
-                                    </button>
+                                    <div class="flex items-center gap-1">
+                                        <button onclick="openEditItem(this)"
+                                                data-id="{{ item.id }}"
+                                                data-title="{{ item.title }}"
+                                                data-due-date="{{ item.due_date.strftime('%Y-%m-%d') }}"
+                                                data-due-time="{% if item.due_date.strftime('%H:%M') != '09:00' %}{{ item.due_date.strftime('%H:%M') }}{% endif %}"
+                                                data-amount="{{ item.amount or '' }}"
+                                                data-description="{{ item.description or '' }}"
+                                                data-recurring="{{ 'true' if item.recurring_group_id else 'false' }}"
+                                                data-bucket-id="{{ item.bucket_id }}"
+                                                title="Edit Task" 
+                                                class="text-slate-500 hover:text-indigo-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-700/50">
+                                            ✏️
+                                        </button>
 
-                                    <button onclick="openDeleteModal({{ item.id }}, {{ 'true' if item.recurring_group_id else 'false' }})" 
-                                            title="Delete Task" 
-                                            class="text-slate-500 hover:text-red-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-700/50">
-                                        🗑️
-                                    </button>
+                                        <button onclick="openDeleteModal({{ item.id }}, {{ 'true' if item.recurring_group_id else 'false' }})" 
+                                                title="Delete Task" 
+                                                class="text-slate-500 hover:text-red-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-700/50">
+                                            🗑️
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
+                        {% endfor %}
                     </div>
-                    {% endfor %}
-                </div>
 
-                <div id="load-more-container" class="mt-8 text-center hidden">
-                    <button onclick="loadMoreMonths()" class="bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-indigo-500/30 font-semibold px-6 py-2.5 rounded-xl transition shadow-lg text-sm flex items-center justify-center gap-2 mx-auto">
-                        <span>👇 Load More Tasks (+3 Months)</span>
-                    </button>
-                </div>
+                    <div id="load-more-container" class="mt-8 text-center hidden">
+                        <button onclick="loadMoreMonths()" class="bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-indigo-500/30 font-semibold px-6 py-2.5 rounded-xl transition shadow-lg text-sm flex items-center justify-center gap-2 mx-auto">
+                            <span>👇 Load More Tasks (+3 Months)</span>
+                        </button>
+                    </div>
 
-                <div id="timeline-empty-state" class="hidden text-center py-12 md:py-16 bg-slate-800/50 border border-slate-700/50 rounded-2xl px-4">
-                    <p id="timeline-empty-text" class="text-slate-400 text-base md:text-lg font-medium">No active tasks found</p>
-                </div>
+                    <div id="timeline-empty-state" class="hidden text-center py-12 md:py-16 bg-slate-800/50 border border-slate-700/50 rounded-2xl px-4">
+                        <p id="timeline-empty-text" class="text-slate-400 text-base md:text-lg font-medium">No active tasks found</p>
+                    </div>
 
+                    {% else %}
+                    <div class="text-center py-12 md:py-16 bg-slate-800/50 border border-slate-700/50 rounded-2xl px-4">
+                        <p class="text-slate-400 text-base md:text-lg font-medium">No timeline items found</p>
+                        <p class="text-slate-500 text-xs md:text-sm mt-1">Select a Realm to create Buckets, or select a Bucket to create Tasks.</p>
+                    </div>
+                    {% endif %}
                 {% else %}
-                <div class="text-center py-12 md:py-16 bg-slate-800/50 border border-slate-700/50 rounded-2xl px-4">
-                    <p class="text-slate-400 text-base md:text-lg font-medium">No timeline items found</p>
-                    <p class="text-slate-500 text-xs md:text-sm mt-1">Select a Realm to create Buckets, or select a Bucket to create Tasks.</p>
+                <div class="text-center py-12 bg-slate-800/60 border border-slate-700/60 rounded-3xl px-6 max-w-md mx-auto my-8 shadow-2xl backdrop-blur-md">
+                    <span class="text-5xl block mb-4">🔐</span>
+                    <h3 class="text-2xl font-bold mb-2 text-white">Welcome to TaskMonster</h3>
+                    <p class="text-slate-400 text-sm mb-6 leading-relaxed">Sign in with your Google account to access your personal dashboard and task timeline.</p>
+                    <a href="/login" class="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-3 rounded-2xl transition shadow-lg shadow-indigo-600/30 w-full">
+                        🔑 Sign in with Google
+                    </a>
                 </div>
                 {% endif %}
-            {% else %}
-            <div class="text-center py-12 bg-slate-800/60 border border-slate-700/60 rounded-3xl px-6 max-w-md mx-auto my-8 shadow-2xl backdrop-blur-md">
-                <span class="text-5xl block mb-4">🔐</span>
-                <h3 class="text-2xl font-bold mb-2 text-white">Welcome to TaskMonster</h3>
-                <p class="text-slate-400 text-sm mb-6 leading-relaxed">Sign in with your Google account to access your personal dashboard and task timeline.</p>
-                <a href="/login" class="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-3 rounded-2xl transition shadow-lg shadow-indigo-600/30 w-full">
-                    🔑 Sign in with Google
-                </a>
             </div>
-            {% endif %}
         </div>
+
+        <!-- Discreet Footer Link -->
+        <footer class="mt-12 mb-2 text-center">
+            <a href="/privacy" target="_blank" class="text-[11px] text-slate-500 hover:text-indigo-400 transition-colors">
+                Privacy Policy
+            </a>
+        </footer>
     </main>
 
     <div id="add-realm-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -878,7 +887,6 @@
             const cardWrapper = formElement.closest('.timeline-card-wrapper');
             const isCompleted = cardWrapper && cardWrapper.getAttribute('data-completed') === 'true';
 
-            // Only trigger confetti explosion when marking an incomplete task as finished
             if (!isCompleted) {
                 event.preventDefault();
 
@@ -894,7 +902,6 @@
                     disableForReducedMotion: true
                 });
 
-                // Short delay to let the explosion render before completing form submit
                 setTimeout(() => {
                     formElement.submit();
                 }, 320);
@@ -1323,7 +1330,6 @@
             document.getElementById('custom-repeat-modal').classList.add('hidden');
         }
 
-        // Store realm access data for rendering inside share modal safely via context maps
         const realmCollaboratorData = {
             {% for realm in realms %}
             "{{ realm.id }}": {
@@ -1355,7 +1361,6 @@
             if (data && data.isOwner && (data.collaborators.length > 0 || data.pendingInvites.length > 0)) {
                 membersSection.classList.remove('hidden');
 
-                // Render Active Members
                 data.collaborators.forEach(col => {
                     const row = document.createElement('div');
                     row.className = "flex items-center justify-between bg-slate-900/80 px-3 py-2 rounded-xl border border-slate-700/50 text-xs";
@@ -1373,7 +1378,6 @@
                     membersList.appendChild(row);
                 });
 
-                // Render Pending Invites
                 data.pendingInvites.forEach(inv => {
                     const row = document.createElement('div');
                     row.className = "flex items-center justify-between bg-amber-500/10 px-3 py-2 rounded-xl border border-amber-500/20 text-xs";
