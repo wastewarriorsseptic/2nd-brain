@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo  # Built-in IANA timezone support
 
 from fastapi import FastAPI, Request, Form, Body
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import SQLModel, Field, Relationship, Session, create_engine, select
 from sqlalchemy import text
@@ -205,6 +206,7 @@ class PendingInvite(SQLModel, table=True):
 # --- FastAPI & Middleware Setup ---
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # --- OAuth Registration ---
