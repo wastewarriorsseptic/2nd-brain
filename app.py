@@ -459,8 +459,18 @@ def logout(request: Request):
 def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optional[int] = None):
     with Session(engine) as session:
         user = get_current_user(request, session)
+        user_tz = user.timezone if (user and user.timezone) else request.session.get('user_timezone', 'UTC')
+        today_date = get_user_today_date(user_tz)
+
         if not user:
-            return templates.TemplateResponse(request=request, name="index.html", context={"user": None})
+            return templates.TemplateResponse(
+                request=request, 
+                name="index.html", 
+                context={
+                    "user": None,
+                    "today": today_date
+                }
+            )
 
         owned_realms = session.exec(select(Realm).where(Realm.user_id == user.id)).all()
         shared_realm_ids = session.exec(select(RealmShare.realm_id).where(RealmShare.user_id == user.id)).all()
@@ -471,7 +481,6 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
 
         all_realm_ids = [r.id for r in realms]
 
-        # Use separate dictionaries to store collaborator data safely
         collaborators_map = {}
         pending_invites_map = {}
 
@@ -493,8 +502,6 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
         query = select(Item).join(Bucket).where(Bucket.realm_id.in_(all_realm_ids)) if all_realm_ids else select(Item).where(False)
         items = session.exec(query.order_by(Item.due_date.asc())).all() if all_realm_ids else []
 
-        user_tz = user.timezone if (user and user.timezone) else request.session.get('user_timezone', 'UTC')
-
         return templates.TemplateResponse(
             request=request,
             name="index.html",
@@ -507,7 +514,7 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
                 "selected_bucket_id": bucket_id,
                 "collaborators_map": collaborators_map,
                 "pending_invites_map": pending_invites_map,
-                "today": get_user_today_date(user_tz)
+                "today": today_date
             }
         )
 
