@@ -1038,3 +1038,10 @@ def cancel_pending_invite(request: Request, invite_id: int = Form(...), realm_id
                 session.commit()
 
     return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
+
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy_policy(request: Request):
+    return templates.TemplateResponse(
+        request=request, 
+        name="privacy.html"
+    )
