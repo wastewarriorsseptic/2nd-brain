@@ -66,7 +66,7 @@
 
                             {% if ns.active_realm %}
                             <span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate inline-block min-w-0 max-w-[110px] sm:max-w-[160px] md:max-w-[220px]" title="{{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.name }}{% endif %}">
-                                {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.icon }} {{ ns.active_bucket.name }}{% endif %}
+                                {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }}{% if ns.active_bucket %} / 📌 {{ ns.active_bucket.name }}{% endif %}
                             </span>
                             {% else %}
                             <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">
@@ -116,14 +116,14 @@
 
                             <nav class="buckets-container space-y-1 ml-2.5 pl-2 border-l border-slate-700/60" data-realm-id="{{ realm.id }}">
                                 {% for bucket in realm.buckets %}
-                                <div id="bucket-row-{{ bucket.id }}" data-bucket-name="{{ bucket.name }}" data-bucket-icon="{{ bucket.icon }}" data-parent-realm-id="{{ realm.id }}"
+                                <div id="bucket-row-{{ bucket.id }}" data-bucket-name="{{ bucket.name }}" data-bucket-icon="📌" data-parent-realm-id="{{ realm.id }}"
                                      class="bucket-item bucket-item-row flex items-center justify-between group rounded-xl {% if selected_bucket_id == bucket.id %}bg-indigo-600 text-white font-medium shadow-md{% else %}text-slate-300{% endif %} px-2.5 py-1.5 transition-all duration-150" data-id="{{ bucket.id }}">
                                     <div class="flex items-center gap-2 flex-1 min-w-0 mr-2">
                                         <span class="bucket-handle text-slate-500 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
                                         <a href="{% if selected_bucket_id == bucket.id %}/?realm_id={{ realm.id }}{% else %}/?bucket_id={{ bucket.id }}{% endif %}" 
                                            onclick="selectBucket(event, {{ bucket.id }}, {{ realm.id }})"
                                            class="bucket-link text-sm flex items-center gap-2 min-w-0 flex-1">
-                                            <span class="shrink-0">{{ bucket.icon }}</span> <span class="truncate">{{ bucket.name }}</span>
+                                            <span class="shrink-0">📌</span> <span class="truncate">{{ bucket.name }}</span>
                                         </a>
                                     </div>
 
@@ -134,7 +134,7 @@
                                         {% else %}
                                         <div class="w-5"></div>
                                         {% endif %}
-                                        <button data-id="{{ bucket.id }}" data-name="{{ bucket.name }}" data-icon="{{ bucket.icon }}" onclick="openEditBucket(this)" title="Edit Bucket" class="w-5 text-center text-xs hover:text-indigo-300">✏️</button>
+                                        <button data-id="{{ bucket.id }}" data-name="{{ bucket.name }}" onclick="openEditBucket(this)" title="Edit Bucket" class="w-5 text-center text-xs hover:text-indigo-300">✏️</button>
                                         <form action="/buckets/delete/" method="POST" onsubmit="return confirm('Delete this Bucket and all its Tasks?');" class="inline w-5 text-center">
                                             <input type="hidden" name="bucket_id" value="{{ bucket.id }}">
                                             <button type="submit" title="Delete Bucket" class="w-full text-xs hover:text-red-400">🗑️</button>
@@ -219,7 +219,7 @@
                                     <div class="flex-1 min-w-0">
                                         <div class="flex flex-wrap items-center gap-1.5 md:gap-2 mb-1.5">
                                             <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[11px] md:text-xs font-semibold px-2 md:px-2.5 py-0.5 rounded-full flex items-center gap-1 truncate max-w-full">
-                                                {{ item.bucket.realm.icon or '🔮' }} {{ item.bucket.realm.name if item.bucket and item.bucket.realm else 'General' }} / {{ item.bucket.icon }} {{ item.bucket.name if item.bucket else '' }}
+                                                {{ item.bucket.realm.icon or '🔮' }} {{ item.bucket.realm.name if item.bucket and item.bucket.realm else 'General' }} / 📌 {{ item.bucket.name if item.bucket else '' }}
                                             </span>
                                             {% if item.recurring_group_id %}
                                             <span class="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] md:text-xs font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -507,59 +507,11 @@
             <h3 class="text-xl font-bold mb-4">Create New Bucket</h3>
             <form action="/buckets/" method="POST" class="space-y-4">
                 <input type="hidden" name="realm_id" id="add-bucket-realm-id" value="{% if selected_realm_id %}{{ selected_realm_id }}{% endif %}">
-                <div class="flex items-center gap-3">
-                    <div class="shrink-0 relative">
-                        <label class="block text-xs font-medium text-slate-400 mb-1">Emoji</label>
-                        <input type="hidden" name="icon" id="add-bucket-icon" value="📌">
-                        <button type="button" id="add-bucket-picker" onclick="toggleEmojiGrid('add-bucket')" class="w-12 h-10 bg-slate-900 border border-slate-700 rounded-xl flex items-center justify-center text-xl text-slate-200 cursor-pointer select-none">📌</button>
-                        <div id="add-bucket-grid" class="hidden absolute top-14 left-0 w-36 max-h-40 bg-slate-900 border border-slate-700 rounded-xl p-2 grid grid-cols-4 gap-1 overflow-y-auto z-50 shadow-2xl">
-                            <div onclick="selectEmoji('add-bucket', '📌')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">📌</div>
-                            <div onclick="selectEmoji('add-bucket', '📂')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">📂</div>
-                            <div onclick="selectEmoji('add-bucket', '📝')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">📝</div>
-                            <div onclick="selectEmoji('add-bucket', '💸')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💸</div>
-                            <div onclick="selectEmoji('add-bucket', '🧾')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🧾</div>
-                            <div onclick="selectEmoji('add-bucket', '🎯')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎯</div>
-                            <div onclick="selectEmoji('add-bucket', '🛒')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🛒</div>
-                            <div onclick="selectEmoji('add-bucket', '💧')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💧</div>
-                            <div onclick="selectEmoji('add-bucket', '💊')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💊</div>
-                            <div onclick="selectEmoji('add-bucket', '🏋️')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🏋️</div>
-                            <div onclick="selectEmoji('add-bucket', '🚗')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🚗</div>
-                            <div onclick="selectEmoji('add-bucket', '🐾')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🐾</div>
-                            <div onclick="selectEmoji('add-bucket', '⚙️')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">⚙️</div>
-                            <div onclick="selectEmoji('add-bucket', '💡')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💡</div>
-                            <div onclick="selectEmoji('add-bucket', '📦')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">📦</div>
-                            <div onclick="selectEmoji('add-bucket', '🔮')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🔮</div>
-                            <div onclick="selectEmoji('add-bucket', '⚡')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">⚡</div>
-                            <div onclick="selectEmoji('add-bucket', '💼')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💼</div>
-                            <div onclick="selectEmoji('add-bucket', '🏠')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🏠</div>
-                            <div onclick="selectEmoji('add-bucket', '💵')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💵</div>
-                            <div onclick="selectEmoji('add-bucket', '🐱')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🐱</div>
-                            <div onclick="selectEmoji('add-bucket', '❤️')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">❤️</div>
-                            <div onclick="selectEmoji('add-bucket', '✈️')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">✈️</div>
-                            <div onclick="selectEmoji('add-bucket', '🎓')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎓</div>
-                            <div onclick="selectEmoji('add-bucket', '💻')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💻</div>
-                            <div onclick="selectEmoji('add-bucket', '🛠️')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🛠️</div>
-                            <div onclick="selectEmoji('add-bucket', '📅')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">📅</div>
-                            <div onclick="selectEmoji('add-bucket', '🌟')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🌟</div>
-                            <div onclick="selectEmoji('add-bucket', '🔥')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🔥</div>
-                            <div onclick="selectEmoji('add-bucket', '🎨')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎨</div>
-                            <div onclick="selectEmoji('add-bucket', '🎵')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎵</div>
-                            <div onclick="selectEmoji('add-bucket', '☕')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">☕</div>
-                            <div onclick="selectEmoji('add-bucket', '🍔')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🍔</div>
-                            <div onclick="selectEmoji('add-bucket', '🔑')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🔑</div>
-                            <div onclick="selectEmoji('add-bucket', '🔒')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🔒</div>
-                            <div onclick="selectEmoji('add-bucket', '🏆')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🏆</div>
-                            <div onclick="selectEmoji('add-bucket', '🚀')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🚀</div>
-                            <div onclick="selectEmoji('add-bucket', '🌱')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🌱</div>
-                            <div onclick="selectEmoji('add-bucket', '🎁')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎁</div>
-                            <div onclick="selectEmoji('add-bucket', '🧠')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🧠</div>
-                        </div>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <label class="block text-xs font-medium text-slate-400 mb-1">Bucket Name</label>
-                        <input type="text" name="name" required placeholder="e.g. Subscriptions" 
-                               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200">
-                    </div>
+                <input type="hidden" name="icon" value="📌">
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-1">Bucket Name</label>
+                    <input type="text" name="name" required placeholder="e.g. Tasks, Cleaning" 
+                           class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200">
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
                     <button type="button" onclick="document.getElementById('add-bucket-modal').classList.add('hidden')" 
@@ -576,59 +528,11 @@
             <h3 class="text-xl font-bold mb-4">Edit Bucket</h3>
             <form action="/buckets/update/" method="POST" class="space-y-4">
                 <input type="hidden" name="bucket_id" id="edit-bucket-id">
-                <div class="flex items-center gap-3">
-                    <div class="shrink-0 relative">
-                        <label class="block text-xs font-medium text-slate-400 mb-1">Emoji</label>
-                        <input type="hidden" name="icon" id="edit-bucket-icon" value="📌">
-                        <button type="button" id="edit-bucket-picker" onclick="toggleEmojiGrid('edit-bucket')" class="w-12 h-10 bg-slate-900 border border-slate-700 rounded-xl flex items-center justify-center text-xl text-slate-200 cursor-pointer select-none">📌</button>
-                        <div id="edit-bucket-grid" class="hidden absolute top-14 left-0 w-36 max-h-40 bg-slate-900 border border-slate-700 rounded-xl p-2 grid grid-cols-4 gap-1 overflow-y-auto z-50 shadow-2xl">
-                            <div onclick="selectEmoji('edit-bucket', '📌')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">📌</div>
-                            <div onclick="selectEmoji('edit-bucket', '📂')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">📂</div>
-                            <div onclick="selectEmoji('edit-bucket', '📝')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">📝</div>
-                            <div onclick="selectEmoji('edit-bucket', '💸')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💸</div>
-                            <div onclick="selectEmoji('edit-bucket', '🧾')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🧾</div>
-                            <div onclick="selectEmoji('edit-bucket', '🎯')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎯</div>
-                            <div onclick="selectEmoji('edit-bucket', '🛒')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🛒</div>
-                            <div onclick="selectEmoji('edit-bucket', '💧')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💧</div>
-                            <div onclick="selectEmoji('edit-bucket', '💊')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💊</div>
-                            <div onclick="selectEmoji('edit-bucket', '🏋️')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🏋️</div>
-                            <div onclick="selectEmoji('edit-bucket', '🚗')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🚗</div>
-                            <div onclick="selectEmoji('edit-bucket', '🐾')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🐾</div>
-                            <div onclick="selectEmoji('edit-bucket', '⚙️')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">⚙️</div>
-                            <div onclick="selectEmoji('edit-bucket', '💡')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💡</div>
-                            <div onclick="selectEmoji('edit-bucket', '📦')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">📦</div>
-                            <div onclick="selectEmoji('edit-bucket', '🔮')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🔮</div>
-                            <div onclick="selectEmoji('edit-bucket', '⚡')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">⚡</div>
-                            <div onclick="selectEmoji('edit-bucket', '💼')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💼</div>
-                            <div onclick="selectEmoji('edit-bucket', '🏠')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🏠</div>
-                            <div onclick="selectEmoji('edit-bucket', '💵')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💵</div>
-                            <div onclick="selectEmoji('edit-bucket', '🐱')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🐱</div>
-                            <div onclick="selectEmoji('edit-bucket', '❤️')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">❤️</div>
-                            <div onclick="selectEmoji('edit-bucket', '✈️')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">✈️</div>
-                            <div onclick="selectEmoji('edit-bucket', '🎓')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎓</div>
-                            <div onclick="selectEmoji('edit-bucket', '💻')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💻</div>
-                            <div onclick="selectEmoji('edit-bucket', '🛠️')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🛠️</div>
-                            <div onclick="selectEmoji('edit-bucket', '📅')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">📅</div>
-                            <div onclick="selectEmoji('edit-bucket', '🌟')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🌟</div>
-                            <div onclick="selectEmoji('edit-bucket', '🔥')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🔥</div>
-                            <div onclick="selectEmoji('edit-bucket', '🎨')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎨</div>
-                            <div onclick="selectEmoji('edit-bucket', '🎵')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎵</div>
-                            <div onclick="selectEmoji('edit-bucket', '☕')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">☕</div>
-                            <div onclick="selectEmoji('edit-bucket', '🍔')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🍔</div>
-                            <div onclick="selectEmoji('edit-bucket', '🔑')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🔑</div>
-                            <div onclick="selectEmoji('edit-bucket', '🔒')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🔒</div>
-                            <div onclick="selectEmoji('edit-bucket', '🏆')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🏆</div>
-                            <div onclick="selectEmoji('edit-bucket', '🚀')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🚀</div>
-                            <div onclick="selectEmoji('edit-bucket', '🌱')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🌱</div>
-                            <div onclick="selectEmoji('edit-bucket', '🎁')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎁</div>
-                            <div onclick="selectEmoji('edit-bucket', '🧠')" class="w-7 h-7 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🧠</div>
-                        </div>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <label class="block text-xs font-medium text-slate-400 mb-1">Bucket Name</label>
-                        <input type="text" name="name" id="edit-bucket-name" required 
-                               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200">
-                    </div>
+                <input type="hidden" name="icon" value="📌">
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-1">Bucket Name</label>
+                    <input type="text" name="name" id="edit-bucket-name" required 
+                           class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200">
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
                     <button type="button" onclick="document.getElementById('edit-bucket-modal').classList.add('hidden')" 
@@ -661,7 +565,7 @@
 
                     {% if ns.active_realm and ns.active_bucket %}
                     <span class="bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-xs font-semibold px-2.5 py-1 rounded-full truncate inline-block max-w-[150px] sm:max-w-[200px]" title="{{ ns.active_realm.name }} / {{ ns.active_bucket.name }}">
-                        {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }} / {{ ns.active_bucket.icon }} {{ ns.active_bucket.name }}
+                        {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }} / 📌 {{ ns.active_bucket.name }}
                     </span>
                     {% endif %}
                 </div>
@@ -1014,16 +918,15 @@
                 const activeBucketRow = document.getElementById('bucket-row-' + currentSelectedBucketId);
                 if (activeBucketRow) {
                     const bName = activeBucketRow.getAttribute('data-bucket-name');
-                    const bIcon = activeBucketRow.getAttribute('data-bucket-icon');
                     const parentRId = activeBucketRow.getAttribute('data-parent-realm-id');
                     const activeRealmRow = document.getElementById('realm-row-' + parentRId);
                     const rName = activeRealmRow ? activeRealmRow.getAttribute('data-realm-name') : '';
                     const rIcon = activeRealmRow ? activeRealmRow.getAttribute('data-realm-icon') : '🔮';
 
-                    const badgeHtml = `<span class="bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-xs font-semibold px-2.5 py-1 rounded-full truncate inline-block max-w-[150px] sm:max-w-[200px]">${rIcon} ${rName} / ${bIcon} ${bName}</span>`;
+                    const badgeHtml = `<span class="bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-xs font-semibold px-2.5 py-1 rounded-full truncate inline-block max-w-[150px] sm:max-w-[200px]">${rIcon} ${rName} / 📌 ${bName}</span>`;
                     
                     if (badgeContainer) {
-                        badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate inline-block min-w-0 max-w-[110px] sm:max-w-[160px] md:max-w-[220px]" title="${rName} / ${bName}">${rIcon} ${rName} / ${bIcon} ${bName}</span>`;
+                        badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate inline-block min-w-0 max-w-[110px] sm:max-w-[160px] md:max-w-[220px]" title="${rName} / ${bName}">${rIcon} ${rName} / 📌 ${bName}</span>`;
                     }
                     if (modalBadgeContainer) {
                         modalBadgeContainer.innerHTML = badgeHtml;
@@ -1416,9 +1319,6 @@
         function openEditBucket(element) {
             document.getElementById('edit-bucket-id').value = element.getAttribute('data-id');
             document.getElementById('edit-bucket-name').value = element.getAttribute('data-name');
-            const icon = element.getAttribute('data-icon') || '📌';
-            document.getElementById('edit-bucket-icon').value = icon;
-            document.getElementById('edit-bucket-picker').innerText = icon;
             document.getElementById('edit-bucket-modal').classList.remove('hidden');
         }
 
