@@ -900,6 +900,10 @@ def delete_item(item_id: int = Form(...), delete_series: bool = Form(False)):
 
 @app.post("/items/toggle-complete/")
 def toggle_item_complete(request: Request, item_id: int = Form(...)):
+    # Capture current page URL so completing a task returns you to the exact same view
+    referer = request.headers.get("referer")
+    redirect_url = referer if referer else "/"
+
     with Session(engine) as session:
         item = session.get(Item, item_id)
         if item:
@@ -947,8 +951,8 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
                     )
 
             session.commit()
-            return RedirectResponse(url=f"/?bucket_id={item.bucket_id}", status_code=303)
-    return RedirectResponse(url="/", status_code=303)
+            return RedirectResponse(url=redirect_url, status_code=303)
+    return RedirectResponse(url=redirect_url, status_code=303)
 
 @app.post("/items/update/")
 def update_item(
