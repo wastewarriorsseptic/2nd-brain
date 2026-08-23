@@ -182,21 +182,21 @@
                     <!-- 3-Segment Filter Pill -->
                     <div class="w-full max-w-lg mx-auto mb-6 md:mb-8 p-1 bg-slate-800/90 border border-slate-700/80 rounded-full flex items-center shadow-inner select-none gap-1">
                         <button id="pill-btn-active" onclick="setTimelineFilter('active')" 
-                                class="flex-1 px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-indigo-600 text-white shadow-md min-w-0">
+                                class="flex-1 px-2 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-indigo-600 text-white shadow-md min-w-0">
                             <span class="truncate">⚡ Active</span>
-                            <span id="active-count-badge" class="bg-indigo-500/30 text-indigo-100 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full border border-indigo-400/30 shrink-0">0</span>
+                            <span id="active-count-badge" class="hidden sm:inline-block bg-indigo-500/30 text-indigo-100 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full border border-indigo-400/30 shrink-0">0</span>
                         </button>
 
                         <button id="pill-btn-overdue" onclick="setTimelineFilter('overdue')" 
-                                class="flex-1 px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 min-w-0">
+                                class="flex-1 px-2 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 min-w-0">
                             <span class="truncate">⚠️ Overdue</span>
-                            <span id="overdue-count-badge" class="bg-rose-500/30 text-rose-200 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full border border-rose-400/30 shrink-0">0</span>
+                            <span id="overdue-count-badge" class="hidden sm:inline-block bg-rose-500/30 text-rose-200 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full border border-rose-400/30 shrink-0">0</span>
                         </button>
 
                         <button id="pill-btn-completed" onclick="setTimelineFilter('completed')" 
-                                class="flex-1 px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 min-w-0">
+                                class="flex-1 px-2 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 min-w-0">
                             <span class="truncate">✅ Completed</span>
-                            <span id="completed-count-badge" class="bg-slate-700 text-slate-300 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full shrink-0">0</span>
+                            <span id="completed-count-badge" class="hidden sm:inline-block bg-slate-700 text-slate-300 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full shrink-0">0</span>
                         </button>
                     </div>
 
@@ -1072,18 +1072,18 @@
             const btnOverdue = document.getElementById('pill-btn-overdue');
             const btnCompleted = document.getElementById('pill-btn-completed');
 
-            const defaultClass = "flex-1 px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 min-w-0";
+            const defaultClass = "flex-1 px-2 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 min-w-0";
 
             if (btnActive) btnActive.className = defaultClass;
             if (btnOverdue) btnOverdue.className = defaultClass;
             if (btnCompleted) btnCompleted.className = defaultClass;
 
             if (mode === 'active' && btnActive) {
-                btnActive.className = "flex-1 px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-indigo-600 text-white shadow-md min-w-0";
+                btnActive.className = "flex-1 px-2 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-indigo-600 text-white shadow-md min-w-0";
             } else if (mode === 'overdue' && btnOverdue) {
-                btnOverdue.className = "flex-1 px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-rose-600 text-white shadow-md min-w-0";
+                btnOverdue.className = "flex-1 px-2 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-rose-600 text-white shadow-md min-w-0";
             } else if (mode === 'completed' && btnCompleted) {
-                btnCompleted.className = "flex-1 px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-emerald-600 text-white shadow-md min-w-0";
+                btnCompleted.className = "flex-1 px-2 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-emerald-600 text-white shadow-md min-w-0";
             }
 
             filterTimelineList();
