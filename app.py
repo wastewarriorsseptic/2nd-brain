@@ -892,10 +892,9 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
                 now_dt = datetime.now()
                 item.completed_at = now_dt
 
-                # If this is part of a recurring series, shift the NEXT uncompleted instance 
-                # relative to the ACTUAL completion date
+                # Cascade-shift ALL future uncompleted items in the series relative to completion date
                 if item.recurring_group_id:
-                    next_item = session.exec(
+                    future_items = session.exec(
                         select(Item)
                         .where(
                             Item.recurring_group_id == item.recurring_group_id,
@@ -904,43 +903,44 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
                             Item.due_date > item.due_date
                         )
                         .order_by(Item.due_date.asc())
-                    ).first()
+                    ).all()
 
-                    if next_item:
+                    if future_items:
+                        next_item = future_items[0]
                         rec_type = item.recurrence_type or "daily"
-                        
+
+                        # 1. Calculate how far out the FIRST future item should move from right NOW
                         if rec_type in ["daily", "weekly", "none"]:
-                            # Calculate exact gap in days between original occurrences
                             interval_days = (next_item.due_date.date() - item.due_date.date()).days
-                            if interval_days > 0:
-                                new_next_due = now_dt.replace(
-                                    hour=next_item.due_date.hour,
-                                    minute=next_item.due_date.minute,
-                                    second=0
-                                ) + timedelta(days=interval_days)
+                            if interval_days < 1:
+                                interval_days = 1
+                            first_new_due = now_dt.replace(
+                                hour=next_item.due_date.hour,
+                                minute=next_item.due_date.minute,
+                                second=0
+                            ) + timedelta(days=interval_days)
                         elif rec_type == "monthly":
-                            # Shift forward by 1 month (or original month gap)
                             m_gap = (next_item.due_date.year - item.due_date.year) * 12 + (next_item.due_date.month - item.due_date.month)
-                            m_gap = max(1, m_gap)
-                            new_next_due = add_months(now_dt, m_gap).replace(
+                            first_new_due = add_months(now_dt, max(1, m_gap)).replace(
                                 hour=next_item.due_date.hour,
                                 minute=next_item.due_date.minute,
                                 second=0
                             )
                         elif rec_type == "yearly":
-                            # Shift forward by 1 year (or original year gap)
                             y_gap = max(1, next_item.due_date.year - item.due_date.year)
-                            new_next_due = now_dt.replace(
+                            first_new_due = now_dt.replace(
                                 year=now_dt.year + y_gap,
                                 hour=next_item.due_date.hour,
                                 minute=next_item.due_date.minute,
                                 second=0
                             )
 
-                        # Only push forward if the newly calculated due date is further out
-                        if new_next_due > next_item.due_date:
-                            next_item.due_date = new_next_due
-                            session.add(next_item)
+                        # 2. If pushing forward, calculate the shift offset and cascade it to ALL future items
+                        if first_new_due > next_item.due_date:
+                            shift_offset = first_new_due - next_item.due_date
+                            for f_item in future_items:
+                                f_item.due_date = f_item.due_date + shift_offset
+                                session.add(f_item)
 
             else:
                 item.completed_at = None
