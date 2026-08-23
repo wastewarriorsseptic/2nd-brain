@@ -179,12 +179,18 @@
             <div class="max-w-4xl mx-auto">
                 {% if user %}
                     
-                    <!-- 3-Segment Filter Pill -->
-                    <div class="w-full max-w-lg mx-auto mb-6 md:mb-8 p-1 bg-slate-800/90 border border-slate-700/80 rounded-full flex items-center shadow-inner select-none gap-1">
+                    <!-- 4-Segment Filter Pill -->
+                    <div class="w-full max-w-xl mx-auto mb-6 md:mb-8 p-1 bg-slate-800/90 border border-slate-700/80 rounded-full flex items-center shadow-inner select-none gap-1">
                         <button id="pill-btn-active" onclick="setTimelineFilter('active')" 
                                 class="flex-1 px-2 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-indigo-600 text-white shadow-md min-w-0">
                             <span class="truncate">⚡ Active</span>
                             <span id="active-count-badge" class="hidden sm:inline-block bg-indigo-500/30 text-indigo-100 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full border border-indigo-400/30 shrink-0">0</span>
+                        </button>
+
+                        <button id="pill-btn-recurring" onclick="setTimelineFilter('recurring')" 
+                                class="flex-1 px-2 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 min-w-0">
+                            <span class="truncate">🔄 Recurring</span>
+                            <span id="recurring-count-badge" class="hidden sm:inline-block bg-amber-500/30 text-amber-200 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full border border-amber-400/30 shrink-0">0</span>
                         </button>
 
                         <button id="pill-btn-overdue" onclick="setTimelineFilter('overdue')" 
@@ -209,6 +215,7 @@
                              data-completed-at="{{ item.completed_at.isoformat() if item.completed_at else '' }}"
                              data-due-date="{{ item.due_date.strftime('%Y-%m-%d') }}"
                              data-item-id="{{ item.id }}"
+                             data-recurring="{{ 'true' if item.recurring_group_id else 'false' }}"
                              data-realm-id="{{ item.bucket.realm.id if item.bucket and item.bucket.realm else '' }}"
                              data-bucket-id="{{ item.bucket.id if item.bucket else '' }}">
                             <div class="absolute -left-[23px] md:-left-[31px] top-5 w-3.5 md:w-4 h-3.5 md:h-4 rounded-full border-2 border-slate-900 {% if item.is_completed %}bg-slate-600{% elif days_out < 0 %}bg-rose-500 animate-pulse{% else %}bg-indigo-500 group-hover:scale-125{% endif %} transition-all"></div>
@@ -436,7 +443,7 @@
                     </div>
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
-                    <button type="button" onclick="document.getElementById('edit-realm-modal').classList.add('hidden')" 
+                    <button type="button" onclick="document.getElementById('add-realm-modal').classList.add('hidden')" 
                             class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Cancel</button>
                     <button type="submit" 
                             class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold">Create Realm</button>
@@ -1079,17 +1086,21 @@
             localStorage.setItem('timeline_filter_mode', mode);
 
             const btnActive = document.getElementById('pill-btn-active');
+            const btnRecurring = document.getElementById('pill-btn-recurring');
             const btnOverdue = document.getElementById('pill-btn-overdue');
             const btnCompleted = document.getElementById('pill-btn-completed');
 
             const defaultClass = "flex-1 px-2 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 min-w-0";
 
             if (btnActive) btnActive.className = defaultClass;
+            if (btnRecurring) btnRecurring.className = defaultClass;
             if (btnOverdue) btnOverdue.className = defaultClass;
             if (btnCompleted) btnCompleted.className = defaultClass;
 
             if (mode === 'active' && btnActive) {
                 btnActive.className = "flex-1 px-2 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-indigo-600 text-white shadow-md min-w-0";
+            } else if (mode === 'recurring' && btnRecurring) {
+                btnRecurring.className = "flex-1 px-2 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-amber-600 text-white shadow-md min-w-0";
             } else if (mode === 'overdue' && btnOverdue) {
                 btnOverdue.className = "flex-1 px-2 sm:px-3 py-2 text-[11px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1.5 bg-rose-600 text-white shadow-md min-w-0";
             } else if (mode === 'completed' && btnCompleted) {
@@ -1138,6 +1149,7 @@
             }
 
             let activeCount = 0;
+            let recurringCount = 0;
             let overdueCount = 0;
             let completedCount = 0;
             let visibleCount = 0;
@@ -1145,6 +1157,7 @@
 
             wrappers.forEach(el => {
                 const isCompleted = el.getAttribute('data-completed') === 'true';
+                const isRecurring = el.getAttribute('data-recurring') === 'true';
                 const itemRealmId = el.getAttribute('data-realm-id') ? parseInt(el.getAttribute('data-realm-id')) : null;
                 const itemBucketId = el.getAttribute('data-bucket-id') ? parseInt(el.getAttribute('data-bucket-id')) : null;
                 const dueDateStr = el.getAttribute('data-due-date');
@@ -1166,11 +1179,14 @@
                 if (matchesSelection) {
                     if (isCompleted) {
                         completedCount++;
-                    } else if (isOverdue) {
-                        overdueCount++;
-                        activeCount++;
                     } else {
                         activeCount++;
+                        if (isRecurring) {
+                            recurringCount++;
+                        }
+                        if (isOverdue) {
+                            overdueCount++;
+                        }
                     }
 
                     const isWithinHorizon = itemDueDate <= endOfHorizonDate;
@@ -1178,6 +1194,8 @@
                     let matchesMode = false;
                     if (currentFilterMode === 'active') {
                         matchesMode = !isCompleted;
+                    } else if (currentFilterMode === 'recurring') {
+                        matchesMode = !isCompleted && isRecurring;
                     } else if (currentFilterMode === 'overdue') {
                         matchesMode = isOverdue;
                     } else if (currentFilterMode === 'completed') {
@@ -1199,10 +1217,12 @@
             });
 
             const activeBadge = document.getElementById('active-count-badge');
+            const recurringBadge = document.getElementById('recurring-count-badge');
             const overdueBadge = document.getElementById('overdue-count-badge');
             const completedBadge = document.getElementById('completed-count-badge');
 
             if (activeBadge) activeBadge.innerText = activeCount;
+            if (recurringBadge) recurringBadge.innerText = recurringCount;
             if (overdueBadge) overdueBadge.innerText = overdueCount;
             if (completedBadge) completedBadge.innerText = completedCount;
 
@@ -1211,6 +1231,8 @@
                     emptyState.classList.remove('hidden');
                     if (currentFilterMode === 'active') {
                         emptyText.innerText = "🎉 All caught up! No active tasks found.";
+                    } else if (currentFilterMode === 'recurring') {
+                        emptyText.innerText = "🔄 No active recurring tasks found.";
                     } else if (currentFilterMode === 'overdue') {
                         emptyText.innerText = "✨ Awesome! You have no overdue tasks.";
                     } else {
