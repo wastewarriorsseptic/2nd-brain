@@ -956,15 +956,20 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
 
 @app.post("/items/update/")
 def update_item(
+    request: Request,
     item_id: int = Form(...),
     title: str = Form(...),
     due_date: str = Form(...),
     due_time: Optional[str] = Form(None),
+    reminder_offset: Optional[int] = Form(0),
     amount: Optional[float] = Form(None),
     description: Optional[str] = Form(None),
     bucket_id: Optional[int] = Form(None),
     update_series: bool = Form(False)
 ):
+    referer = request.headers.get("referer")
+    redirect_url = referer if referer else "/"
+
     hour, minute = 9, 0
     if due_time and due_time.strip():
         try:
@@ -978,7 +983,7 @@ def update_item(
     with Session(engine) as session:
         item = session.get(Item, item_id)
         if not item:
-            return RedirectResponse(url="/", status_code=303)
+            return RedirectResponse(url=redirect_url, status_code=303)
 
         target_bucket_id = bucket_id if bucket_id else item.bucket_id
 
@@ -1003,7 +1008,7 @@ def update_item(
             session.add(item)
 
         session.commit()
-        return RedirectResponse(url=f"/?bucket_id={target_bucket_id}", status_code=303)
+        return RedirectResponse(url=redirect_url, status_code=303)
 
 @app.post("/users/timezone/")
 def sync_user_timezone(request: Request, timezone: str = Form(...)):
