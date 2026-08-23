@@ -879,7 +879,6 @@ def delete_item(item_id: int = Form(...), delete_series: bool = Form(False)):
 
 @app.post("/items/toggle-complete/")
 def toggle_item_complete(request: Request, item_id: int = Form(...)):
-    # Capture current page URL so completing a task returns you to the exact same view
     referer = request.headers.get("referer")
     redirect_url = referer if referer else "/"
 
@@ -890,7 +889,59 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
             item.is_completed = not was_completed
 
             if not was_completed:
-                item.completed_at = datetime.now()
+                now_dt = datetime.now()
+                item.completed_at = now_dt
+
+                # If this is part of a recurring series, shift the NEXT uncompleted instance 
+                # relative to the ACTUAL completion date
+                if item.recurring_group_id:
+                    next_item = session.exec(
+                        select(Item)
+                        .where(
+                            Item.recurring_group_id == item.recurring_group_id,
+                            Item.is_completed == False,
+                            Item.id != item.id,
+                            Item.due_date > item.due_date
+                        )
+                        .order_by(Item.due_date.asc())
+                    ).first()
+
+                    if next_item:
+                        rec_type = item.recurrence_type or "daily"
+                        
+                        if rec_type in ["daily", "weekly", "none"]:
+                            # Calculate exact gap in days between original occurrences
+                            interval_days = (next_item.due_date.date() - item.due_date.date()).days
+                            if interval_days > 0:
+                                new_next_due = now_dt.replace(
+                                    hour=next_item.due_date.hour,
+                                    minute=next_item.due_date.minute,
+                                    second=0
+                                ) + timedelta(days=interval_days)
+                        elif rec_type == "monthly":
+                            # Shift forward by 1 month (or original month gap)
+                            m_gap = (next_item.due_date.year - item.due_date.year) * 12 + (next_item.due_date.month - item.due_date.month)
+                            m_gap = max(1, m_gap)
+                            new_next_due = add_months(now_dt, m_gap).replace(
+                                hour=next_item.due_date.hour,
+                                minute=next_item.due_date.minute,
+                                second=0
+                            )
+                        elif rec_type == "yearly":
+                            # Shift forward by 1 year (or original year gap)
+                            y_gap = max(1, next_item.due_date.year - item.due_date.year)
+                            new_next_due = now_dt.replace(
+                                year=now_dt.year + y_gap,
+                                hour=next_item.due_date.hour,
+                                minute=next_item.due_date.minute,
+                                second=0
+                            )
+
+                        # Only push forward if the newly calculated due date is further out
+                        if new_next_due > next_item.due_date:
+                            next_item.due_date = new_next_due
+                            session.add(next_item)
+
             else:
                 item.completed_at = None
 
