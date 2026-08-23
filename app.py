@@ -908,27 +908,27 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
                     if future_items:
                         rec_type = item.recurrence_type or "daily"
                         
-                        # Determine the fixed interval step
+                        # Fix 12:00 AM rollover issue by ensuring hour defaults to 9 AM if 00:00
+                        hour = future_items[0].due_date.hour
+                        minute = future_items[0].due_date.minute
+                        if hour == 0 and minute == 0:
+                            hour = 9
+
+                        today_base = now_dt.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
                         if rec_type in ["daily", "weekly", "none"]:
-                            # Measure original interval step between 1st and 2nd future items, or default to 3
+                            # Measure step interval between occurrences (defaulting to 3 if missing)
                             step_days = 3
                             if len(future_items) > 1:
-                                step_days = (future_items[1].due_date.date() - future_items[0].due_date.date()).days
-                                if step_days < 1:
-                                    step_days = 1
-
-                            # Re-anchor the entire future chain starting step_days from NOW
-                            anchor_date = now_dt.replace(
-                                hour=future_items[0].due_date.hour,
-                                minute=future_items[0].due_date.minute,
-                                second=0
-                            ) + timedelta(days=step_days)
+                                calculated_step = (future_items[1].due_date.date() - future_items[0].due_date.date()).days
+                                if calculated_step >= 1:
+                                    step_days = calculated_step
 
                             for idx, f_item in enumerate(future_items):
-                                new_due = anchor_date + timedelta(days=idx * step_days)
-                                if new_due > f_item.due_date:
-                                    f_item.due_date = new_due
-                                    session.add(f_item)
+                                # Re-anchor: 1st future task is today_base + step_days
+                                new_due = today_base + timedelta(days=(idx + 1) * step_days)
+                                f_item.due_date = new_due
+                                session.add(f_item)
 
                         elif rec_type == "monthly":
                             m_gap = 1
@@ -936,17 +936,10 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
                                 m_gap = (future_items[1].due_date.year - future_items[0].due_date.year) * 12 + (future_items[1].due_date.month - future_items[0].due_date.month)
                                 m_gap = max(1, m_gap)
 
-                            anchor_date = add_months(now_dt, m_gap).replace(
-                                hour=future_items[0].due_date.hour,
-                                minute=future_items[0].due_date.minute,
-                                second=0
-                            )
-
                             for idx, f_item in enumerate(future_items):
-                                new_due = add_months(anchor_date, idx * m_gap)
-                                if new_due > f_item.due_date:
-                                    f_item.due_date = new_due
-                                    session.add(f_item)
+                                new_due = add_months(today_base, (idx + 1) * m_gap)
+                                f_item.due_date = new_due
+                                session.add(f_item)
 
             else:
                 item.completed_at = None
