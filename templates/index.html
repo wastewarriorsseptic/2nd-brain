@@ -501,7 +501,7 @@
                             <div onclick="selectEmoji('edit-realm', '⚽')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">⚽</div>
                             <div onclick="selectEmoji('edit-realm', '🧹')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🧹</div>
                             <div onclick="selectEmoji('edit-realm', '🧼')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🧼</div>
-                            <div onclick="selectEmoji('edit-realm', '🍳')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🍳</div>
+                            <div onclick="selectEmoji('add-realm', '🍳')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🍳</div>
                             <div onclick="selectEmoji('edit-realm', '☕')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">☕</div>
                             <div onclick="selectEmoji('edit-realm', '🍔')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🍔</div>
                             <div onclick="selectEmoji('edit-realm', '🍕')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🍕</div>
@@ -729,6 +729,10 @@
                 <input type="hidden" name="item_id" id="edit-item-id">
                 <input type="hidden" name="bucket_id" id="edit-item-bucket-id">
                 <input type="hidden" name="recurrence_type" id="edit-recurrence-type-input" value="none">
+                <input type="hidden" name="interval" id="edit-interval-input" value="1">
+                <input type="hidden" name="weekdays" id="edit-weekdays-input" value="">
+                <input type="hidden" name="month_days" id="edit-month-days-input" value="">
+                <input type="hidden" name="months" id="edit-months-input" value="">
 
                 <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Title</label>
@@ -887,7 +891,13 @@
                 ? (document.getElementById('edit-recurrence-type-input').value || 'none')
                 : (document.getElementById('add-recurrence-type-input').value || 'none');
             
+            const currentInterval = (target === 'edit')
+                ? (document.getElementById('edit-interval-input').value || 1)
+                : (document.getElementById('interval-input').value || 1);
+
             document.getElementById('modal-freq-select').value = currentFreq;
+            document.getElementById('modal-interval').value = currentInterval;
+            
             toggleFrequencyView();
             document.getElementById('custom-repeat-modal').classList.remove('hidden');
         }
@@ -1362,23 +1372,39 @@
             const targetInputId = (currentRecurrenceTarget === 'edit') 
                 ? 'edit-recurrence-type-input' 
                 : 'add-recurrence-type-input';
+
+            const targetIntervalId = (currentRecurrenceTarget === 'edit')
+                ? 'edit-interval-input'
+                : 'interval-input';
             
             const recurrenceInput = document.getElementById(targetInputId);
             if (recurrenceInput) {
                 recurrenceInput.value = freq;
             }
 
-            document.getElementById('interval-input').value = interval;
-            document.getElementById('weekdays-input').value = selectedWeekdays.join(',');
-            document.getElementById('month-days-input').value = selectedMonthDays.join(',');
-            document.getElementById('months-input').value = selectedYearMonths.join(',');
+            const intervalInput = document.getElementById(targetIntervalId);
+            if (intervalInput) {
+                intervalInput.value = interval;
+            }
+
+            if (currentRecurrenceTarget === 'edit') {
+                document.getElementById('edit-weekdays-input').value = selectedWeekdays.join(',');
+                document.getElementById('edit-month-days-input').value = selectedMonthDays.join(',');
+                document.getElementById('edit-months-input').value = selectedYearMonths.join(',');
+            } else {
+                document.getElementById('weekdays-input').value = selectedWeekdays.join(',');
+                document.getElementById('month-days-input').value = selectedMonthDays.join(',');
+                document.getElementById('months-input').value = selectedYearMonths.join(',');
+            }
 
             const labelSpan = document.getElementById('repeat-button-label').querySelector('span');
             if (labelSpan && currentRecurrenceTarget === 'add') {
                 if (freq === 'none') {
                     labelSpan.innerText = 'Never';
                 } else {
-                    labelSpan.innerText = `${freq.charAt(0).toUpperCase() + freq.slice(1)} (Every ${interval})`;
+                    labelSpan.innerText = (interval > 1) 
+                        ? `${freq.charAt(0).toUpperCase() + freq.slice(1)} (Every ${interval})` 
+                        : freq.charAt(0).toUpperCase() + freq.slice(1);
                 }
             }
 
@@ -1387,7 +1413,9 @@
                 if (freq === 'none') {
                     editStatusSpan.innerText = 'Never';
                 } else {
-                    editStatusSpan.innerText = `${freq.charAt(0).toUpperCase() + freq.slice(1)} (Every ${interval})`;
+                    editStatusSpan.innerText = (interval > 1) 
+                        ? `${freq.charAt(0).toUpperCase() + freq.slice(1)} (Every ${interval})` 
+                        : freq.charAt(0).toUpperCase() + freq.slice(1);
                 }
             }
 
@@ -1504,11 +1532,17 @@
                 editRecurrenceInput.value = recurrenceType;
             }
 
+            const currentInterval = document.getElementById('edit-interval-input').value || 1;
             const editStatusSpan = document.getElementById('edit-repeat-status');
             if (editStatusSpan) {
-                editStatusSpan.innerText = (recurrenceType && recurrenceType !== 'none') 
-                    ? (recurrenceType.charAt(0).toUpperCase() + recurrenceType.slice(1)) 
-                    : 'Never';
+                if (recurrenceType && recurrenceType !== 'none') {
+                    const formattedType = recurrenceType.charAt(0).toUpperCase() + recurrenceType.slice(1);
+                    editStatusSpan.innerText = (currentInterval > 1) 
+                        ? `${formattedType} (Every ${currentInterval})` 
+                        : formattedType;
+                } else {
+                    editStatusSpan.innerText = 'Never';
+                }
             }
 
             const seriesWrapper = document.getElementById('edit-item-series-wrapper');
