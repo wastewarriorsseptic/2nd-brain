@@ -223,36 +223,8 @@ oauth.register(
 scheduler = BackgroundScheduler()
 scheduler.start()
 
-def check_and_send_overdue_emails():
-    with Session(engine) as session:
-        overdue_items = session.exec(
-            select(Item).where(Item.is_completed == False, Item.due_date < datetime.now())
-        ).all()
-
-        for item in overdue_items:
-            # Fetch bucket owner/realm to determine target user's local date
-            bucket = session.get(Bucket, item.bucket_id)
-            realm = session.get(Realm, bucket.realm_id) if bucket else None
-            user = session.get(User, realm.user_id) if (realm and realm.user_id) else None
-            
-            user_tz = user.timezone if (user and user.timezone) else "UTC"
-            today = get_user_today_date(user_tz)
-
-            days_overdue = (today - item.due_date.date()).days
-            if days_overdue > 0:
-                due_str = item.due_date.strftime("%b %d, %Y")
-                send_email_alert(
-                    title=f"⚠️ OVERDUE ({days_overdue}d): {item.title}",
-                    due_date=f"{due_str} ({days_overdue} day(s) overdue)",
-                    amount=item.amount,
-                    description=item.description
-                )
-
-# Daily cron at 8:00 AM for overdue notifications
-scheduler.add_job(check_and_send_overdue_emails, 'cron', hour=8, minute=0)
-
 def send_daily_snapshot_emails():
-    """Runs hourly; sends a snapshot only if it is currently 7:00 AM in the user's local time zone."""
+    """Runs hourly; sends a single consolidated digest during the user's local 7:00 AM hour."""
     if not resend.api_key:
         print("Skipping snapshot emails: RESEND_API_KEY is missing.", flush=True)
         return
@@ -263,14 +235,13 @@ def send_daily_snapshot_emails():
         for user in users:
             user_tz = user.timezone or "UTC"
             
-            # Check current local hour for this specific user
             try:
                 user_now = datetime.now(ZoneInfo(user_tz))
             except Exception:
                 user_now = datetime.now(ZoneInfo("UTC"))
 
             # Strictly trigger ONLY during the user's local 7:00 AM hour
-            if user_now.hour != 6:
+            if user_now.hour != 7:
                 continue
 
             user_today = user_now.date()
@@ -288,57 +259,62 @@ def send_daily_snapshot_emails():
             if not realm_ids:
                 continue
 
-            # Query all items across user's accessible realms
             all_items = session.exec(
                 select(Item).join(Bucket).where(Bucket.realm_id.in_(realm_ids))
             ).all()
 
-            # Categorize Items (Timezone-Aware Completed Yesterday)
+            # Categorize Items
+            overdue_items = []
+            due_today = []
+            due_tomorrow = []
             completed_yesterday = []
+
             for item in all_items:
-                if item.is_completed and item.completed_at:
-                    dt = item.completed_at
-                    # Ensure UTC awareness if naive
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
-                    
-                    try:
-                        local_completed_date = dt.astimezone(ZoneInfo(user_tz)).date()
-                    except Exception:
-                        local_completed_date = dt.date()
+                if item.is_completed:
+                    if item.completed_at:
+                        dt = item.completed_at
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        try:
+                            local_completed_date = dt.astimezone(ZoneInfo(user_tz)).date()
+                        except Exception:
+                            local_completed_date = dt.date()
 
-                    if local_completed_date == yesterday:
-                        completed_yesterday.append(item)
+                        if local_completed_date == yesterday:
+                            completed_yesterday.append(item)
+                else:
+                    item_due = item.due_date.date()
+                    if item_due < user_today:
+                        overdue_items.append(item)
+                    elif item_due == user_today:
+                        due_today.append(item)
+                    elif item_due == tomorrow:
+                        due_tomorrow.append(item)
 
-            due_today = [
-                item for item in all_items 
-                if not item.is_completed and item.due_date.date() == user_today
-            ]
-
-            due_tomorrow = [
-                item for item in all_items 
-                if not item.is_completed and item.due_date.date() == tomorrow
-            ]
-
-            # Don't send empty emails if there's no activity
-            if not completed_yesterday and not due_today and not due_tomorrow:
+            if not overdue_items and not completed_yesterday and not due_today and not due_tomorrow:
                 continue
 
-            # Format HTML Sections
-            def format_item_list(items, empty_msg):
+            def format_item_list(items, empty_msg, show_overdue_days=False):
                 if not items:
                     return f"<p style='color: #9ca3af; font-size: 13px;'>{empty_msg}</p>"
                 html = "<ul style='padding-left: 20px; margin: 8px 0; color: #374151; font-size: 14px;'>"
                 for item in items:
                     amount_str = f" (${item.amount:.2f})" if item.amount else ""
                     realm_str = f" <span style='color: #6b7280; font-size: 12px;'>[{item.bucket.realm.name} / {item.bucket.name}]</span>" if item.bucket else ""
-                    html += f"<li style='margin-bottom: 6px;'><strong>{item.title}</strong>{amount_str}{realm_str}</li>"
+                    
+                    extra_tag = ""
+                    if show_overdue_days:
+                        days_late = (user_today - item.due_date.date()).days
+                        extra_tag = f" <span style='color: #dc2626; font-weight: 600; font-size: 12px;'>(Overdue {days_late}d)</span>"
+                    
+                    html += f"<li style='margin-bottom: 6px;'><strong>{item.title}</strong>{amount_str}{extra_tag}{realm_str}</li>"
                 html += "</ul>"
                 return html
 
-            completed_html = format_item_list(completed_yesterday, "No tasks completed yesterday.")
+            overdue_html = format_item_list(overdue_items, "No overdue tasks!", show_overdue_days=True)
             today_html = format_item_list(due_today, "No tasks due today!")
             tomorrow_html = format_item_list(due_tomorrow, "Nothing scheduled for tomorrow.")
+            completed_html = format_item_list(completed_yesterday, "No tasks completed yesterday.")
 
             email_body = f"""
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background-color: #ffffff;">
@@ -347,14 +323,17 @@ def send_daily_snapshot_emails():
                 
                 <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 16px 0;" />
                 
-                <h3 style="color: #059669; font-size: 15px; margin-bottom: 4px;">✅ Completed Yesterday</h3>
-                {completed_html}
+                <h3 style="color: #dc2626; font-size: 15px; margin-bottom: 4px;">⚠️ Overdue Tasks ({len(overdue_items)})</h3>
+                {overdue_html}
 
                 <h3 style="color: #4f46e5; font-size: 15px; margin-bottom: 4px; margin-top: 16px;">⚡ Due Today</h3>
                 {today_html}
 
                 <h3 style="color: #d97706; font-size: 15px; margin-bottom: 4px; margin-top: 16px;">📅 Due Tomorrow</h3>
                 {tomorrow_html}
+
+                <h3 style="color: #059669; font-size: 15px; margin-bottom: 4px; margin-top: 16px;">✅ Completed Yesterday</h3>
+                {completed_html}
 
                 <div style="margin-top: 24px; text-align: center;">
                     <a href="https://usetaskmonster.app" style="background-color: #6366f1; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; display: inline-block;">Open TaskMonster</a>
@@ -366,10 +345,10 @@ def send_daily_snapshot_emails():
                 resend.Emails.send({
                     "from": "TaskMonster <notifications@usetaskmonster.app>",
                     "to": [user.email],
-                    "subject": f"☕ Your Daily Snapshot - {user_today.strftime('%b %d')}",
+                    "subject": f"☕ Daily Snapshot - {user_today.strftime('%b %d')}{' (' + str(len(overdue_items)) + ' Overdue)' if overdue_items else ''}",
                     "html": email_body
                 })
-                print(f"Snapshot email successfully sent to {user.email} for local time {user_tz}", flush=True)
+                print(f"Snapshot email sent to {user.email} for local time {user_tz}", flush=True)
             except Exception as e:
                 print(f"Failed to send snapshot email to {user.email}: {e}", flush=True)
 
