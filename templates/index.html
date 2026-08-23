@@ -153,27 +153,22 @@
             {% endif %}
         </div>
 
+        {% if user %}
+        <!-- Sidebar User Profile Footer -->
+        <div class="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400 mt-auto">
+            <span class="truncate max-w-[140px] font-medium text-slate-300">👤 {{ user.name }}</span>
+            <a href="/logout" class="hover:text-rose-400 font-semibold text-[11px] transition-colors">
+                Sign Out
+            </a>
+        </div>
+        {% else %}
         <div></div>
+        {% endif %}
     </aside>
 
     <main class="flex-1 p-3 md:p-8 overflow-y-auto flex flex-col justify-between">
         <div>
-            <header class="flex items-center justify-between gap-3 mb-4 md:mb-6">
-                <div></div>
-
-                {% if user %}
-                <div class="flex items-center gap-3 ml-auto">
-                    <span class="text-sm font-medium text-slate-300 flex items-center gap-1.5">
-                        👤 {{ user.name }}
-                    </span>
-                    <a href="/logout" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/80 text-xs font-semibold px-3 py-1.5 rounded-xl transition">
-                        Sign Out
-                    </a>
-                </div>
-                {% endif %}
-            </header>
-
-            <div class="max-w-4xl mx-auto">
+            <div class="max-w-4xl mx-auto pt-2 sm:pt-4">
                 {% if user %}
                     
                     <!-- 4-Segment Responsive Filter Pill -->
