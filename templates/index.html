@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0f172a">
     <link rel="icon" type="image/jpeg" href="/static/icon.jpeg">
     <link rel="apple-touch-icon" href="/static/icon.jpeg">
-    <title>😈 TaskMonster - Timeline</title>
+    <title>😈 TaskMonster - Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
@@ -158,14 +158,11 @@
 
     <main class="flex-1 p-3 md:p-8 overflow-y-auto flex flex-col justify-between">
         <div>
-            <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 md:mb-8">
-                <div>
-                    <h2 class="text-2xl md:text-3xl font-bold tracking-tight">Timeline</h2>
-                    <p class="text-slate-400 text-xs md:text-sm mt-0.5">Chronological flow of tasks due this month:</p>
-                </div>
+            <header class="flex items-center justify-between gap-3 mb-4 md:mb-6">
+                <div></div>
 
                 {% if user %}
-                <div class="flex items-center gap-3">
+                <div class="flex items-center gap-3 ml-auto">
                     <span class="text-sm font-medium text-slate-300 flex items-center gap-1.5">
                         👤 {{ user.name }}
                     </span>
@@ -543,10 +540,10 @@
                     </div>
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
-                    <button type="button" onclick="document.getElementById('add-realm-modal').classList.add('hidden')" 
+                    <button type="button" onclick="document.getElementById('edit-realm-modal').classList.add('hidden')" 
                             class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Cancel</button>
                     <button type="submit" 
-                            class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold">Create Realm</button>
+                            class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold">Save Changes</button>
                 </div>
             </form>
         </div>
