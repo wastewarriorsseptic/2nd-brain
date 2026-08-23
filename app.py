@@ -962,6 +962,7 @@ def update_item(
     due_date: str = Form(...),
     due_time: Optional[str] = Form(None),
     reminder_offset: Optional[int] = Form(0),
+    recurrence_type: Optional[str] = Form("none"),
     amount: Optional[float] = Form(None),
     description: Optional[str] = Form(None),
     bucket_id: Optional[int] = Form(None),
@@ -997,6 +998,7 @@ def update_item(
                 series_item.amount = amount
                 series_item.description = description
                 series_item.bucket_id = target_bucket_id
+                series_item.recurrence_type = recurrence_type
                 series_item.due_date = series_item.due_date.replace(hour=hour, minute=minute, second=0)
                 session.add(series_item)
         else:
@@ -1005,6 +1007,7 @@ def update_item(
             item.amount = amount
             item.description = description
             item.bucket_id = target_bucket_id
+            item.recurrence_type = recurrence_type
             session.add(item)
 
         session.commit()

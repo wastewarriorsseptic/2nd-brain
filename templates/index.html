@@ -638,7 +638,7 @@
 
             <form action="/items/" method="POST" class="space-y-3.5">
                 <input type="hidden" name="bucket_id" id="task-modal-bucket-id" value="{{ selected_bucket_id or '' }}">
-                <input type="hidden" name="recurrence_type" id="recurrence-type-input" value="none">
+                <input type="hidden" name="recurrence_type" id="add-recurrence-type-input" value="none">
                 <input type="hidden" name="interval" id="interval-input" value="1">
                 <input type="hidden" name="weekdays" id="weekdays-input" value="">
                 <input type="hidden" name="month_days" id="month-days-input" value="">
@@ -683,7 +683,7 @@
 
                 <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Repeat</label>
-                    <button type="button" onclick="document.getElementById('custom-repeat-modal').classList.remove('hidden')" 
+                    <button type="button" onclick="openRecurrenceModal('add')" 
                             id="repeat-button-label"
                             class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-left text-slate-200 flex justify-between items-center hover:border-slate-500 transition box-border">
                         <span>Never</span>
@@ -721,6 +721,7 @@
             <form action="/items/update/" method="POST" class="space-y-3.5">
                 <input type="hidden" name="item_id" id="edit-item-id">
                 <input type="hidden" name="bucket_id" id="edit-item-bucket-id">
+                <input type="hidden" name="recurrence_type" id="edit-recurrence-type-input" value="none">
 
                 <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Title</label>
@@ -761,7 +762,7 @@
 
                 <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Repeat</label>
-                    <button type="button" onclick="document.getElementById('custom-repeat-modal').classList.remove('hidden')" 
+                    <button type="button" onclick="openRecurrenceModal('edit')" 
                             id="edit-repeat-button-label"
                             class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-left text-slate-200 flex justify-between items-center hover:border-slate-500 transition box-border">
                         <span id="edit-repeat-status">Never</span>
@@ -871,6 +872,19 @@
     </div>
 
     <script>
+        let currentRecurrenceTarget = 'add';
+
+        function openRecurrenceModal(target) {
+            currentRecurrenceTarget = target;
+            const currentFreq = (target === 'edit') 
+                ? (document.getElementById('edit-recurrence-type-input').value || 'none')
+                : (document.getElementById('add-recurrence-type-input').value || 'none');
+            
+            document.getElementById('modal-freq-select').value = currentFreq;
+            toggleFrequencyView();
+            document.getElementById('custom-repeat-modal').classList.remove('hidden');
+        }
+
         function triggerTaskConfetti(event, formElement) {
             const cardWrapper = formElement.closest('.timeline-card-wrapper');
             const isCompleted = cardWrapper && cardWrapper.getAttribute('data-completed') === 'true';
@@ -1309,14 +1323,22 @@
             const freq = document.getElementById('modal-freq-select').value;
             const interval = document.getElementById('modal-interval').value;
 
-            document.getElementById('recurrence-type-input').value = freq;
+            const targetInputId = (currentRecurrenceTarget === 'edit') 
+                ? 'edit-recurrence-type-input' 
+                : 'add-recurrence-type-input';
+            
+            const recurrenceInput = document.getElementById(targetInputId);
+            if (recurrenceInput) {
+                recurrenceInput.value = freq;
+            }
+
             document.getElementById('interval-input').value = interval;
             document.getElementById('weekdays-input').value = selectedWeekdays.join(',');
             document.getElementById('month-days-input').value = selectedMonthDays.join(',');
             document.getElementById('months-input').value = selectedYearMonths.join(',');
 
             const labelSpan = document.getElementById('repeat-button-label').querySelector('span');
-            if (labelSpan) {
+            if (labelSpan && currentRecurrenceTarget === 'add') {
                 if (freq === 'none') {
                     labelSpan.innerText = 'Never';
                 } else {
@@ -1325,7 +1347,7 @@
             }
 
             const editStatusSpan = document.getElementById('edit-repeat-status');
-            if (editStatusSpan) {
+            if (editStatusSpan && currentRecurrenceTarget === 'edit') {
                 if (freq === 'none') {
                     editStatusSpan.innerText = 'Never';
                 } else {
@@ -1440,10 +1462,15 @@
             document.getElementById('edit-item-due-time').value = dueTime;
             document.getElementById('edit-item-amount').value = amount;
             document.getElementById('edit-item-description').value = description;
+            
+            const editRecurrenceInput = document.getElementById('edit-recurrence-type-input');
+            if (editRecurrenceInput) {
+                editRecurrenceInput.value = recurrenceType;
+            }
 
             const editStatusSpan = document.getElementById('edit-repeat-status');
             if (editStatusSpan) {
-                editStatusSpan.innerText = recurrenceType !== 'none' 
+                editStatusSpan.innerText = (recurrenceType && recurrenceType !== 'none') 
                     ? (recurrenceType.charAt(0).toUpperCase() + recurrenceType.slice(1)) 
                     : 'Never';
             }
