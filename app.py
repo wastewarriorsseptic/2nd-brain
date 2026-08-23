@@ -992,7 +992,7 @@ def update_item(
     due_time: Optional[str] = Form(None),
     reminder_offset: Optional[int] = Form(0),
     recurrence_type: Optional[str] = Form("none"),
-    interval: int = Form(1),
+    interval: Optional[int] = Form(1),
     weekdays: Optional[str] = Form(""),
     month_days: Optional[str] = Form(""),
     months: Optional[str] = Form(""),
@@ -1022,47 +1022,43 @@ def update_item(
         target_bucket_id = bucket_id if bucket_id else item.bucket_id
 
         if update_series and item.recurring_group_id:
-            # 1. Fetch all items in this recurring group
             series_items = session.exec(
                 select(Item).where(Item.recurring_group_id == item.recurring_group_id)
             ).all()
 
-            # Check if recurrence pattern changed
-            recurrence_changed = (recurrence_type != item.recurrence_type)
+            # 1. Delete all future uncompleted items in the series relative to THIS item's original/new due date
+            for s_item in series_items:
+                if s_item.id != item.id and not s_item.is_completed and s_item.due_date >= item.due_date:
+                    for reminder in s_item.reminders:
+                        session.delete(reminder)
+                    session.delete(s_item)
 
-            if recurrence_changed:
-                # Remove future uncompleted items in the series
-                for s_item in series_items:
-                    if s_item.id != item.id and not s_item.is_completed and s_item.due_date >= datetime.now():
-                        for reminder in s_item.reminders:
-                            session.delete(reminder)
-                        session.delete(s_item)
+            # 2. Update current item
+            item.title = title
+            item.due_date = new_due_date
+            item.amount = amount
+            item.description = description
+            item.bucket_id = target_bucket_id
+            item.recurrence_type = recurrence_type
+            session.add(item)
+            session.commit()
 
-                # Update the anchor task
-                item.title = title
-                item.due_date = new_due_date
-                item.amount = amount
-                item.description = description
-                item.bucket_id = target_bucket_id
-                item.recurrence_type = recurrence_type
-                session.add(item)
-                session.commit()
-
-                # Generate new future dates based on the updated rule
+            # 3. Regenerate future instances using the interval parameter
+            if recurrence_type != "none":
                 target_dates = []
                 base_due_date = new_due_date
-                interval = max(1, interval)
+                interval_val = max(1, interval if interval is not None else 1)
 
                 selected_weekdays = [int(x) for x in weekdays.split(",") if x.strip()] if weekdays else [(base_due_date.weekday() + 1) % 7]
                 selected_month_days = [int(x) for x in month_days.split(",") if x.strip()] if month_days else [base_due_date.day]
                 selected_months = [int(x) for x in months.split(",") if x.strip()] if months else [base_due_date.month]
 
                 if recurrence_type == "daily":
-                    curr = base_due_date + timedelta(days=interval)
+                    curr = base_due_date + timedelta(days=interval_val)
                     max_date = base_due_date + timedelta(days=180)
                     while curr <= max_date:
                         target_dates.append(curr)
-                        curr += timedelta(days=interval)
+                        curr += timedelta(days=interval_val)
                 elif recurrence_type == "weekly":
                     curr = base_due_date + timedelta(days=1)
                     max_date = base_due_date + timedelta(days=365)
@@ -1071,17 +1067,17 @@ def update_item(
                         if wday in selected_weekdays:
                             target_dates.append(curr)
                         curr += timedelta(days=1)
-                        if wday == 6 and interval > 1:
-                            curr += timedelta(weeks=interval - 1)
+                        if wday == 6 and interval_val > 1:
+                            curr += timedelta(weeks=interval_val - 1)
                 elif recurrence_type == "monthly":
-                    for i in range(interval, 12, interval):
+                    for i in range(interval_val, 12, interval_val):
                         m_date = add_months(base_due_date, i)
                         max_day_in_month = monthrange(m_date.year, m_date.month)[1]
                         for mday in selected_month_days:
                             actual_day = min(mday, max_day_in_month)
                             target_dates.append(datetime(m_date.year, m_date.month, actual_day, hour, minute, 0))
                 elif recurrence_type == "yearly":
-                    for i in range(interval, 5, interval):
+                    for i in range(interval_val, 5, interval_val):
                         target_year = base_due_date.year + i
                         for m in selected_months:
                             max_day = monthrange(target_year, m)[1]
@@ -1099,18 +1095,7 @@ def update_item(
                         recurrence_type=recurrence_type
                     )
                     session.add(new_series_item)
-
-            else:
-                # Recurrence type didn't change: update title/amount/notes on existing tasks
-                for series_item in series_items:
-                    series_item.title = title
-                    series_item.amount = amount
-                    series_item.description = description
-                    series_item.bucket_id = target_bucket_id
-                    series_item.due_date = series_item.due_date.replace(hour=hour, minute=minute, second=0)
-                    session.add(series_item)
         else:
-            # Single task edit
             item.title = title
             item.due_date = new_due_date
             item.amount = amount
