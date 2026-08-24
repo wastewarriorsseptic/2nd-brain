@@ -444,7 +444,7 @@
                     <button type="button" onclick="document.getElementById('edit-realm-modal').classList.add('hidden')" 
                             class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Cancel</button>
                     <button type="submit" 
-                            class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold">Create Realm</button>
+                            class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold">Save Changes</button>
                 </div>
             </form>
         </div>
@@ -1032,17 +1032,34 @@
             try {
                 const response = await fetch('/realms/', { method: 'POST', body: formData });
                 if (response.ok) {
+                    const htmlRes = await fetch('/');
+                    const htmlText = await htmlRes.text();
+                    const doc = new DOMParser().parseFromString(htmlText, 'text/html');
+
+                    let realRealmId = null;
+                    doc.querySelectorAll('[id^="realm-row-"]').forEach(row => {
+                        if (row.getAttribute('data-realm-name') === realmName) {
+                            realRealmId = parseInt(row.id.replace('realm-row-', ''));
+                        }
+                    });
+
+                    if (!realRealmId) {
+                        window.location.reload();
+                        return;
+                    }
+
                     const realmSelect = document.getElementById('task-modal-realm-select');
-                    const newRealmId = Date.now(); // Temp ID for active session
                     
-                    realmsData.push({ id: newRealmId, name: realmName, icon: '🔮', buckets: [] });
+                    if (!realmsData.some(r => r.id === realRealmId)) {
+                        realmsData.push({ id: realRealmId, name: realmName, icon: '🔮', buckets: [] });
+                    }
 
                     const newOpt = document.createElement('option');
-                    newOpt.value = newRealmId;
+                    newOpt.value = realRealmId;
                     newOpt.textContent = `🔮 ${realmName}`;
                     realmSelect.insertBefore(newOpt, realmSelect.lastElementChild);
 
-                    realmSelect.value = newRealmId;
+                    realmSelect.value = realRealmId;
                     nameInput.value = '';
                     document.getElementById('inline-new-realm-fields').classList.add('hidden');
                     
@@ -1057,34 +1074,54 @@
             const realmSelect = document.getElementById('task-modal-realm-select');
             const nameInput = document.getElementById('inline-bucket-name');
             const bucketName = nameInput ? nameInput.value.trim() : '';
-            const realmId = realmSelect ? realmSelect.value : '';
+            const rawRealmVal = realmSelect ? realmSelect.value : '';
 
             if (!bucketName) return alert('Please enter a Bucket Name');
-            if (!realmId || realmId === 'NEW_REALM') return alert('Please select a valid Realm first');
+            if (!rawRealmVal || rawRealmVal === 'NEW_REALM') return alert('Please select a valid Realm first');
 
             const formData = new FormData();
             formData.append('name', bucketName);
-            formData.append('realm_id', realmId);
+            formData.append('realm_id', rawRealmVal);
             formData.append('icon', '📌');
 
             try {
                 const response = await fetch('/buckets/', { method: 'POST', body: formData });
                 if (response.ok) {
+                    const htmlRes = await fetch('/');
+                    const htmlText = await htmlRes.text();
+                    const doc = new DOMParser().parseFromString(htmlText, 'text/html');
+
+                    let realBucketId = null;
+                    doc.querySelectorAll('[id^="bucket-row-"]').forEach(row => {
+                        if (row.getAttribute('data-bucket-name') === bucketName && row.getAttribute('data-parent-realm-id') === String(rawRealmVal)) {
+                            realBucketId = parseInt(row.id.replace('bucket-row-', ''));
+                        }
+                    });
+
+                    if (!realBucketId) {
+                        window.location.reload();
+                        return;
+                    }
+
                     const bucketSelect = document.getElementById('task-modal-bucket-select');
-                    const selectedRealmId = parseInt(realmId);
+                    const selectedRealmId = parseInt(rawRealmVal);
                     const realm = realmsData.find(r => r.id === selectedRealmId);
 
-                    const newBucketId = Date.now();
-                    if (realm) {
-                        realm.buckets.push({ id: newBucketId, name: bucketName });
+                    if (realm && !realm.buckets.some(b => b.id === realBucketId)) {
+                        realm.buckets.push({ id: realBucketId, name: bucketName });
                     }
 
                     const newOpt = document.createElement('option');
-                    newOpt.value = newBucketId;
+                    newOpt.value = realBucketId;
                     newOpt.textContent = `📌 ${bucketName}`;
-                    bucketSelect.insertBefore(newOpt, bucketSelect.lastElementChild);
 
-                    bucketSelect.value = newBucketId;
+                    if (bucketSelect.lastElementChild) {
+                        bucketSelect.insertBefore(newOpt, bucketSelect.lastElementChild);
+                    } else {
+                        bucketSelect.appendChild(newOpt);
+                    }
+
+                    bucketSelect.value = realBucketId;
                     nameInput.value = '';
                     document.getElementById('inline-new-bucket-fields').classList.add('hidden');
 
