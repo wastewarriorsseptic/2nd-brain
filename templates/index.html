@@ -441,7 +441,7 @@
                     </div>
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
-                    <button type="button" onclick="document.getElementById('add-realm-modal').classList.add('hidden')" 
+                    <button type="button" onclick="document.getElementById('edit-realm-modal').classList.add('hidden')" 
                             class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Cancel</button>
                     <button type="submit" 
                             class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold">Create Realm</button>
@@ -1032,10 +1032,24 @@
             try {
                 const response = await fetch('/realms/', { method: 'POST', body: formData });
                 if (response.ok) {
-                    window.location.reload();
+                    const realmSelect = document.getElementById('task-modal-realm-select');
+                    const newRealmId = Date.now(); // Temp ID for active session
+                    
+                    realmsData.push({ id: newRealmId, name: realmName, icon: '🔮', buckets: [] });
+
+                    const newOpt = document.createElement('option');
+                    newOpt.value = newRealmId;
+                    newOpt.textContent = `🔮 ${realmName}`;
+                    realmSelect.insertBefore(newOpt, realmSelect.lastElementChild);
+
+                    realmSelect.value = newRealmId;
+                    nameInput.value = '';
+                    document.getElementById('inline-new-realm-fields').classList.add('hidden');
+                    
+                    onModalRealmChange();
                 }
             } catch (err) {
-                console.error("Error creating realm:", err);
+                console.error("Error creating inline realm:", err);
             }
         }
 
@@ -1056,10 +1070,28 @@
             try {
                 const response = await fetch('/buckets/', { method: 'POST', body: formData });
                 if (response.ok) {
-                    window.location.reload();
+                    const bucketSelect = document.getElementById('task-modal-bucket-select');
+                    const selectedRealmId = parseInt(realmId);
+                    const realm = realmsData.find(r => r.id === selectedRealmId);
+
+                    const newBucketId = Date.now();
+                    if (realm) {
+                        realm.buckets.push({ id: newBucketId, name: bucketName });
+                    }
+
+                    const newOpt = document.createElement('option');
+                    newOpt.value = newBucketId;
+                    newOpt.textContent = `📌 ${bucketName}`;
+                    bucketSelect.insertBefore(newOpt, bucketSelect.lastElementChild);
+
+                    bucketSelect.value = newBucketId;
+                    nameInput.value = '';
+                    document.getElementById('inline-new-bucket-fields').classList.add('hidden');
+
+                    onModalBucketChange();
                 }
             } catch (err) {
-                console.error("Error creating bucket:", err);
+                console.error("Error creating inline bucket:", err);
             }
         }
 
