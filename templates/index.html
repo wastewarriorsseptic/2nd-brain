@@ -649,20 +649,41 @@
             </div>
 
             <form action="/items/" method="POST" class="space-y-3.5">
-                <!-- Realm and Bucket Selector Row (for global add) -->
-                <div id="modal-realm-bucket-picker" class="grid grid-cols-2 gap-2 pb-1">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-400 mb-1">Realm</label>
-                        <select id="task-modal-realm-select" onchange="onModalRealmChange()" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
-                            {% for r in realms %}
-                            <option value="{{ r.id }}" {% if r.id == selected_realm_id %}selected{% endif %}>{{ r.icon or '🔮' }} {{ r.name }}</option>
-                            {% endfor %}
-                        </select>
+                <!-- Realm and Bucket Selector Row (with inline creation) -->
+                <div id="modal-realm-bucket-picker" class="space-y-2 pb-1">
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-400 mb-1">Realm</label>
+                            <select id="task-modal-realm-select" onchange="onModalRealmChange()" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                                {% for r in realms %}
+                                <option value="{{ r.id }}" {% if r.id == selected_realm_id %}selected{% endif %}>{{ r.icon or '🔮' }} {{ r.name }}</option>
+                                {% endfor %}
+                                <option value="NEW_REALM" class="text-indigo-400 font-bold">+ New Realm...</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-400 mb-1">Bucket</label>
+                            <select id="task-modal-bucket-select" onchange="onModalBucketChange()" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                            </select>
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-400 mb-1">Bucket</label>
-                        <select id="task-modal-bucket-select" onchange="onModalBucketChange()" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
-                        </select>
+
+                    <!-- Inline New Realm Fields -->
+                    <div id="inline-new-realm-fields" class="hidden p-2.5 bg-slate-900/80 border border-indigo-500/30 rounded-xl space-y-2">
+                        <span class="text-[11px] font-semibold text-indigo-300 block">✨ Create New Realm</span>
+                        <div class="flex items-center gap-2">
+                            <input type="text" id="inline-realm-name" placeholder="Realm Name (e.g. Work)" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none">
+                            <button type="button" onclick="submitInlineRealm()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition">Create</button>
+                        </div>
+                    </div>
+
+                    <!-- Inline New Bucket Fields -->
+                    <div id="inline-new-bucket-fields" class="hidden p-2.5 bg-slate-900/80 border border-indigo-500/30 rounded-xl space-y-2">
+                        <span class="text-[11px] font-semibold text-indigo-300 block">📌 Create New Bucket</span>
+                        <div class="flex items-center gap-2">
+                            <input type="text" id="inline-bucket-name" placeholder="Bucket Name (e.g. Urgent)" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none">
+                            <button type="button" onclick="submitInlineBucket()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition">Create</button>
+                        </div>
                     </div>
                 </div>
 
@@ -905,7 +926,7 @@
     </div>
 
     <script>
-        const realmsData = [
+        let realmsData = [
             {% for r in realms %}
             {
                 id: {{ r.id }},
@@ -924,6 +945,9 @@
             const picker = document.getElementById('modal-realm-bucket-picker');
             if (picker) picker.classList.remove('hidden');
 
+            document.getElementById('inline-new-realm-fields').classList.add('hidden');
+            document.getElementById('inline-new-bucket-fields').classList.add('hidden');
+
             const realmSelect = document.getElementById('task-modal-realm-select');
             if (realmSelect && realmsData.length > 0) {
                 if (currentSelectedRealmId) {
@@ -940,8 +964,20 @@
         function onModalRealmChange() {
             const realmSelect = document.getElementById('task-modal-realm-select');
             const bucketSelect = document.getElementById('task-modal-bucket-select');
-            const selectedRealmId = parseInt(realmSelect.value);
+            const realmFields = document.getElementById('inline-new-realm-fields');
+            const bucketFields = document.getElementById('inline-new-bucket-fields');
 
+            bucketFields.classList.add('hidden');
+
+            if (realmSelect.value === 'NEW_REALM') {
+                realmFields.classList.remove('hidden');
+                bucketSelect.innerHTML = '<option value="">(Select Realm First)</option>';
+                return;
+            } else {
+                realmFields.classList.add('hidden');
+            }
+
+            const selectedRealmId = parseInt(realmSelect.value);
             const realm = realmsData.find(r => r.id === selectedRealmId);
             bucketSelect.innerHTML = '';
 
@@ -955,11 +991,16 @@
                     }
                     bucketSelect.appendChild(opt);
                 });
-            } else {
-                const opt = document.createElement('option');
-                opt.value = '';
-                opt.textContent = 'No Buckets Found';
-                bucketSelect.appendChild(opt);
+            }
+
+            const optNew = document.createElement('option');
+            optNew.value = 'NEW_BUCKET';
+            optNew.className = 'text-indigo-400 font-bold';
+            optNew.textContent = '+ New Bucket...';
+            bucketSelect.appendChild(optNew);
+
+            if (!realm || realm.buckets.length === 0) {
+                bucketSelect.value = 'NEW_BUCKET';
             }
 
             onModalBucketChange();
@@ -968,8 +1009,49 @@
         function onModalBucketChange() {
             const bucketSelect = document.getElementById('task-modal-bucket-select');
             const hiddenBucketInput = document.getElementById('task-modal-bucket-id');
-            if (bucketSelect && hiddenBucketInput) {
+            const bucketFields = document.getElementById('inline-new-bucket-fields');
+
+            if (bucketSelect.value === 'NEW_BUCKET') {
+                bucketFields.classList.remove('hidden');
+                hiddenBucketInput.value = '';
+            } else {
+                bucketFields.classList.add('hidden');
                 hiddenBucketInput.value = bucketSelect.value || '';
+            }
+        }
+
+        async function submitInlineRealm() {
+            const nameInput = document.getElementById('inline-realm-name');
+            const realmName = nameInput ? nameInput.value.strip() : '';
+            if (!realmName) return alert('Please enter a Realm Name');
+
+            const formData = new FormData();
+            formData.append('name', realmName);
+            formData.append('icon', '🔮');
+
+            const response = await fetch('/realms/', { method: 'POST', body: formData });
+            if (response.ok) {
+                window.location.reload();
+            }
+        }
+
+        async function submitInlineBucket() {
+            const realmSelect = document.getElementById('task-modal-realm-select');
+            const nameInput = document.getElementById('inline-bucket-name');
+            const bucketName = nameInput ? nameInput.value.trim() : '';
+            const realmId = realmSelect ? realmSelect.value : '';
+
+            if (!bucketName) return alert('Please enter a Bucket Name');
+            if (!realmId || realmId === 'NEW_REALM') return alert('Please select a valid Realm first');
+
+            const formData = new FormData();
+            formData.append('name', bucketName);
+            formData.append('realm_id', realmId);
+            formData.append('icon', '📌');
+
+            const response = await fetch('/buckets/', { method: 'POST', body: formData });
+            if (response.ok) {
+                window.location.reload();
             }
         }
 
