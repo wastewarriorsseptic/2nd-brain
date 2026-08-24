@@ -1022,16 +1022,20 @@
 
         async function submitInlineRealm() {
             const nameInput = document.getElementById('inline-realm-name');
-            const realmName = nameInput ? nameInput.value.strip() : '';
+            const realmName = nameInput ? nameInput.value.trim() : '';
             if (!realmName) return alert('Please enter a Realm Name');
 
             const formData = new FormData();
             formData.append('name', realmName);
             formData.append('icon', '🔮');
 
-            const response = await fetch('/realms/', { method: 'POST', body: formData });
-            if (response.ok) {
-                window.location.reload();
+            try {
+                const response = await fetch('/realms/', { method: 'POST', body: formData });
+                if (response.ok) {
+                    window.location.reload();
+                }
+            } catch (err) {
+                console.error("Error creating realm:", err);
             }
         }
 
@@ -1049,9 +1053,13 @@
             formData.append('realm_id', realmId);
             formData.append('icon', '📌');
 
-            const response = await fetch('/buckets/', { method: 'POST', body: formData });
-            if (response.ok) {
-                window.location.reload();
+            try {
+                const response = await fetch('/buckets/', { method: 'POST', body: formData });
+                if (response.ok) {
+                    window.location.reload();
+                }
+            } catch (err) {
+                console.error("Error creating bucket:", err);
             }
         }
 
