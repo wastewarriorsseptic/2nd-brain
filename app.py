@@ -241,7 +241,7 @@ def send_daily_snapshot_emails():
                 user_now = datetime.now(ZoneInfo("UTC"))
 
             # Strictly trigger ONLY during the user's local 7:00 AM hour
-            if user_now.hour != 7:
+            if user_now.hour != 6:
                 continue
 
             user_today = user_now.date()
