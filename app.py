@@ -753,12 +753,13 @@ def create_item(
     elif recurrence_type == "weekly":
         curr = base_due_date
         max_date = base_due_date + timedelta(days=365)
+        # Standardize selected weekdays to standard Python weekday indices (0=Mon, ..., 6=Sun)
+        target_wdays = [x if x < 7 else 0 for x in selected_weekdays]
         while curr <= max_date:
-            wday = (curr.weekday() + 1) % 7
-            if wday in selected_weekdays:
+            if curr.weekday() in target_wdays or curr == base_due_date:
                 target_dates.append(curr)
             curr += timedelta(days=1)
-            if wday == 6 and interval > 1:
+            if curr.weekday() == 0 and interval > 1:
                 curr += timedelta(weeks=interval - 1)
     elif recurrence_type == "monthly":
         for i in range(0, 12, interval):
