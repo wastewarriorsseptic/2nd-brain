@@ -2269,8 +2269,7 @@
                 realm.x += (realm.targetX - realm.x) * 0.08;
                 realm.y += (realm.targetY - realm.y) * 0.08;
 
-                // Dynamic Scale Factor for Zoomed-Out Legibility
-                // When zoomed out far (<0.65), scale up the Realm planet and its label pill
+                // INVERSE SCALE FACTOR: Keep Realm planets & labels large when camera zooms out
                 const zoomFactor = Math.max(1.0, 0.55 / Math.max(0.18, cameraZoom));
                 const currentRadius = realm.radius * Math.min(zoomFactor, 2.2);
 
@@ -2291,42 +2290,45 @@
                 spaceCtx.fill();
                 spaceCtx.stroke();
 
-                // Centered Realm Emoji Icon
-                const emojiSize = Math.round(24 * Math.min(zoomFactor, 2.0));
-                spaceCtx.font = `${emojiSize}px serif`;
+                // Centered Realm Emoji Icon (Context Isolated)
+                spaceCtx.save();
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
+                const emojiSize = Math.round(24 * Math.min(zoomFactor, 2.0));
+                spaceCtx.font = `${emojiSize}px serif`;
                 spaceCtx.shadowBlur = 0;
-                spaceCtx.fillText(realm.icon, realm.x, realm.y + 1);
+                spaceCtx.fillText(realm.icon, realm.x, realm.y);
+                spaceCtx.restore();
 
-                // DYNAMIC SCREEN-CONSTANT PILL LABELS FOR REALMS
+                // DYNAMIC HIGH-CONTRAST REALM PILL BADGE LABELS (Context Isolated & Perfectly Centered)
                 spaceCtx.save();
+                spaceCtx.textAlign = 'center';
+                spaceCtx.textBaseline = 'middle';
                 const beaconText = `${realm.icon} ${realm.name}`;
                 const fontSize = Math.round(14 * Math.min(zoomFactor, 1.8));
                 spaceCtx.font = `bold ${fontSize}px sans-serif`;
                 
-                const pillPadding = 16 * Math.min(zoomFactor, 1.6);
-                const pillHeight = 26 * Math.min(zoomFactor, 1.6);
+                const pillPadding = 20 * Math.min(zoomFactor, 1.6);
+                const pillHeight = 28 * Math.min(zoomFactor, 1.6);
                 const bTextWidth = spaceCtx.measureText(beaconText).width + pillPadding;
-                const pillY = realm.y + currentRadius + (12 * zoomFactor);
+                const pillX = realm.x - bTextWidth / 2;
+                const pillY = realm.y + currentRadius + (10 * zoomFactor);
 
-                // High-Contrast Floating Pill
+                // Rounded Pill Badge Background
                 spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
                 spaceCtx.strokeStyle = '#818cf8';
                 spaceCtx.lineWidth = 1.5 * Math.min(zoomFactor, 1.5);
                 spaceCtx.shadowColor = '#6366f1';
                 spaceCtx.shadowBlur = 12 * zoomFactor;
                 spaceCtx.beginPath();
-                spaceCtx.roundRect(realm.x - bTextWidth / 2, pillY, bTextWidth, pillHeight, 6 * zoomFactor);
+                spaceCtx.roundRect(pillX, pillY, bTextWidth, pillHeight, 8 * zoomFactor);
                 spaceCtx.fill();
                 spaceCtx.stroke();
 
-                // High-Contrast Text
+                // High-Visibility Text Centered Inside Pill
                 spaceCtx.fillStyle = '#ffffff';
-                spaceCtx.textAlign = 'center';
-                spaceCtx.textBaseline = 'middle';
                 spaceCtx.shadowBlur = 0;
-                spaceCtx.fillText(beaconText, realm.x, pillY + (pillHeight / 2) + 1);
+                spaceCtx.fillText(beaconText, realm.x, pillY + (pillHeight / 2));
                 spaceCtx.restore();
 
                 const allTasksInRealm = [];
@@ -2355,8 +2357,13 @@
                     spaceCtx.shadowBlur = 12;
                     spaceCtx.fill();
 
+                    // Bucket Moon Star Emoji (Context Isolated & Centered)
+                    spaceCtx.save();
+                    spaceCtx.textAlign = 'center';
+                    spaceCtx.textBaseline = 'middle';
                     spaceCtx.font = '10px serif';
                     spaceCtx.fillText('⭐️', bucket.x, bucket.y);
+                    spaceCtx.restore();
 
                     // Bucket Label Pill
                     const bLabel = `⭐️ ${bucket.name}`;
@@ -2370,7 +2377,8 @@
 
                     spaceCtx.fillStyle = '#38bdf8';
                     spaceCtx.textAlign = 'center';
-                    spaceCtx.fillText(bLabel, bucket.x, bucket.y + bucket.radius + 14);
+                    spaceCtx.textBaseline = 'middle';
+                    spaceCtx.fillText(bLabel, bucket.x, bucket.y + bucket.radius + 11);
 
                     // Position Task Satellites with floating offset
                     bucket.tasks.forEach(task => {
@@ -2462,7 +2470,8 @@
 
                         spaceCtx.fillStyle = '#e2e8f0';
                         spaceCtx.textAlign = 'center';
-                        spaceCtx.fillText(truncatedTitle, task.x, task.y + task.radius + 12);
+                        spaceCtx.textBaseline = 'middle';
+                        spaceCtx.fillText(truncatedTitle, task.x, task.y + task.radius + 9);
                     });
                 });
             });
