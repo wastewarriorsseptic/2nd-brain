@@ -2186,22 +2186,24 @@
             spaceCtx.translate(cameraOffset.x, cameraOffset.y);
             spaceCtx.scale(cameraZoom, cameraZoom);
 
-            // Draw Devil Central Universe Core 😈
-            spaceCtx.beginPath();
-            spaceCtx.arc(0, 0, 26, 0, Math.PI * 2);
-            spaceCtx.fillStyle = 'rgba(30, 41, 59, 0.95)';
-            spaceCtx.strokeStyle = '#6366f1';
-            spaceCtx.lineWidth = 3;
-            spaceCtx.shadowColor = '#818cf8';
-            spaceCtx.shadowBlur = 35;
-            spaceCtx.fill();
-            spaceCtx.stroke();
+            // Draw Devil Central Universe Core 😈 (Bigger & Pulsing Glow, No Outer Ring)
+            const pulseScale = 1 + Math.sin(frameCount * 2) * 0.08;
+            const coreRadius = 38 * pulseScale;
 
-            spaceCtx.font = '24px serif';
+            spaceCtx.save();
+            spaceCtx.beginPath();
+            spaceCtx.arc(0, 0, coreRadius, 0, Math.PI * 2);
+            spaceCtx.fillStyle = 'rgba(30, 41, 59, 0.95)';
+            spaceCtx.shadowColor = '#818cf8';
+            spaceCtx.shadowBlur = 45 + Math.sin(frameCount * 2) * 15;
+            spaceCtx.fill();
+
+            spaceCtx.font = `${Math.round(36 * pulseScale)}px serif`;
             spaceCtx.textAlign = 'center';
             spaceCtx.textBaseline = 'middle';
             spaceCtx.shadowBlur = 0;
-            spaceCtx.fillText('😈', 0, 1);
+            spaceCtx.fillText('😈', 0, 2);
+            spaceCtx.restore();
 
             spaceRealms.forEach(realm => {
                 realm.x += (realm.targetX - realm.x) * 0.08;
