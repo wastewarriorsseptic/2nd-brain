@@ -55,6 +55,15 @@
         #space-view-overlay {
             touch-action: none;
         }
+
+        /* Hide scrollbars for smooth Quick-Warp dock sliding */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex">
@@ -398,17 +407,24 @@
         <!-- Canvas Viewport -->
         <canvas id="space-canvas" class="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"></canvas>
 
-        <!-- Streamlined Top Floating Space Bar -->
-        <div class="relative z-10 pt-12 md:pt-4 px-4 flex items-center justify-between pointer-events-none">
-            <div class="bg-slate-900/90 border border-slate-800 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto">
-                <span class="text-base">😈</span>
-                <h2 class="text-xs font-bold text-white tracking-wide">TaskMonster Universe</h2>
+        <!-- Streamlined Top Floating Space Bar & Realm Quick-Warp Dock -->
+        <div class="relative z-10 pt-10 md:pt-4 px-3 md:px-6 flex flex-col gap-2 pointer-events-none">
+            <div class="flex items-center justify-between w-full">
+                <div class="bg-slate-900/90 border border-slate-800 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto">
+                    <span class="text-base">😈</span>
+                    <h2 class="text-xs font-bold text-white tracking-wide">TaskMonster Universe</h2>
+                </div>
+
+                <button onclick="toggleSpaceView()" 
+                        class="pointer-events-auto px-3.5 py-1.5 bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-indigo-400/30">
+                    ✖ Close View
+                </button>
             </div>
 
-            <button onclick="toggleSpaceView()" 
-                    class="pointer-events-auto px-3.5 py-1.5 bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-indigo-400/30">
-                ✖ Close View
-            </button>
+            <!-- Realm Quick-Warp Horizontal Floating Dock -->
+            <div id="realm-warp-dock" class="pointer-events-auto flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 px-1 max-w-full">
+                <!-- Populated via JS with Realm Pills -->
+            </div>
         </div>
 
         <!-- Bottom Layout HUD Inspection Card & Controls Wrapper -->
@@ -455,7 +471,7 @@
             <div class="bg-slate-900/90 border border-slate-800 p-1.5 rounded-2xl backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto">
                 <button onclick="zoomSpace(1.2)" class="w-8 h-8 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm rounded-xl flex items-center justify-center transition">＋</button>
                 <button onclick="zoomSpace(0.8)" class="w-8 h-8 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm rounded-xl flex items-center justify-center transition">－</button>
-                <button onclick="recenterSpace()" class="px-3 h-8 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-bold text-xs rounded-xl flex items-center justify-center transition">🎯 Recenter</button>
+                <button onclick="recenterSpace()" class="px-3 h-8 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-bold text-xs rounded-xl flex items-center justify-center transition">🎯 Auto-Fit Universe</button>
             </div>
         </div>
     </div>
@@ -2040,6 +2056,23 @@
             }
         }
 
+        function populateWarpDock() {
+            const warpDock = document.getElementById('realm-warp-dock');
+            if (!warpDock) return;
+            warpDock.innerHTML = '';
+
+            spaceRealms.forEach(realm => {
+                const btn = document.createElement('button');
+                btn.className = "bg-slate-900/90 border border-slate-700/80 hover:border-indigo-500/80 px-3 py-1 rounded-full text-xs font-semibold text-slate-200 flex items-center gap-1.5 shadow-lg backdrop-blur-md shrink-0 transition-all active:scale-95";
+                btn.innerHTML = `<span>${realm.icon}</span><span>${realm.name}</span>`;
+                btn.onclick = () => {
+                    activeSelectedBucket = null;
+                    focusAndRepelRealms(realm);
+                };
+                warpDock.appendChild(btn);
+            });
+        }
+
         function initSpaceCanvas() {
             spaceCanvas = document.getElementById('space-canvas');
             spaceCtx = spaceCanvas.getContext('2d');
@@ -2132,6 +2165,7 @@
                 };
             });
 
+            populateWarpDock();
             setupSpaceEvents();
             setupHudDraggable();
             recenterSpace();
@@ -2154,13 +2188,39 @@
         function recenterSpace() {
             activeSelectedRealm = null;
             activeSelectedBucket = null;
-            targetCameraOffset = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-            targetCameraZoom = window.innerWidth < 768 ? 0.45 : 0.65;
 
-            spaceRealms.forEach(realm => {
-                realm.targetX = realm.baseX;
-                realm.targetY = realm.baseY;
+            if (spaceRealms.length === 0) {
+                targetCameraOffset = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+                targetCameraZoom = 0.65;
+                return;
+            }
+
+            // AUTO-FIT BOUNDS CALCULATION
+            let minX = -100, maxX = 100, minY = -100, maxY = 100;
+            spaceRealms.forEach(r => {
+                r.targetX = r.baseX;
+                r.targetY = r.baseY;
+                if (r.baseX < minX) minX = r.baseX;
+                if (r.baseX > maxX) maxX = r.baseX;
+                if (r.baseY < minY) minY = r.baseY;
+                if (r.baseY > maxY) maxY = r.baseY;
             });
+
+            const padding = 280;
+            const boundingWidth = (maxX - minX) + (padding * 2);
+            const boundingHeight = (maxY - minY) + (padding * 2);
+
+            const fitZoomX = window.innerWidth / boundingWidth;
+            const fitZoomY = window.innerHeight / boundingHeight;
+            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.18), 0.75);
+
+            const centerX = (minX + maxX) / 2;
+            const centerY = (minY + maxY) / 2;
+
+            targetCameraOffset = {
+                x: (window.innerWidth / 2) - (centerX * targetCameraZoom),
+                y: (window.innerHeight / 2) - (centerY * targetCameraZoom)
+            };
         }
 
         function zoomSpace(factor) {
@@ -2234,7 +2294,6 @@
                 spaceCtx.fillText(realm.icon, realm.x, realm.y + 1);
 
                 // LEVEL-OF-DETAIL (LOD) SEMANTIC BEACON LABELS
-                // When zoomed out far, show a prominent beacon label pill for each Realm
                 if (cameraZoom < 0.55) {
                     spaceCtx.save();
                     const beaconText = `${realm.icon} ${realm.name}`;
