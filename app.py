@@ -753,14 +753,16 @@ def create_item(
     elif recurrence_type == "weekly":
         curr = base_due_date
         max_date = base_due_date + timedelta(days=365)
-        # Standardize selected weekdays to standard Python weekday indices (0=Mon, ..., 6=Sun)
-        target_wdays = [x if x < 7 else 0 for x in selected_weekdays]
+        
+        # JS Days: Sun(0), Mon(1), Tue(2), Wed(3), Thu(4), Fri(5), Sat(6)
+        # Py Days: Mon(0), Tue(1), Wed(2), Thu(3), Fri(4), Sat(5), Sun(6)
+        js_to_py = {0: 6, 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5}
+        py_target_wdays = [js_to_py[x] for x in selected_weekdays if x in js_to_py] if (weekdays and weekdays.strip()) else [base_due_date.weekday()]
+
         while curr <= max_date:
-            if curr.weekday() in target_wdays or curr == base_due_date:
+            if curr.weekday() in py_target_wdays or curr == base_due_date:
                 target_dates.append(curr)
-            curr += timedelta(days=1)
-            if curr.weekday() == 0 and interval > 1:
-                curr += timedelta(weeks=interval - 1)
+            curr += timedelta(days=7 * interval)
     elif recurrence_type == "monthly":
         for i in range(0, 12, interval):
             m_date = add_months(base_due_date, i)
@@ -1103,8 +1105,10 @@ def update_item(
             item.description = description
             item.bucket_id = target_bucket_id
             item.recurrence_type = recurrence_type
+            if recurrence_type != "none" and not item.recurring_group_id:
+                item.recurring_group_id = str(uuid.uuid4())
             session.add(item)
-
+            
         session.commit()
         return RedirectResponse(url=redirect_url, status_code=303)
 
