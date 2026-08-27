@@ -520,7 +520,7 @@
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
                     <button type="button" onclick="document.getElementById('edit-realm-modal').classList.add('hidden')" 
-                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Cancel</button>
+                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Save Changes</button>
                     <button type="submit" 
                             class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold">Save Changes</button>
                 </div>
@@ -1909,7 +1909,7 @@
         }
     </script>
 
-    <!-- SPACE VIEW CANVAS ENGINE SCRIPT -->
+    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (SIMPLIFIED & CLEAN) -->
     <script>
         let isSpaceViewActive = false;
         let spaceCanvas, spaceCtx;
@@ -1918,7 +1918,6 @@
         let cameraZoom = 1;
         let isDragging = false;
         let dragStart = { x: 0, y: 0 };
-        let activeHoverNode = null;
         let initialPinchDistance = null;
 
         function toggleSpaceView() {
@@ -1948,10 +1947,12 @@
             resizeSpaceCanvas();
             window.addEventListener('resize', resizeSpaceCanvas);
 
-            // Populate Space Nodes from DOM Data & realmsData
+            // Deduplicate Tasks: Group recurring items so only the earliest upcoming task per series renders
+            const processedGroupIds = new Set();
+
             spaceRealms = realmsData.map((realm, rIdx) => {
                 const realmAngle = (rIdx / realmsData.length) * Math.PI * 2;
-                const realmDistance = 180 + (rIdx * 90);
+                const realmDistance = 220 + (rIdx * 110);
 
                 return {
                     id: realm.id,
@@ -1959,41 +1960,55 @@
                     icon: realm.icon || '🔮',
                     orbitRadius: realmDistance,
                     angle: realmAngle,
-                    speed: 0.0015 / (rIdx + 1),
-                    radius: 22,
+                    speed: 0.0003, // Slow, elegant drift
+                    radius: 26,
                     buckets: realm.buckets.map((bucket, bIdx) => {
                         const bucketAngle = (bIdx / Math.max(1, realm.buckets.length)) * Math.PI * 2;
                         
-                        // Query DOM tasks belonging to this bucket
-                        const taskNodes = Array.from(document.querySelectorAll(`.timeline-card-wrapper[data-bucket-id="${bucket.id}"]`)).map((el, tIdx) => {
-                            const isCompleted = el.getAttribute('data-completed') === 'true';
-                            const isOverdue = el.querySelector('.bg-rose-500') !== null;
-                            const isRecurring = el.getAttribute('data-recurring') === 'true';
+                        // Select DOM items belonging to this bucket
+                        const bucketCardElements = Array.from(document.querySelectorAll(`.timeline-card-wrapper[data-bucket-id="${bucket.id}"]`));
+                        const filteredTasks = [];
 
-                            return {
+                        bucketCardElements.forEach((el) => {
+                            const isCompleted = el.getAttribute('data-completed') === 'true';
+                            const groupId = el.getAttribute('data-item-id');
+                            const recurringFlag = el.getAttribute('data-recurring') === 'true';
+
+                            // For space view, skip completed tasks & duplicates from the same recurring series
+                            if (isCompleted) return;
+                            
+                            if (recurringFlag) {
+                                const title = el.getAttribute('data-title') || '';
+                                const seriesKey = `${bucket.id}-${title}`;
+                                if (processedGroupIds.has(seriesKey)) return;
+                                processedGroupIds.add(seriesKey);
+                            }
+
+                            const isOverdue = el.querySelector('.bg-rose-500') !== null;
+
+                            filteredTasks.push({
                                 id: el.getAttribute('data-item-id'),
                                 title: el.getAttribute('data-title') || el.querySelector('h3').innerText.trim(),
                                 dueDate: el.getAttribute('data-due-date-formatted') || '',
                                 realmName: realm.name,
                                 bucketName: bucket.name,
-                                isCompleted: isCompleted,
                                 isOverdue: isOverdue,
-                                isRecurring: isRecurring,
-                                orbitRadius: 24 + (tIdx * 12),
-                                angle: (tIdx / 4) * Math.PI * 2,
-                                speed: 0.015 + (tIdx * 0.003),
-                                radius: 6
-                            };
+                                isRecurring: recurringFlag,
+                                orbitRadius: 28 + (filteredTasks.length * 10),
+                                angle: (filteredTasks.length / 5) * Math.PI * 2,
+                                speed: 0.004,
+                                radius: 5
+                            });
                         });
 
                         return {
                             id: bucket.id,
                             name: bucket.name,
-                            orbitRadius: 55 + (bIdx * 20),
+                            orbitRadius: 70 + (bIdx * 25),
                             angle: bucketAngle,
-                            speed: 0.008 / (bIdx + 1),
-                            radius: 10,
-                            tasks: taskNodes
+                            speed: 0.0015,
+                            radius: 12,
+                            tasks: filteredTasks
                         };
                     })
                 };
@@ -2012,11 +2027,11 @@
 
         function recenterSpace() {
             cameraOffset = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-            cameraZoom = window.innerWidth < 768 ? 0.75 : 1.0;
+            cameraZoom = window.innerWidth < 768 ? 0.6 : 0.85;
         }
 
         function zoomSpace(factor) {
-            cameraZoom = Math.min(Math.max(0.3, cameraZoom * factor), 3.0);
+            cameraZoom = Math.min(Math.max(0.25, cameraZoom * factor), 2.5);
         }
 
         function renderSpaceFrame() {
@@ -2028,21 +2043,20 @@
             spaceCtx.translate(cameraOffset.x, cameraOffset.y);
             spaceCtx.scale(cameraZoom, cameraZoom);
 
-            // Draw Galaxy Core (Universe Sun)
+            // Draw Galaxy Core
             spaceCtx.beginPath();
-            spaceCtx.arc(0, 0, 16, 0, Math.PI * 2);
+            spaceCtx.arc(0, 0, 18, 0, Math.PI * 2);
             spaceCtx.fillStyle = '#6366f1';
-            spaceCtx.shadowColor = '#a5b4fc';
-            spaceCtx.shadowBlur = 25;
+            spaceCtx.shadowColor = '#818cf8';
+            spaceCtx.shadowBlur = 30;
             spaceCtx.fill();
 
-            // Render Realms (Planets)
             spaceRealms.forEach(realm => {
                 realm.angle += realm.speed;
                 realm.x = Math.cos(realm.angle) * realm.orbitRadius;
                 realm.y = Math.sin(realm.angle) * realm.orbitRadius;
 
-                // Realm Orbit Ring
+                // Realm Orbit Track
                 spaceCtx.beginPath();
                 spaceCtx.arc(0, 0, realm.orbitRadius, 0, Math.PI * 2);
                 spaceCtx.strokeStyle = 'rgba(99, 102, 241, 0.12)';
@@ -2050,28 +2064,27 @@
                 spaceCtx.shadowBlur = 0;
                 spaceCtx.stroke();
 
-                // Realm Planet Glow
+                // Realm Planet
                 spaceCtx.beginPath();
                 spaceCtx.arc(realm.x, realm.y, realm.radius, 0, Math.PI * 2);
-                spaceCtx.fillStyle = 'rgba(30, 41, 59, 0.9)';
+                spaceCtx.fillStyle = 'rgba(30, 41, 59, 0.95)';
                 spaceCtx.strokeStyle = '#818cf8';
                 spaceCtx.lineWidth = 2;
                 spaceCtx.shadowColor = '#6366f1';
-                spaceCtx.shadowBlur = 12;
+                spaceCtx.shadowBlur = 15;
                 spaceCtx.fill();
                 spaceCtx.stroke();
 
-                // Realm Emoji Core
-                spaceCtx.font = '16px serif';
+                // Realm Icon & Label
+                spaceCtx.font = '18px serif';
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
                 spaceCtx.shadowBlur = 0;
                 spaceCtx.fillText(realm.icon, realm.x, realm.y + 1);
 
-                // Realm Label
-                spaceCtx.font = 'bold 10px sans-serif';
-                spaceCtx.fillStyle = '#cbd5e1';
-                spaceCtx.fillText(realm.name, realm.x, realm.y + realm.radius + 12);
+                spaceCtx.font = 'bold 11px sans-serif';
+                spaceCtx.fillStyle = '#e2e8f0';
+                spaceCtx.fillText(realm.name, realm.x, realm.y + realm.radius + 14);
 
                 // Render Buckets (Moons)
                 realm.buckets.forEach(bucket => {
@@ -2079,26 +2092,25 @@
                     bucket.x = realm.x + Math.cos(bucket.angle) * bucket.orbitRadius;
                     bucket.y = realm.y + Math.sin(bucket.angle) * bucket.orbitRadius;
 
-                    // Bucket Orbit Ring around Realm
+                    // Bucket Orbit Track
                     spaceCtx.beginPath();
                     spaceCtx.arc(realm.x, realm.y, bucket.orbitRadius, 0, Math.PI * 2);
                     spaceCtx.strokeStyle = 'rgba(56, 189, 248, 0.15)';
                     spaceCtx.lineWidth = 0.8;
                     spaceCtx.stroke();
 
-                    // Bucket Moon Body
+                    // Bucket Moon
                     spaceCtx.beginPath();
                     spaceCtx.arc(bucket.x, bucket.y, bucket.radius, 0, Math.PI * 2);
                     spaceCtx.fillStyle = '#0284c7';
                     spaceCtx.shadowColor = '#38bdf8';
-                    spaceCtx.shadowBlur = 8;
+                    spaceCtx.shadowBlur = 10;
                     spaceCtx.fill();
 
-                    // Bucket Moon Thumbtack Symbol
-                    spaceCtx.font = '8px serif';
+                    spaceCtx.font = '9px serif';
                     spaceCtx.fillText('📌', bucket.x, bucket.y);
 
-                    // Render Tasks (Satellites)
+                    // Render Task Satellites
                     bucket.tasks.forEach(task => {
                         task.angle += task.speed;
                         task.x = bucket.x + Math.cos(task.angle) * task.orbitRadius;
@@ -2107,13 +2119,10 @@
                         spaceCtx.beginPath();
                         spaceCtx.arc(task.x, task.y, task.radius, 0, Math.PI * 2);
 
-                        if (task.isCompleted) {
-                            spaceCtx.fillStyle = '#64748b';
-                            spaceCtx.shadowBlur = 0;
-                        } else if (task.isOverdue) {
+                        if (task.isOverdue) {
                             spaceCtx.fillStyle = '#f43f5e';
                             spaceCtx.shadowColor = '#f43f5e';
-                            spaceCtx.shadowBlur = 10;
+                            spaceCtx.shadowBlur = 12;
                         } else if (task.isRecurring) {
                             spaceCtx.fillStyle = '#f59e0b';
                             spaceCtx.shadowColor = '#f59e0b';
@@ -2132,7 +2141,7 @@
             requestAnimationFrame(renderSpaceFrame);
         }
 
-        // Mouse & Touch Pointer Handlers for Pan, Zoom & Inspect
+        // Pointer & Inspection Controls
         function setupSpaceEvents() {
             spaceCanvas.onmousedown = (e) => {
                 isDragging = true;
@@ -2151,10 +2160,10 @@
 
             spaceCanvas.onwheel = (e) => {
                 e.preventDefault();
-                zoomSpace(e.deltaY < 0 ? 1.1 : 0.9);
+                zoomSpace(e.deltaY < 0 ? 1.08 : 0.92);
             };
 
-            // Touch Handlers for Mobile (Pan, Pinch Zoom, Tap Inspect)
+            // Touch Handlers for Mobile
             spaceCanvas.ontouchstart = (e) => {
                 if (e.touches.length === 1) {
                     isDragging = true;
@@ -2178,7 +2187,7 @@
                         e.touches[0].clientY - e.touches[1].clientY
                     );
                     const zoomFactor = currentDist / initialPinchDistance;
-                    zoomSpace(zoomFactor > 1 ? 1.03 : 0.97);
+                    zoomSpace(zoomFactor > 1 ? 1.02 : 0.98);
                     initialPinchDistance = currentDist;
                 }
             };
@@ -2190,7 +2199,6 @@
         }
 
         function detectHoverNode(clientX, clientY) {
-            // Translate Screen Coordinates to Canvas Space Coordinates
             const worldX = (clientX - cameraOffset.x) / cameraZoom;
             const worldY = (clientY - cameraOffset.y) / cameraZoom;
 
@@ -2200,7 +2208,7 @@
                 realm.buckets.forEach(bucket => {
                     bucket.tasks.forEach(task => {
                         const dist = Math.hypot(worldX - task.x, worldY - task.y);
-                        if (dist <= task.radius + 12) { // Generous tap target for touch screens
+                        if (dist <= task.radius + 14) {
                             foundTask = task;
                         }
                     });
@@ -2225,10 +2233,7 @@
             date.innerText = `📅 ${task.dueDate}`;
             idInput.value = task.id;
 
-            if (task.isCompleted) {
-                badgeStatus.innerText = 'Completed';
-                badgeStatus.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-700 text-slate-300';
-            } else if (task.isOverdue) {
+            if (task.isOverdue) {
                 badgeStatus.innerText = '⚠️ Overdue';
                 badgeStatus.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30';
             } else if (task.isRecurring) {
