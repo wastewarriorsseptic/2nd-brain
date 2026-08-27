@@ -1926,7 +1926,7 @@
         }
     </script>
 
-    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (REALM REPULSION & CLEAR BOUNDARIES) -->
+    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (REALM REPULSION & CLEAR BOUNDARIES & TASK REPULSION) -->
     <script>
         let isSpaceViewActive = false;
         let spaceCanvas, spaceCtx;
@@ -1941,6 +1941,7 @@
         let activeSelectedRealm = null;
         let activeSelectedBucket = null;
         let initialPinchDistance = null;
+        let frameCount = 0;
 
         function toggleSpaceView() {
             const overlay = document.getElementById('space-view-overlay');
@@ -2028,14 +2029,15 @@
                                 isOverdue: isOverdue,
                                 isRecurring: recurringFlag,
                                 domElement: el,
-                                radius: 7
+                                radius: 7,
+                                floatOffset: Math.random() * Math.PI * 2
                             });
                         });
 
                         const totalTasks = Math.max(1, filteredTasks.length);
                         filteredTasks.forEach((task, tIdx) => {
                             task.angle = (tIdx / totalTasks) * Math.PI * 2;
-                            task.orbitRadius = 50 + (tIdx * 30);
+                            task.orbitRadius = 55 + (tIdx * 32);
                         });
 
                         const bucketDist = 160 + (bIdx * 60);
@@ -2082,6 +2084,8 @@
 
         function renderSpaceFrame() {
             if (!isSpaceViewActive) return;
+
+            frameCount += 0.02; // Slow time increment for natural hover drifting
 
             cameraZoom += (targetCameraZoom - cameraZoom) * 0.1;
             cameraOffset.x += (targetCameraOffset.x - cameraOffset.x) * 0.1;
@@ -2143,6 +2147,9 @@
                 spaceCtx.fillStyle = '#f8fafc';
                 spaceCtx.fillText(realm.name, realm.x, realm.y + realm.radius + 20);
 
+                // Collect all active tasks for inter-task repulsion calculations
+                const allTasksInRealm = [];
+
                 // Render Buckets (Moons)
                 realm.buckets.forEach(bucket => {
                     if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id && activeSelectedRealm && activeSelectedRealm.id === realm.id) {
@@ -2184,14 +2191,52 @@
                     spaceCtx.textAlign = 'center';
                     spaceCtx.fillText(bLabel, bucket.x, bucket.y + bucket.radius + 14);
 
-                    // Render Task Satellites
+                    // Position Task Satellites with gentle floating hover offset
                     bucket.tasks.forEach(task => {
-                        task.x = bucket.x + Math.cos(task.angle) * task.orbitRadius;
-                        task.y = bucket.y + Math.sin(task.angle) * task.orbitRadius;
+                        const hoverX = Math.cos(frameCount + task.floatOffset) * 3;
+                        const hoverY = Math.sin(frameCount + task.floatOffset) * 3;
 
-                        // Check Repulsion Safety Boundary
+                        task.x = bucket.x + Math.cos(task.angle) * task.orbitRadius + hoverX;
+                        task.y = bucket.y + Math.sin(task.angle) * task.orbitRadius + hoverY;
+
+                        allTasksInRealm.push(task);
+                    });
+                });
+
+                // Task Inter-Satellite Repulsion Physics: Push overlapping tasks apart
+                for (let i = 0; i < allTasksInRealm.length; i++) {
+                    for (let j = i + 1; j < allTasksInRealm.length; j++) {
+                        const t1 = allTasksInRealm[i];
+                        const t2 = allTasksInRealm[j];
+
+                        const dx = t2.x - t1.x;
+                        const dy = t2.y - t1.y;
+                        const dist = Math.hypot(dx, dy);
+                        const minDist = 60; // Repulsion distance buffer between task label pills
+
+                        if (dist < minDist && dist > 0) {
+                            const overlap = (minDist - dist) / 2;
+                            const nx = dx / dist;
+                            const ny = dy / dist;
+
+                            t1.x -= nx * overlap;
+                            t1.y -= ny * overlap;
+                            t2.x += nx * overlap;
+                            t2.y += ny * overlap;
+                        }
+                    }
+                }
+
+                // Render Task Satellites
+                realm.buckets.forEach(bucket => {
+                    if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id && activeSelectedRealm && activeSelectedRealm.id === realm.id) {
+                        return;
+                    }
+
+                    bucket.tasks.forEach(task => {
+                        // Check Repulsion Safety Boundary around Realm Planet
                         const distToRealm = Math.hypot(task.x - realm.x, task.y - realm.y);
-                        const minAllowedDist = realm.radius + 24;
+                        const minAllowedDist = realm.radius + 28;
                         if (distToRealm < minAllowedDist) {
                             const angleFromRealm = Math.atan2(task.y - realm.y, task.x - realm.x);
                             task.x = realm.x + Math.cos(angleFromRealm) * minAllowedDist;
