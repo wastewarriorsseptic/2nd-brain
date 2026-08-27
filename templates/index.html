@@ -2015,7 +2015,7 @@
         }
     </script>
 
-    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (RESPONSIVE VIEWPORT DISTRIBUTION & DEBOUNCED TOUCH) -->
+    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (ORGANIC FLOATING REALMS) -->
     <script>
         let isSpaceViewActive = false;
         let spaceCanvas, spaceCtx;
@@ -2083,14 +2083,12 @@
             const processedGroupIds = new Set();
             const totalRealms = Math.max(1, realmsData.length);
 
-            // DYNAMIC RESPONSIVE ORBIT RADII: Expanded for mobile portrait to prevent pill overlaps
             const isMobile = window.innerWidth < 768;
             const viewRadius = Math.min(window.innerWidth, window.innerHeight) * (isMobile ? 0.48 : 0.32);
 
             spaceRealms = realmsData.map((realm, rIdx) => {
                 const realmAngle = (rIdx / totalRealms) * Math.PI * 2 - Math.PI / 2;
 
-                // Radial Staggering: Offset alternating Realms to prevent label collision
                 const radialOffset = (rIdx % 2 === 0 ? 1.0 : 1.15);
                 const currentOrbitRadius = viewRadius * radialOffset;
 
@@ -2110,7 +2108,10 @@
                     y: basePos.y,
                     targetX: basePos.x,
                     targetY: basePos.y,
-                    radius: isMobile ? 40 : 46, // Touch-friendly base planet size
+                    radius: isMobile ? 40 : 46,
+                    // ORGANIC FLOAT OFFSET: Unique phase & speed for each Realm
+                    floatOffsetPhase: (rIdx * 1.37) % (Math.PI * 2),
+                    floatSpeed: 1.2 + (rIdx % 3) * 0.3,
                     buckets: realm.buckets.map((bucket, bIdx) => {
                         const totalBuckets = Math.max(1, realm.buckets.length);
                         const bucketAngle = (bIdx / totalBuckets) * Math.PI * 2;
@@ -2275,8 +2276,16 @@
             spaceCtx.restore();
 
             spaceRealms.forEach(realm => {
+                // Smooth Interpolation to Base Target Coordinate
                 realm.x += (realm.targetX - realm.x) * 0.08;
                 realm.y += (realm.targetY - realm.y) * 0.08;
+
+                // GENTLE FLOATING BOBBING EFFECT (Subtle sin/cos Lissajous float)
+                const floatX = Math.cos(frameCount * realm.floatSpeed + realm.floatOffsetPhase) * 6;
+                const floatY = Math.sin(frameCount * realm.floatSpeed * 0.8 + realm.floatOffsetPhase) * 6;
+
+                const drawX = realm.x + floatX;
+                const drawY = realm.y + floatY;
 
                 const isThisRealmSelected = activeSelectedRealm && activeSelectedRealm.id === realm.id;
 
@@ -2285,13 +2294,13 @@
 
                 spaceCtx.save();
                 spaceCtx.beginPath();
-                spaceCtx.arc(realm.x, realm.y, realm.radius + 14, 0, Math.PI * 2);
+                spaceCtx.arc(drawX, drawY, realm.radius + 14, 0, Math.PI * 2);
                 spaceCtx.fillStyle = isThisRealmSelected ? 'rgba(99, 102, 241, 0.35)' : 'rgba(99, 102, 241, 0.15)';
                 spaceCtx.fill();
 
                 // Planet Main Body
                 spaceCtx.beginPath();
-                spaceCtx.arc(realm.x, realm.y, realm.radius, 0, Math.PI * 2);
+                spaceCtx.arc(drawX, drawY, realm.radius, 0, Math.PI * 2);
                 spaceCtx.fillStyle = isThisRealmSelected ? 'rgba(79, 70, 229, 0.95)' : 'rgba(30, 41, 59, 0.95)';
                 spaceCtx.strokeStyle = isThisRealmSelected ? '#a5b4fc' : '#818cf8';
                 spaceCtx.lineWidth = isThisRealmSelected ? 4 : 2.5;
@@ -2305,28 +2314,28 @@
                 spaceCtx.save();
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
-                spaceCtx.font = '26px serif';
+                spaceCtx.font = '28px serif';
                 spaceCtx.shadowBlur = 0;
-                spaceCtx.fillText(realm.icon, realm.x, realm.y);
+                spaceCtx.fillText(realm.icon, drawX, drawY);
                 spaceCtx.restore();
 
-                // DYNAMIC SMART LABELS: Top planets place labels above, bottom planets below to eliminate overlaps
+                // DYNAMIC SMART LABELS (Floats smoothly with the planet node)
                 spaceCtx.save();
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
                 const beaconText = `${realm.icon} ${realm.name}`;
-                spaceCtx.font = 'bold 14px sans-serif';
+                spaceCtx.font = 'bold 15px sans-serif';
                 
                 const pillPadding = 26;
                 const pillHeight = 28;
                 const bTextWidth = spaceCtx.measureText(realm.name).width + pillPadding;
-                const pillX = realm.x - (bTextWidth / 2);
+                const pillX = drawX - (bTextWidth / 2);
                 
-                // Smart Directional Offset
-                const isTopHalf = realm.y < 0;
+                // Smart Directional Offset based on screen side
+                const isTopHalf = realm.baseY < 0;
                 const pillY = isTopHalf 
-                    ? realm.y - realm.radius - pillHeight - 10 
-                    : realm.y + realm.radius + 10;
+                    ? drawY - realm.radius - pillHeight - 10 
+                    : drawY + realm.radius + 10;
 
                 // Rounded Pill Badge Background
                 spaceCtx.fillStyle = isThisRealmSelected ? 'rgba(79, 70, 229, 0.95)' : 'rgba(15, 23, 42, 0.95)';
@@ -2342,7 +2351,7 @@
                 // High-Visibility Text Centered Inside Pill
                 spaceCtx.fillStyle = '#ffffff';
                 spaceCtx.shadowBlur = 0;
-                spaceCtx.fillText(beaconText, realm.x, pillY + (pillHeight / 2));
+                spaceCtx.fillText(beaconText, drawX, pillY + (pillHeight / 2));
                 spaceCtx.restore();
 
                 // DRILL-DOWN LOGIC: Only render Buckets & Tasks if THIS Realm is active/selected!
@@ -2356,12 +2365,12 @@
                         return;
                     }
 
-                    bucket.x = realm.x + Math.cos(bucket.angle) * bucket.orbitRadius;
-                    bucket.y = realm.y + Math.sin(bucket.angle) * bucket.orbitRadius;
+                    bucket.x = drawX + Math.cos(bucket.angle) * bucket.orbitRadius;
+                    bucket.y = drawY + Math.sin(bucket.angle) * bucket.orbitRadius;
 
                     // Bucket Orbit Ring around Realm Planet
                     spaceCtx.beginPath();
-                    spaceCtx.arc(realm.x, realm.y, bucket.orbitRadius, 0, Math.PI * 2);
+                    spaceCtx.arc(drawX, drawY, bucket.orbitRadius, 0, Math.PI * 2);
                     spaceCtx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
                     spaceCtx.lineWidth = 1.2;
                     spaceCtx.stroke();
@@ -2444,12 +2453,12 @@
 
                     bucket.tasks.forEach(task => {
                         // Boundary Repulsion from Realm Core
-                        const distToRealm = Math.hypot(task.x - realm.x, task.y - realm.y);
+                        const distToRealm = Math.hypot(task.x - drawX, task.y - drawY);
                         const minAllowedDist = realm.radius + 28;
                         if (distToRealm < minAllowedDist) {
-                            const angleFromRealm = Math.atan2(task.y - realm.y, task.x - realm.x);
-                            task.x = realm.x + Math.cos(angleFromRealm) * minAllowedDist;
-                            task.y = realm.y + Math.sin(angleFromRealm) * minAllowedDist;
+                            const angleFromRealm = Math.atan2(task.y - drawY, task.x - drawX);
+                            task.x = drawX + Math.cos(angleFromRealm) * minAllowedDist;
+                            task.y = drawY + Math.sin(angleFromRealm) * minAllowedDist;
                         }
 
                         // Task Satellite Orbit Ring
