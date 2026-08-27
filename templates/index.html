@@ -388,7 +388,7 @@
                 <span class="text-lg">🌌</span>
                 <div>
                     <h2 class="text-xs font-bold text-white leading-none">TaskMonster Universe</h2>
-                    <span class="text-[10px] text-slate-400">Planets = Realms • Moons = Buckets • Satellites = Tasks</span>
+                    <span class="text-[10px] text-slate-400">Tap Realm Planet to Focus • Drag HUD to Reposition</span>
                 </div>
             </div>
 
@@ -398,7 +398,7 @@
             </button>
         </div>
 
-        <!-- Draggable & Modrain HUD Inspection Card -->
+        <!-- Draggable & Modular HUD Inspection Card -->
         <div id="space-hud-card" class="hidden absolute top-16 right-4 z-20 w-80 bg-slate-900/95 border border-indigo-500/40 p-3.5 rounded-2xl backdrop-blur-md shadow-2xl space-y-2.5 select-none">
             <div id="space-hud-drag-handle" class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2 cursor-move">
                 <span id="hud-category-badge" class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full truncate">
@@ -619,15 +619,15 @@
                             <div onclick="selectEmoji('edit-realm', '🏆')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🏆</div>
                             <div onclick="selectEmoji('edit-realm', '🚀')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🚀</div>
                             <div onclick="selectEmoji('edit-realm', '🌱')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🌱</div>
-                            <div onclick="selectEmoji('add-realm', '🎁')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎁</div>
-                            <div onclick="selectEmoji('add-realm', '🧠')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🧠</div>
-                            <div onclick="selectEmoji('add-realm', '⚙️')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">⚙️</div>
-                            <div onclick="selectEmoji('add-realm', '💡')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💡</div>
-                            <div onclick="selectEmoji('add-realm', '📦')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">📦</div>
-                            <div onclick="selectEmoji('add-realm', '🌟')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🌟</div>
-                            <div onclick="selectEmoji('add-realm', '🔥')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🔥</div>
-                            <div onclick="selectEmoji('add-realm', '🎨')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎨</div>
-                            <div onclick="selectEmoji('add-realm', '🎵')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎵</div>
+                            <div onclick="selectEmoji('edit-realm', '🎁')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎁</div>
+                            <div onclick="selectEmoji('edit-realm', '🧠')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🧠</div>
+                            <div onclick="selectEmoji('edit-realm', '⚙️')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">⚙️</div>
+                            <div onclick="selectEmoji('edit-realm', '💡')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💡</div>
+                            <div onclick="selectEmoji('edit-realm', '📦')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">📦</div>
+                            <div onclick="selectEmoji('edit-realm', '🌟')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🌟</div>
+                            <div onclick="selectEmoji('edit-realm', '🔥')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🔥</div>
+                            <div onclick="selectEmoji('edit-realm', '🎨')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎨</div>
+                            <div onclick="selectEmoji('edit-realm', '🎵')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎵</div>
                         </div>
                     </div>
                     <div class="flex-1 min-w-0">
@@ -1927,16 +1927,19 @@
         }
     </script>
 
-    <!-- SPACE VIEW CANVAS ENGINE SCRIPT -->
+    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (STATIONARY + INTERACTIVE FOCUS PHYSICS) -->
     <script>
         let isSpaceViewActive = false;
         let spaceCanvas, spaceCtx;
         let spaceRealms = [];
         let cameraOffset = { x: 0, y: 0 };
+        let targetCameraOffset = { x: 0, y: 0 };
         let cameraZoom = 1;
+        let targetCameraZoom = 1;
         let isDragging = false;
         let dragStart = { x: 0, y: 0 };
         let activeSelectedTask = null;
+        let activeSelectedRealm = null;
         let initialPinchDistance = null;
 
         function toggleSpaceView() {
@@ -1970,16 +1973,24 @@
 
             spaceRealms = realmsData.map((realm, rIdx) => {
                 const realmAngle = (rIdx / realmsData.length) * Math.PI * 2;
-                const realmDistance = 220 + (rIdx * 110);
+                const realmDistance = 260 + (rIdx * 120);
+
+                const basePos = {
+                    x: Math.cos(realmAngle) * realmDistance,
+                    y: Math.sin(realmAngle) * realmDistance
+                };
 
                 return {
                     id: realm.id,
                     name: realm.name,
                     icon: realm.icon || '🔮',
-                    orbitRadius: realmDistance,
-                    angle: realmAngle,
-                    speed: 0.0003,
-                    radius: 26,
+                    baseX: basePos.x,
+                    baseY: basePos.y,
+                    x: basePos.x,
+                    y: basePos.y,
+                    targetX: basePos.x,
+                    targetY: basePos.y,
+                    radius: 28,
                     buckets: realm.buckets.map((bucket, bIdx) => {
                         const bucketAngle = (bIdx / Math.max(1, realm.buckets.length)) * Math.PI * 2;
                         
@@ -2000,6 +2011,8 @@
                             }
 
                             const isOverdue = el.querySelector('.bg-rose-500') !== null;
+                            const taskAngle = (filteredTasks.length / 5) * Math.PI * 2;
+                            const taskDist = 36 + (filteredTasks.length * 14);
 
                             filteredTasks.push({
                                 id: el.getAttribute('data-item-id'),
@@ -2016,20 +2029,20 @@
                                 isOverdue: isOverdue,
                                 isRecurring: recurringFlag,
                                 domElement: el,
-                                orbitRadius: 32 + (filteredTasks.length * 12),
-                                angle: (filteredTasks.length / 5) * Math.PI * 2,
-                                speed: 0.003,
-                                radius: 6
+                                angle: taskAngle,
+                                orbitRadius: taskDist,
+                                radius: 7
                             });
                         });
+
+                        const bucketDist = 85 + (bIdx * 30);
 
                         return {
                             id: bucket.id,
                             name: bucket.name,
-                            orbitRadius: 75 + (bIdx * 25),
                             angle: bucketAngle,
-                            speed: 0.0012,
-                            radius: 12,
+                            orbitRadius: bucketDist,
+                            radius: 14,
                             tasks: filteredTasks
                         };
                     })
@@ -2049,16 +2062,28 @@
         }
 
         function recenterSpace() {
-            cameraOffset = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-            cameraZoom = window.innerWidth < 768 ? 0.6 : 0.85;
+            activeSelectedRealm = null;
+            targetCameraOffset = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+            targetCameraZoom = window.innerWidth < 768 ? 0.6 : 0.85;
+
+            // Reset Repulsion Targets
+            spaceRealms.forEach(realm => {
+                realm.targetX = realm.baseX;
+                realm.targetY = realm.baseY;
+            });
         }
 
         function zoomSpace(factor) {
-            cameraZoom = Math.min(Math.max(0.25, cameraZoom * factor), 2.5);
+            targetCameraZoom = Math.min(Math.max(0.25, targetCameraZoom * factor), 2.5);
         }
 
         function renderSpaceFrame() {
             if (!isSpaceViewActive) return;
+
+            // Smooth Interpolation for Camera Zoom & Offset
+            cameraZoom += (targetCameraZoom - cameraZoom) * 0.1;
+            cameraOffset.x += (targetCameraOffset.x - cameraOffset.x) * 0.1;
+            cameraOffset.y += (targetCameraOffset.y - cameraOffset.y) * 0.1;
 
             spaceCtx.clearRect(0, 0, spaceCanvas.width, spaceCanvas.height);
 
@@ -2066,7 +2091,7 @@
             spaceCtx.translate(cameraOffset.x, cameraOffset.y);
             spaceCtx.scale(cameraZoom, cameraZoom);
 
-            // Draw Galaxy Core
+            // Draw Galaxy Core Center
             spaceCtx.beginPath();
             spaceCtx.arc(0, 0, 18, 0, Math.PI * 2);
             spaceCtx.fillStyle = '#6366f1';
@@ -2075,24 +2100,16 @@
             spaceCtx.fill();
 
             spaceRealms.forEach(realm => {
-                realm.angle += realm.speed;
-                realm.x = Math.cos(realm.angle) * realm.orbitRadius;
-                realm.y = Math.sin(realm.angle) * realm.orbitRadius;
-
-                // Realm Orbit Track
-                spaceCtx.beginPath();
-                spaceCtx.arc(0, 0, realm.orbitRadius, 0, Math.PI * 2);
-                spaceCtx.strokeStyle = 'rgba(99, 102, 241, 0.12)';
-                spaceCtx.lineWidth = 1;
-                spaceCtx.shadowBlur = 0;
-                spaceCtx.stroke();
+                // Smooth Position Repulsion Interpolation
+                realm.x += (realm.targetX - realm.x) * 0.08;
+                realm.y += (realm.targetY - realm.y) * 0.08;
 
                 // Realm Planet Body
                 spaceCtx.beginPath();
                 spaceCtx.arc(realm.x, realm.y, realm.radius, 0, Math.PI * 2);
-                spaceCtx.fillStyle = 'rgba(30, 41, 59, 0.95)';
+                spaceCtx.fillStyle = (activeSelectedRealm && activeSelectedRealm.id === realm.id) ? 'rgba(79, 70, 229, 0.95)' : 'rgba(30, 41, 59, 0.95)';
                 spaceCtx.strokeStyle = '#818cf8';
-                spaceCtx.lineWidth = 2;
+                spaceCtx.lineWidth = (activeSelectedRealm && activeSelectedRealm.id === realm.id) ? 3 : 2;
                 spaceCtx.shadowColor = '#6366f1';
                 spaceCtx.shadowBlur = 15;
                 spaceCtx.fill();
@@ -2105,17 +2122,16 @@
                 spaceCtx.shadowBlur = 0;
                 spaceCtx.fillText(realm.icon, realm.x, realm.y + 1);
 
-                spaceCtx.font = 'bold 11px sans-serif';
+                spaceCtx.font = 'bold 12px sans-serif';
                 spaceCtx.fillStyle = '#e2e8f0';
-                spaceCtx.fillText(realm.name, realm.x, realm.y + realm.radius + 14);
+                spaceCtx.fillText(realm.name, realm.x, realm.y + realm.radius + 16);
 
-                // Render Buckets (Moons)
+                // Render Stationary Buckets (Moons)
                 realm.buckets.forEach(bucket => {
-                    bucket.angle += bucket.speed;
                     bucket.x = realm.x + Math.cos(bucket.angle) * bucket.orbitRadius;
                     bucket.y = realm.y + Math.sin(bucket.angle) * bucket.orbitRadius;
 
-                    // Bucket Orbit Track
+                    // Bucket Orbit Ring around Realm Planet
                     spaceCtx.beginPath();
                     spaceCtx.arc(realm.x, realm.y, bucket.orbitRadius, 0, Math.PI * 2);
                     spaceCtx.strokeStyle = 'rgba(56, 189, 248, 0.15)';
@@ -2137,11 +2153,10 @@
                     spaceCtx.font = '600 10px sans-serif';
                     spaceCtx.fillStyle = '#38bdf8';
                     spaceCtx.textAlign = 'left';
-                    spaceCtx.fillText(`📌 ${bucket.name}`, bucket.x + bucket.radius + 4, bucket.y + 3);
+                    spaceCtx.fillText(`📌 ${bucket.name}`, bucket.x + bucket.radius + 5, bucket.y + 3);
 
-                    // Render Task Satellites
+                    // Render Stationary Task Satellites
                     bucket.tasks.forEach(task => {
-                        task.angle += task.speed;
                         task.x = bucket.x + Math.cos(task.angle) * task.orbitRadius;
                         task.y = bucket.y + Math.sin(task.angle) * task.orbitRadius;
 
@@ -2164,11 +2179,11 @@
                         spaceCtx.fill();
 
                         // Task Headline Text Label
-                        spaceCtx.font = '9px sans-serif';
+                        spaceCtx.font = '10px sans-serif';
                         spaceCtx.fillStyle = '#cbd5e1';
                         spaceCtx.textAlign = 'left';
-                        const truncatedTitle = task.title.length > 20 ? task.title.substring(0, 18) + '…' : task.title;
-                        spaceCtx.fillText(truncatedTitle, task.x + task.radius + 4, task.y + 3);
+                        const truncatedTitle = task.title.length > 22 ? task.title.substring(0, 20) + '…' : task.title;
+                        spaceCtx.fillText(truncatedTitle, task.x + task.radius + 5, task.y + 3);
                     });
                 });
             });
@@ -2177,18 +2192,21 @@
             requestAnimationFrame(renderSpaceFrame);
         }
 
-        // Pointer & Inspection Controls
+        // Pointer & Interaction Controls
         function setupSpaceEvents() {
             spaceCanvas.onmousedown = (e) => {
                 isDragging = true;
                 dragStart = { x: e.clientX - cameraOffset.x, y: e.clientY - cameraOffset.y };
             };
 
+            spaceCanvas.onclick = (e) => {
+                detectClickNode(e.clientX, e.clientY);
+            };
+
             window.onmousemove = (e) => {
                 if (isDragging) {
-                    cameraOffset = { x: e.clientX - dragStart.x, y: e.clientY - dragStart.y };
-                } else if (isSpaceViewActive) {
-                    detectHoverNode(e.clientX, e.clientY);
+                    targetCameraOffset = { x: e.clientX - dragStart.x, y: e.clientY - dragStart.y };
+                    cameraOffset = { ...targetCameraOffset };
                 }
             };
 
@@ -2204,7 +2222,7 @@
                 if (e.touches.length === 1) {
                     isDragging = true;
                     dragStart = { x: e.touches[0].clientX - cameraOffset.x, y: e.touches[0].clientY - cameraOffset.y };
-                    detectHoverNode(e.touches[0].clientX, e.touches[0].clientY);
+                    detectClickNode(e.touches[0].clientX, e.touches[0].clientY);
                 } else if (e.touches.length === 2) {
                     isDragging = false;
                     initialPinchDistance = Math.hypot(
@@ -2216,7 +2234,8 @@
 
             spaceCanvas.ontouchmove = (e) => {
                 if (isDragging && e.touches.length === 1) {
-                    cameraOffset = { x: e.touches[0].clientX - dragStart.x, y: e.touches[0].clientY - dragStart.y };
+                    targetCameraOffset = { x: e.touches[0].clientX - dragStart.x, y: e.touches[0].clientY - dragStart.y };
+                    cameraOffset = { ...targetCameraOffset };
                 } else if (e.touches.length === 2 && initialPinchDistance) {
                     const currentDist = Math.hypot(
                         e.touches[0].clientX - e.touches[1].clientX,
@@ -2234,26 +2253,68 @@
             };
         }
 
-        function detectHoverNode(clientX, clientY) {
+        function detectClickNode(clientX, clientY) {
             const worldX = (clientX - cameraOffset.x) / cameraZoom;
             const worldY = (clientY - cameraOffset.y) / cameraZoom;
 
-            let foundTask = null;
+            let clickedTask = null;
+            let clickedRealm = null;
 
+            // 1. Check Task Node Selection
             spaceRealms.forEach(realm => {
                 realm.buckets.forEach(bucket => {
                     bucket.tasks.forEach(task => {
                         const dist = Math.hypot(worldX - task.x, worldY - task.y);
                         if (dist <= task.radius + 16) {
-                            foundTask = task;
+                            clickedTask = task;
                         }
                     });
                 });
             });
 
-            if (foundTask) {
-                showHudCard(foundTask);
+            if (clickedTask) {
+                showHudCard(clickedTask);
+                return;
             }
+
+            // 2. Check Realm Planet Selection (Focus & Push Other Realms Away)
+            spaceRealms.forEach(realm => {
+                const dist = Math.hypot(worldX - realm.x, worldY - realm.y);
+                if (dist <= realm.radius + 18) {
+                    clickedRealm = realm;
+                }
+            });
+
+            if (clickedRealm) {
+                focusAndRepelRealms(clickedRealm);
+            }
+        }
+
+        function focusAndRepelRealms(selectedRealm) {
+            activeSelectedRealm = selectedRealm;
+            
+            // Repel all other Realms away from the selected Realm
+            spaceRealms.forEach(realm => {
+                if (realm.id === selectedRealm.id) {
+                    realm.targetX = selectedRealm.baseX;
+                    realm.targetY = selectedRealm.baseY;
+                } else {
+                    const dx = realm.baseX - selectedRealm.baseX;
+                    const dy = realm.baseY - selectedRealm.baseY;
+                    const angle = Math.atan2(dy, dx);
+                    const repelDist = 280; // Push non-selected realms outward by 280 units
+
+                    realm.targetX = selectedRealm.baseX + Math.cos(angle) * (Math.hypot(dx, dy) + repelDist);
+                    realm.targetY = selectedRealm.baseY + Math.sin(angle) * (Math.hypot(dx, dy) + repelDist);
+                }
+            });
+
+            // Smoothly focus camera on Selected Realm
+            targetCameraZoom = window.innerWidth < 768 ? 1.1 : 1.35;
+            targetCameraOffset = {
+                x: (window.innerWidth / 2) - (selectedRealm.baseX * targetCameraZoom),
+                y: (window.innerHeight / 2) - (selectedRealm.baseY * targetCameraZoom)
+            };
         }
 
         function showHudCard(task) {
@@ -2287,7 +2348,6 @@
         function triggerHudEdit() {
             if (!activeSelectedTask) return;
 
-            // Trigger the edit modal using the task's DOM element source
             const dummyBtn = document.createElement('button');
             dummyBtn.setAttribute('data-id', activeSelectedTask.id);
             dummyBtn.setAttribute('data-title', activeSelectedTask.title);
