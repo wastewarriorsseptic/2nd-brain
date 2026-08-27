@@ -2015,7 +2015,7 @@
         }
     </script>
 
-    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (DRILL-DOWN ISOLATION ARCHITECTURE) -->
+    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (RESPONSIVE VIEWPORT DISTRIBUTION & DEBOUNCED TOUCH) -->
     <script>
         let isSpaceViewActive = false;
         let spaceCanvas, spaceCtx;
@@ -2081,14 +2081,17 @@
             window.addEventListener('resize', resizeSpaceCanvas);
 
             const processedGroupIds = new Set();
+            const totalRealms = Math.max(1, realmsData.length);
+
+            // DYNAMIC VIEWPORT DISTRIBUTION: Distribute Realms in an aesthetic ring filling the viewable screen space
+            const viewRadius = Math.min(window.innerWidth, window.innerHeight) * (window.innerWidth < 768 ? 0.38 : 0.32);
 
             spaceRealms = realmsData.map((realm, rIdx) => {
-                const realmAngle = (rIdx / realmsData.length) * Math.PI * 2;
-                const realmDistance = 240 + (rIdx * 120);
+                const realmAngle = (rIdx / totalRealms) * Math.PI * 2 - Math.PI / 2;
 
                 const basePos = {
-                    x: Math.cos(realmAngle) * realmDistance,
-                    y: Math.sin(realmAngle) * realmDistance
+                    x: Math.cos(realmAngle) * viewRadius,
+                    y: Math.sin(realmAngle) * viewRadius
                 };
 
                 return {
@@ -2101,7 +2104,7 @@
                     y: basePos.y,
                     targetX: basePos.x,
                     targetY: basePos.y,
-                    radius: 44, // Generous base planet size
+                    radius: 46, // Prominent, touch-friendly base size
                     buckets: realm.buckets.map((bucket, bIdx) => {
                         const totalBuckets = Math.max(1, realm.buckets.length);
                         const bucketAngle = (bIdx / totalBuckets) * Math.PI * 2;
@@ -2191,7 +2194,7 @@
 
             if (spaceRealms.length === 0) {
                 targetCameraOffset = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-                targetCameraZoom = 0.65;
+                targetCameraZoom = 0.85;
                 return;
             }
 
@@ -2206,13 +2209,13 @@
                 if (r.baseY > maxY) maxY = r.baseY;
             });
 
-            const padding = 200;
+            const padding = window.innerWidth < 768 ? 140 : 180;
             const boundingWidth = (maxX - minX) + (padding * 2);
             const boundingHeight = (maxY - minY) + (padding * 2);
 
             const fitZoomX = window.innerWidth / boundingWidth;
             const fitZoomY = window.innerHeight / boundingHeight;
-            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.35), 0.90);
+            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.55), 1.1);
 
             const centerX = (minX + maxX) / 2;
             const centerY = (minY + maxY) / 2;
@@ -2224,7 +2227,7 @@
         }
 
         function zoomSpace(factor) {
-            targetCameraZoom = Math.min(Math.max(0.15, targetCameraZoom * factor), 2.5);
+            targetCameraZoom = Math.min(Math.max(0.2, targetCameraZoom * factor), 2.5);
         }
 
         function renderSpaceFrame() {
@@ -2271,22 +2274,26 @@
 
                 const isThisRealmSelected = activeSelectedRealm && activeSelectedRealm.id === realm.id;
 
-                // Realm Planet Atmosphere Aura
+                // AMPLIFIED NEON GLOW & RADIAL ATMOSPHERE AURA
+                const pulseGlow = 18 + Math.sin(frameCount * 2.5 + realm.id) * 6;
+
+                spaceCtx.save();
                 spaceCtx.beginPath();
-                spaceCtx.arc(realm.x, realm.y, realm.radius + 14, 0, Math.PI * 2);
-                spaceCtx.fillStyle = isThisRealmSelected ? 'rgba(99, 102, 241, 0.25)' : 'rgba(99, 102, 241, 0.08)';
+                spaceCtx.arc(realm.x, realm.y, realm.radius + 16, 0, Math.PI * 2);
+                spaceCtx.fillStyle = isThisRealmSelected ? 'rgba(99, 102, 241, 0.35)' : 'rgba(99, 102, 241, 0.15)';
                 spaceCtx.fill();
 
-                // Realm Planet Body
+                // Planet Main Body
                 spaceCtx.beginPath();
                 spaceCtx.arc(realm.x, realm.y, realm.radius, 0, Math.PI * 2);
                 spaceCtx.fillStyle = isThisRealmSelected ? 'rgba(79, 70, 229, 0.95)' : 'rgba(30, 41, 59, 0.95)';
-                spaceCtx.strokeStyle = '#818cf8';
+                spaceCtx.strokeStyle = isThisRealmSelected ? '#a5b4fc' : '#818cf8';
                 spaceCtx.lineWidth = isThisRealmSelected ? 4 : 2.5;
-                spaceCtx.shadowColor = '#6366f1';
-                spaceCtx.shadowBlur = isThisRealmSelected ? 30 : 15;
+                spaceCtx.shadowColor = isThisRealmSelected ? '#818cf8' : '#6366f1';
+                spaceCtx.shadowBlur = isThisRealmSelected ? 35 : pulseGlow;
                 spaceCtx.fill();
                 spaceCtx.stroke();
+                spaceCtx.restore();
 
                 // Perfectly Centered Realm Emoji Icon
                 spaceCtx.save();
@@ -2297,7 +2304,7 @@
                 spaceCtx.fillText(realm.icon, realm.x, realm.y);
                 spaceCtx.restore();
 
-                // DYNAMIC REALM PILL BADGE LABELS
+                // HIGH-CONTRAST DYNAMIC REALM PILL BADGE LABELS
                 spaceCtx.save();
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
@@ -2364,7 +2371,7 @@
                     spaceCtx.fillText('⭐️', bucket.x, bucket.y);
                     spaceCtx.restore();
 
-                    // Bucket Label Pill (Perfectly Centered with Emoji Width Buffer)
+                    // Bucket Label Pill (Perfectly Centered)
                     spaceCtx.save();
                     spaceCtx.textAlign = 'center';
                     spaceCtx.textBaseline = 'middle';
