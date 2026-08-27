@@ -388,7 +388,6 @@
                 <span class="text-lg">😈</span>
                 <div>
                     <h2 class="text-xs font-bold text-white leading-none">TaskMonster Universe</h2>
-                    <span class="text-[10px] text-slate-400">Tap Realm Planet to Focus • Tap Bucket Moon to Isolate</span>
                 </div>
             </div>
 
@@ -1927,7 +1926,7 @@
         }
     </script>
 
-    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (BUCKET ISOLATION & FOCUS) -->
+    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (REALM REPULSION & CLEAR BOUNDARIES) -->
     <script>
         let isSpaceViewActive = false;
         let spaceCanvas, spaceCtx;
@@ -1974,7 +1973,7 @@
 
             spaceRealms = realmsData.map((realm, rIdx) => {
                 const realmAngle = (rIdx / realmsData.length) * Math.PI * 2;
-                const realmDistance = 350 + (rIdx * 200);
+                const realmDistance = 450 + (rIdx * 250);
 
                 const basePos = {
                     x: Math.cos(realmAngle) * realmDistance,
@@ -1991,7 +1990,7 @@
                     y: basePos.y,
                     targetX: basePos.x,
                     targetY: basePos.y,
-                    radius: 32,
+                    radius: 36,
                     buckets: realm.buckets.map((bucket, bIdx) => {
                         const totalBuckets = Math.max(1, realm.buckets.length);
                         const bucketAngle = (bIdx / totalBuckets) * Math.PI * 2;
@@ -2036,10 +2035,10 @@
                         const totalTasks = Math.max(1, filteredTasks.length);
                         filteredTasks.forEach((task, tIdx) => {
                             task.angle = (tIdx / totalTasks) * Math.PI * 2;
-                            task.orbitRadius = 45 + (tIdx * 28);
+                            task.orbitRadius = 50 + (tIdx * 30);
                         });
 
-                        const bucketDist = 110 + (bIdx * 45);
+                        const bucketDist = 160 + (bIdx * 60);
 
                         return {
                             id: bucket.id,
@@ -2069,7 +2068,7 @@
             activeSelectedRealm = null;
             activeSelectedBucket = null;
             targetCameraOffset = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-            targetCameraZoom = window.innerWidth < 768 ? 0.45 : 0.75;
+            targetCameraZoom = window.innerWidth < 768 ? 0.35 : 0.65;
 
             spaceRealms.forEach(realm => {
                 realm.targetX = realm.baseX;
@@ -2078,7 +2077,7 @@
         }
 
         function zoomSpace(factor) {
-            targetCameraZoom = Math.min(Math.max(0.2, targetCameraZoom * factor), 2.5);
+            targetCameraZoom = Math.min(Math.max(0.15, targetCameraZoom * factor), 2.5);
         }
 
         function renderSpaceFrame() {
@@ -2096,7 +2095,7 @@
 
             // Draw Devil Central Universe Core 😈
             spaceCtx.beginPath();
-            spaceCtx.arc(0, 0, 24, 0, Math.PI * 2);
+            spaceCtx.arc(0, 0, 26, 0, Math.PI * 2);
             spaceCtx.fillStyle = 'rgba(30, 41, 59, 0.95)';
             spaceCtx.strokeStyle = '#6366f1';
             spaceCtx.lineWidth = 3;
@@ -2105,7 +2104,7 @@
             spaceCtx.fill();
             spaceCtx.stroke();
 
-            spaceCtx.font = '22px serif';
+            spaceCtx.font = '24px serif';
             spaceCtx.textAlign = 'center';
             spaceCtx.textBaseline = 'middle';
             spaceCtx.shadowBlur = 0;
@@ -2115,6 +2114,12 @@
                 realm.x += (realm.targetX - realm.x) * 0.08;
                 realm.y += (realm.targetY - realm.y) * 0.08;
 
+                // Realm Planet Atmosphere Aura
+                spaceCtx.beginPath();
+                spaceCtx.arc(realm.x, realm.y, realm.radius + 10, 0, Math.PI * 2);
+                spaceCtx.fillStyle = 'rgba(99, 102, 241, 0.08)';
+                spaceCtx.fill();
+
                 // Realm Planet Body
                 spaceCtx.beginPath();
                 spaceCtx.arc(realm.x, realm.y, realm.radius, 0, Math.PI * 2);
@@ -2122,24 +2127,24 @@
                 spaceCtx.strokeStyle = '#818cf8';
                 spaceCtx.lineWidth = (activeSelectedRealm && activeSelectedRealm.id === realm.id) ? 3 : 2;
                 spaceCtx.shadowColor = '#6366f1';
-                spaceCtx.shadowBlur = 18;
+                spaceCtx.shadowBlur = 20;
                 spaceCtx.fill();
                 spaceCtx.stroke();
 
-                // Realm Icon & Label
-                spaceCtx.font = '22px serif';
+                // Realm Emoji Icon
+                spaceCtx.font = '24px serif';
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
                 spaceCtx.shadowBlur = 0;
                 spaceCtx.fillText(realm.icon, realm.x, realm.y + 1);
 
-                spaceCtx.font = 'bold 13px sans-serif';
+                // Realm Name Label
+                spaceCtx.font = 'bold 14px sans-serif';
                 spaceCtx.fillStyle = '#f8fafc';
-                spaceCtx.fillText(realm.name, realm.x, realm.y + realm.radius + 18);
+                spaceCtx.fillText(realm.name, realm.x, realm.y + realm.radius + 20);
 
                 // Render Buckets (Moons)
                 realm.buckets.forEach(bucket => {
-                    // Hide sibling buckets if a specific Bucket is selected in this Realm
                     if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id && activeSelectedRealm && activeSelectedRealm.id === realm.id) {
                         return;
                     }
@@ -2147,7 +2152,7 @@
                     bucket.x = realm.x + Math.cos(bucket.angle) * bucket.orbitRadius;
                     bucket.y = realm.y + Math.sin(bucket.angle) * bucket.orbitRadius;
 
-                    // Bucket Orbit Track
+                    // Bucket Orbit Ring around Realm Planet
                     spaceCtx.beginPath();
                     spaceCtx.arc(realm.x, realm.y, bucket.orbitRadius, 0, Math.PI * 2);
                     spaceCtx.strokeStyle = 'rgba(56, 189, 248, 0.12)';
@@ -2184,14 +2189,23 @@
                         task.x = bucket.x + Math.cos(task.angle) * task.orbitRadius;
                         task.y = bucket.y + Math.sin(task.angle) * task.orbitRadius;
 
-                        // Concentric Orbit Track per task ring
+                        // Check Repulsion Safety Boundary
+                        const distToRealm = Math.hypot(task.x - realm.x, task.y - realm.y);
+                        const minAllowedDist = realm.radius + 24;
+                        if (distToRealm < minAllowedDist) {
+                            const angleFromRealm = Math.atan2(task.y - realm.y, task.x - realm.x);
+                            task.x = realm.x + Math.cos(angleFromRealm) * minAllowedDist;
+                            task.y = realm.y + Math.sin(angleFromRealm) * minAllowedDist;
+                        }
+
+                        // Task Satellite Orbit Ring
                         spaceCtx.beginPath();
                         spaceCtx.arc(bucket.x, bucket.y, task.orbitRadius, 0, Math.PI * 2);
                         spaceCtx.strokeStyle = 'rgba(148, 163, 184, 0.08)';
                         spaceCtx.lineWidth = 0.5;
                         spaceCtx.stroke();
 
-                        // Task Satellite
+                        // Task Satellite Node
                         spaceCtx.beginPath();
                         spaceCtx.arc(task.x, task.y, task.radius, 0, Math.PI * 2);
 
@@ -2359,14 +2373,14 @@
                     const dx = realm.baseX - selectedRealm.baseX;
                     const dy = realm.baseY - selectedRealm.baseY;
                     const angle = Math.atan2(dy, dx);
-                    const repelDist = 380;
+                    const repelDist = 450;
 
                     realm.targetX = selectedRealm.baseX + Math.cos(angle) * (Math.hypot(dx, dy) + repelDist);
                     realm.targetY = selectedRealm.baseY + Math.sin(angle) * (Math.hypot(dx, dy) + repelDist);
                 }
             });
 
-            targetCameraZoom = window.innerWidth < 768 ? 0.9 : 1.1;
+            targetCameraZoom = window.innerWidth < 768 ? 0.85 : 1.0;
             targetCameraOffset = {
                 x: (window.innerWidth / 2) - (selectedRealm.baseX * targetCameraZoom),
                 y: (window.innerHeight / 2) - (selectedRealm.baseY * targetCameraZoom)
