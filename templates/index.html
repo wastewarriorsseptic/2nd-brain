@@ -2083,28 +2083,34 @@
             const processedGroupIds = new Set();
             const totalRealms = Math.max(1, realmsData.length);
 
-            // DYNAMIC VIEWPORT DISTRIBUTION: Distribute Realms in an aesthetic ring filling the viewable screen space
-            const viewRadius = Math.min(window.innerWidth, window.innerHeight) * (window.innerWidth < 768 ? 0.38 : 0.32);
+            // DYNAMIC RESPONSIVE ORBIT RADII: Expanded for mobile portrait to prevent pill overlaps
+            const isMobile = window.innerWidth < 768;
+            const viewRadius = Math.min(window.innerWidth, window.innerHeight) * (isMobile ? 0.48 : 0.32);
 
             spaceRealms = realmsData.map((realm, rIdx) => {
                 const realmAngle = (rIdx / totalRealms) * Math.PI * 2 - Math.PI / 2;
 
+                // Radial Staggering: Offset alternating Realms to prevent label collision
+                const radialOffset = (rIdx % 2 === 0 ? 1.0 : 1.15);
+                const currentOrbitRadius = viewRadius * radialOffset;
+
                 const basePos = {
-                    x: Math.cos(realmAngle) * viewRadius,
-                    y: Math.sin(realmAngle) * viewRadius
+                    x: Math.cos(realmAngle) * currentOrbitRadius,
+                    y: Math.sin(realmAngle) * currentOrbitRadius
                 };
 
                 return {
                     id: realm.id,
                     name: realm.name,
                     icon: realm.icon || '🔮',
+                    angle: realmAngle,
                     baseX: basePos.x,
                     baseY: basePos.y,
                     x: basePos.x,
                     y: basePos.y,
                     targetX: basePos.x,
                     targetY: basePos.y,
-                    radius: 46, // Prominent, touch-friendly base size
+                    radius: isMobile ? 40 : 46, // Touch-friendly base planet size
                     buckets: realm.buckets.map((bucket, bIdx) => {
                         const totalBuckets = Math.max(1, realm.buckets.length);
                         const bucketAngle = (bIdx / totalBuckets) * Math.PI * 2;
@@ -2209,13 +2215,13 @@
                 if (r.baseY > maxY) maxY = r.baseY;
             });
 
-            const padding = window.innerWidth < 768 ? 140 : 180;
+            const padding = window.innerWidth < 768 ? 160 : 200;
             const boundingWidth = (maxX - minX) + (padding * 2);
             const boundingHeight = (maxY - minY) + (padding * 2);
 
             const fitZoomX = window.innerWidth / boundingWidth;
             const fitZoomY = window.innerHeight / boundingHeight;
-            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.55), 1.1);
+            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.45), 1.0);
 
             const centerX = (minX + maxX) / 2;
             const centerY = (minY + maxY) / 2;
@@ -2279,7 +2285,7 @@
 
                 spaceCtx.save();
                 spaceCtx.beginPath();
-                spaceCtx.arc(realm.x, realm.y, realm.radius + 16, 0, Math.PI * 2);
+                spaceCtx.arc(realm.x, realm.y, realm.radius + 14, 0, Math.PI * 2);
                 spaceCtx.fillStyle = isThisRealmSelected ? 'rgba(99, 102, 241, 0.35)' : 'rgba(99, 102, 241, 0.15)';
                 spaceCtx.fill();
 
@@ -2299,23 +2305,28 @@
                 spaceCtx.save();
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
-                spaceCtx.font = '28px serif';
+                spaceCtx.font = '26px serif';
                 spaceCtx.shadowBlur = 0;
                 spaceCtx.fillText(realm.icon, realm.x, realm.y);
                 spaceCtx.restore();
 
-                // HIGH-CONTRAST DYNAMIC REALM PILL BADGE LABELS
+                // DYNAMIC SMART LABELS: Top planets place labels above, bottom planets below to eliminate overlaps
                 spaceCtx.save();
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
                 const beaconText = `${realm.icon} ${realm.name}`;
-                spaceCtx.font = 'bold 15px sans-serif';
+                spaceCtx.font = 'bold 14px sans-serif';
                 
                 const pillPadding = 26;
                 const pillHeight = 28;
                 const bTextWidth = spaceCtx.measureText(realm.name).width + pillPadding;
                 const pillX = realm.x - (bTextWidth / 2);
-                const pillY = realm.y + realm.radius + 12;
+                
+                // Smart Directional Offset
+                const isTopHalf = realm.y < 0;
+                const pillY = isTopHalf 
+                    ? realm.y - realm.radius - pillHeight - 10 
+                    : realm.y + realm.radius + 10;
 
                 // Rounded Pill Badge Background
                 spaceCtx.fillStyle = isThisRealmSelected ? 'rgba(79, 70, 229, 0.95)' : 'rgba(15, 23, 42, 0.95)';
