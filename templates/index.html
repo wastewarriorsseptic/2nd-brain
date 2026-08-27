@@ -2101,7 +2101,7 @@
                     y: basePos.y,
                     targetX: basePos.x,
                     targetY: basePos.y,
-                    radius: 54, // Enlarged Realm planet base radius
+                    radius: 36,
                     buckets: realm.buckets.map((bucket, bIdx) => {
                         const totalBuckets = Math.max(1, realm.buckets.length);
                         const bucketAngle = (bIdx / totalBuckets) * Math.PI * 2;
@@ -2151,7 +2151,7 @@
                             task.orbitRadius = 55 + (tIdx * 32);
                         });
 
-                        const bucketDist = 180 + (bIdx * 65);
+                        const bucketDist = 160 + (bIdx * 60);
 
                         return {
                             id: bucket.id,
@@ -2269,55 +2269,64 @@
                 realm.x += (realm.targetX - realm.x) * 0.08;
                 realm.y += (realm.targetY - realm.y) * 0.08;
 
+                // Dynamic Scale Factor for Zoomed-Out Legibility
+                // When zoomed out far (<0.65), scale up the Realm planet and its label pill
+                const zoomFactor = Math.max(1.0, 0.55 / Math.max(0.18, cameraZoom));
+                const currentRadius = realm.radius * Math.min(zoomFactor, 2.2);
+
                 // Realm Planet Atmosphere Aura
                 spaceCtx.beginPath();
-                spaceCtx.arc(realm.x, realm.y, realm.radius + 14, 0, Math.PI * 2);
-                spaceCtx.fillStyle = 'rgba(99, 102, 241, 0.12)';
+                spaceCtx.arc(realm.x, realm.y, currentRadius + (10 * zoomFactor), 0, Math.PI * 2);
+                spaceCtx.fillStyle = 'rgba(99, 102, 241, 0.08)';
                 spaceCtx.fill();
 
                 // Realm Planet Body
                 spaceCtx.beginPath();
-                spaceCtx.arc(realm.x, realm.y, realm.radius, 0, Math.PI * 2);
+                spaceCtx.arc(realm.x, realm.y, currentRadius, 0, Math.PI * 2);
                 spaceCtx.fillStyle = (activeSelectedRealm && activeSelectedRealm.id === realm.id) ? 'rgba(79, 70, 229, 0.95)' : 'rgba(30, 41, 59, 0.95)';
                 spaceCtx.strokeStyle = '#818cf8';
-                spaceCtx.lineWidth = (activeSelectedRealm && activeSelectedRealm.id === realm.id) ? 3.5 : 2.5;
+                spaceCtx.lineWidth = (activeSelectedRealm && activeSelectedRealm.id === realm.id) ? 3 * zoomFactor : 2 * zoomFactor;
                 spaceCtx.shadowColor = '#6366f1';
-                spaceCtx.shadowBlur = 24;
+                spaceCtx.shadowBlur = 20 * zoomFactor;
                 spaceCtx.fill();
                 spaceCtx.stroke();
 
-                // Centered Realm Emoji Icon (Larger Font Size)
-                spaceCtx.save();
-                spaceCtx.font = '36px serif';
+                // Centered Realm Emoji Icon
+                const emojiSize = Math.round(24 * Math.min(zoomFactor, 2.0));
+                spaceCtx.font = `${emojiSize}px serif`;
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
                 spaceCtx.shadowBlur = 0;
-                spaceCtx.fillText(realm.icon, realm.x, realm.y + 2);
-                spaceCtx.restore();
+                spaceCtx.fillText(realm.icon, realm.x, realm.y + 1);
 
-                // HIGH-CONTRAST ENHANCED PILL BADGE REALM LABELS (ALWAYS LEGIBLE ON ALL ZOOMS)
+                // DYNAMIC SCREEN-CONSTANT PILL LABELS FOR REALMS
                 spaceCtx.save();
-                const realmLabel = `${realm.icon} ${realm.name}`;
-                spaceCtx.font = 'bold 16px sans-serif';
-                const rTextWidth = spaceCtx.measureText(realmLabel).width + 24;
+                const beaconText = `${realm.icon} ${realm.name}`;
+                const fontSize = Math.round(14 * Math.min(zoomFactor, 1.8));
+                spaceCtx.font = `bold ${fontSize}px sans-serif`;
+                
+                const pillPadding = 16 * Math.min(zoomFactor, 1.6);
+                const pillHeight = 26 * Math.min(zoomFactor, 1.6);
+                const bTextWidth = spaceCtx.measureText(beaconText).width + pillPadding;
+                const pillY = realm.y + currentRadius + (12 * zoomFactor);
 
-                // High-visibility Rounded Pill Badge
+                // High-Contrast Floating Pill
                 spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
                 spaceCtx.strokeStyle = '#818cf8';
-                spaceCtx.lineWidth = 1.5;
+                spaceCtx.lineWidth = 1.5 * Math.min(zoomFactor, 1.5);
                 spaceCtx.shadowColor = '#6366f1';
-                spaceCtx.shadowBlur = 12;
+                spaceCtx.shadowBlur = 12 * zoomFactor;
                 spaceCtx.beginPath();
-                spaceCtx.roundRect(realm.x - rTextWidth / 2, realm.y + realm.radius + 10, rTextWidth, 30, 8);
+                spaceCtx.roundRect(realm.x - bTextWidth / 2, pillY, bTextWidth, pillHeight, 6 * zoomFactor);
                 spaceCtx.fill();
                 spaceCtx.stroke();
 
-                // High-visibility Crisp White Text
+                // High-Contrast Text
                 spaceCtx.fillStyle = '#ffffff';
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
                 spaceCtx.shadowBlur = 0;
-                spaceCtx.fillText(realmLabel, realm.x, realm.y + realm.radius + 25);
+                spaceCtx.fillText(beaconText, realm.x, pillY + (pillHeight / 2) + 1);
                 spaceCtx.restore();
 
                 const allTasksInRealm = [];
@@ -2408,7 +2417,7 @@
                     bucket.tasks.forEach(task => {
                         // Boundary Repulsion from Realm Core
                         const distToRealm = Math.hypot(task.x - realm.x, task.y - realm.y);
-                        const minAllowedDist = realm.radius + 28;
+                        const minAllowedDist = currentRadius + 28;
                         if (distToRealm < minAllowedDist) {
                             const angleFromRealm = Math.atan2(task.y - realm.y, task.x - realm.x);
                             task.x = realm.x + Math.cos(angleFromRealm) * minAllowedDist;
@@ -2590,7 +2599,10 @@
             // 3. Check Realm Planet Selection (Focus & Push Other Realms Away)
             spaceRealms.forEach(realm => {
                 const dist = Math.hypot(worldX - realm.x, worldY - realm.y);
-                if (dist <= realm.radius + 22) {
+                const zoomFactor = Math.max(1.0, 0.55 / Math.max(0.18, cameraZoom));
+                const currentRadius = realm.radius * Math.min(zoomFactor, 2.2);
+
+                if (dist <= currentRadius + 22) {
                     clickedRealm = realm;
                 }
             });
