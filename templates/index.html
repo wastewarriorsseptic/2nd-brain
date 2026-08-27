@@ -323,6 +323,7 @@
                                                 data-description="{{ item.description or '' }}"
                                                 data-recurring="{{ 'true' if (item.recurrence_type and item.recurrence_type != 'none') or item.recurring_group_id else 'false' }}"
                                                 data-recurrence-type="{{ item.recurrence_type or 'none' }}"
+                                                data-realm-id="{{ item.bucket.realm.id if item.bucket and item.bucket.realm else '' }}"
                                                 data-bucket-id="{{ item.bucket_id }}"
                                                 title="Edit Task" 
                                                 class="text-slate-500 hover:text-indigo-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-700/50">
@@ -537,7 +538,7 @@
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
                     <button type="button" onclick="document.getElementById('edit-realm-modal').classList.add('hidden')" 
-                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Save Changes</button>
+                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Cancel</button>
                     <button type="submit" 
                             class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold">Save Changes</button>
                 </div>
@@ -865,7 +866,24 @@
 
             <form action="/items/update/" method="POST" class="space-y-3.5">
                 <input type="hidden" name="item_id" id="edit-item-id">
-                <input type="hidden" name="bucket_id" id="edit-item-bucket-id">
+                
+                <!-- Realm and Bucket Dynamic Pickers for Editing Task Location -->
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Realm</label>
+                        <select id="edit-task-realm-select" onchange="onEditModalRealmChange()" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                            {% for r in realms %}
+                            <option value="{{ r.id }}">{{ r.icon or '🔮' }} {{ r.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Bucket</label>
+                        <select id="edit-task-bucket-select" name="bucket_id" required class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                        </select>
+                    </div>
+                </div>
+
                 <input type="hidden" name="recurrence_type" id="edit-recurrence-type-input" value="none">
                 <input type="hidden" name="interval" id="edit-interval-input" value="1">
                 <input type="hidden" name="weekdays" id="edit-weekdays-input" value="">
@@ -1112,6 +1130,28 @@
             } else {
                 bucketFields.classList.add('hidden');
                 hiddenBucketInput.value = bucketSelect.value || '';
+            }
+        }
+
+        function onEditModalRealmChange() {
+            const realmSelect = document.getElementById('edit-task-realm-select');
+            const bucketSelect = document.getElementById('edit-task-bucket-select');
+            const selectedRealmId = parseInt(realmSelect.value);
+            const realm = realmsData.find(r => r.id === selectedRealmId);
+
+            bucketSelect.innerHTML = '';
+            if (realm && realm.buckets.length > 0) {
+                realm.buckets.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = b.id;
+                    opt.textContent = `📌 ${b.name}`;
+                    bucketSelect.appendChild(opt);
+                });
+            } else {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = '(No buckets in realm)';
+                bucketSelect.appendChild(opt);
             }
         }
 
@@ -1877,14 +1917,26 @@
             const isRecurring = element.getAttribute('data-recurring') === 'true';
             const recurrenceType = element.getAttribute('data-recurrence-type') || 'none';
             const bucketId = element.getAttribute('data-bucket-id') || '';
+            const realmId = element.getAttribute('data-realm-id') || '';
 
             document.getElementById('edit-item-id').value = id;
-            document.getElementById('edit-item-bucket-id').value = bucketId;
             document.getElementById('edit-item-title').value = title;
             document.getElementById('edit-item-due-date').value = dueDate;
             document.getElementById('edit-item-due-time').value = dueTime;
             document.getElementById('edit-item-amount').value = amount;
             document.getElementById('edit-item-description').value = description;
+
+            // Set Realm & Bucket dropdown selections
+            const realmSelect = document.getElementById('edit-task-realm-select');
+            if (realmSelect && realmId) {
+                realmSelect.value = realmId;
+                onEditModalRealmChange();
+            }
+
+            const bucketSelect = document.getElementById('edit-task-bucket-select');
+            if (bucketSelect && bucketId) {
+                bucketSelect.value = bucketId;
+            }
             
             const editRecurrenceInput = document.getElementById('edit-recurrence-type-input');
             if (editRecurrenceInput) {
@@ -1926,7 +1978,7 @@
         }
     </script>
 
-    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (REALM REPULSION & CLEAR BOUNDARIES & TASK REPULSION) -->
+    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (MOBILE DEBOUNCED & TASK REPULSION PHYSICS) -->
     <script>
         let isSpaceViewActive = false;
         let spaceCanvas, spaceCtx;
@@ -1942,6 +1994,7 @@
         let activeSelectedBucket = null;
         let initialPinchDistance = null;
         let frameCount = 0;
+        let lastTouchTime = 0;
 
         function toggleSpaceView() {
             const overlay = document.getElementById('space-view-overlay');
@@ -2024,6 +2077,7 @@
                                 description: el.getAttribute('data-description') || '',
                                 recurrenceType: el.getAttribute('data-recurrence-type') || 'none',
                                 bucketId: bucket.id,
+                                realmId: realm.id,
                                 realmName: realm.name,
                                 bucketName: bucket.name,
                                 isOverdue: isOverdue,
@@ -2085,7 +2139,7 @@
         function renderSpaceFrame() {
             if (!isSpaceViewActive) return;
 
-            frameCount += 0.02; // Slow time increment for natural hover drifting
+            frameCount += 0.02;
 
             cameraZoom += (targetCameraZoom - cameraZoom) * 0.1;
             cameraOffset.x += (targetCameraOffset.x - cameraOffset.x) * 0.1;
@@ -2147,7 +2201,6 @@
                 spaceCtx.fillStyle = '#f8fafc';
                 spaceCtx.fillText(realm.name, realm.x, realm.y + realm.radius + 20);
 
-                // Collect all active tasks for inter-task repulsion calculations
                 const allTasksInRealm = [];
 
                 // Render Buckets (Moons)
@@ -2191,7 +2244,7 @@
                     spaceCtx.textAlign = 'center';
                     spaceCtx.fillText(bLabel, bucket.x, bucket.y + bucket.radius + 14);
 
-                    // Position Task Satellites with gentle floating hover offset
+                    // Position Task Satellites with floating offset
                     bucket.tasks.forEach(task => {
                         const hoverX = Math.cos(frameCount + task.floatOffset) * 3;
                         const hoverY = Math.sin(frameCount + task.floatOffset) * 3;
@@ -2203,7 +2256,7 @@
                     });
                 });
 
-                // Task Inter-Satellite Repulsion Physics: Push overlapping tasks apart
+                // Task Inter-Satellite Repulsion
                 for (let i = 0; i < allTasksInRealm.length; i++) {
                     for (let j = i + 1; j < allTasksInRealm.length; j++) {
                         const t1 = allTasksInRealm[i];
@@ -2212,7 +2265,7 @@
                         const dx = t2.x - t1.x;
                         const dy = t2.y - t1.y;
                         const dist = Math.hypot(dx, dy);
-                        const minDist = 60; // Repulsion distance buffer between task label pills
+                        const minDist = 60;
 
                         if (dist < minDist && dist > 0) {
                             const overlap = (minDist - dist) / 2;
@@ -2234,7 +2287,7 @@
                     }
 
                     bucket.tasks.forEach(task => {
-                        // Check Repulsion Safety Boundary around Realm Planet
+                        // Boundary Repulsion from Realm Core
                         const distToRealm = Math.hypot(task.x - realm.x, task.y - realm.y);
                         const minAllowedDist = realm.radius + 28;
                         if (distToRealm < minAllowedDist) {
@@ -2290,14 +2343,16 @@
             requestAnimationFrame(renderSpaceFrame);
         }
 
-        // Pointer & Interaction Controls
+        // Pointer & Interaction Controls (With Touch Mobile Tap Debounce)
         function setupSpaceEvents() {
             spaceCanvas.onmousedown = (e) => {
+                if (Date.now() - lastTouchTime < 400) return;
                 isDragging = true;
                 dragStart = { x: e.clientX - cameraOffset.x, y: e.clientY - cameraOffset.y };
             };
 
             spaceCanvas.onclick = (e) => {
+                if (Date.now() - lastTouchTime < 400) return;
                 detectClickNode(e.clientX, e.clientY);
             };
 
@@ -2317,10 +2372,10 @@
 
             // Touch Handlers for Mobile
             spaceCanvas.ontouchstart = (e) => {
+                lastTouchTime = Date.now();
                 if (e.touches.length === 1) {
                     isDragging = true;
                     dragStart = { x: e.touches[0].clientX - cameraOffset.x, y: e.touches[0].clientY - cameraOffset.y };
-                    detectClickNode(e.touches[0].clientX, e.touches[0].clientY);
                 } else if (e.touches.length === 2) {
                     isDragging = false;
                     initialPinchDistance = Math.hypot(
@@ -2345,9 +2400,14 @@
                 }
             };
 
-            spaceCanvas.ontouchend = () => {
+            spaceCanvas.ontouchend = (e) => {
                 isDragging = false;
                 initialPinchDistance = null;
+                
+                if (e.changedTouches.length === 1) {
+                    const touch = e.changedTouches[0];
+                    detectClickNode(touch.clientX, touch.clientY);
+                }
             };
         }
 
@@ -2364,7 +2424,7 @@
                 realm.buckets.forEach(bucket => {
                     bucket.tasks.forEach(task => {
                         const dist = Math.hypot(worldX - task.x, worldY - task.y);
-                        if (dist <= task.radius + 16) {
+                        if (dist <= task.radius + 18) {
                             clickedTask = task;
                         }
                     });
@@ -2380,7 +2440,7 @@
             spaceRealms.forEach(realm => {
                 realm.buckets.forEach(bucket => {
                     const dist = Math.hypot(worldX - bucket.x, worldY - bucket.y);
-                    if (dist <= bucket.radius + 16) {
+                    if (dist <= bucket.radius + 20) {
                         clickedBucket = bucket;
                         clickedRealm = realm;
                     }
@@ -2396,7 +2456,7 @@
             // 3. Check Realm Planet Selection (Focus & Push Other Realms Away)
             spaceRealms.forEach(realm => {
                 const dist = Math.hypot(worldX - realm.x, worldY - realm.y);
-                if (dist <= realm.radius + 18) {
+                if (dist <= realm.radius + 22) {
                     clickedRealm = realm;
                 }
             });
@@ -2473,6 +2533,7 @@
             dummyBtn.setAttribute('data-recurring', activeSelectedTask.isRecurring ? 'true' : 'false');
             dummyBtn.setAttribute('data-recurrence-type', activeSelectedTask.recurrenceType);
             dummyBtn.setAttribute('data-bucket-id', activeSelectedTask.bucketId);
+            dummyBtn.setAttribute('data-realm-id', activeSelectedTask.realmId);
 
             openEditItem(dummyBtn);
         }
