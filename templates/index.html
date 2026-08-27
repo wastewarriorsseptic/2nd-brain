@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#0f172a">
     <link rel="icon" type="image/jpeg" href="/static/icon.jpeg">
     <link rel="apple-touch-icon" href="/static/icon.jpeg">
@@ -398,23 +398,21 @@
         <!-- Canvas Viewport -->
         <canvas id="space-canvas" class="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"></canvas>
 
-        <!-- Top Floating Space HUD -->
-        <div class="relative z-10 p-4 flex items-center justify-between pointer-events-none">
-            <div class="bg-slate-900/90 border border-slate-800 p-2.5 px-4 rounded-2xl backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto">
-                <span class="text-lg">😈</span>
-                <div>
-                    <h2 class="text-xs font-bold text-white leading-none">TaskMonster Universe</h2>
-                </div>
+        <!-- Streamlined Top Floating Space Bar -->
+        <div class="relative z-10 pt-12 md:pt-4 px-4 flex items-center justify-between pointer-events-none">
+            <div class="bg-slate-900/90 border border-slate-800 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto">
+                <span class="text-base">😈</span>
+                <h2 class="text-xs font-bold text-white tracking-wide">TaskMonster Universe</h2>
             </div>
 
             <button onclick="toggleSpaceView()" 
-                    class="pointer-events-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-2xl shadow-xl transition border border-indigo-400/30">
-                ✖ Close Space View
+                    class="pointer-events-auto px-3.5 py-1.5 bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-indigo-400/30">
+                ✖ Close View
             </button>
         </div>
 
         <!-- Draggable & Modular HUD Inspection Card -->
-        <div id="space-hud-card" class="hidden absolute top-16 right-4 z-20 w-80 bg-slate-900/95 border border-indigo-500/40 p-3.5 rounded-2xl backdrop-blur-md shadow-2xl space-y-2.5 select-none">
+        <div id="space-hud-card" class="hidden absolute top-20 right-4 z-20 w-80 bg-slate-900/95 border border-indigo-500/40 p-3.5 rounded-2xl backdrop-blur-md shadow-2xl space-y-2.5 select-none">
             <div id="space-hud-drag-handle" class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2 cursor-move">
                 <span id="hud-category-badge" class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full truncate">
                     Realm / Bucket
@@ -2000,7 +1998,7 @@
         }
     </script>
 
-    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (MOBILE DEBOUNCED & PERSISTENT VIEW STATE) -->
+    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (MOBILE HiDPI RESOLUTION & DEBOUNCED state) -->
     <script>
         let isSpaceViewActive = false;
         let spaceCanvas, spaceCtx;
@@ -2017,6 +2015,7 @@
         let initialPinchDistance = null;
         let frameCount = 0;
         let lastTouchTime = 0;
+        let deviceDPR = 1;
 
         function toggleSpaceView() {
             const overlay = document.getElementById('space-view-overlay');
@@ -2140,15 +2139,22 @@
 
         function resizeSpaceCanvas() {
             if (!spaceCanvas) return;
-            spaceCanvas.width = window.innerWidth;
-            spaceCanvas.height = window.innerHeight;
+            deviceDPR = window.devicePixelRatio || 1;
+            
+            // Set backing store dimensions for HiDPI crispness
+            spaceCanvas.width = window.innerWidth * deviceDPR;
+            spaceCanvas.height = window.innerHeight * deviceDPR;
+
+            // Maintain CSS layout size
+            spaceCanvas.style.width = `${window.innerWidth}px`;
+            spaceCanvas.style.height = `${window.innerHeight}px`;
         }
 
         function recenterSpace() {
             activeSelectedRealm = null;
             activeSelectedBucket = null;
             targetCameraOffset = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-            targetCameraZoom = window.innerWidth < 768 ? 0.35 : 0.65;
+            targetCameraZoom = window.innerWidth < 768 ? 0.45 : 0.65;
 
             spaceRealms.forEach(realm => {
                 realm.targetX = realm.baseX;
@@ -2172,6 +2178,10 @@
             spaceCtx.clearRect(0, 0, spaceCanvas.width, spaceCanvas.height);
 
             spaceCtx.save();
+            
+            // Scale Canvas for Retina/HiDPI Mobile Displays
+            spaceCtx.scale(deviceDPR, deviceDPR);
+
             spaceCtx.translate(cameraOffset.x, cameraOffset.y);
             spaceCtx.scale(cameraZoom, cameraZoom);
 
