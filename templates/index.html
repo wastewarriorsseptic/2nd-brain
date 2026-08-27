@@ -411,46 +411,47 @@
             </button>
         </div>
 
-        <!-- Draggable & Modular HUD Inspection Card -->
-        <div id="space-hud-card" class="hidden absolute top-20 right-4 z-20 w-80 bg-slate-900/95 border border-indigo-500/40 p-3.5 rounded-2xl backdrop-blur-md shadow-2xl space-y-2.5 select-none">
-            <div id="space-hud-drag-handle" class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2 cursor-move">
-                <span id="hud-category-badge" class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full truncate">
-                    Realm / Bucket
-                </span>
-                <div class="flex items-center gap-1">
-                    <span id="hud-status-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full">
-                        Active
+        <!-- Bottom Layout Controls & Centered Inspection Card Wrapper -->
+        <div class="relative z-20 pb-6 px-4 flex flex-col items-center gap-3 pointer-events-none select-none">
+            <!-- Centered Bottom Task HUD Inspection Card -->
+            <div id="space-hud-card" class="hidden pointer-events-auto w-11/12 max-w-sm bg-slate-900/95 border border-indigo-500/40 p-3.5 rounded-2xl backdrop-blur-md shadow-2xl space-y-2.5">
+                <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                    <span id="hud-category-badge" class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full truncate">
+                        Realm / Bucket
                     </span>
-                    <button onclick="hideHudCard()" class="text-slate-400 hover:text-white text-xs px-1 font-bold">✕</button>
+                    <div class="flex items-center gap-1">
+                        <span id="hud-status-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full">
+                            Active
+                        </span>
+                        <button onclick="hideHudCard()" class="text-slate-400 hover:text-white text-xs px-1 font-bold">✕</button>
+                    </div>
                 </div>
-            </div>
 
-            <div class="flex items-start gap-3">
-                <!-- Checkbox Completion Control -->
-                <form id="hud-complete-form" action="/items/toggle-complete/" method="POST" class="inline shrink-0 mt-0.5" onsubmit="triggerTaskConfetti(event, this)">
-                    <input type="hidden" name="item_id" id="hud-task-id-input" value="">
-                    <button type="submit" id="hud-checkbox-btn"
-                            title="Mark Complete"
-                            class="w-6 h-6 rounded-lg border border-slate-600 hover:border-emerald-400 text-transparent hover:text-emerald-400/50 flex items-center justify-center transition">
-                        ✓
+                <div class="flex items-start gap-3">
+                    <!-- Checkbox Completion Control -->
+                    <form id="hud-complete-form" action="/items/toggle-complete/" method="POST" class="inline shrink-0 mt-0.5" onsubmit="triggerTaskConfetti(event, this)">
+                        <input type="hidden" name="item_id" id="hud-task-id-input" value="">
+                        <button type="submit" id="hud-checkbox-btn"
+                                title="Mark Complete"
+                                class="w-6 h-6 rounded-lg border border-slate-600 hover:border-emerald-400 text-transparent hover:text-emerald-400/50 flex items-center justify-center transition">
+                            ✓
+                        </button>
+                    </form>
+
+                    <div class="flex-1 min-w-0">
+                        <h3 id="hud-task-title" class="text-sm font-bold text-white break-words leading-snug">Task Title</h3>
+                        <p id="hud-task-date" class="text-[11px] text-indigo-300 font-mono mt-0.5">📅 Due Date</p>
+                    </div>
+
+                    <!-- Edit Button -->
+                    <button id="hud-edit-btn" onclick="triggerHudEdit()" title="Edit Task"
+                            class="text-slate-400 hover:text-indigo-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-800 shrink-0">
+                        ✏️
                     </button>
-                </form>
-
-                <div class="flex-1 min-w-0">
-                    <h3 id="hud-task-title" class="text-sm font-bold text-white break-words leading-snug">Task Title</h3>
-                    <p id="hud-task-date" class="text-[11px] text-indigo-300 font-mono mt-0.5">📅 Due Date</p>
                 </div>
-
-                <!-- Edit Button -->
-                <button id="hud-edit-btn" onclick="triggerHudEdit()" title="Edit Task"
-                        class="text-slate-400 hover:text-indigo-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-800 shrink-0">
-                    ✏️
-                </button>
             </div>
-        </div>
 
-        <!-- Bottom Touch & Zoom Controls HUD -->
-        <div class="relative z-10 p-4 flex items-center justify-center gap-3 pointer-events-none mb-2">
+            <!-- Bottom Touch & Zoom Controls HUD -->
             <div class="bg-slate-900/90 border border-slate-800 p-1.5 rounded-2xl backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto">
                 <button onclick="zoomSpace(1.2)" class="w-8 h-8 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm rounded-xl flex items-center justify-center transition">＋</button>
                 <button onclick="zoomSpace(0.8)" class="w-8 h-8 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm rounded-xl flex items-center justify-center transition">－</button>
@@ -551,7 +552,7 @@
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
                     <button type="button" onclick="document.getElementById('edit-realm-modal').classList.add('hidden')" 
-                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Save Changes</button>
+                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Cancel</button>
                     <button type="submit" 
                             class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold">Save Changes</button>
                 </div>
@@ -2584,6 +2585,8 @@
             const handle = document.getElementById('space-hud-drag-handle');
             let isHudDragging = false;
             let startX, startY, initialLeft, initialTop;
+
+            if (!handle) return;
 
             handle.onmousedown = (e) => {
                 isHudDragging = true;
