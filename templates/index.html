@@ -2015,7 +2015,7 @@
         }
     </script>
 
-    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (MOBILE HiDPI RESOLUTION & DEBOUNCED state) -->
+    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (DRILL-DOWN ISOLATION ARCHITECTURE) -->
     <script>
         let isSpaceViewActive = false;
         let spaceCanvas, spaceCtx;
@@ -2063,7 +2063,7 @@
 
             spaceRealms.forEach(realm => {
                 const btn = document.createElement('button');
-                btn.className = "bg-slate-900/90 border border-slate-700/80 hover:border-indigo-500/80 px-3 py-1 rounded-full text-xs font-semibold text-slate-200 flex items-center gap-1.5 shadow-lg backdrop-blur-md shrink-0 transition-all active:scale-95";
+                btn.className = "bg-slate-900/90 border border-slate-700/80 hover:border-indigo-500/80 px-3.5 py-1.5 rounded-full text-xs font-bold text-slate-200 flex items-center gap-1.5 shadow-lg backdrop-blur-md shrink-0 transition-all active:scale-95";
                 btn.innerHTML = `<span>${realm.icon}</span><span>${realm.name}</span>`;
                 btn.onclick = () => {
                     activeSelectedBucket = null;
@@ -2084,9 +2084,7 @@
 
             spaceRealms = realmsData.map((realm, rIdx) => {
                 const realmAngle = (rIdx / realmsData.length) * Math.PI * 2;
-                
-                // COMPRESSED CELESTIAL DISTANCE: Pulled Realm centers much closer together
-                const realmDistance = 220 + (rIdx * 110);
+                const realmDistance = 240 + (rIdx * 120);
 
                 const basePos = {
                     x: Math.cos(realmAngle) * realmDistance,
@@ -2103,7 +2101,7 @@
                     y: basePos.y,
                     targetX: basePos.x,
                     targetY: basePos.y,
-                    radius: 36,
+                    radius: 44, // Generous base planet size
                     buckets: realm.buckets.map((bucket, bIdx) => {
                         const totalBuckets = Math.max(1, realm.buckets.length);
                         const bucketAngle = (bIdx / totalBuckets) * Math.PI * 2;
@@ -2150,18 +2148,17 @@
                         const totalTasks = Math.max(1, filteredTasks.length);
                         filteredTasks.forEach((task, tIdx) => {
                             task.angle = (tIdx / totalTasks) * Math.PI * 2;
-                            task.orbitRadius = 45 + (tIdx * 28);
+                            task.orbitRadius = 55 + (tIdx * 32);
                         });
 
-                        // COMPACT BUCKET ORBIT: Tightened distance from parent Realm
-                        const bucketDist = 100 + (bIdx * 45);
+                        const bucketDist = 110 + (bIdx * 50);
 
                         return {
                             id: bucket.id,
                             name: bucket.name,
                             angle: bucketAngle,
                             orbitRadius: bucketDist,
-                            radius: 14,
+                            radius: 15,
                             tasks: filteredTasks
                         };
                     })
@@ -2198,7 +2195,7 @@
                 return;
             }
 
-            // AUTO-FIT BOUNDS CALCULATION (Tightened Bounds)
+            // AUTO-FIT BOUNDS CALCULATION
             let minX = -100, maxX = 100, minY = -100, maxY = 100;
             spaceRealms.forEach(r => {
                 r.targetX = r.baseX;
@@ -2209,13 +2206,13 @@
                 if (r.baseY > maxY) maxY = r.baseY;
             });
 
-            const padding = 180;
+            const padding = 200;
             const boundingWidth = (maxX - minX) + (padding * 2);
             const boundingHeight = (maxY - minY) + (padding * 2);
 
             const fitZoomX = window.innerWidth / boundingWidth;
             const fitZoomY = window.innerHeight / boundingHeight;
-            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.35), 0.95);
+            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.35), 0.90);
 
             const centerX = (minX + maxX) / 2;
             const centerY = (minY + maxY) / 2;
@@ -2251,7 +2248,7 @@
 
             // Draw Devil Central Universe Core 😈 (Bigger & Pulsing Glow, No Outer Ring)
             const pulseScale = 1 + Math.sin(frameCount * 2) * 0.08;
-            const coreRadius = 38 * pulseScale;
+            const coreRadius = 42 * pulseScale;
 
             spaceCtx.save();
             spaceCtx.beginPath();
@@ -2263,7 +2260,7 @@
 
             spaceCtx.textAlign = 'center';
             spaceCtx.textBaseline = 'middle';
-            spaceCtx.font = `${Math.round(36 * pulseScale)}px serif`;
+            spaceCtx.font = `${Math.round(40 * pulseScale)}px serif`;
             spaceCtx.shadowBlur = 0;
             spaceCtx.fillText('😈', 0, 0);
             spaceCtx.restore();
@@ -2272,24 +2269,22 @@
                 realm.x += (realm.targetX - realm.x) * 0.08;
                 realm.y += (realm.targetY - realm.y) * 0.08;
 
-                // Dynamic Scale Factor for Zoomed-Out Legibility
-                const zoomFactor = Math.max(1.0, 0.55 / Math.max(0.18, cameraZoom));
-                const currentRadius = realm.radius * Math.min(zoomFactor, 1.8);
+                const isThisRealmSelected = activeSelectedRealm && activeSelectedRealm.id === realm.id;
 
                 // Realm Planet Atmosphere Aura
                 spaceCtx.beginPath();
-                spaceCtx.arc(realm.x, realm.y, currentRadius + (10 * zoomFactor), 0, Math.PI * 2);
-                spaceCtx.fillStyle = 'rgba(99, 102, 241, 0.08)';
+                spaceCtx.arc(realm.x, realm.y, realm.radius + 14, 0, Math.PI * 2);
+                spaceCtx.fillStyle = isThisRealmSelected ? 'rgba(99, 102, 241, 0.25)' : 'rgba(99, 102, 241, 0.08)';
                 spaceCtx.fill();
 
                 // Realm Planet Body
                 spaceCtx.beginPath();
-                spaceCtx.arc(realm.x, realm.y, currentRadius, 0, Math.PI * 2);
-                spaceCtx.fillStyle = (activeSelectedRealm && activeSelectedRealm.id === realm.id) ? 'rgba(79, 70, 229, 0.95)' : 'rgba(30, 41, 59, 0.95)';
+                spaceCtx.arc(realm.x, realm.y, realm.radius, 0, Math.PI * 2);
+                spaceCtx.fillStyle = isThisRealmSelected ? 'rgba(79, 70, 229, 0.95)' : 'rgba(30, 41, 59, 0.95)';
                 spaceCtx.strokeStyle = '#818cf8';
-                spaceCtx.lineWidth = (activeSelectedRealm && activeSelectedRealm.id === realm.id) ? 3 * zoomFactor : 2 * zoomFactor;
+                spaceCtx.lineWidth = isThisRealmSelected ? 4 : 2.5;
                 spaceCtx.shadowColor = '#6366f1';
-                spaceCtx.shadowBlur = 20 * zoomFactor;
+                spaceCtx.shadowBlur = isThisRealmSelected ? 30 : 15;
                 spaceCtx.fill();
                 spaceCtx.stroke();
 
@@ -2297,35 +2292,32 @@
                 spaceCtx.save();
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
-                const emojiSize = Math.round(24 * Math.min(zoomFactor, 1.8));
-                spaceCtx.font = `${emojiSize}px serif`;
+                spaceCtx.font = '28px serif';
                 spaceCtx.shadowBlur = 0;
                 spaceCtx.fillText(realm.icon, realm.x, realm.y);
                 spaceCtx.restore();
 
-                // DYNAMIC HIGH-CONTRAST REALM PILL BADGE LABELS (Clean Emoji Offset Padding)
+                // DYNAMIC REALM PILL BADGE LABELS
                 spaceCtx.save();
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
                 const beaconText = `${realm.icon} ${realm.name}`;
-                const fontSize = Math.round(14 * Math.min(zoomFactor, 1.6));
-                spaceCtx.font = `bold ${fontSize}px sans-serif`;
+                spaceCtx.font = 'bold 15px sans-serif';
                 
-                // Emoji Width Buffer
-                const pillPadding = 32 * Math.min(zoomFactor, 1.5);
-                const pillHeight = 28 * Math.min(zoomFactor, 1.5);
+                const pillPadding = 26;
+                const pillHeight = 28;
                 const bTextWidth = spaceCtx.measureText(realm.name).width + pillPadding;
                 const pillX = realm.x - (bTextWidth / 2);
-                const pillY = realm.y + currentRadius + (10 * zoomFactor);
+                const pillY = realm.y + realm.radius + 12;
 
                 // Rounded Pill Badge Background
-                spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+                spaceCtx.fillStyle = isThisRealmSelected ? 'rgba(79, 70, 229, 0.95)' : 'rgba(15, 23, 42, 0.95)';
                 spaceCtx.strokeStyle = '#818cf8';
-                spaceCtx.lineWidth = 1.5 * Math.min(zoomFactor, 1.4);
+                spaceCtx.lineWidth = 1.5;
                 spaceCtx.shadowColor = '#6366f1';
-                spaceCtx.shadowBlur = 12 * zoomFactor;
+                spaceCtx.shadowBlur = 12;
                 spaceCtx.beginPath();
-                spaceCtx.roundRect(pillX, pillY, bTextWidth, pillHeight, 8 * zoomFactor);
+                spaceCtx.roundRect(pillX, pillY, bTextWidth, pillHeight, 8);
                 spaceCtx.fill();
                 spaceCtx.stroke();
 
@@ -2335,11 +2327,14 @@
                 spaceCtx.fillText(beaconText, realm.x, pillY + (pillHeight / 2));
                 spaceCtx.restore();
 
+                // DRILL-DOWN LOGIC: Only render Buckets & Tasks if THIS Realm is active/selected!
+                if (!isThisRealmSelected) return;
+
                 const allTasksInRealm = [];
 
                 // Render Buckets (Moons)
                 realm.buckets.forEach(bucket => {
-                    if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id && activeSelectedRealm && activeSelectedRealm.id === realm.id) {
+                    if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) {
                         return;
                     }
 
@@ -2349,8 +2344,8 @@
                     // Bucket Orbit Ring around Realm Planet
                     spaceCtx.beginPath();
                     spaceCtx.arc(realm.x, realm.y, bucket.orbitRadius, 0, Math.PI * 2);
-                    spaceCtx.strokeStyle = 'rgba(56, 189, 248, 0.12)';
-                    spaceCtx.lineWidth = 0.8;
+                    spaceCtx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
+                    spaceCtx.lineWidth = 1.2;
                     spaceCtx.stroke();
 
                     // Bucket Moon Body
@@ -2374,17 +2369,17 @@
                     spaceCtx.textAlign = 'center';
                     spaceCtx.textBaseline = 'middle';
                     const bLabel = `⭐️ ${bucket.name}`;
-                    spaceCtx.font = 'bold 10px sans-serif';
-                    const bWidth = spaceCtx.measureText(bucket.name).width + 22;
+                    spaceCtx.font = 'bold 11px sans-serif';
+                    const bWidth = spaceCtx.measureText(bucket.name).width + 24;
                     const bPillY = bucket.y + bucket.radius + 4;
                     
-                    spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+                    spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
                     spaceCtx.beginPath();
-                    spaceCtx.roundRect(bucket.x - bWidth / 2, bPillY, bWidth, 16, 4);
+                    spaceCtx.roundRect(bucket.x - bWidth / 2, bPillY, bWidth, 18, 5);
                     spaceCtx.fill();
 
                     spaceCtx.fillStyle = '#38bdf8';
-                    spaceCtx.fillText(bLabel, bucket.x, bPillY + 8);
+                    spaceCtx.fillText(bLabel, bucket.x, bPillY + 9);
                     spaceCtx.restore();
 
                     // Position Task Satellites with floating offset
@@ -2425,14 +2420,14 @@
 
                 // Render Task Satellites
                 realm.buckets.forEach(bucket => {
-                    if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id && activeSelectedRealm && activeSelectedRealm.id === realm.id) {
+                    if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) {
                         return;
                     }
 
                     bucket.tasks.forEach(task => {
                         // Boundary Repulsion from Realm Core
                         const distToRealm = Math.hypot(task.x - realm.x, task.y - realm.y);
-                        const minAllowedDist = currentRadius + 28;
+                        const minAllowedDist = realm.radius + 28;
                         if (distToRealm < minAllowedDist) {
                             const angleFromRealm = Math.atan2(task.y - realm.y, task.x - realm.x);
                             task.x = realm.x + Math.cos(angleFromRealm) * minAllowedDist;
@@ -2442,8 +2437,8 @@
                         // Task Satellite Orbit Ring
                         spaceCtx.beginPath();
                         spaceCtx.arc(bucket.x, bucket.y, task.orbitRadius, 0, Math.PI * 2);
-                        spaceCtx.strokeStyle = 'rgba(148, 163, 184, 0.08)';
-                        spaceCtx.lineWidth = 0.5;
+                        spaceCtx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
+                        spaceCtx.lineWidth = 0.6;
                         spaceCtx.stroke();
 
                         // Task Satellite Node
@@ -2465,22 +2460,22 @@
                         }
                         spaceCtx.fill();
 
-                        // Task Label Pill (Context Isolated & Centered)
+                        // Task Label Pill
                         spaceCtx.save();
                         spaceCtx.textAlign = 'center';
                         spaceCtx.textBaseline = 'middle';
                         const truncatedTitle = task.title.length > 18 ? task.title.substring(0, 16) + '…' : task.title;
-                        spaceCtx.font = '9px sans-serif';
+                        spaceCtx.font = '10px sans-serif';
                         const tWidth = spaceCtx.measureText(truncatedTitle).width + 8;
                         const tPillY = task.y + task.radius + 3;
 
                         spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
                         spaceCtx.beginPath();
-                        spaceCtx.roundRect(task.x - tWidth / 2, tPillY, tWidth, 14, 3);
+                        spaceCtx.roundRect(task.x - tWidth / 2, tPillY, tWidth, 15, 3);
                         spaceCtx.fill();
 
                         spaceCtx.fillStyle = '#e2e8f0';
-                        spaceCtx.fillText(truncatedTitle, task.x, tPillY + 7);
+                        spaceCtx.fillText(truncatedTitle, task.x, tPillY + 7.5);
                         spaceCtx.restore();
                     });
                 });
@@ -2566,9 +2561,10 @@
             let clickedBucket = null;
             let clickedRealm = null;
 
-            // 1. Check Task Node Selection
-            spaceRealms.forEach(realm => {
-                realm.buckets.forEach(bucket => {
+            // 1. Check Task Node Selection (Only if parent realm is selected)
+            if (activeSelectedRealm) {
+                activeSelectedRealm.buckets.forEach(bucket => {
+                    if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
                     bucket.tasks.forEach(task => {
                         const dist = Math.hypot(worldX - task.x, worldY - task.y);
                         if (dist <= task.radius + 18) {
@@ -2576,36 +2572,30 @@
                         }
                     });
                 });
-            });
+            }
 
             if (clickedTask) {
                 showHudCard(clickedTask);
                 return;
             }
 
-            // 2. Check Bucket Moon Selection (Isolate Bucket & Zoom In Closer)
-            spaceRealms.forEach(realm => {
-                realm.buckets.forEach(bucket => {
+            // 2. Check Bucket Moon Selection (Only if parent realm is selected)
+            if (activeSelectedRealm) {
+                activeSelectedRealm.buckets.forEach(bucket => {
                     const dist = Math.hypot(worldX - bucket.x, worldY - bucket.y);
                     if (dist <= bucket.radius + 20) {
                         clickedBucket = bucket;
-                        clickedRealm = realm;
                     }
                 });
-            });
+            }
 
-            if (clickedBucket && clickedRealm) {
-                activeSelectedRealm = clickedRealm;
-
-                // Toggle bucket selection
+            if (clickedBucket) {
+                // Toggle bucket selection inside active realm
                 if (activeSelectedBucket && activeSelectedBucket.id === clickedBucket.id) {
-                    // UN-TAP: Return camera back to default Realm focus & zoom
                     activeSelectedBucket = null;
-                    focusAndRepelRealms(clickedRealm);
+                    focusAndRepelRealms(activeSelectedRealm);
                 } else {
-                    // TAP: Select Bucket, re-center on Bucket moon, and zoom in closer
                     activeSelectedBucket = clickedBucket;
-                    
                     targetCameraZoom = window.innerWidth < 768 ? 1.25 : 1.45;
                     targetCameraOffset = {
                         x: (window.innerWidth / 2) - (clickedBucket.x * targetCameraZoom),
@@ -2615,20 +2605,26 @@
                 return;
             }
 
-            // 3. Check Realm Planet Selection (Focus & Push Other Realms Away)
+            // 3. Check Realm Planet Selection (Top-Level Drill Down)
             spaceRealms.forEach(realm => {
                 const dist = Math.hypot(worldX - realm.x, worldY - realm.y);
-                const zoomFactor = Math.max(1.0, 0.55 / Math.max(0.18, cameraZoom));
-                const currentRadius = realm.radius * Math.min(zoomFactor, 1.8);
-
-                if (dist <= currentRadius + 22) {
+                if (dist <= realm.radius + 24) {
                     clickedRealm = realm;
                 }
             });
 
             if (clickedRealm) {
-                activeSelectedBucket = null;
-                focusAndRepelRealms(clickedRealm);
+                if (activeSelectedRealm && activeSelectedRealm.id === clickedRealm.id) {
+                    // UN-TAP: Zoom back out to full Universe overview
+                    recenterSpace();
+                } else {
+                    // TAP: Drill into Realm
+                    activeSelectedBucket = null;
+                    focusAndRepelRealms(clickedRealm);
+                }
+            } else {
+                // Tap on empty space deselects
+                hideHudCard();
             }
         }
 
@@ -2650,7 +2646,7 @@
                 }
             });
 
-            targetCameraZoom = window.innerWidth < 768 ? 0.85 : 1.0;
+            targetCameraZoom = window.innerWidth < 768 ? 0.90 : 1.1;
             targetCameraOffset = {
                 x: (window.innerWidth / 2) - (selectedRealm.baseX * targetCameraZoom),
                 y: (window.innerHeight / 2) - (selectedRealm.baseY * targetCameraZoom)
