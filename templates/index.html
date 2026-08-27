@@ -2473,7 +2473,7 @@
                 return;
             }
 
-            // 2. Check Bucket Moon Selection (Isolate Bucket)
+            // 2. Check Bucket Moon Selection (Isolate Bucket & Zoom In Closer)
             spaceRealms.forEach(realm => {
                 realm.buckets.forEach(bucket => {
                     const dist = Math.hypot(worldX - bucket.x, worldY - bucket.y);
@@ -2486,7 +2486,22 @@
 
             if (clickedBucket && clickedRealm) {
                 activeSelectedRealm = clickedRealm;
-                activeSelectedBucket = (activeSelectedBucket && activeSelectedBucket.id === clickedBucket.id) ? null : clickedBucket;
+
+                // Toggle bucket selection
+                if (activeSelectedBucket && activeSelectedBucket.id === clickedBucket.id) {
+                    // UN-TAP: Return camera back to default Realm focus & zoom
+                    activeSelectedBucket = null;
+                    focusAndRepelRealms(clickedRealm);
+                } else {
+                    // TAP: Select Bucket, re-center on Bucket moon, and zoom in closer
+                    activeSelectedBucket = clickedBucket;
+                    
+                    targetCameraZoom = window.innerWidth < 768 ? 1.25 : 1.45;
+                    targetCameraOffset = {
+                        x: (window.innerWidth / 2) - (clickedBucket.x * targetCameraZoom),
+                        y: (window.innerHeight / 2) - (clickedBucket.y * targetCameraZoom)
+                    };
+                }
                 return;
             }
 
