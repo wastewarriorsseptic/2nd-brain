@@ -385,7 +385,7 @@
         <!-- Top Floating Space HUD -->
         <div class="relative z-10 p-4 flex items-center justify-between pointer-events-none">
             <div class="bg-slate-900/90 border border-slate-800 p-2.5 px-4 rounded-2xl backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto">
-                <span class="text-lg">🌌</span>
+                <span class="text-lg">😈</span>
                 <div>
                     <h2 class="text-xs font-bold text-white leading-none">TaskMonster Universe</h2>
                     <span class="text-[10px] text-slate-400">Tap Realm Planet to Focus • Drag HUD to Reposition</span>
@@ -1927,7 +1927,7 @@
         }
     </script>
 
-    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (STATIONARY + INTERACTIVE FOCUS PHYSICS) -->
+    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (ZERO OVERLAP + DEVIL CORE) -->
     <script>
         let isSpaceViewActive = false;
         let spaceCanvas, spaceCtx;
@@ -1973,7 +1973,7 @@
 
             spaceRealms = realmsData.map((realm, rIdx) => {
                 const realmAngle = (rIdx / realmsData.length) * Math.PI * 2;
-                const realmDistance = 260 + (rIdx * 120);
+                const realmDistance = 350 + (rIdx * 200);
 
                 const basePos = {
                     x: Math.cos(realmAngle) * realmDistance,
@@ -1990,9 +1990,10 @@
                     y: basePos.y,
                     targetX: basePos.x,
                     targetY: basePos.y,
-                    radius: 28,
+                    radius: 32,
                     buckets: realm.buckets.map((bucket, bIdx) => {
-                        const bucketAngle = (bIdx / Math.max(1, realm.buckets.length)) * Math.PI * 2;
+                        const totalBuckets = Math.max(1, realm.buckets.length);
+                        const bucketAngle = (bIdx / totalBuckets) * Math.PI * 2;
                         
                         const bucketCardElements = Array.from(document.querySelectorAll(`.timeline-card-wrapper[data-bucket-id="${bucket.id}"]`));
                         const filteredTasks = [];
@@ -2011,8 +2012,6 @@
                             }
 
                             const isOverdue = el.querySelector('.bg-rose-500') !== null;
-                            const taskAngle = (filteredTasks.length / 5) * Math.PI * 2;
-                            const taskDist = 36 + (filteredTasks.length * 14);
 
                             filteredTasks.push({
                                 id: el.getAttribute('data-item-id'),
@@ -2029,13 +2028,17 @@
                                 isOverdue: isOverdue,
                                 isRecurring: recurringFlag,
                                 domElement: el,
-                                angle: taskAngle,
-                                orbitRadius: taskDist,
                                 radius: 7
                             });
                         });
 
-                        const bucketDist = 85 + (bIdx * 30);
+                        const totalTasks = Math.max(1, filteredTasks.length);
+                        filteredTasks.forEach((task, tIdx) => {
+                            task.angle = (tIdx / totalTasks) * Math.PI * 2;
+                            task.orbitRadius = 45 + (tIdx * 28);
+                        });
+
+                        const bucketDist = 110 + (bIdx * 45);
 
                         return {
                             id: bucket.id,
@@ -2064,9 +2067,8 @@
         function recenterSpace() {
             activeSelectedRealm = null;
             targetCameraOffset = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-            targetCameraZoom = window.innerWidth < 768 ? 0.6 : 0.85;
+            targetCameraZoom = window.innerWidth < 768 ? 0.45 : 0.75;
 
-            // Reset Repulsion Targets
             spaceRealms.forEach(realm => {
                 realm.targetX = realm.baseX;
                 realm.targetY = realm.baseY;
@@ -2074,13 +2076,12 @@
         }
 
         function zoomSpace(factor) {
-            targetCameraZoom = Math.min(Math.max(0.25, targetCameraZoom * factor), 2.5);
+            targetCameraZoom = Math.min(Math.max(0.2, targetCameraZoom * factor), 2.5);
         }
 
         function renderSpaceFrame() {
             if (!isSpaceViewActive) return;
 
-            // Smooth Interpolation for Camera Zoom & Offset
             cameraZoom += (targetCameraZoom - cameraZoom) * 0.1;
             cameraOffset.x += (targetCameraOffset.x - cameraOffset.x) * 0.1;
             cameraOffset.y += (targetCameraOffset.y - cameraOffset.y) * 0.1;
@@ -2091,16 +2092,24 @@
             spaceCtx.translate(cameraOffset.x, cameraOffset.y);
             spaceCtx.scale(cameraZoom, cameraZoom);
 
-            // Draw Galaxy Core Center
+            // Draw Devil Central Universe Core 😈
             spaceCtx.beginPath();
-            spaceCtx.arc(0, 0, 18, 0, Math.PI * 2);
-            spaceCtx.fillStyle = '#6366f1';
+            spaceCtx.arc(0, 0, 24, 0, Math.PI * 2);
+            spaceCtx.fillStyle = 'rgba(30, 41, 59, 0.95)';
+            spaceCtx.strokeStyle = '#6366f1';
+            spaceCtx.lineWidth = 3;
             spaceCtx.shadowColor = '#818cf8';
-            spaceCtx.shadowBlur = 30;
+            spaceCtx.shadowBlur = 35;
             spaceCtx.fill();
+            spaceCtx.stroke();
+
+            spaceCtx.font = '22px serif';
+            spaceCtx.textAlign = 'center';
+            spaceCtx.textBaseline = 'middle';
+            spaceCtx.shadowBlur = 0;
+            spaceCtx.fillText('😈', 0, 1);
 
             spaceRealms.forEach(realm => {
-                // Smooth Position Repulsion Interpolation
                 realm.x += (realm.targetX - realm.x) * 0.08;
                 realm.y += (realm.targetY - realm.y) * 0.08;
 
@@ -2111,30 +2120,30 @@
                 spaceCtx.strokeStyle = '#818cf8';
                 spaceCtx.lineWidth = (activeSelectedRealm && activeSelectedRealm.id === realm.id) ? 3 : 2;
                 spaceCtx.shadowColor = '#6366f1';
-                spaceCtx.shadowBlur = 15;
+                spaceCtx.shadowBlur = 18;
                 spaceCtx.fill();
                 spaceCtx.stroke();
 
                 // Realm Icon & Label
-                spaceCtx.font = '18px serif';
+                spaceCtx.font = '22px serif';
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
                 spaceCtx.shadowBlur = 0;
                 spaceCtx.fillText(realm.icon, realm.x, realm.y + 1);
 
-                spaceCtx.font = 'bold 12px sans-serif';
-                spaceCtx.fillStyle = '#e2e8f0';
-                spaceCtx.fillText(realm.name, realm.x, realm.y + realm.radius + 16);
+                spaceCtx.font = 'bold 13px sans-serif';
+                spaceCtx.fillStyle = '#f8fafc';
+                spaceCtx.fillText(realm.name, realm.x, realm.y + realm.radius + 18);
 
-                // Render Stationary Buckets (Moons)
+                // Render Buckets (Moons)
                 realm.buckets.forEach(bucket => {
                     bucket.x = realm.x + Math.cos(bucket.angle) * bucket.orbitRadius;
                     bucket.y = realm.y + Math.sin(bucket.angle) * bucket.orbitRadius;
 
-                    // Bucket Orbit Ring around Realm Planet
+                    // Bucket Orbit Track
                     spaceCtx.beginPath();
                     spaceCtx.arc(realm.x, realm.y, bucket.orbitRadius, 0, Math.PI * 2);
-                    spaceCtx.strokeStyle = 'rgba(56, 189, 248, 0.15)';
+                    spaceCtx.strokeStyle = 'rgba(56, 189, 248, 0.12)';
                     spaceCtx.lineWidth = 0.8;
                     spaceCtx.stroke();
 
@@ -2146,20 +2155,36 @@
                     spaceCtx.shadowBlur = 10;
                     spaceCtx.fill();
 
-                    spaceCtx.font = '9px serif';
+                    spaceCtx.font = '10px serif';
                     spaceCtx.fillText('📌', bucket.x, bucket.y);
 
-                    // Bucket Headline Text Label
-                    spaceCtx.font = '600 10px sans-serif';
-                    spaceCtx.fillStyle = '#38bdf8';
-                    spaceCtx.textAlign = 'left';
-                    spaceCtx.fillText(`📌 ${bucket.name}`, bucket.x + bucket.radius + 5, bucket.y + 3);
+                    // Bucket Label Pill
+                    const bLabel = `📌 ${bucket.name}`;
+                    spaceCtx.font = 'bold 10px sans-serif';
+                    const bWidth = spaceCtx.measureText(bLabel).width + 8;
+                    
+                    spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+                    spaceCtx.beginPath();
+                    spaceCtx.roundRect(bucket.x - bWidth / 2, bucket.y + bucket.radius + 4, bWidth, 14, 4);
+                    spaceCtx.fill();
 
-                    // Render Stationary Task Satellites
+                    spaceCtx.fillStyle = '#38bdf8';
+                    spaceCtx.textAlign = 'center';
+                    spaceCtx.fillText(bLabel, bucket.x, bucket.y + bucket.radius + 14);
+
+                    // Render Task Satellites
                     bucket.tasks.forEach(task => {
                         task.x = bucket.x + Math.cos(task.angle) * task.orbitRadius;
                         task.y = bucket.y + Math.sin(task.angle) * task.orbitRadius;
 
+                        // Concentric Orbit Track per task ring
+                        spaceCtx.beginPath();
+                        spaceCtx.arc(bucket.x, bucket.y, task.orbitRadius, 0, Math.PI * 2);
+                        spaceCtx.strokeStyle = 'rgba(148, 163, 184, 0.08)';
+                        spaceCtx.lineWidth = 0.5;
+                        spaceCtx.stroke();
+
+                        // Task Satellite
                         spaceCtx.beginPath();
                         spaceCtx.arc(task.x, task.y, task.radius, 0, Math.PI * 2);
 
@@ -2178,12 +2203,19 @@
                         }
                         spaceCtx.fill();
 
-                        // Task Headline Text Label
-                        spaceCtx.font = '10px sans-serif';
-                        spaceCtx.fillStyle = '#cbd5e1';
-                        spaceCtx.textAlign = 'left';
-                        const truncatedTitle = task.title.length > 22 ? task.title.substring(0, 20) + '…' : task.title;
-                        spaceCtx.fillText(truncatedTitle, task.x + task.radius + 5, task.y + 3);
+                        // Task Label Pill (Prevents text overlap on dark canvas)
+                        const truncatedTitle = task.title.length > 18 ? task.title.substring(0, 16) + '…' : task.title;
+                        spaceCtx.font = '9px sans-serif';
+                        const tWidth = spaceCtx.measureText(truncatedTitle).width + 6;
+
+                        spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+                        spaceCtx.beginPath();
+                        spaceCtx.roundRect(task.x - tWidth / 2, task.y + task.radius + 3, tWidth, 12, 3);
+                        spaceCtx.fill();
+
+                        spaceCtx.fillStyle = '#e2e8f0';
+                        spaceCtx.textAlign = 'center';
+                        spaceCtx.fillText(truncatedTitle, task.x, task.y + task.radius + 12);
                     });
                 });
             });
@@ -2260,7 +2292,6 @@
             let clickedTask = null;
             let clickedRealm = null;
 
-            // 1. Check Task Node Selection
             spaceRealms.forEach(realm => {
                 realm.buckets.forEach(bucket => {
                     bucket.tasks.forEach(task => {
@@ -2277,7 +2308,6 @@
                 return;
             }
 
-            // 2. Check Realm Planet Selection (Focus & Push Other Realms Away)
             spaceRealms.forEach(realm => {
                 const dist = Math.hypot(worldX - realm.x, worldY - realm.y);
                 if (dist <= realm.radius + 18) {
@@ -2293,7 +2323,6 @@
         function focusAndRepelRealms(selectedRealm) {
             activeSelectedRealm = selectedRealm;
             
-            // Repel all other Realms away from the selected Realm
             spaceRealms.forEach(realm => {
                 if (realm.id === selectedRealm.id) {
                     realm.targetX = selectedRealm.baseX;
@@ -2302,15 +2331,14 @@
                     const dx = realm.baseX - selectedRealm.baseX;
                     const dy = realm.baseY - selectedRealm.baseY;
                     const angle = Math.atan2(dy, dx);
-                    const repelDist = 280; // Push non-selected realms outward by 280 units
+                    const repelDist = 380;
 
                     realm.targetX = selectedRealm.baseX + Math.cos(angle) * (Math.hypot(dx, dy) + repelDist);
                     realm.targetY = selectedRealm.baseY + Math.sin(angle) * (Math.hypot(dx, dy) + repelDist);
                 }
             });
 
-            // Smoothly focus camera on Selected Realm
-            targetCameraZoom = window.innerWidth < 768 ? 1.1 : 1.35;
+            targetCameraZoom = window.innerWidth < 768 ? 0.9 : 1.1;
             targetCameraOffset = {
                 x: (window.innerWidth / 2) - (selectedRealm.baseX * targetCameraZoom),
                 y: (window.innerHeight / 2) - (selectedRealm.baseY * targetCameraZoom)
