@@ -38,7 +38,7 @@
 
         /* Fullscreen Space Canvas Overlay */
         #space-view-overlay {
-            touch-action: none; /* Prevent browser scrolling while interacting in space */
+            touch-action: none;
         }
     </style>
 </head>
@@ -232,10 +232,14 @@
                              data-completed="{{ 'true' if item.is_completed else 'false' }}"
                              data-completed-at="{{ item.completed_at.isoformat() if item.completed_at else '' }}"
                              data-due-date="{{ item.due_date.strftime('%Y-%m-%d') }}"
+                             data-due-time="{% if item.due_date.strftime('%H:%M') != '09:00' %}{{ item.due_date.strftime('%H:%M') }}{% endif %}"
                              data-due-date-formatted="{{ item.due_date.strftime('%b %d, %Y') }}"
+                             data-amount="{{ item.amount or '' }}"
+                             data-description="{{ item.description or '' }}"
                              data-title="{{ item.title }}"
                              data-item-id="{{ item.id }}"
                              data-recurring="{{ 'true' if (item.recurrence_type and item.recurrence_type != 'none') or item.recurring_group_id else 'false' }}"
+                             data-recurrence-type="{{ item.recurrence_type or 'none' }}"
                              data-realm-id="{{ item.bucket.realm.id if item.bucket and item.bucket.realm else '' }}"
                              data-bucket-id="{{ item.bucket.id if item.bucket else '' }}">
                             <div class="absolute -left-[23px] md:-left-[31px] top-5 w-3.5 md:w-4 h-3.5 md:h-4 rounded-full border-2 border-slate-900 {% if item.is_completed %}bg-slate-600{% elif days_out < 0 %}bg-rose-500 animate-pulse{% else %}bg-indigo-500 group-hover:scale-125{% endif %} transition-all"></div>
@@ -394,27 +398,41 @@
             </button>
         </div>
 
-        <!-- Floating Tooltip HUD Inspection Card -->
-        <div id="space-hud-card" class="hidden relative z-10 mx-auto mb-20 w-11/12 max-w-sm bg-slate-900/95 border border-indigo-500/40 p-4 rounded-2xl backdrop-blur-md shadow-2xl space-y-2 select-none">
-            <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+        <!-- Draggable & Modrain HUD Inspection Card -->
+        <div id="space-hud-card" class="hidden absolute top-16 right-4 z-20 w-80 bg-slate-900/95 border border-indigo-500/40 p-3.5 rounded-2xl backdrop-blur-md shadow-2xl space-y-2.5 select-none">
+            <div id="space-hud-drag-handle" class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2 cursor-move">
                 <span id="hud-category-badge" class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full truncate">
                     Realm / Bucket
                 </span>
-                <span id="hud-status-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full">
-                    Active
-                </span>
+                <div class="flex items-center gap-1">
+                    <span id="hud-status-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        Active
+                    </span>
+                    <button onclick="hideHudCard()" class="text-slate-400 hover:text-white text-xs px-1 font-bold">✕</button>
+                </div>
             </div>
 
-            <h3 id="hud-task-title" class="text-sm font-bold text-white break-words leading-snug">Task Title</h3>
-            <p id="hud-task-date" class="text-xs text-indigo-300 font-mono">📅 Due Date</p>
-
-            <div class="flex justify-end pt-1">
-                <form id="hud-complete-form" action="/items/toggle-complete/" method="POST" class="w-full">
+            <div class="flex items-start gap-3">
+                <!-- Checkbox Completion Control -->
+                <form id="hud-complete-form" action="/items/toggle-complete/" method="POST" class="inline shrink-0 mt-0.5" onsubmit="triggerTaskConfetti(event, this)">
                     <input type="hidden" name="item_id" id="hud-task-id-input" value="">
-                    <button type="submit" class="w-full py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow transition">
-                        ✓ Mark Complete
+                    <button type="submit" id="hud-checkbox-btn"
+                            title="Mark Complete"
+                            class="w-6 h-6 rounded-lg border border-slate-600 hover:border-emerald-400 text-transparent hover:text-emerald-400/50 flex items-center justify-center transition">
+                        ✓
                     </button>
                 </form>
+
+                <div class="flex-1 min-w-0">
+                    <h3 id="hud-task-title" class="text-sm font-bold text-white break-words leading-snug">Task Title</h3>
+                    <p id="hud-task-date" class="text-[11px] text-indigo-300 font-mono mt-0.5">📅 Due Date</p>
+                </div>
+
+                <!-- Edit Button -->
+                <button id="hud-edit-btn" onclick="triggerHudEdit()" title="Edit Task"
+                        class="text-slate-400 hover:text-indigo-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-800 shrink-0">
+                    ✏️
+                </button>
             </div>
         </div>
 
@@ -601,15 +619,15 @@
                             <div onclick="selectEmoji('edit-realm', '🏆')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🏆</div>
                             <div onclick="selectEmoji('edit-realm', '🚀')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🚀</div>
                             <div onclick="selectEmoji('edit-realm', '🌱')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🌱</div>
-                            <div onclick="selectEmoji('edit-realm', '🎁')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎁</div>
-                            <div onclick="selectEmoji('edit-realm', '🧠')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🧠</div>
-                            <div onclick="selectEmoji('edit-realm', '⚙️')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">⚙️</div>
-                            <div onclick="selectEmoji('edit-realm', '💡')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💡</div>
-                            <div onclick="selectEmoji('edit-realm', '📦')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">📦</div>
-                            <div onclick="selectEmoji('edit-realm', '🌟')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🌟</div>
-                            <div onclick="selectEmoji('edit-realm', '🔥')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🔥</div>
-                            <div onclick="selectEmoji('edit-realm', '🎨')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎨</div>
-                            <div onclick="selectEmoji('edit-realm', '🎵')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎵</div>
+                            <div onclick="selectEmoji('add-realm', '🎁')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎁</div>
+                            <div onclick="selectEmoji('add-realm', '🧠')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🧠</div>
+                            <div onclick="selectEmoji('add-realm', '⚙️')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">⚙️</div>
+                            <div onclick="selectEmoji('add-realm', '💡')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💡</div>
+                            <div onclick="selectEmoji('add-realm', '📦')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">📦</div>
+                            <div onclick="selectEmoji('add-realm', '🌟')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🌟</div>
+                            <div onclick="selectEmoji('add-realm', '🔥')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🔥</div>
+                            <div onclick="selectEmoji('add-realm', '🎨')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎨</div>
+                            <div onclick="selectEmoji('add-realm', '🎵')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎵</div>
                         </div>
                     </div>
                     <div class="flex-1 min-w-0">
@@ -1909,7 +1927,7 @@
         }
     </script>
 
-    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (SIMPLIFIED & CLEAN) -->
+    <!-- SPACE VIEW CANVAS ENGINE SCRIPT -->
     <script>
         let isSpaceViewActive = false;
         let spaceCanvas, spaceCtx;
@@ -1918,6 +1936,7 @@
         let cameraZoom = 1;
         let isDragging = false;
         let dragStart = { x: 0, y: 0 };
+        let activeSelectedTask = null;
         let initialPinchDistance = null;
 
         function toggleSpaceView() {
@@ -1947,7 +1966,6 @@
             resizeSpaceCanvas();
             window.addEventListener('resize', resizeSpaceCanvas);
 
-            // Deduplicate Tasks: Group recurring items so only the earliest upcoming task per series renders
             const processedGroupIds = new Set();
 
             spaceRealms = realmsData.map((realm, rIdx) => {
@@ -1960,21 +1978,18 @@
                     icon: realm.icon || '🔮',
                     orbitRadius: realmDistance,
                     angle: realmAngle,
-                    speed: 0.0003, // Slow, elegant drift
+                    speed: 0.0003,
                     radius: 26,
                     buckets: realm.buckets.map((bucket, bIdx) => {
                         const bucketAngle = (bIdx / Math.max(1, realm.buckets.length)) * Math.PI * 2;
                         
-                        // Select DOM items belonging to this bucket
                         const bucketCardElements = Array.from(document.querySelectorAll(`.timeline-card-wrapper[data-bucket-id="${bucket.id}"]`));
                         const filteredTasks = [];
 
                         bucketCardElements.forEach((el) => {
                             const isCompleted = el.getAttribute('data-completed') === 'true';
-                            const groupId = el.getAttribute('data-item-id');
                             const recurringFlag = el.getAttribute('data-recurring') === 'true';
 
-                            // For space view, skip completed tasks & duplicates from the same recurring series
                             if (isCompleted) return;
                             
                             if (recurringFlag) {
@@ -1989,24 +2004,31 @@
                             filteredTasks.push({
                                 id: el.getAttribute('data-item-id'),
                                 title: el.getAttribute('data-title') || el.querySelector('h3').innerText.trim(),
-                                dueDate: el.getAttribute('data-due-date-formatted') || '',
+                                dueDate: el.getAttribute('data-due-date') || '',
+                                dueTime: el.getAttribute('data-due-time') || '',
+                                dueDateFormatted: el.getAttribute('data-due-date-formatted') || '',
+                                amount: el.getAttribute('data-amount') || '',
+                                description: el.getAttribute('data-description') || '',
+                                recurrenceType: el.getAttribute('data-recurrence-type') || 'none',
+                                bucketId: bucket.id,
                                 realmName: realm.name,
                                 bucketName: bucket.name,
                                 isOverdue: isOverdue,
                                 isRecurring: recurringFlag,
-                                orbitRadius: 28 + (filteredTasks.length * 10),
+                                domElement: el,
+                                orbitRadius: 32 + (filteredTasks.length * 12),
                                 angle: (filteredTasks.length / 5) * Math.PI * 2,
-                                speed: 0.004,
-                                radius: 5
+                                speed: 0.003,
+                                radius: 6
                             });
                         });
 
                         return {
                             id: bucket.id,
                             name: bucket.name,
-                            orbitRadius: 70 + (bIdx * 25),
+                            orbitRadius: 75 + (bIdx * 25),
                             angle: bucketAngle,
-                            speed: 0.0015,
+                            speed: 0.0012,
                             radius: 12,
                             tasks: filteredTasks
                         };
@@ -2015,6 +2037,7 @@
             });
 
             setupSpaceEvents();
+            setupHudDraggable();
             recenterSpace();
             requestAnimationFrame(renderSpaceFrame);
         }
@@ -2064,7 +2087,7 @@
                 spaceCtx.shadowBlur = 0;
                 spaceCtx.stroke();
 
-                // Realm Planet
+                // Realm Planet Body
                 spaceCtx.beginPath();
                 spaceCtx.arc(realm.x, realm.y, realm.radius, 0, Math.PI * 2);
                 spaceCtx.fillStyle = 'rgba(30, 41, 59, 0.95)';
@@ -2099,7 +2122,7 @@
                     spaceCtx.lineWidth = 0.8;
                     spaceCtx.stroke();
 
-                    // Bucket Moon
+                    // Bucket Moon Body
                     spaceCtx.beginPath();
                     spaceCtx.arc(bucket.x, bucket.y, bucket.radius, 0, Math.PI * 2);
                     spaceCtx.fillStyle = '#0284c7';
@@ -2109,6 +2132,12 @@
 
                     spaceCtx.font = '9px serif';
                     spaceCtx.fillText('📌', bucket.x, bucket.y);
+
+                    // Bucket Headline Text Label
+                    spaceCtx.font = '600 10px sans-serif';
+                    spaceCtx.fillStyle = '#38bdf8';
+                    spaceCtx.textAlign = 'left';
+                    spaceCtx.fillText(`📌 ${bucket.name}`, bucket.x + bucket.radius + 4, bucket.y + 3);
 
                     // Render Task Satellites
                     bucket.tasks.forEach(task => {
@@ -2128,11 +2157,18 @@
                             spaceCtx.shadowColor = '#f59e0b';
                             spaceCtx.shadowBlur = 10;
                         } else {
-                            spaceCtx.fillStyle = '#38bdf8';
-                            spaceCtx.shadowColor = '#38bdf8';
+                            spaceCtx.fillStyle = '#818cf8';
+                            spaceCtx.shadowColor = '#818cf8';
                             spaceCtx.shadowBlur = 8;
                         }
                         spaceCtx.fill();
+
+                        // Task Headline Text Label
+                        spaceCtx.font = '9px sans-serif';
+                        spaceCtx.fillStyle = '#cbd5e1';
+                        spaceCtx.textAlign = 'left';
+                        const truncatedTitle = task.title.length > 20 ? task.title.substring(0, 18) + '…' : task.title;
+                        spaceCtx.fillText(truncatedTitle, task.x + task.radius + 4, task.y + 3);
                     });
                 });
             });
@@ -2208,7 +2244,7 @@
                 realm.buckets.forEach(bucket => {
                     bucket.tasks.forEach(task => {
                         const dist = Math.hypot(worldX - task.x, worldY - task.y);
-                        if (dist <= task.radius + 14) {
+                        if (dist <= task.radius + 16) {
                             foundTask = task;
                         }
                     });
@@ -2221,6 +2257,7 @@
         }
 
         function showHudCard(task) {
+            activeSelectedTask = task;
             const card = document.getElementById('space-hud-card');
             const badgeCategory = document.getElementById('hud-category-badge');
             const badgeStatus = document.getElementById('hud-status-badge');
@@ -2230,7 +2267,7 @@
 
             badgeCategory.innerText = `${task.realmName} / 📌 ${task.bucketName}`;
             title.innerText = task.title;
-            date.innerText = `📅 ${task.dueDate}`;
+            date.innerText = `📅 ${task.dueDateFormatted}`;
             idInput.value = task.id;
 
             if (task.isOverdue) {
@@ -2247,9 +2284,56 @@
             card.classList.remove('hidden');
         }
 
+        function triggerHudEdit() {
+            if (!activeSelectedTask) return;
+
+            // Trigger the edit modal using the task's DOM element source
+            const dummyBtn = document.createElement('button');
+            dummyBtn.setAttribute('data-id', activeSelectedTask.id);
+            dummyBtn.setAttribute('data-title', activeSelectedTask.title);
+            dummyBtn.setAttribute('data-due-date', activeSelectedTask.dueDate);
+            dummyBtn.setAttribute('data-due-time', activeSelectedTask.dueTime);
+            dummyBtn.setAttribute('data-amount', activeSelectedTask.amount);
+            dummyBtn.setAttribute('data-description', activeSelectedTask.description);
+            dummyBtn.setAttribute('data-recurring', activeSelectedTask.isRecurring ? 'true' : 'false');
+            dummyBtn.setAttribute('data-recurrence-type', activeSelectedTask.recurrenceType);
+            dummyBtn.setAttribute('data-bucket-id', activeSelectedTask.bucketId);
+
+            openEditItem(dummyBtn);
+        }
+
         function hideHudCard() {
             const card = document.getElementById('space-hud-card');
             if (card) card.classList.add('hidden');
+            activeSelectedTask = null;
+        }
+
+        // Draggable HUD Mechanics
+        function setupHudDraggable() {
+            const card = document.getElementById('space-hud-card');
+            const handle = document.getElementById('space-hud-drag-handle');
+            let isHudDragging = false;
+            let startX, startY, initialLeft, initialTop;
+
+            handle.onmousedown = (e) => {
+                isHudDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                const rect = card.getBoundingClientRect();
+                initialLeft = rect.left;
+                initialTop = rect.top;
+            };
+
+            window.addEventListener('mousemove', (e) => {
+                if (!isHudDragging) return;
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                card.style.left = `${initialLeft + dx}px`;
+                card.style.top = `${initialTop + dy}px`;
+                card.style.right = 'auto';
+            });
+
+            window.addEventListener('mouseup', () => { isHudDragging = false; });
         }
     </script>
 
