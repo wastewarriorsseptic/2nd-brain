@@ -388,7 +388,7 @@
                 <span class="text-lg">😈</span>
                 <div>
                     <h2 class="text-xs font-bold text-white leading-none">TaskMonster Universe</h2>
-                    <span class="text-[10px] text-slate-400">Tap Realm Planet to Focus • Drag HUD to Reposition</span>
+                    <span class="text-[10px] text-slate-400">Tap Realm Planet to Focus • Tap Bucket Moon to Isolate</span>
                 </div>
             </div>
 
@@ -1927,7 +1927,7 @@
         }
     </script>
 
-    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (ZERO OVERLAP + DEVIL CORE) -->
+    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (BUCKET ISOLATION & FOCUS) -->
     <script>
         let isSpaceViewActive = false;
         let spaceCanvas, spaceCtx;
@@ -1940,6 +1940,7 @@
         let dragStart = { x: 0, y: 0 };
         let activeSelectedTask = null;
         let activeSelectedRealm = null;
+        let activeSelectedBucket = null;
         let initialPinchDistance = null;
 
         function toggleSpaceView() {
@@ -2066,6 +2067,7 @@
 
         function recenterSpace() {
             activeSelectedRealm = null;
+            activeSelectedBucket = null;
             targetCameraOffset = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
             targetCameraZoom = window.innerWidth < 768 ? 0.45 : 0.75;
 
@@ -2137,6 +2139,11 @@
 
                 // Render Buckets (Moons)
                 realm.buckets.forEach(bucket => {
+                    // Hide sibling buckets if a specific Bucket is selected in this Realm
+                    if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id && activeSelectedRealm && activeSelectedRealm.id === realm.id) {
+                        return;
+                    }
+
                     bucket.x = realm.x + Math.cos(bucket.angle) * bucket.orbitRadius;
                     bucket.y = realm.y + Math.sin(bucket.angle) * bucket.orbitRadius;
 
@@ -2150,9 +2157,9 @@
                     // Bucket Moon Body
                     spaceCtx.beginPath();
                     spaceCtx.arc(bucket.x, bucket.y, bucket.radius, 0, Math.PI * 2);
-                    spaceCtx.fillStyle = '#0284c7';
+                    spaceCtx.fillStyle = (activeSelectedBucket && activeSelectedBucket.id === bucket.id) ? '#38bdf8' : '#0284c7';
                     spaceCtx.shadowColor = '#38bdf8';
-                    spaceCtx.shadowBlur = 10;
+                    spaceCtx.shadowBlur = 12;
                     spaceCtx.fill();
 
                     spaceCtx.font = '10px serif';
@@ -2203,7 +2210,7 @@
                         }
                         spaceCtx.fill();
 
-                        // Task Label Pill (Prevents text overlap on dark canvas)
+                        // Task Label Pill
                         const truncatedTitle = task.title.length > 18 ? task.title.substring(0, 16) + '…' : task.title;
                         spaceCtx.font = '9px sans-serif';
                         const tWidth = spaceCtx.measureText(truncatedTitle).width + 6;
@@ -2290,8 +2297,10 @@
             const worldY = (clientY - cameraOffset.y) / cameraZoom;
 
             let clickedTask = null;
+            let clickedBucket = null;
             let clickedRealm = null;
 
+            // 1. Check Task Node Selection
             spaceRealms.forEach(realm => {
                 realm.buckets.forEach(bucket => {
                     bucket.tasks.forEach(task => {
@@ -2308,6 +2317,24 @@
                 return;
             }
 
+            // 2. Check Bucket Moon Selection (Isolate Bucket)
+            spaceRealms.forEach(realm => {
+                realm.buckets.forEach(bucket => {
+                    const dist = Math.hypot(worldX - bucket.x, worldY - bucket.y);
+                    if (dist <= bucket.radius + 16) {
+                        clickedBucket = bucket;
+                        clickedRealm = realm;
+                    }
+                });
+            });
+
+            if (clickedBucket && clickedRealm) {
+                activeSelectedRealm = clickedRealm;
+                activeSelectedBucket = (activeSelectedBucket && activeSelectedBucket.id === clickedBucket.id) ? null : clickedBucket;
+                return;
+            }
+
+            // 3. Check Realm Planet Selection (Focus & Push Other Realms Away)
             spaceRealms.forEach(realm => {
                 const dist = Math.hypot(worldX - realm.x, worldY - realm.y);
                 if (dist <= realm.radius + 18) {
@@ -2316,6 +2343,7 @@
             });
 
             if (clickedRealm) {
+                activeSelectedBucket = null;
                 focusAndRepelRealms(clickedRealm);
             }
         }
