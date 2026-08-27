@@ -411,7 +411,7 @@
             </button>
         </div>
 
-        <!-- Bottom Layout Controls & Centered Inspection Card Wrapper -->
+        <!-- Bottom Layout HUD Inspection Card & Controls Wrapper -->
         <div class="relative z-20 pb-6 px-4 flex flex-col items-center gap-3 pointer-events-none select-none">
             <!-- Centered Bottom Task HUD Inspection Card -->
             <div id="space-hud-card" class="hidden pointer-events-auto w-11/12 max-w-sm bg-slate-900/95 border border-indigo-500/40 p-3.5 rounded-2xl backdrop-blur-md shadow-2xl space-y-2.5">
@@ -2233,10 +2233,39 @@
                 spaceCtx.shadowBlur = 0;
                 spaceCtx.fillText(realm.icon, realm.x, realm.y + 1);
 
-                // Realm Name Label
-                spaceCtx.font = 'bold 14px sans-serif';
-                spaceCtx.fillStyle = '#f8fafc';
-                spaceCtx.fillText(realm.name, realm.x, realm.y + realm.radius + 20);
+                // LEVEL-OF-DETAIL (LOD) SEMANTIC BEACON LABELS
+                // When zoomed out far, show a prominent beacon label pill for each Realm
+                if (cameraZoom < 0.55) {
+                    spaceCtx.save();
+                    const beaconText = `${realm.icon} ${realm.name}`;
+                    spaceCtx.font = 'bold 18px sans-serif';
+                    const bTextWidth = spaceCtx.measureText(beaconText).width + 24;
+
+                    // Large Glowing Beacon Pill Box
+                    spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+                    spaceCtx.strokeStyle = '#818cf8';
+                    spaceCtx.lineWidth = 2;
+                    spaceCtx.shadowColor = '#6366f1';
+                    spaceCtx.shadowBlur = 15;
+                    spaceCtx.beginPath();
+                    spaceCtx.roundRect(realm.x - bTextWidth / 2, realm.y + realm.radius + 12, bTextWidth, 32, 10);
+                    spaceCtx.fill();
+                    spaceCtx.stroke();
+
+                    // High-contrast Label Text
+                    spaceCtx.fillStyle = '#ffffff';
+                    spaceCtx.textAlign = 'center';
+                    spaceCtx.textBaseline = 'middle';
+                    spaceCtx.shadowBlur = 0;
+                    spaceCtx.fillText(beaconText, realm.x, realm.y + realm.radius + 28);
+                    spaceCtx.restore();
+                } else {
+                    // Standard In-Zoom Realm Label
+                    spaceCtx.font = 'bold 14px sans-serif';
+                    spaceCtx.fillStyle = '#f8fafc';
+                    spaceCtx.textAlign = 'center';
+                    spaceCtx.fillText(realm.name, realm.x, realm.y + realm.radius + 20);
+                }
 
                 const allTasksInRealm = [];
 
