@@ -2101,7 +2101,7 @@
                     y: basePos.y,
                     targetX: basePos.x,
                     targetY: basePos.y,
-                    radius: 36,
+                    radius: 54, // Enlarged Realm planet base radius
                     buckets: realm.buckets.map((bucket, bIdx) => {
                         const totalBuckets = Math.max(1, realm.buckets.length);
                         const bucketAngle = (bIdx / totalBuckets) * Math.PI * 2;
@@ -2151,7 +2151,7 @@
                             task.orbitRadius = 55 + (tIdx * 32);
                         });
 
-                        const bucketDist = 160 + (bIdx * 60);
+                        const bucketDist = 180 + (bIdx * 65);
 
                         return {
                             id: bucket.id,
@@ -2271,8 +2271,8 @@
 
                 // Realm Planet Atmosphere Aura
                 spaceCtx.beginPath();
-                spaceCtx.arc(realm.x, realm.y, realm.radius + 10, 0, Math.PI * 2);
-                spaceCtx.fillStyle = 'rgba(99, 102, 241, 0.08)';
+                spaceCtx.arc(realm.x, realm.y, realm.radius + 14, 0, Math.PI * 2);
+                spaceCtx.fillStyle = 'rgba(99, 102, 241, 0.12)';
                 spaceCtx.fill();
 
                 // Realm Planet Body
@@ -2280,51 +2280,45 @@
                 spaceCtx.arc(realm.x, realm.y, realm.radius, 0, Math.PI * 2);
                 spaceCtx.fillStyle = (activeSelectedRealm && activeSelectedRealm.id === realm.id) ? 'rgba(79, 70, 229, 0.95)' : 'rgba(30, 41, 59, 0.95)';
                 spaceCtx.strokeStyle = '#818cf8';
-                spaceCtx.lineWidth = (activeSelectedRealm && activeSelectedRealm.id === realm.id) ? 3 : 2;
+                spaceCtx.lineWidth = (activeSelectedRealm && activeSelectedRealm.id === realm.id) ? 3.5 : 2.5;
                 spaceCtx.shadowColor = '#6366f1';
-                spaceCtx.shadowBlur = 20;
+                spaceCtx.shadowBlur = 24;
                 spaceCtx.fill();
                 spaceCtx.stroke();
 
-                // Realm Emoji Icon
-                spaceCtx.font = '24px serif';
+                // Centered Realm Emoji Icon (Larger Font Size)
+                spaceCtx.save();
+                spaceCtx.font = '36px serif';
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
                 spaceCtx.shadowBlur = 0;
-                spaceCtx.fillText(realm.icon, realm.x, realm.y + 1);
+                spaceCtx.fillText(realm.icon, realm.x, realm.y + 2);
+                spaceCtx.restore();
 
-                // LEVEL-OF-DETAIL (LOD) SEMANTIC BEACON LABELS
-                if (cameraZoom < 0.55) {
-                    spaceCtx.save();
-                    const beaconText = `${realm.icon} ${realm.name}`;
-                    spaceCtx.font = 'bold 18px sans-serif';
-                    const bTextWidth = spaceCtx.measureText(beaconText).width + 24;
+                // HIGH-CONTRAST ENHANCED PILL BADGE REALM LABELS (ALWAYS LEGIBLE ON ALL ZOOMS)
+                spaceCtx.save();
+                const realmLabel = `${realm.icon} ${realm.name}`;
+                spaceCtx.font = 'bold 16px sans-serif';
+                const rTextWidth = spaceCtx.measureText(realmLabel).width + 24;
 
-                    // Large Glowing Beacon Pill Box
-                    spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
-                    spaceCtx.strokeStyle = '#818cf8';
-                    spaceCtx.lineWidth = 2;
-                    spaceCtx.shadowColor = '#6366f1';
-                    spaceCtx.shadowBlur = 15;
-                    spaceCtx.beginPath();
-                    spaceCtx.roundRect(realm.x - bTextWidth / 2, realm.y + realm.radius + 12, bTextWidth, 32, 10);
-                    spaceCtx.fill();
-                    spaceCtx.stroke();
+                // High-visibility Rounded Pill Badge
+                spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+                spaceCtx.strokeStyle = '#818cf8';
+                spaceCtx.lineWidth = 1.5;
+                spaceCtx.shadowColor = '#6366f1';
+                spaceCtx.shadowBlur = 12;
+                spaceCtx.beginPath();
+                spaceCtx.roundRect(realm.x - rTextWidth / 2, realm.y + realm.radius + 10, rTextWidth, 30, 8);
+                spaceCtx.fill();
+                spaceCtx.stroke();
 
-                    // High-contrast Label Text
-                    spaceCtx.fillStyle = '#ffffff';
-                    spaceCtx.textAlign = 'center';
-                    spaceCtx.textBaseline = 'middle';
-                    spaceCtx.shadowBlur = 0;
-                    spaceCtx.fillText(beaconText, realm.x, realm.y + realm.radius + 28);
-                    spaceCtx.restore();
-                } else {
-                    // Standard In-Zoom Realm Label
-                    spaceCtx.font = 'bold 14px sans-serif';
-                    spaceCtx.fillStyle = '#f8fafc';
-                    spaceCtx.textAlign = 'center';
-                    spaceCtx.fillText(realm.name, realm.x, realm.y + realm.radius + 20);
-                }
+                // High-visibility Crisp White Text
+                spaceCtx.fillStyle = '#ffffff';
+                spaceCtx.textAlign = 'center';
+                spaceCtx.textBaseline = 'middle';
+                spaceCtx.shadowBlur = 0;
+                spaceCtx.fillText(realmLabel, realm.x, realm.y + realm.radius + 25);
+                spaceCtx.restore();
 
                 const allTasksInRealm = [];
 
