@@ -100,7 +100,7 @@
 
                             {% if ns.active_realm %}
                             <span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate inline-block min-w-0 max-w-[110px] sm:max-w-[160px] md:max-w-[220px]" title="{{ ns.active_realm.name }}{% if ns.active_bucket %} / {{ ns.active_bucket.name }}{% endif %}">
-                                {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }}{% if ns.active_bucket %} / 🌕 {{ ns.active_bucket.name }}{% endif %}
+                                {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }}{% if ns.active_bucket %} / ⭐️ {{ ns.active_bucket.name }}{% endif %}
                             </span>
                             {% else %}
                             <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">
@@ -150,14 +150,14 @@
 
                             <nav class="buckets-container space-y-1 ml-2.5 pl-2 border-l border-slate-700/60" data-realm-id="{{ realm.id }}">
                                 {% for bucket in realm.buckets %}
-                                <div id="bucket-row-{{ bucket.id }}" data-bucket-name="{{ bucket.name }}" data-bucket-icon="🌕" data-parent-realm-id="{{ realm.id }}"
+                                <div id="bucket-row-{{ bucket.id }}" data-bucket-name="{{ bucket.name }}" data-bucket-icon="⭐️" data-parent-realm-id="{{ realm.id }}"
                                      class="bucket-item bucket-item-row flex items-center justify-between group rounded-xl {% if selected_bucket_id == bucket.id %}bg-indigo-600 text-white font-medium shadow-md{% else %}text-slate-300{% endif %} px-2.5 py-1.5 transition-all duration-150" data-id="{{ bucket.id }}">
                                     <div class="flex items-center gap-2 flex-1 min-w-0 mr-2">
                                         <span class="bucket-handle text-slate-500 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
                                         <a href="{% if selected_bucket_id == bucket.id %}/?realm_id={{ realm.id }}{% else %}/?bucket_id={{ bucket.id }}{% endif %}" 
                                            onclick="selectBucket(event, {{ bucket.id }}, {{ realm.id }})"
                                            class="bucket-link text-sm flex items-center gap-2 min-w-0 flex-1">
-                                            <span class="shrink-0">🌕</span> <span class="truncate">{{ bucket.name }}</span>
+                                            <span class="shrink-0">⭐️</span> <span class="truncate">{{ bucket.name }}</span>
                                         </a>
                                     </div>
 
@@ -274,7 +274,7 @@
                                     <div class="flex-1 min-w-0">
                                         <div class="flex flex-wrap items-center gap-1.5 md:gap-2 mb-1.5">
                                             <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[11px] md:text-xs font-semibold px-2 md:px-2.5 py-0.5 rounded-full flex items-center gap-1 truncate max-w-full">
-                                                {{ item.bucket.realm.icon or '🔮' }} {{ item.bucket.realm.name if item.bucket and item.bucket.realm else 'General' }} / 🌕 {{ item.bucket.name if item.bucket else '' }}
+                                                {{ item.bucket.realm.icon or '🔮' }} {{ item.bucket.realm.name if item.bucket and item.bucket.realm else 'General' }} / ⭐️ {{ item.bucket.name if item.bucket else '' }}
                                             </span>
                                             {% if (item.recurrence_type and item.recurrence_type != 'none') or item.recurring_group_id %}
                                             <span class="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] md:text-xs font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -694,7 +694,7 @@
             <h3 class="text-xl font-bold mb-4">Create New Bucket</h3>
             <form action="/buckets/" method="POST" class="space-y-4">
                 <input type="hidden" name="realm_id" id="add-bucket-realm-id" value="{% if selected_realm_id %}{{ selected_realm_id }}{% endif %}">
-                <input type="hidden" name="icon" value="🌕">
+                <input type="hidden" name="icon" value="⭐️">
                 <div>
                     <label class="block text-xs font-medium text-slate-400 mb-1">Bucket Name</label>
                     <input type="text" name="name" required placeholder="e.g. Tasks, Cleaning" 
@@ -715,7 +715,7 @@
             <h3 class="text-xl font-bold mb-4">Edit Bucket</h3>
             <form action="/buckets/update/" method="POST" class="space-y-4">
                 <input type="hidden" name="bucket_id" id="edit-bucket-id">
-                <input type="hidden" name="icon" value="🌕">
+                <input type="hidden" name="icon" value="⭐️">
                 <div>
                     <label class="block text-xs font-medium text-slate-400 mb-1">Bucket Name</label>
                     <input type="text" name="name" id="edit-bucket-name" required 
@@ -752,7 +752,7 @@
 
                     {% if ns.active_realm and ns.active_bucket %}
                     <span class="bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-xs font-semibold px-2.5 py-1 rounded-full truncate inline-block max-w-[150px] sm:max-w-[200px]" title="{{ ns.active_realm.name }} / {{ ns.active_bucket.name }}">
-                        {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }} / 🌕 {{ ns.active_bucket.name }}
+                        {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }} / ⭐️ {{ ns.active_bucket.name }}
                     </span>
                     {% endif %}
                 </div>
@@ -789,7 +789,7 @@
 
                     <!-- Inline New Bucket Fields -->
                     <div id="inline-new-bucket-fields" class="hidden p-2.5 bg-slate-900/80 border border-indigo-500/30 rounded-xl space-y-2">
-                        <span class="text-[11px] font-semibold text-indigo-300 block">🌕 Create New Bucket</span>
+                        <span class="text-[11px] font-semibold text-indigo-300 block">⭐️ Create New Bucket</span>
                         <div class="flex items-center gap-2">
                             <input type="text" id="inline-bucket-name" placeholder="Bucket Name (e.g. Urgent)" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none">
                             <button type="button" onclick="submitInlineBucket()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition">Create</button>
@@ -1112,7 +1112,7 @@
                 realm.buckets.forEach(b => {
                     const opt = document.createElement('option');
                     opt.value = b.id;
-                    opt.textContent = `🌕 ${b.name}`;
+                    opt.textContent = `⭐️ ${b.name}`;
                     if (currentSelectedBucketId && b.id === currentSelectedBucketId) {
                         opt.selected = true;
                     }
@@ -1158,7 +1158,7 @@
                 realm.buckets.forEach(b => {
                     const opt = document.createElement('option');
                     opt.value = b.id;
-                    opt.textContent = `🌕 ${b.name}`;
+                    opt.textContent = `⭐️ ${b.name}`;
                     bucketSelect.appendChild(opt);
                 });
             } else {
@@ -1231,7 +1231,7 @@
             const formData = new FormData();
             formData.append('name', bucketName);
             formData.append('realm_id', rawRealmVal);
-            formData.append('icon', '🌕');
+            formData.append('icon', '⭐️');
 
             try {
                 const response = await fetch('/buckets/', { method: 'POST', body: formData });
@@ -1262,7 +1262,7 @@
 
                     const newOpt = document.createElement('option');
                     newOpt.value = realBucketId;
-                    newOpt.textContent = `🌕 ${bucketName}`;
+                    newOpt.textContent = `⭐️ ${bucketName}`;
 
                     if (bucketSelect.lastElementChild) {
                         bucketSelect.insertBefore(newOpt, bucketSelect.lastElementChild);
@@ -1441,10 +1441,10 @@
                     const rName = activeRealmRow ? activeRealmRow.getAttribute('data-realm-name') : '';
                     const rIcon = activeRealmRow ? activeRealmRow.getAttribute('data-realm-icon') : '🔮';
 
-                    const badgeHtml = `<span class="bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-xs font-semibold px-2.5 py-1 rounded-full truncate inline-block max-w-[150px] sm:max-w-[200px]">${rIcon} ${rName} / 🌕 ${bName}</span>`;
+                    const badgeHtml = `<span class="bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-xs font-semibold px-2.5 py-1 rounded-full truncate inline-block max-w-[150px] sm:max-w-[200px]">${rIcon} ${rName} / ⭐️ ${bName}</span>`;
                     
                     if (badgeContainer) {
-                        badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate inline-block min-w-0 max-w-[110px] sm:max-w-[160px] md:max-w-[220px]" title="${rName} / ${bName}">${rIcon} ${rName} / 🌕 ${bName}</span>`;
+                        badgeContainer.innerHTML = `<span class="bg-slate-700/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-medium px-2 py-0.5 rounded-full truncate inline-block min-w-0 max-w-[110px] sm:max-w-[160px] md:max-w-[220px]" title="${rName} / ${bName}">${rIcon} ${rName} / ⭐️ ${bName}</span>`;
                     }
                     if (modalBadgeContainer) {
                         modalBadgeContainer.innerHTML = badgeHtml;
@@ -2265,10 +2265,10 @@
                     spaceCtx.fill();
 
                     spaceCtx.font = '10px serif';
-                    spaceCtx.fillText('🌕', bucket.x, bucket.y);
+                    spaceCtx.fillText('⭐️', bucket.x, bucket.y);
 
                     // Bucket Label Pill
-                    const bLabel = `🌕 ${bucket.name}`;
+                    const bLabel = `⭐️ ${bucket.name}`;
                     spaceCtx.font = 'bold 10px sans-serif';
                     const bWidth = spaceCtx.measureText(bLabel).width + 8;
                     
@@ -2553,7 +2553,7 @@
             const date = document.getElementById('hud-task-date');
             const idInput = document.getElementById('hud-task-id-input');
 
-            badgeCategory.innerText = `${task.realmName} / 🌕 ${task.bucketName}`;
+            badgeCategory.innerText = `${task.realmName} / ⭐️ ${task.bucketName}`;
             title.innerText = task.title;
             date.innerText = `📅 ${task.dueDateFormatted}`;
             idInput.value = task.id;
