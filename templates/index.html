@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#0f172a">
     <link rel="icon" type="image/jpeg" href="/static/icon.jpeg">
     <link rel="apple-touch-icon" href="/static/icon.jpeg">
@@ -34,6 +34,11 @@
             .timeline-container {
                 margin-left: 1rem !important;
             }
+        }
+
+        /* Fullscreen Space Canvas Overlay */
+        #space-view-overlay {
+            touch-action: none; /* Prevent browser scrolling while interacting in space */
         }
     </style>
 </head>
@@ -183,8 +188,17 @@
             <div class="max-w-4xl mx-auto pt-2 sm:pt-4">
                 {% if user %}
                     
+                    <!-- View Mode Toggle Bar (Timeline vs. Space View) -->
+                    <div class="flex items-center justify-between w-full max-w-xl mx-auto mb-4 px-2">
+                        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Dashboard View</span>
+                        <button onclick="toggleSpaceView()" 
+                                class="px-3.5 py-1.5 bg-indigo-600/90 hover:bg-indigo-500 text-white font-bold text-xs rounded-full shadow-md shadow-indigo-600/20 transition flex items-center gap-1.5 border border-indigo-400/30">
+                            <span id="view-toggle-icon">🌌</span> <span id="view-toggle-label">Space View</span>
+                        </button>
+                    </div>
+
                     <!-- 4-Segment Responsive Filter Pill -->
-                    <div class="w-full max-w-xl mx-auto mb-6 md:mb-8 p-1 bg-slate-800/90 border border-slate-700/80 rounded-full flex items-center shadow-inner select-none gap-0.5 sm:gap-1">
+                    <div id="filter-pill-bar" class="w-full max-w-xl mx-auto mb-6 md:mb-8 p-1 bg-slate-800/90 border border-slate-700/80 rounded-full flex items-center shadow-inner select-none gap-0.5 sm:gap-1">
                         <button id="pill-btn-active" onclick="setTimelineFilter('active')" 
                                 class="flex-1 px-1 sm:px-3 py-1.5 text-[10px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1 bg-indigo-600 text-white shadow-md min-w-0">
                             <span>⚡ Active</span>
@@ -218,6 +232,8 @@
                              data-completed="{{ 'true' if item.is_completed else 'false' }}"
                              data-completed-at="{{ item.completed_at.isoformat() if item.completed_at else '' }}"
                              data-due-date="{{ item.due_date.strftime('%Y-%m-%d') }}"
+                             data-due-date-formatted="{{ item.due_date.strftime('%b %d, %Y') }}"
+                             data-title="{{ item.title }}"
                              data-item-id="{{ item.id }}"
                              data-recurring="{{ 'true' if (item.recurrence_type and item.recurrence_type != 'none') or item.recurring_group_id else 'false' }}"
                              data-realm-id="{{ item.bucket.realm.id if item.bucket and item.bucket.realm else '' }}"
@@ -357,6 +373,62 @@
         </footer>
     </main>
 
+    <!-- FULLSCREEN SPACE VIEW OVERLAY -->
+    <div id="space-view-overlay" class="hidden fixed inset-0 bg-slate-950 z-40 overflow-hidden flex flex-col justify-between">
+        <!-- Canvas Viewport -->
+        <canvas id="space-canvas" class="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"></canvas>
+
+        <!-- Top Floating Space HUD -->
+        <div class="relative z-10 p-4 flex items-center justify-between pointer-events-none">
+            <div class="bg-slate-900/90 border border-slate-800 p-2.5 px-4 rounded-2xl backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto">
+                <span class="text-lg">🌌</span>
+                <div>
+                    <h2 class="text-xs font-bold text-white leading-none">TaskMonster Universe</h2>
+                    <span class="text-[10px] text-slate-400">Planets = Realms • Moons = Buckets • Satellites = Tasks</span>
+                </div>
+            </div>
+
+            <button onclick="toggleSpaceView()" 
+                    class="pointer-events-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-2xl shadow-xl transition border border-indigo-400/30">
+                ✖ Close Space View
+            </button>
+        </div>
+
+        <!-- Floating Tooltip HUD Inspection Card -->
+        <div id="space-hud-card" class="hidden relative z-10 mx-auto mb-20 w-11/12 max-w-sm bg-slate-900/95 border border-indigo-500/40 p-4 rounded-2xl backdrop-blur-md shadow-2xl space-y-2 select-none">
+            <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                <span id="hud-category-badge" class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full truncate">
+                    Realm / Bucket
+                </span>
+                <span id="hud-status-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    Active
+                </span>
+            </div>
+
+            <h3 id="hud-task-title" class="text-sm font-bold text-white break-words leading-snug">Task Title</h3>
+            <p id="hud-task-date" class="text-xs text-indigo-300 font-mono">📅 Due Date</p>
+
+            <div class="flex justify-end pt-1">
+                <form id="hud-complete-form" action="/items/toggle-complete/" method="POST" class="w-full">
+                    <input type="hidden" name="item_id" id="hud-task-id-input" value="">
+                    <button type="submit" class="w-full py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow transition">
+                        ✓ Mark Complete
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Bottom Touch & Zoom Controls HUD -->
+        <div class="relative z-10 p-4 flex items-center justify-center gap-3 pointer-events-none mb-2">
+            <div class="bg-slate-900/90 border border-slate-800 p-1.5 rounded-2xl backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto">
+                <button onclick="zoomSpace(1.2)" class="w-8 h-8 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm rounded-xl flex items-center justify-center transition">＋</button>
+                <button onclick="zoomSpace(0.8)" class="w-8 h-8 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm rounded-xl flex items-center justify-center transition">－</button>
+                <button onclick="recenterSpace()" class="px-3 h-8 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-bold text-xs rounded-xl flex items-center justify-center transition">🎯 Recenter</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals Sections (Add Realm, Edit Realm, Share Realm, Add Bucket, Edit Bucket, Add Task, Edit Task, Recurrence, Delete Task) -->
     <div id="add-realm-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
         <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
             <h3 class="text-xl font-bold mb-4">Create New Realm</h3>
@@ -448,7 +520,7 @@
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
                     <button type="button" onclick="document.getElementById('edit-realm-modal').classList.add('hidden')" 
-                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Save Changes</button>
+                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Cancel</button>
                     <button type="submit" 
                             class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold">Save Changes</button>
                 </div>
@@ -548,7 +620,7 @@
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
                     <button type="button" onclick="document.getElementById('edit-realm-modal').classList.add('hidden')" 
-                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Cancel</button>
+                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Save Changes</button>
                     <button type="submit" 
                             class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold">Save Changes</button>
                 </div>
@@ -1834,6 +1906,345 @@
                 seriesBtn.classList.add('hidden');
             }
             document.getElementById('delete-item-modal').classList.remove('hidden');
+        }
+    </script>
+
+    <!-- SPACE VIEW CANVAS ENGINE SCRIPT -->
+    <script>
+        let isSpaceViewActive = false;
+        let spaceCanvas, spaceCtx;
+        let spaceRealms = [];
+        let cameraOffset = { x: 0, y: 0 };
+        let cameraZoom = 1;
+        let isDragging = false;
+        let dragStart = { x: 0, y: 0 };
+        let activeHoverNode = null;
+        let initialPinchDistance = null;
+
+        function toggleSpaceView() {
+            const overlay = document.getElementById('space-view-overlay');
+            const toggleIcon = document.getElementById('view-toggle-icon');
+            const toggleLabel = document.getElementById('view-toggle-label');
+
+            isSpaceViewActive = !isSpaceViewActive;
+
+            if (isSpaceViewActive) {
+                overlay.classList.remove('hidden');
+                toggleIcon.innerText = '📅';
+                toggleLabel.innerText = 'Timeline View';
+                initSpaceCanvas();
+            } else {
+                overlay.classList.add('hidden');
+                toggleIcon.innerText = '🌌';
+                toggleLabel.innerText = 'Space View';
+                hideHudCard();
+            }
+        }
+
+        function initSpaceCanvas() {
+            spaceCanvas = document.getElementById('space-canvas');
+            spaceCtx = spaceCanvas.getContext('2d');
+
+            resizeSpaceCanvas();
+            window.addEventListener('resize', resizeSpaceCanvas);
+
+            // Populate Space Nodes from DOM Data & realmsData
+            spaceRealms = realmsData.map((realm, rIdx) => {
+                const realmAngle = (rIdx / realmsData.length) * Math.PI * 2;
+                const realmDistance = 180 + (rIdx * 90);
+
+                return {
+                    id: realm.id,
+                    name: realm.name,
+                    icon: realm.icon || '🔮',
+                    orbitRadius: realmDistance,
+                    angle: realmAngle,
+                    speed: 0.0015 / (rIdx + 1),
+                    radius: 22,
+                    buckets: realm.buckets.map((bucket, bIdx) => {
+                        const bucketAngle = (bIdx / Math.max(1, realm.buckets.length)) * Math.PI * 2;
+                        
+                        // Query DOM tasks belonging to this bucket
+                        const taskNodes = Array.from(document.querySelectorAll(`.timeline-card-wrapper[data-bucket-id="${bucket.id}"]`)).map((el, tIdx) => {
+                            const isCompleted = el.getAttribute('data-completed') === 'true';
+                            const isOverdue = el.querySelector('.bg-rose-500') !== null;
+                            const isRecurring = el.getAttribute('data-recurring') === 'true';
+
+                            return {
+                                id: el.getAttribute('data-item-id'),
+                                title: el.getAttribute('data-title') || el.querySelector('h3').innerText.trim(),
+                                dueDate: el.getAttribute('data-due-date-formatted') || '',
+                                realmName: realm.name,
+                                bucketName: bucket.name,
+                                isCompleted: isCompleted,
+                                isOverdue: isOverdue,
+                                isRecurring: isRecurring,
+                                orbitRadius: 24 + (tIdx * 12),
+                                angle: (tIdx / 4) * Math.PI * 2,
+                                speed: 0.015 + (tIdx * 0.003),
+                                radius: 6
+                            };
+                        });
+
+                        return {
+                            id: bucket.id,
+                            name: bucket.name,
+                            orbitRadius: 55 + (bIdx * 20),
+                            angle: bucketAngle,
+                            speed: 0.008 / (bIdx + 1),
+                            radius: 10,
+                            tasks: taskNodes
+                        };
+                    })
+                };
+            });
+
+            setupSpaceEvents();
+            recenterSpace();
+            requestAnimationFrame(renderSpaceFrame);
+        }
+
+        function resizeSpaceCanvas() {
+            if (!spaceCanvas) return;
+            spaceCanvas.width = window.innerWidth;
+            spaceCanvas.height = window.innerHeight;
+        }
+
+        function recenterSpace() {
+            cameraOffset = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+            cameraZoom = window.innerWidth < 768 ? 0.75 : 1.0;
+        }
+
+        function zoomSpace(factor) {
+            cameraZoom = Math.min(Math.max(0.3, cameraZoom * factor), 3.0);
+        }
+
+        function renderSpaceFrame() {
+            if (!isSpaceViewActive) return;
+
+            spaceCtx.clearRect(0, 0, spaceCanvas.width, spaceCanvas.height);
+
+            spaceCtx.save();
+            spaceCtx.translate(cameraOffset.x, cameraOffset.y);
+            spaceCtx.scale(cameraZoom, cameraZoom);
+
+            // Draw Galaxy Core (Universe Sun)
+            spaceCtx.beginPath();
+            spaceCtx.arc(0, 0, 16, 0, Math.PI * 2);
+            spaceCtx.fillStyle = '#6366f1';
+            spaceCtx.shadowColor = '#a5b4fc';
+            spaceCtx.shadowBlur = 25;
+            spaceCtx.fill();
+
+            // Render Realms (Planets)
+            spaceRealms.forEach(realm => {
+                realm.angle += realm.speed;
+                realm.x = Math.cos(realm.angle) * realm.orbitRadius;
+                realm.y = Math.sin(realm.angle) * realm.orbitRadius;
+
+                // Realm Orbit Ring
+                spaceCtx.beginPath();
+                spaceCtx.arc(0, 0, realm.orbitRadius, 0, Math.PI * 2);
+                spaceCtx.strokeStyle = 'rgba(99, 102, 241, 0.12)';
+                spaceCtx.lineWidth = 1;
+                spaceCtx.shadowBlur = 0;
+                spaceCtx.stroke();
+
+                // Realm Planet Glow
+                spaceCtx.beginPath();
+                spaceCtx.arc(realm.x, realm.y, realm.radius, 0, Math.PI * 2);
+                spaceCtx.fillStyle = 'rgba(30, 41, 59, 0.9)';
+                spaceCtx.strokeStyle = '#818cf8';
+                spaceCtx.lineWidth = 2;
+                spaceCtx.shadowColor = '#6366f1';
+                spaceCtx.shadowBlur = 12;
+                spaceCtx.fill();
+                spaceCtx.stroke();
+
+                // Realm Emoji Core
+                spaceCtx.font = '16px serif';
+                spaceCtx.textAlign = 'center';
+                spaceCtx.textBaseline = 'middle';
+                spaceCtx.shadowBlur = 0;
+                spaceCtx.fillText(realm.icon, realm.x, realm.y + 1);
+
+                // Realm Label
+                spaceCtx.font = 'bold 10px sans-serif';
+                spaceCtx.fillStyle = '#cbd5e1';
+                spaceCtx.fillText(realm.name, realm.x, realm.y + realm.radius + 12);
+
+                // Render Buckets (Moons)
+                realm.buckets.forEach(bucket => {
+                    bucket.angle += bucket.speed;
+                    bucket.x = realm.x + Math.cos(bucket.angle) * bucket.orbitRadius;
+                    bucket.y = realm.y + Math.sin(bucket.angle) * bucket.orbitRadius;
+
+                    // Bucket Orbit Ring around Realm
+                    spaceCtx.beginPath();
+                    spaceCtx.arc(realm.x, realm.y, bucket.orbitRadius, 0, Math.PI * 2);
+                    spaceCtx.strokeStyle = 'rgba(56, 189, 248, 0.15)';
+                    spaceCtx.lineWidth = 0.8;
+                    spaceCtx.stroke();
+
+                    // Bucket Moon Body
+                    spaceCtx.beginPath();
+                    spaceCtx.arc(bucket.x, bucket.y, bucket.radius, 0, Math.PI * 2);
+                    spaceCtx.fillStyle = '#0284c7';
+                    spaceCtx.shadowColor = '#38bdf8';
+                    spaceCtx.shadowBlur = 8;
+                    spaceCtx.fill();
+
+                    // Bucket Moon Thumbtack Symbol
+                    spaceCtx.font = '8px serif';
+                    spaceCtx.fillText('📌', bucket.x, bucket.y);
+
+                    // Render Tasks (Satellites)
+                    bucket.tasks.forEach(task => {
+                        task.angle += task.speed;
+                        task.x = bucket.x + Math.cos(task.angle) * task.orbitRadius;
+                        task.y = bucket.y + Math.sin(task.angle) * task.orbitRadius;
+
+                        spaceCtx.beginPath();
+                        spaceCtx.arc(task.x, task.y, task.radius, 0, Math.PI * 2);
+
+                        if (task.isCompleted) {
+                            spaceCtx.fillStyle = '#64748b';
+                            spaceCtx.shadowBlur = 0;
+                        } else if (task.isOverdue) {
+                            spaceCtx.fillStyle = '#f43f5e';
+                            spaceCtx.shadowColor = '#f43f5e';
+                            spaceCtx.shadowBlur = 10;
+                        } else if (task.isRecurring) {
+                            spaceCtx.fillStyle = '#f59e0b';
+                            spaceCtx.shadowColor = '#f59e0b';
+                            spaceCtx.shadowBlur = 10;
+                        } else {
+                            spaceCtx.fillStyle = '#38bdf8';
+                            spaceCtx.shadowColor = '#38bdf8';
+                            spaceCtx.shadowBlur = 8;
+                        }
+                        spaceCtx.fill();
+                    });
+                });
+            });
+
+            spaceCtx.restore();
+            requestAnimationFrame(renderSpaceFrame);
+        }
+
+        // Mouse & Touch Pointer Handlers for Pan, Zoom & Inspect
+        function setupSpaceEvents() {
+            spaceCanvas.onmousedown = (e) => {
+                isDragging = true;
+                dragStart = { x: e.clientX - cameraOffset.x, y: e.clientY - cameraOffset.y };
+            };
+
+            window.onmousemove = (e) => {
+                if (isDragging) {
+                    cameraOffset = { x: e.clientX - dragStart.x, y: e.clientY - dragStart.y };
+                } else if (isSpaceViewActive) {
+                    detectHoverNode(e.clientX, e.clientY);
+                }
+            };
+
+            window.onmouseup = () => { isDragging = false; };
+
+            spaceCanvas.onwheel = (e) => {
+                e.preventDefault();
+                zoomSpace(e.deltaY < 0 ? 1.1 : 0.9);
+            };
+
+            // Touch Handlers for Mobile (Pan, Pinch Zoom, Tap Inspect)
+            spaceCanvas.ontouchstart = (e) => {
+                if (e.touches.length === 1) {
+                    isDragging = true;
+                    dragStart = { x: e.touches[0].clientX - cameraOffset.x, y: e.touches[0].clientY - cameraOffset.y };
+                    detectHoverNode(e.touches[0].clientX, e.touches[0].clientY);
+                } else if (e.touches.length === 2) {
+                    isDragging = false;
+                    initialPinchDistance = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                }
+            };
+
+            spaceCanvas.ontouchmove = (e) => {
+                if (isDragging && e.touches.length === 1) {
+                    cameraOffset = { x: e.touches[0].clientX - dragStart.x, y: e.touches[0].clientY - dragStart.y };
+                } else if (e.touches.length === 2 && initialPinchDistance) {
+                    const currentDist = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                    const zoomFactor = currentDist / initialPinchDistance;
+                    zoomSpace(zoomFactor > 1 ? 1.03 : 0.97);
+                    initialPinchDistance = currentDist;
+                }
+            };
+
+            spaceCanvas.ontouchend = () => {
+                isDragging = false;
+                initialPinchDistance = null;
+            };
+        }
+
+        function detectHoverNode(clientX, clientY) {
+            // Translate Screen Coordinates to Canvas Space Coordinates
+            const worldX = (clientX - cameraOffset.x) / cameraZoom;
+            const worldY = (clientY - cameraOffset.y) / cameraZoom;
+
+            let foundTask = null;
+
+            spaceRealms.forEach(realm => {
+                realm.buckets.forEach(bucket => {
+                    bucket.tasks.forEach(task => {
+                        const dist = Math.hypot(worldX - task.x, worldY - task.y);
+                        if (dist <= task.radius + 12) { // Generous tap target for touch screens
+                            foundTask = task;
+                        }
+                    });
+                });
+            });
+
+            if (foundTask) {
+                showHudCard(foundTask);
+            }
+        }
+
+        function showHudCard(task) {
+            const card = document.getElementById('space-hud-card');
+            const badgeCategory = document.getElementById('hud-category-badge');
+            const badgeStatus = document.getElementById('hud-status-badge');
+            const title = document.getElementById('hud-task-title');
+            const date = document.getElementById('hud-task-date');
+            const idInput = document.getElementById('hud-task-id-input');
+
+            badgeCategory.innerText = `${task.realmName} / 📌 ${task.bucketName}`;
+            title.innerText = task.title;
+            date.innerText = `📅 ${task.dueDate}`;
+            idInput.value = task.id;
+
+            if (task.isCompleted) {
+                badgeStatus.innerText = 'Completed';
+                badgeStatus.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-700 text-slate-300';
+            } else if (task.isOverdue) {
+                badgeStatus.innerText = '⚠️ Overdue';
+                badgeStatus.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30';
+            } else if (task.isRecurring) {
+                badgeStatus.innerText = '🔄 Recurring';
+                badgeStatus.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30';
+            } else {
+                badgeStatus.innerText = '⚡ Active';
+                badgeStatus.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30';
+            }
+
+            card.classList.remove('hidden');
+        }
+
+        function hideHudCard() {
+            const card = document.getElementById('space-hud-card');
+            if (card) card.classList.add('hidden');
         }
     </script>
 
