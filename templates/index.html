@@ -2287,8 +2287,9 @@
             spaceCtx.restore();
 
             spaceRealms.forEach(realm => {
+                // CONTINUOUS DEVIL CORE REPULSION PHYSICS
                 const distToCore = Math.hypot(realm.x, realm.y);
-                const minCoreDist = coreRadius + realm.radius + 60;
+                const minCoreDist = coreRadius + realm.radius + 80;
                 if (distToCore < minCoreDist && distToCore > 0) {
                     const angleFromCore = Math.atan2(realm.y, realm.x);
                     realm.x = Math.cos(angleFromCore) * minCoreDist;
@@ -2658,6 +2659,15 @@
             const worldX = (clientX - cameraOffset.x) / cameraZoom;
             const worldY = (clientY - cameraOffset.y) / cameraZoom;
 
+            // 1. DEVIL CORE TAP DETECTION (0,0) -> RESET TO FULL UNIVERSE VIEW
+            const pulseScale = 1 + Math.sin(frameCount * 2) * 0.08;
+            const coreRadius = 48 * pulseScale;
+            const distToCore = Math.hypot(worldX, worldY);
+            if (distToCore <= coreRadius + 15) {
+                recenterSpace();
+                return;
+            }
+
             let clickedTask = null;
             let clickedBucket = null;
             let clickedRealm = null;
@@ -2678,11 +2688,9 @@
             if (clickedTask) {
                 if (activeSelectedBucket) {
                     if (String(activeSwipeTaskId) === String(clickedTask.id)) {
-                        // Unselect task node and return to bucket view
                         deselectBucketSwipeDock();
                         focusAndRepelRealms(activeSelectedRealm);
                     } else {
-                        // Focus on newly selected task node
                         activeSwipeTaskId = clickedTask.id;
                         focusCameraOnTask(clickedTask);
 
