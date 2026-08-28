@@ -2387,7 +2387,7 @@
                     spaceCtx.shadowBlur = 18;
                     spaceCtx.fill();
 
-                    // Centered Bucket Emoji
+                    // Centered Bucket Emoji inside moon circle
                     spaceCtx.save();
                     spaceCtx.textAlign = 'center';
                     spaceCtx.textBaseline = 'middle';
@@ -2395,7 +2395,7 @@
                     spaceCtx.fillText('⭐️', bucket.x, bucket.y + 1);
                     spaceCtx.restore();
 
-                    // Properly Positioned Label Pill
+                    // Properly Positioned Label Pill below or above moon to avoid clipping
                     spaceCtx.save();
                     spaceCtx.font = 'bold 15px sans-serif';
                     spaceCtx.textBaseline = 'middle';
@@ -2674,16 +2674,23 @@
                 });
             }
 
-            // Click task behavior inside bucket mode
+            // Click task behavior inside bucket mode: tap selected node to unselect
             if (clickedTask) {
                 if (activeSelectedBucket) {
-                    activeSwipeTaskId = clickedTask.id;
-                    focusCameraOnTask(clickedTask);
+                    if (String(activeSwipeTaskId) === String(clickedTask.id)) {
+                        // Unselect task node and return to bucket view
+                        deselectBucketSwipeDock();
+                        focusAndRepelRealms(activeSelectedRealm);
+                    } else {
+                        // Focus on newly selected task node
+                        activeSwipeTaskId = clickedTask.id;
+                        focusCameraOnTask(clickedTask);
 
-                    const wrapper = document.getElementById('swipe-dock-cards-wrapper');
-                    const targetCard = wrapper ? wrapper.querySelector(`[data-swipe-task-id="${clickedTask.id}"]`) : null;
-                    if (targetCard) {
-                        targetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                        const wrapper = document.getElementById('swipe-dock-cards-wrapper');
+                        const targetCard = wrapper ? wrapper.querySelector(`[data-swipe-task-id="${clickedTask.id}"]`) : null;
+                        if (targetCard) {
+                            targetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                        }
                     }
                 } else {
                     showHudCard(clickedTask);
@@ -2770,7 +2777,9 @@
                 activeSwipeTaskId = null;
                 wrapper.innerHTML = '<span class="text-xs text-slate-400 py-2 px-3 block text-center w-full">No active tasks in this bucket</span>';
             } else {
+                // Default to the first chronological task on bucket load
                 activeSwipeTaskId = sortedTasks[0].id;
+                focusCameraOnTask(sortedTasks[0]);
 
                 sortedTasks.forEach((task, index) => {
                     const card = document.createElement('div');
