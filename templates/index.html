@@ -2293,6 +2293,15 @@
             spaceCtx.restore();
 
             spaceRealms.forEach(realm => {
+                // CORE REPULSION PHYSICS: Push realms away from Central Devil Core (0,0)
+                const distToCore = Math.hypot(realm.x, realm.y);
+                const minCoreDist = coreRadius + realm.radius + 60; // Keep safety buffer around central core
+                if (distToCore < minCoreDist && distToCore > 0) {
+                    const angleFromCore = Math.atan2(realm.y, realm.x);
+                    realm.x = Math.cos(angleFromCore) * minCoreDist;
+                    realm.y = Math.sin(angleFromCore) * minCoreDist;
+                }
+
                 realm.x += (realm.targetX - realm.x) * 0.08;
                 realm.y += (realm.targetY - realm.y) * 0.08;
 
@@ -2401,19 +2410,25 @@
                     spaceCtx.fillText('⭐️', bucket.x, bucket.y);
                     spaceCtx.restore();
 
-                    // FIXED BUCKET PILL ALIGNMENT & OFFSET
+                    // PROPERLY ALIGNED BUCKET PILL LABEL (EMOJI + TEXT INLINE)
                     spaceCtx.save();
-                    spaceCtx.textAlign = 'center';
-                    spaceCtx.textBaseline = 'middle';
-                    const bLabel = bucket.name; // Clean name string without duplicating star emoji
                     spaceCtx.font = 'bold 15px sans-serif';
-                    const nameWidth = spaceCtx.measureText(bLabel).width;
-                    const bWidth = nameWidth + 28; // Padding
-                    
-                    // Increased top gap (radius + 12px) to prevent overlap with moon circle
-                    const bPillY = bucket.y + bucket.radius + 12;
-                    const pillHeight = 26;
+                    spaceCtx.textBaseline = 'middle';
 
+                    const iconText = "⭐️";
+                    const nameText = bucket.name;
+
+                    const iconWidth = spaceCtx.measureText(iconText).width;
+                    const nameWidth = spaceCtx.measureText(nameText).width;
+                    const textGap = 6;
+                    const paddingX = 14;
+
+                    const totalContentWidth = iconWidth + textGap + nameWidth;
+                    const bWidth = totalContentWidth + (paddingX * 2);
+                    const pillHeight = 26;
+                    const bPillY = bucket.y + bucket.radius + 12; // Clean vertical offset
+
+                    // Background Pill Box
                     spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
                     spaceCtx.strokeStyle = '#38bdf8';
                     spaceCtx.lineWidth = 1.2;
@@ -2422,9 +2437,17 @@
                     spaceCtx.fill();
                     spaceCtx.stroke();
 
-                    // Centered Bucket Name Text
+                    // Draw Emoji & Text Side-by-Side Centered
+                    const startX = bucket.x - (totalContentWidth / 2);
+                    const centerY = bPillY + (pillHeight / 2);
+
+                    spaceCtx.textAlign = 'left';
+                    spaceCtx.fillStyle = '#ffffff';
+                    spaceCtx.fillText(iconText, startX, centerY);
+
                     spaceCtx.fillStyle = '#38bdf8';
-                    spaceCtx.fillText(bLabel, bucket.x, bPillY + (pillHeight / 2));
+                    spaceCtx.fillText(nameText, startX + iconWidth + textGap, centerY);
+
                     spaceCtx.restore();
 
                     bucket.tasks.forEach(task => {
