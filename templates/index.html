@@ -430,7 +430,7 @@
         <!-- Bottom Layout HUD Inspection Card & Controls Wrapper -->
         <div class="relative z-20 pb-6 px-4 flex flex-col items-center gap-3 pointer-events-none select-none w-full">
             
-            <!-- SINGLE-CARD FEATURED SWIPE DOCK FOR SELECTED BUCKETS -->
+            <!-- UNIFIED BUCKET TASK SWIPE DOCK -->
             <div id="bucket-task-swipe-dock" class="hidden pointer-events-auto w-11/12 max-w-sm bg-slate-900/95 border border-indigo-500/40 p-3 rounded-2xl backdrop-blur-md shadow-2xl space-y-2">
                 <div class="flex items-center justify-between px-1 border-b border-slate-800/80 pb-1.5">
                     <span id="swipe-dock-bucket-title" class="text-[11px] font-extrabold text-indigo-300 tracking-wide uppercase truncate">
@@ -440,11 +440,11 @@
                 </div>
                 <!-- Snap-Mandatory Single-Card Carousel View -->
                 <div id="swipe-dock-cards-wrapper" class="flex items-center gap-3 overflow-x-auto snap-x snap-mandatory no-scrollbar py-1 px-0.5">
-                    <!-- Populated dynamically with full-width detailed cards -->
+                    <!-- Populated dynamically with detailed task cards -->
                 </div>
             </div>
 
-            <!-- Centered Bottom Task HUD Inspection Card (Used only when standalone tasks are clicked outside bucket mode) -->
+            <!-- Standalone Task Inspection HUD (Used when tapping standalone tasks outside bucket mode) -->
             <div id="space-hud-card" class="hidden pointer-events-auto w-11/12 max-w-sm bg-slate-900/95 border border-indigo-500/40 p-3.5 rounded-2xl backdrop-blur-md shadow-2xl space-y-2.5">
                 <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
                     <span id="hud-category-badge" class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full truncate">
@@ -459,7 +459,6 @@
                 </div>
 
                 <div class="flex items-start gap-3">
-                    <!-- Checkbox Completion Control -->
                     <form id="hud-complete-form" action="/items/toggle-complete/" method="POST" class="inline shrink-0 mt-0.5" onsubmit="triggerTaskConfetti(event, this)">
                         <input type="hidden" name="item_id" id="hud-task-id-input" value="">
                         <button type="submit" id="hud-checkbox-btn"
@@ -474,7 +473,6 @@
                         <p id="hud-task-date" class="text-[11px] text-indigo-300 font-mono mt-0.5">📅 Due Date</p>
                     </div>
 
-                    <!-- Edit Button -->
                     <button id="hud-edit-btn" onclick="triggerHudEdit()" title="Edit Task"
                             class="text-slate-400 hover:text-indigo-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-800 shrink-0">
                         ✏️
@@ -2389,47 +2387,41 @@
                     spaceCtx.shadowBlur = 18;
                     spaceCtx.fill();
 
+                    // Centered Bucket Emoji
                     spaceCtx.save();
                     spaceCtx.textAlign = 'center';
                     spaceCtx.textBaseline = 'middle';
                     spaceCtx.font = '16px serif';
-                    spaceCtx.fillText('⭐️', bucket.x, bucket.y);
+                    spaceCtx.fillText('⭐️', bucket.x, bucket.y + 1);
                     spaceCtx.restore();
 
+                    // Properly Positioned Label Pill
                     spaceCtx.save();
                     spaceCtx.font = 'bold 15px sans-serif';
                     spaceCtx.textBaseline = 'middle';
 
-                    const iconText = "⭐️";
                     const nameText = bucket.name;
-
-                    const iconWidth = spaceCtx.measureText(iconText).width;
                     const nameWidth = spaceCtx.measureText(nameText).width;
-                    const textGap = 6;
-                    const paddingX = 14;
-
-                    const totalContentWidth = iconWidth + textGap + nameWidth;
-                    const bWidth = totalContentWidth + (paddingX * 2);
-                    const pillHeight = 26;
-                    const bPillY = bucket.y + bucket.radius + 12;
+                    const paddingX = 16;
+                    const bWidth = nameWidth + (paddingX * 2);
+                    const bPillHeight = 26;
+                    
+                    const isBucketInBottomHalf = bucket.y > 0;
+                    const bPillY = isBucketInBottomHalf
+                        ? bucket.y - bucket.radius - bPillHeight - 8
+                        : bucket.y + bucket.radius + 8;
 
                     spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
                     spaceCtx.strokeStyle = '#38bdf8';
                     spaceCtx.lineWidth = 1.2;
                     spaceCtx.beginPath();
-                    spaceCtx.roundRect(bucket.x - (bWidth / 2), bPillY, bWidth, pillHeight, 8);
+                    spaceCtx.roundRect(bucket.x - (bWidth / 2), bPillY, bWidth, bPillHeight, 8);
                     spaceCtx.fill();
                     spaceCtx.stroke();
 
-                    const startX = bucket.x - (totalContentWidth / 2);
-                    const centerY = bPillY + (pillHeight / 2);
-
-                    spaceCtx.textAlign = 'left';
-                    spaceCtx.fillStyle = '#ffffff';
-                    spaceCtx.fillText(iconText, startX, centerY);
-
+                    spaceCtx.textAlign = 'center';
                     spaceCtx.fillStyle = '#38bdf8';
-                    spaceCtx.fillText(nameText, startX + iconWidth + textGap, centerY);
+                    spaceCtx.fillText(nameText, bucket.x, bPillY + (bPillHeight / 2));
 
                     spaceCtx.restore();
 
@@ -2688,7 +2680,6 @@
                     activeSwipeTaskId = clickedTask.id;
                     focusCameraOnTask(clickedTask);
 
-                    // Scroll the swipe dock to the clicked task card
                     const wrapper = document.getElementById('swipe-dock-cards-wrapper');
                     const targetCard = wrapper ? wrapper.querySelector(`[data-swipe-task-id="${clickedTask.id}"]`) : null;
                     if (targetCard) {
@@ -2753,9 +2744,10 @@
 
         function focusCameraOnTask(task) {
             targetCameraZoom = 1.35;
+            const verticalHudOffset = (window.innerHeight * 0.18);
             targetCameraOffset = {
                 x: (window.innerWidth / 2) - (task.x * targetCameraZoom),
-                y: (window.innerHeight / 2) - (task.y * targetCameraZoom)
+                y: (window.innerHeight / 2) - (task.y * targetCameraZoom) - verticalHudOffset
             };
         }
 
@@ -2778,7 +2770,7 @@
                 activeSwipeTaskId = null;
                 wrapper.innerHTML = '<span class="text-xs text-slate-400 py-2 px-3 block text-center w-full">No active tasks in this bucket</span>';
             } else {
-                activeSwipeTaskId = sortedTasks[0].id; // Set initial active swipe node
+                activeSwipeTaskId = sortedTasks[0].id;
 
                 sortedTasks.forEach((task, index) => {
                     const card = document.createElement('div');
@@ -2801,7 +2793,14 @@
                     card.innerHTML = `
                         <div class="flex items-center justify-between gap-2 border-b border-slate-700/50 pb-1.5">
                             <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border ${badgeClass}">${badgeText}</span>
-                            ${amountText}
+                            <div class="flex items-center gap-2">
+                                ${amountText}
+                                <form action="/items/toggle-complete/" method="POST" class="inline" onclick="event.stopPropagation()" onsubmit="triggerTaskConfetti(event, this)">
+                                    <input type="hidden" name="item_id" value="${task.id}">
+                                    <button type="submit" title="Mark Complete" class="w-5 h-5 rounded border border-slate-600 hover:border-emerald-400 text-slate-400 hover:text-emerald-400 flex items-center justify-center text-xs transition">✓</button>
+                                </form>
+                                <button onclick="event.stopPropagation(); openEditItemFromTask(${JSON.stringify(task).replace(/"/g, '&quot;')})" title="Edit Task" class="text-slate-400 hover:text-indigo-400 text-xs">✏️</button>
+                            </div>
                         </div>
                         <div>
                             <h4 class="text-sm font-bold text-white break-words leading-snug">${task.title}</h4>
@@ -2822,11 +2821,26 @@
                     wrapper.appendChild(card);
                 });
 
-                // Attach IntersectionObserver to track horizontal swipe snaps & sync active node glow
                 setupSwipeDockObserver(wrapper, sortedTasks);
             }
 
             dock.classList.remove('hidden');
+        }
+
+        function openEditItemFromTask(task) {
+            const dummyBtn = document.createElement('button');
+            dummyBtn.setAttribute('data-id', task.id);
+            dummyBtn.setAttribute('data-title', task.title);
+            dummyBtn.setAttribute('data-due-date', task.dueDate);
+            dummyBtn.setAttribute('data-due-time', task.dueTime);
+            dummyBtn.setAttribute('data-amount', task.amount);
+            dummyBtn.setAttribute('data-description', task.description);
+            dummyBtn.setAttribute('data-recurring', task.isRecurring ? 'true' : 'false');
+            dummyBtn.setAttribute('data-recurrence-type', task.recurrenceType);
+            dummyBtn.setAttribute('data-bucket-id', task.bucketId);
+            dummyBtn.setAttribute('data-realm-id', task.realmId);
+
+            openEditItem(dummyBtn);
         }
 
         function setupSwipeDockObserver(container, tasks) {
