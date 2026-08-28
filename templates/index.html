@@ -2251,7 +2251,19 @@
         }
 
         function zoomSpace(factor) {
-            targetCameraZoom = Math.min(Math.max(0.2, targetCameraZoom * factor), 2.5);
+            const oldZoom = targetCameraZoom;
+            const newZoom = Math.min(Math.max(0.2, oldZoom * factor), 2.5);
+            if (oldZoom === newZoom) return;
+
+            // Anchor scaling directly to the center of the viewport
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
+
+            targetCameraOffset = {
+                x: centerX - (centerX - targetCameraOffset.x) * (newZoom / oldZoom),
+                y: centerY - (centerY - targetCameraOffset.y) * (newZoom / oldZoom)
+            };
+            targetCameraZoom = newZoom;
         }
 
         function renderSpaceFrame() {
@@ -2447,6 +2459,7 @@
 
                         const isActiveSwipeNode = activeSwipeTaskId && String(task.id) === String(activeSwipeTaskId);
 
+                        // GLOWING halo for active swipe node
                         if (isActiveSwipeNode) {
                             spaceCtx.save();
                             const pulseHalo = 18 + Math.sin(frameCount * 4) * 6;
@@ -2652,7 +2665,20 @@
 
             spaceCanvas.onwheel = (e) => {
                 e.preventDefault();
-                zoomSpace(e.deltaY < 0 ? 1.08 : 0.92);
+                const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
+                const oldZoom = targetCameraZoom;
+                const newZoom = Math.min(Math.max(0.2, oldZoom * zoomFactor), 2.5);
+                if (oldZoom === newZoom) return;
+
+                // Anchor zoom directly to cursor position
+                const mouseX = e.clientX;
+                const mouseY = e.clientY;
+
+                targetCameraOffset = {
+                    x: mouseX - (mouseX - targetCameraOffset.x) * (newZoom / oldZoom),
+                    y: mouseY - (mouseY - targetCameraOffset.y) * (newZoom / oldZoom)
+                };
+                targetCameraZoom = newZoom;
             };
 
             spaceCanvas.ontouchstart = (e) => {
