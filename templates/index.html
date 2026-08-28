@@ -2099,7 +2099,8 @@
             const totalRealms = Math.max(1, realmsData.length);
 
             const isMobile = window.innerWidth < 768;
-            const viewRadius = Math.min(window.innerWidth, window.innerHeight) * (isMobile ? 0.52 : 0.36);
+            // SAFE VIEWPORT ORBITAL RADIUS FACTOR
+            const viewRadius = Math.min(window.innerWidth, window.innerHeight) * (isMobile ? 0.38 : 0.28);
 
             spaceRealms = realmsData.map((realm, rIdx) => {
                 const realmAngle = (rIdx / totalRealms) * Math.PI * 2 - Math.PI / 2;
@@ -2229,20 +2230,23 @@
                 if (r.baseY > maxY) maxY = r.baseY;
             });
 
-            const padding = window.innerWidth < 768 ? 160 : 200;
+            const padding = window.innerWidth < 768 ? 160 : 220;
             const boundingWidth = (maxX - minX) + (padding * 2);
             const boundingHeight = (maxY - minY) + (padding * 2);
 
             const fitZoomX = window.innerWidth / boundingWidth;
             const fitZoomY = window.innerHeight / boundingHeight;
-            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.45), 1.0);
+            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.40), 0.90);
 
             const centerX = (minX + maxX) / 2;
             const centerY = (minY + maxY) / 2;
 
+            // SAFE UI Y-CENTER OFFSET (Shifts center down past header dock)
+            const safeYCenter = (window.innerHeight / 2) + 20;
+
             targetCameraOffset = {
                 x: (window.innerWidth / 2) - (centerX * targetCameraZoom),
-                y: (window.innerHeight / 2) - (centerY * targetCameraZoom)
+                y: safeYCenter - (centerY * targetCameraZoom)
             };
         }
 
@@ -2286,7 +2290,6 @@
             spaceCtx.fillText('😈', 0, 0);
             spaceCtx.restore();
 
-            // Collect all interactive elements for global repulsion calculations
             const allBucketsOnCanvas = [];
             const allTasksOnCanvas = [];
 
@@ -2359,7 +2362,7 @@
                             const dx = t2.x - t1.x;
                             const dy = t2.y - t1.y;
                             const dist = Math.hypot(dx, dy);
-                            const minTaskDist = 110; // Clearance between task title pills
+                            const minTaskDist = 110;
 
                             if (dist < minTaskDist && dist > 0) {
                                 const overlap = (minTaskDist - dist) / 2;
@@ -2378,7 +2381,7 @@
                             const dxB = t1.x - b.x;
                             const dyB = t1.y - b.y;
                             const distB = Math.hypot(dxB, dyB);
-                            const minBucketDist = b.radius + 85; // Buffer around bucket moons
+                            const minBucketDist = b.radius + 85;
 
                             if (distB < minBucketDist && distB > 0) {
                                 const pushFactor = (minBucketDist - distB);
@@ -2391,7 +2394,7 @@
                         const dxR = t1.x - drawX;
                         const dyR = t1.y - drawY;
                         const distR = Math.hypot(dxR, dyR);
-                        const minRealmDist = realm.radius + 110; // Buffer around central Realm planet
+                        const minRealmDist = realm.radius + 110;
 
                         if (distR < minRealmDist && distR > 0) {
                             const pushFactor = (minRealmDist - distR);
@@ -2444,7 +2447,6 @@
 
                         const isActiveSwipeNode = activeSwipeTaskId && String(task.id) === String(activeSwipeTaskId);
 
-                        // Glowing halo for active swipe node
                         if (isActiveSwipeNode) {
                             spaceCtx.save();
                             const pulseHalo = 18 + Math.sin(frameCount * 4) * 6;
