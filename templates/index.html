@@ -2184,7 +2184,7 @@
                             name: bucket.name,
                             angle: bucketAngle,
                             orbitRadius: bucketDist,
-                            radius: isMobile ? 26 : 22,
+                            radius: isMobile ? 32 : 28, // Enlarged Bucket Moon Radius
                             tasks: filteredTasks
                         };
                     })
@@ -2368,6 +2368,7 @@
 
                 const allTasksInRealm = [];
 
+                // Calculate Buckets (Moons) Position & Tasks Layout
                 realm.buckets.forEach(bucket => {
                     const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
                     if (activeSelectedBucket && !isSelectedBucket) return;
@@ -2375,72 +2376,10 @@
                     bucket.x = drawX + Math.cos(bucket.angle) * bucket.orbitRadius;
                     bucket.y = drawY + Math.sin(bucket.angle) * bucket.orbitRadius;
 
-                    spaceCtx.beginPath();
-                    spaceCtx.arc(drawX, drawY, bucket.orbitRadius, 0, Math.PI * 2);
-                    spaceCtx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
-                    spaceCtx.lineWidth = 1.8;
-                    spaceCtx.stroke();
-
-                    spaceCtx.beginPath();
-                    spaceCtx.arc(bucket.x, bucket.y, bucket.radius, 0, Math.PI * 2);
-                    spaceCtx.fillStyle = isSelectedBucket ? '#38bdf8' : '#0284c7';
-                    spaceCtx.shadowColor = '#38bdf8';
-                    spaceCtx.shadowBlur = 18;
-                    spaceCtx.fill();
-
-                    // Centered Bucket Emoji inside moon circle
-                    spaceCtx.save();
-                    spaceCtx.textAlign = 'center';
-                    spaceCtx.textBaseline = 'middle';
-                    spaceCtx.font = '16px serif';
-                    spaceCtx.fillText('⭐️', bucket.x, bucket.y + 1);
-                    spaceCtx.restore();
-
-                    // Properly Positioned Label Pill below or above moon to avoid clipping
-                    spaceCtx.save();
-                    spaceCtx.font = 'bold 15px sans-serif';
-                    spaceCtx.textBaseline = 'middle';
-
-                    const nameText = bucket.name;
-                    const nameWidth = spaceCtx.measureText(nameText).width;
-                    const paddingX = 16;
-                    const bWidth = nameWidth + (paddingX * 2);
-                    const bPillHeight = 26;
-                    
-                    const isBucketInBottomHalf = bucket.y > 0;
-                    const bPillY = isBucketInBottomHalf
-                        ? bucket.y - bucket.radius - bPillHeight - 8
-                        : bucket.y + bucket.radius + 8;
-
-                    spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
-                    spaceCtx.strokeStyle = '#38bdf8';
-                    spaceCtx.lineWidth = 1.2;
-                    spaceCtx.beginPath();
-                    spaceCtx.roundRect(bucket.x - (bWidth / 2), bPillY, bWidth, bPillHeight, 8);
-                    spaceCtx.fill();
-                    spaceCtx.stroke();
-
-                    spaceCtx.textAlign = 'center';
-                    spaceCtx.fillStyle = '#38bdf8';
-                    spaceCtx.fillText(nameText, bucket.x, bPillY + (bPillHeight / 2));
-
-                    spaceCtx.restore();
-
                     // CHRONOLOGICAL LINEAR LAYOUT FROM LEFT TO RIGHT
                     if (isSelectedBucket && bucket.tasks.length > 0) {
                         const stepSpacing = 160;
-                        const startLinearX = bucket.x + 80;
-
-                        spaceCtx.save();
-                        spaceCtx.beginPath();
-                        spaceCtx.moveTo(bucket.x + bucket.radius + 5, bucket.y);
-                        spaceCtx.lineTo(startLinearX + ((bucket.tasks.length - 1) * stepSpacing) + 40, bucket.y);
-                        spaceCtx.strokeStyle = 'rgba(99, 102, 241, 0.5)';
-                        spaceCtx.lineWidth = 2.5;
-                        spaceCtx.shadowColor = '#818cf8';
-                        spaceCtx.shadowBlur = 12;
-                        spaceCtx.stroke();
-                        spaceCtx.restore();
+                        const startLinearX = bucket.x + 90;
 
                         bucket.tasks.forEach((task, tIdx) => {
                             task.x = startLinearX + (tIdx * stepSpacing);
@@ -2498,9 +2437,27 @@
                     }
                 }
 
-                // Render Tasks with Active Node Glow
+                // LAYER 1: RENDER TASK SATELLITES FIRST (So Bucket Moons render on top of them)
                 realm.buckets.forEach(bucket => {
                     if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
+
+                    const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
+
+                    if (isSelectedBucket && bucket.tasks.length > 0) {
+                        const stepSpacing = 160;
+                        const startLinearX = bucket.x + 90;
+
+                        spaceCtx.save();
+                        spaceCtx.beginPath();
+                        spaceCtx.moveTo(bucket.x + bucket.radius + 5, bucket.y);
+                        spaceCtx.lineTo(startLinearX + ((bucket.tasks.length - 1) * stepSpacing) + 40, bucket.y);
+                        spaceCtx.strokeStyle = 'rgba(99, 102, 241, 0.5)';
+                        spaceCtx.lineWidth = 2.5;
+                        spaceCtx.shadowColor = '#818cf8';
+                        spaceCtx.shadowBlur = 12;
+                        spaceCtx.stroke();
+                        spaceCtx.restore();
+                    }
 
                     bucket.tasks.forEach(task => {
                         if (!activeSelectedBucket) {
@@ -2582,6 +2539,68 @@
                         spaceCtx.restore();
                     });
                 });
+
+                // LAYER 2: RENDER BUCKET MOONS & BUCKET LABELS LAST (FOREGROUND / ON TOP OF EVERYTHING)
+                realm.buckets.forEach(bucket => {
+                    const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
+                    if (activeSelectedBucket && !isSelectedBucket) return;
+
+                    spaceCtx.save();
+
+                    // Realm Orbit Ring
+                    spaceCtx.beginPath();
+                    spaceCtx.arc(drawX, drawY, bucket.orbitRadius, 0, Math.PI * 2);
+                    spaceCtx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+                    spaceCtx.lineWidth = 2.0;
+                    spaceCtx.stroke();
+
+                    // High-Visibility Bucket Moon Body
+                    spaceCtx.beginPath();
+                    spaceCtx.arc(bucket.x, bucket.y, bucket.radius, 0, Math.PI * 2);
+                    spaceCtx.fillStyle = isSelectedBucket ? '#0284c7' : '#0369a1';
+                    spaceCtx.strokeStyle = '#38bdf8';
+                    spaceCtx.lineWidth = 2.5;
+                    spaceCtx.shadowColor = '#38bdf8';
+                    spaceCtx.shadowBlur = 35;
+                    spaceCtx.fill();
+                    spaceCtx.stroke();
+
+                    // Centered Bucket Star Emoji
+                    spaceCtx.textAlign = 'center';
+                    spaceCtx.textBaseline = 'middle';
+                    spaceCtx.font = '20px serif';
+                    spaceCtx.shadowBlur = 0;
+                    spaceCtx.fillText('⭐️', bucket.x, bucket.y + 1);
+
+                    // High-Visibility Bucket Label Pill Badge
+                    spaceCtx.font = 'bold 17px sans-serif';
+                    const nameText = bucket.name;
+                    const nameWidth = spaceCtx.measureText(nameText).width;
+                    const paddingX = 18;
+                    const bWidth = nameWidth + (paddingX * 2);
+                    const bPillHeight = 30;
+                    
+                    const isBucketInBottomHalf = bucket.y > 0;
+                    const bPillY = isBucketInBottomHalf
+                        ? bucket.y - bucket.radius - bPillHeight - 10
+                        : bucket.y + bucket.radius + 10;
+
+                    spaceCtx.fillStyle = isSelectedBucket ? 'rgba(3, 105, 161, 0.98)' : 'rgba(15, 23, 42, 0.98)';
+                    spaceCtx.strokeStyle = '#38bdf8';
+                    spaceCtx.lineWidth = 1.8;
+                    spaceCtx.shadowColor = '#38bdf8';
+                    spaceCtx.shadowBlur = 18;
+                    spaceCtx.beginPath();
+                    spaceCtx.roundRect(bucket.x - (bWidth / 2), bPillY, bWidth, bPillHeight, 10);
+                    spaceCtx.fill();
+                    spaceCtx.stroke();
+
+                    spaceCtx.fillStyle = '#ffffff';
+                    spaceCtx.shadowBlur = 0;
+                    spaceCtx.fillText(nameText, bucket.x, bPillY + (bPillHeight / 2));
+
+                    spaceCtx.restore();
+                });
             });
 
             spaceCtx.restore();
@@ -2659,7 +2678,7 @@
             const worldX = (clientX - cameraOffset.x) / cameraZoom;
             const worldY = (clientY - cameraOffset.y) / cameraZoom;
 
-            // 1. DEVIL CORE TAP DETECTION (0,0) -> RESET TO FULL UNIVERSE VIEW
+            // DEVIL CORE TAP DETECTION (0,0) -> RESET TO FULL UNIVERSE VIEW
             const pulseScale = 1 + Math.sin(frameCount * 2) * 0.08;
             const coreRadius = 48 * pulseScale;
             const distToCore = Math.hypot(worldX, worldY);
