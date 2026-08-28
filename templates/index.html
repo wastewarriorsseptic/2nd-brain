@@ -2295,7 +2295,7 @@
             spaceRealms.forEach(realm => {
                 // CORE REPULSION PHYSICS: Push realms away from Central Devil Core (0,0)
                 const distToCore = Math.hypot(realm.x, realm.y);
-                const minCoreDist = coreRadius + realm.radius + 60; // Keep safety buffer around central core
+                const minCoreDist = coreRadius + realm.radius + 60;
                 if (distToCore < minCoreDist && distToCore > 0) {
                     const angleFromCore = Math.atan2(realm.y, realm.x);
                     realm.x = Math.cos(angleFromCore) * minCoreDist;
@@ -2383,7 +2383,8 @@
 
                 // Render Buckets (Moons)
                 realm.buckets.forEach(bucket => {
-                    if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
+                    const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
+                    if (activeSelectedBucket && !isSelectedBucket) return;
 
                     bucket.x = drawX + Math.cos(bucket.angle) * bucket.orbitRadius;
                     bucket.y = drawY + Math.sin(bucket.angle) * bucket.orbitRadius;
@@ -2398,7 +2399,7 @@
                     // Larger Bucket Moon Body for Touch Accessibility
                     spaceCtx.beginPath();
                     spaceCtx.arc(bucket.x, bucket.y, bucket.radius, 0, Math.PI * 2);
-                    spaceCtx.fillStyle = (activeSelectedBucket && activeSelectedBucket.id === bucket.id) ? '#38bdf8' : '#0284c7';
+                    spaceCtx.fillStyle = isSelectedBucket ? '#38bdf8' : '#0284c7';
                     spaceCtx.shadowColor = '#38bdf8';
                     spaceCtx.shadowBlur = 18;
                     spaceCtx.fill();
@@ -2426,7 +2427,7 @@
                     const totalContentWidth = iconWidth + textGap + nameWidth;
                     const bWidth = totalContentWidth + (paddingX * 2);
                     const pillHeight = 26;
-                    const bPillY = bucket.y + bucket.radius + 12; // Clean vertical offset
+                    const bPillY = bucket.y + bucket.radius + 12;
 
                     // Background Pill Box
                     spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
@@ -2450,51 +2451,78 @@
 
                     spaceCtx.restore();
 
-                    bucket.tasks.forEach(task => {
-                        const hoverX = Math.cos(frameCount + task.floatOffset) * 3;
-                        const hoverY = Math.sin(frameCount + task.floatOffset) * 3;
+                    // CHRONOLOGICAL LINEAR HORIZONTAL LAYOUT WHEN BUCKET IS SELECTED
+                    if (isSelectedBucket && bucket.tasks.length > 0) {
+                        const stepSpacing = 160; // Horizontal pixel spacing between tasks
+                        const totalLinearWidth = (bucket.tasks.length - 1) * stepSpacing;
+                        const startLinearX = bucket.x - (totalLinearWidth / 2);
 
-                        task.x = bucket.x + Math.cos(task.angle) * task.orbitRadius + hoverX;
-                        task.y = bucket.y + Math.sin(task.angle) * task.orbitRadius + hoverY;
+                        // Draw glowing horizontal timeline guide line connecting all task nodes
+                        spaceCtx.save();
+                        spaceCtx.beginPath();
+                        spaceCtx.moveTo(startLinearX - 40, bucket.y + 110);
+                        spaceCtx.lineTo(startLinearX + totalLinearWidth + 40, bucket.y + 110);
+                        spaceCtx.strokeStyle = 'rgba(99, 102, 241, 0.5)';
+                        spaceCtx.lineWidth = 2.5;
+                        spaceCtx.shadowColor = '#818cf8';
+                        spaceCtx.shadowBlur = 12;
+                        spaceCtx.stroke();
+                        spaceCtx.restore();
 
-                        allTasksInRealm.push({ task, bucket });
-                    });
+                        bucket.tasks.forEach((task, tIdx) => {
+                            task.x = startLinearX + (tIdx * stepSpacing);
+                            task.y = bucket.y + 110; // Perfectly horizontal line 110px below selected bucket moon
+                        });
+                    } else {
+                        // Standard Circular Orbit positioning when bucket is NOT specifically selected
+                        bucket.tasks.forEach(task => {
+                            const hoverX = Math.cos(frameCount + task.floatOffset) * 3;
+                            const hoverY = Math.sin(frameCount + task.floatOffset) * 3;
+
+                            task.x = bucket.x + Math.cos(task.angle) * task.orbitRadius + hoverX;
+                            task.y = bucket.y + Math.sin(task.angle) * task.orbitRadius + hoverY;
+
+                            allTasksInRealm.push({ task, bucket });
+                        });
+                    }
                 });
 
-                // STRONG BUCKET & TASK REPULSION PHYSICS
-                for (let i = 0; i < allTasksInRealm.length; i++) {
-                    const item1 = allTasksInRealm[i];
-                    const t1 = item1.task;
+                // STRONG BUCKET & TASK REPULSION PHYSICS (Only active in orbital mode)
+                if (!activeSelectedBucket) {
+                    for (let i = 0; i < allTasksInRealm.length; i++) {
+                        const item1 = allTasksInRealm[i];
+                        const t1 = item1.task;
 
-                    const dxB = t1.x - item1.bucket.x;
-                    const dyB = t1.y - item1.bucket.y;
-                    const distB = Math.hypot(dxB, dyB);
-                    const minBucketDist = item1.bucket.radius + 55;
+                        const dxB = t1.x - item1.bucket.x;
+                        const dyB = t1.y - item1.bucket.y;
+                        const distB = Math.hypot(dxB, dyB);
+                        const minBucketDist = item1.bucket.radius + 55;
 
-                    if (distB < minBucketDist && distB > 0) {
-                        const pushFactor = (minBucketDist - distB);
-                        t1.x += (dxB / distB) * pushFactor;
-                        t1.y += (dyB / distB) * pushFactor;
-                    }
+                        if (distB < minBucketDist && distB > 0) {
+                            const pushFactor = (minBucketDist - distB);
+                            t1.x += (dxB / distB) * pushFactor;
+                            t1.y += (dyB / distB) * pushFactor;
+                        }
 
-                    for (let j = i + 1; j < allTasksInRealm.length; j++) {
-                        const item2 = allTasksInRealm[j];
-                        const t2 = item2.task;
+                        for (let j = i + 1; j < allTasksInRealm.length; j++) {
+                            const item2 = allTasksInRealm[j];
+                            const t2 = item2.task;
 
-                        const dx = t2.x - t1.x;
-                        const dy = t2.y - t1.y;
-                        const dist = Math.hypot(dx, dy);
-                        const minDist = 90;
+                            const dx = t2.x - t1.x;
+                            const dy = t2.y - t1.y;
+                            const dist = Math.hypot(dx, dy);
+                            const minDist = 90;
 
-                        if (dist < minDist && dist > 0) {
-                            const overlap = (minDist - dist) / 2;
-                            const nx = dx / dist;
-                            const ny = dy / dist;
+                            if (dist < minDist && dist > 0) {
+                                const overlap = (minDist - dist) / 2;
+                                const nx = dx / dist;
+                                const ny = dy / dist;
 
-                            t1.x -= nx * overlap;
-                            t1.y -= ny * overlap;
-                            t2.x += nx * overlap;
-                            t2.y += ny * overlap;
+                                t1.x -= nx * overlap;
+                                t1.y -= ny * overlap;
+                                t2.x += nx * overlap;
+                                t2.y += ny * overlap;
+                            }
                         }
                     }
                 }
@@ -2504,19 +2532,21 @@
                     if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
 
                     bucket.tasks.forEach(task => {
-                        const distToRealm = Math.hypot(task.x - drawX, task.y - drawY);
-                        const minAllowedDist = realm.radius + 40;
-                        if (distToRealm < minAllowedDist) {
-                            const angleFromRealm = Math.atan2(task.y - drawY, task.x - drawX);
-                            task.x = drawX + Math.cos(angleFromRealm) * minAllowedDist;
-                            task.y = drawY + Math.sin(angleFromRealm) * minAllowedDist;
-                        }
+                        if (!activeSelectedBucket) {
+                            const distToRealm = Math.hypot(task.x - drawX, task.y - drawY);
+                            const minAllowedDist = realm.radius + 40;
+                            if (distToRealm < minAllowedDist) {
+                                const angleFromRealm = Math.atan2(task.y - drawY, task.x - drawX);
+                                task.x = drawX + Math.cos(angleFromRealm) * minAllowedDist;
+                                task.y = drawY + Math.sin(angleFromRealm) * minAllowedDist;
+                            }
 
-                        spaceCtx.beginPath();
-                        spaceCtx.arc(bucket.x, bucket.y, task.orbitRadius, 0, Math.PI * 2);
-                        spaceCtx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
-                        spaceCtx.lineWidth = 0.6;
-                        spaceCtx.stroke();
+                            spaceCtx.beginPath();
+                            spaceCtx.arc(bucket.x, bucket.y, task.orbitRadius, 0, Math.PI * 2);
+                            spaceCtx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
+                            spaceCtx.lineWidth = 0.6;
+                            spaceCtx.stroke();
+                        }
 
                         spaceCtx.beginPath();
                         spaceCtx.arc(task.x, task.y, task.radius, 0, Math.PI * 2);
@@ -2675,7 +2705,7 @@
                     targetCameraZoom = isMobile ? 0.65 : 1.15;
                     targetCameraOffset = {
                         x: (window.innerWidth / 2) - (clickedBucket.x * targetCameraZoom),
-                        y: (window.innerHeight / 2) - (clickedBucket.y * targetCameraZoom)
+                        y: (window.innerHeight / 2) - ((clickedBucket.y + 60) * targetCameraZoom)
                     };
                 }
                 return;
