@@ -2165,7 +2165,7 @@
                                 isOverdue: isOverdue,
                                 isRecurring: recurringFlag,
                                 domElement: el,
-                                radius: 10, // Slightly enlarged task satellite
+                                radius: 10,
                                 floatOffset: Math.random() * Math.PI * 2
                             });
                         });
@@ -2176,11 +2176,9 @@
                         const totalTasks = Math.max(1, filteredTasks.length);
                         filteredTasks.forEach((task, tIdx) => {
                             task.angle = (tIdx / totalTasks) * Math.PI * 2;
-                            // Sequential orbit expansion by due date order
                             task.orbitRadius = 110 + (tIdx * 45);
                         });
 
-                        // EXPANDED BUCKET DISTANCE: Scale bucket moons up for mobile visibility
                         const bucketDist = (isMobile ? 220 : 200) + (bIdx * 85);
 
                         return {
@@ -2275,7 +2273,7 @@
             spaceCtx.translate(cameraOffset.x, cameraOffset.y);
             spaceCtx.scale(cameraZoom, cameraZoom);
 
-            // Draw Devil Central Universe Core 😈
+            // Central Core 😈
             const pulseScale = 1 + Math.sin(frameCount * 2) * 0.08;
             const coreRadius = 48 * pulseScale;
 
@@ -2403,25 +2401,30 @@
                     spaceCtx.fillText('⭐️', bucket.x, bucket.y);
                     spaceCtx.restore();
 
-                    // Scaled Up Bucket Label Pill (15px Font)
+                    // FIXED BUCKET PILL ALIGNMENT & OFFSET
                     spaceCtx.save();
                     spaceCtx.textAlign = 'center';
                     spaceCtx.textBaseline = 'middle';
-                    const bLabel = `⭐️ ${bucket.name}`;
+                    const bLabel = bucket.name; // Clean name string without duplicating star emoji
                     spaceCtx.font = 'bold 15px sans-serif';
-                    const bWidth = spaceCtx.measureText(bucket.name).width + 36;
-                    const bPillY = bucket.y + bucket.radius + 6;
+                    const nameWidth = spaceCtx.measureText(bLabel).width;
+                    const bWidth = nameWidth + 28; // Padding
                     
+                    // Increased top gap (radius + 12px) to prevent overlap with moon circle
+                    const bPillY = bucket.y + bucket.radius + 12;
+                    const pillHeight = 26;
+
                     spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
                     spaceCtx.strokeStyle = '#38bdf8';
                     spaceCtx.lineWidth = 1.2;
                     spaceCtx.beginPath();
-                    spaceCtx.roundRect(bucket.x - bWidth / 2, bPillY, bWidth, 26, 8);
+                    spaceCtx.roundRect(bucket.x - (bWidth / 2), bPillY, bWidth, pillHeight, 8);
                     spaceCtx.fill();
                     spaceCtx.stroke();
 
+                    // Centered Bucket Name Text
                     spaceCtx.fillStyle = '#38bdf8';
-                    spaceCtx.fillText(bLabel, bucket.x, bPillY + 13);
+                    spaceCtx.fillText(bLabel, bucket.x, bPillY + (pillHeight / 2));
                     spaceCtx.restore();
 
                     bucket.tasks.forEach(task => {
