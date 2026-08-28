@@ -386,7 +386,7 @@
                 <div class="text-center py-12 bg-slate-800/60 border border-slate-700/60 rounded-3xl px-6 max-w-md mx-auto my-8 shadow-2xl backdrop-blur-md">
                     <span class="text-5xl block mb-4">🔐</span>
                     <h3 class="text-2xl font-bold mb-2 text-white">Welcome to TaskMonster</h3>
-                    <p class="text-slate-400 text-sm mb-6 leading-relaxed">Sign in with your Google account to access your personal dashboard and personal task timeline.</p>
+                    <p class="text-slate-400 text-sm mb-6 leading-relaxed">Sign in with your Google account to access your personal dashboard and task timeline.</p>
                     <a href="/login" class="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-3 rounded-2xl transition shadow-lg shadow-indigo-600/30 w-full">
                         🔑 Sign in with Google
                     </a>
@@ -2104,11 +2104,10 @@
             spaceRealms = realmsData.map((realm, rIdx) => {
                 const realmAngle = (rIdx / totalRealms) * Math.PI * 2 - Math.PI / 2;
 
-                // MULTI-TIERED CONCENTRIC RINGS FOR MOBILE (<768px) TO PREVENT OVERLAPS
+                // STAGGER REALMS ON MOBILE (<768px) INTO INNER AND OUTER RINGS IF > 5 REALMS
                 let radialOffset = (rIdx % 2 === 0 ? 1.0 : 1.18);
-                if (isMobile && totalRealms > 4) {
-                    const tier = rIdx % 3;
-                    radialOffset = tier === 0 ? 0.75 : (tier === 1 ? 1.25 : 1.75);
+                if (isMobile && totalRealms > 5) {
+                    radialOffset = (rIdx % 2 === 0 ? 0.90 : 1.35);
                 }
 
                 const currentOrbitRadius = baseViewRadius * radialOffset;
@@ -2129,7 +2128,7 @@
                     y: basePos.y,
                     targetX: basePos.x,
                     targetY: basePos.y,
-                    radius: isMobile ? 42 : 68, // Reduced mobile planet size
+                    radius: isMobile ? 60 : 68,
                     floatOffsetPhase: (rIdx * 1.37) % (Math.PI * 2),
                     floatSpeed: 1.2 + (rIdx % 3) * 0.3,
                     buckets: realm.buckets.map((bucket, bIdx) => {
@@ -2183,14 +2182,14 @@
                             task.orbitRadius = 110 + (tIdx * 45);
                         });
 
-                        const bucketDist = (isMobile ? 180 : 200) + (bIdx * 85);
+                        const bucketDist = (isMobile ? 220 : 200) + (bIdx * 85);
 
                         return {
                             id: bucket.id,
                             name: bucket.name,
                             angle: bucketAngle,
                             orbitRadius: bucketDist,
-                            radius: isMobile ? 26 : 28,
+                            radius: isMobile ? 32 : 28,
                             tasks: filteredTasks
                         };
                     })
@@ -2235,19 +2234,18 @@
                 if (r.baseY > maxY) maxY = r.baseY;
             });
 
-            const isMobile = window.innerWidth < 768;
-            const padding = isMobile ? 120 : 220;
+            const padding = window.innerWidth < 768 ? 160 : 220;
             const boundingWidth = (maxX - minX) + (padding * 2);
             const boundingHeight = (maxY - minY) + (padding * 2);
 
             const fitZoomX = window.innerWidth / boundingWidth;
             const fitZoomY = window.innerHeight / boundingHeight;
-            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.35), 0.90);
+            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.40), 0.90);
 
             const centerX = (minX + maxX) / 2;
             const centerY = (minY + maxY) / 2;
 
-            const safeYCenter = (window.innerHeight / 2) + (isMobile ? 30 : 20);
+            const safeYCenter = (window.innerHeight / 2) + 20;
 
             targetCameraOffset = {
                 x: (window.innerWidth / 2) - (centerX * targetCameraZoom),
@@ -2306,9 +2304,9 @@
             spaceCtx.fillText('😈', 0, 0);
             spaceCtx.restore();
 
-            // REALM-TO-REALM REPULSION PHYSICS SOLVER
+            // REALM-TO-REALM REPULSION PHYSICS SOLVER (Prevents Realm collisions)
             const isMobile = window.innerWidth < 768;
-            const minRealmDist = isMobile ? 120 : 160;
+            const minRealmDist = isMobile ? 140 : 160;
 
             for (let i = 0; i < spaceRealms.length; i++) {
                 const r1 = spaceRealms[i];
@@ -2337,7 +2335,7 @@
             spaceRealms.forEach(realm => {
                 // Continuous Devil Core repulsion
                 const distToCore = Math.hypot(realm.x, realm.y);
-                const minCoreDist = coreRadius + realm.radius + (isMobile ? 50 : 80);
+                const minCoreDist = coreRadius + realm.radius + 80;
                 if (distToCore < minCoreDist && distToCore > 0) {
                     const angleFromCore = Math.atan2(realm.y, realm.x);
                     realm.x = Math.cos(angleFromCore) * minCoreDist;
@@ -2574,12 +2572,12 @@
                     spaceCtx.shadowBlur = 0;
                     spaceCtx.fillText('⭐️', bucket.x, bucket.y + 1);
 
-                    spaceCtx.font = isMobile ? 'bold 13px sans-serif' : 'bold 17px sans-serif';
+                    spaceCtx.font = 'bold 17px sans-serif';
                     const nameText = bucket.name;
                     const nameWidth = spaceCtx.measureText(nameText).width;
-                    const paddingX = isMobile ? 12 : 18;
+                    const paddingX = 18;
                     const bWidth = nameWidth + (paddingX * 2);
-                    const bPillHeight = isMobile ? 24 : 30;
+                    const bPillHeight = 30;
                     
                     const isBucketInBottomHalf = bucket.y > 0;
                     const bPillY = isBucketInBottomHalf
@@ -2612,12 +2610,11 @@
         }
 
         function renderRealmNode(realm, drawX, drawY, isSelected) {
-            const isMobile = window.innerWidth < 768;
             const pulseGlow = 22 + Math.sin(frameCount * 2.5 + realm.id) * 6;
 
             spaceCtx.save();
             spaceCtx.beginPath();
-            spaceCtx.arc(drawX, drawY, realm.radius + (isMobile ? 12 : 18), 0, Math.PI * 2);
+            spaceCtx.arc(drawX, drawY, realm.radius + 18, 0, Math.PI * 2);
             spaceCtx.fillStyle = isSelected ? 'rgba(99, 102, 241, 0.35)' : 'rgba(99, 102, 241, 0.15)';
             spaceCtx.fill();
 
@@ -2625,7 +2622,7 @@
             spaceCtx.arc(drawX, drawY, realm.radius, 0, Math.PI * 2);
             spaceCtx.fillStyle = isSelected ? 'rgba(79, 70, 229, 0.95)' : 'rgba(30, 41, 59, 0.95)';
             spaceCtx.strokeStyle = isSelected ? '#a5b4fc' : '#818cf8';
-            spaceCtx.lineWidth = isSelected ? (isMobile ? 3.5 : 5) : 3.5;
+            spaceCtx.lineWidth = isSelected ? 5 : 3.5;
             spaceCtx.shadowColor = isSelected ? '#818cf8' : '#6366f1';
             spaceCtx.shadowBlur = isSelected ? 40 : pulseGlow;
             spaceCtx.fill();
@@ -2633,30 +2630,30 @@
 
             spaceCtx.textAlign = 'center';
             spaceCtx.textBaseline = 'middle';
-            spaceCtx.font = isMobile ? '28px serif' : '42px serif';
+            spaceCtx.font = '42px serif';
             spaceCtx.shadowBlur = 0;
             spaceCtx.fillText(realm.icon, drawX, drawY);
 
             const beaconText = `${realm.icon} ${realm.name}`;
-            spaceCtx.font = isMobile ? 'bold 14px sans-serif' : 'bold 22px sans-serif';
+            spaceCtx.font = 'bold 22px sans-serif';
             
-            const pillPadding = isMobile ? 20 : 36;
-            const pillHeight = isMobile ? 28 : 42;
-            const bTextWidth = spaceCtx.measureText(realm.name).width + pillPadding + (isMobile ? 16 : 28);
+            const pillPadding = 36;
+            const pillHeight = 42;
+            const bTextWidth = spaceCtx.measureText(realm.name).width + pillPadding + 28;
             const pillX = drawX - (bTextWidth / 2);
             
             const isTopHalf = realm.baseY < 0;
             const pillY = isTopHalf 
-                ? drawY - realm.radius - pillHeight - (isMobile ? 8 : 12) 
-                : drawY + realm.radius + (isMobile ? 8 : 12);
+                ? drawY - realm.radius - pillHeight - 12 
+                : drawY + realm.radius + 12;
 
             spaceCtx.fillStyle = isSelected ? 'rgba(79, 70, 229, 0.98)' : 'rgba(15, 23, 42, 0.98)';
             spaceCtx.strokeStyle = '#818cf8';
-            spaceCtx.lineWidth = isMobile ? 1.5 : 2;
+            spaceCtx.lineWidth = 2;
             spaceCtx.shadowColor = '#6366f1';
             spaceCtx.shadowBlur = 15;
             spaceCtx.beginPath();
-            spaceCtx.roundRect(pillX, pillY, bTextWidth, pillHeight, isMobile ? 8 : 12);
+            spaceCtx.roundRect(pillX, pillY, bTextWidth, pillHeight, 12);
             spaceCtx.fill();
             spaceCtx.stroke();
 
