@@ -2099,14 +2099,18 @@
             const totalRealms = Math.max(1, realmsData.length);
 
             const isMobile = window.innerWidth < 768;
-            // SAFE VIEWPORT ORBITAL RADIUS FACTOR
-            const viewRadius = Math.min(window.innerWidth, window.innerHeight) * (isMobile ? 0.38 : 0.28);
+            const baseViewRadius = Math.min(window.innerWidth, window.innerHeight) * (isMobile ? 0.38 : 0.28);
 
             spaceRealms = realmsData.map((realm, rIdx) => {
                 const realmAngle = (rIdx / totalRealms) * Math.PI * 2 - Math.PI / 2;
 
-                const radialOffset = (rIdx % 2 === 0 ? 1.0 : 1.18);
-                const currentOrbitRadius = viewRadius * radialOffset;
+                // STAGGER REALMS ON MOBILE (<768px) INTO INNER AND OUTER RINGS IF > 5 REALMS
+                let radialOffset = (rIdx % 2 === 0 ? 1.0 : 1.18);
+                if (isMobile && totalRealms > 5) {
+                    radialOffset = (rIdx % 2 === 0 ? 0.90 : 1.35);
+                }
+
+                const currentOrbitRadius = baseViewRadius * radialOffset;
 
                 const basePos = {
                     x: Math.cos(realmAngle) * currentOrbitRadius,
@@ -2241,7 +2245,6 @@
             const centerX = (minX + maxX) / 2;
             const centerY = (minY + maxY) / 2;
 
-            // SAFE UI Y-CENTER OFFSET (Shifts center down past header dock)
             const safeYCenter = (window.innerHeight / 2) + 20;
 
             targetCameraOffset = {
@@ -2255,7 +2258,6 @@
             const newZoom = Math.min(Math.max(0.2, oldZoom * factor), 2.5);
             if (oldZoom === newZoom) return;
 
-            // Anchor scaling directly to the center of the viewport
             const centerX = window.innerWidth / 2;
             const centerY = window.innerHeight / 2;
 
@@ -2301,6 +2303,31 @@
             spaceCtx.shadowBlur = 0;
             spaceCtx.fillText('😈', 0, 0);
             spaceCtx.restore();
+
+            // REALM-TO-REALM REPULSION PHYSICS SOLVER (Prevents Realm collisions)
+            const isMobile = window.innerWidth < 768;
+            const minRealmDist = isMobile ? 140 : 160;
+
+            for (let i = 0; i < spaceRealms.length; i++) {
+                const r1 = spaceRealms[i];
+                for (let j = i + 1; j < spaceRealms.length; j++) {
+                    const r2 = spaceRealms[j];
+                    const dx = r2.x - r1.x;
+                    const dy = r2.y - r1.y;
+                    const dist = Math.hypot(dx, dy);
+
+                    if (dist < minRealmDist && dist > 0) {
+                        const overlap = (minRealmDist - dist) / 2;
+                        const nx = dx / dist;
+                        const ny = dy / dist;
+
+                        r1.x -= nx * overlap;
+                        r1.y -= ny * overlap;
+                        r2.x += nx * overlap;
+                        r2.y += ny * overlap;
+                    }
+                }
+            }
 
             const allBucketsOnCanvas = [];
             const allTasksOnCanvas = [];
@@ -2365,7 +2392,6 @@
 
                 // GLOBAL MULTI-BODY REPULSION PHYSICS (Orbital Mode)
                 if (!activeSelectedBucket) {
-                    // 1. Task-to-Task Repulsion (Pushes adjacent task nodes apart)
                     for (let i = 0; i < allTasksOnCanvas.length; i++) {
                         const t1 = allTasksOnCanvas[i];
 
@@ -2388,7 +2414,6 @@
                             }
                         }
 
-                        // 2. Task-to-Bucket Clearance (Pushes task nodes away from ALL bucket moons)
                         allBucketsOnCanvas.forEach(b => {
                             const dxB = t1.x - b.x;
                             const dyB = t1.y - b.y;
@@ -2402,7 +2427,6 @@
                             }
                         });
 
-                        // 3. Task-to-Realm Clearance (Pushes task nodes away from Realm planets)
                         const dxR = t1.x - drawX;
                         const dyR = t1.y - drawY;
                         const distR = Math.hypot(dxR, dyR);
@@ -2414,7 +2438,6 @@
                             t1.y += (dyR / distR) * pushFactor;
                         }
 
-                        // 4. Task-to-Devil Clearance
                         const distDev = Math.hypot(t1.x, t1.y);
                         const minDevDist = coreRadius + 90;
                         if (distDev < minDevDist && distDev > 0) {
@@ -2459,7 +2482,6 @@
 
                         const isActiveSwipeNode = activeSwipeTaskId && String(task.id) === String(activeSwipeTaskId);
 
-                        // GLOWING halo for active swipe node
                         if (isActiveSwipeNode) {
                             spaceCtx.save();
                             const pulseHalo = 18 + Math.sin(frameCount * 4) * 6;
@@ -2670,7 +2692,6 @@
                 const newZoom = Math.min(Math.max(0.2, oldZoom * zoomFactor), 2.5);
                 if (oldZoom === newZoom) return;
 
-                // Anchor zoom directly to cursor position
                 const mouseX = e.clientX;
                 const mouseY = e.clientY;
 
