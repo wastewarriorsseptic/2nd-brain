@@ -2286,8 +2286,12 @@
             spaceCtx.fillText('😈', 0, 0);
             spaceCtx.restore();
 
+            // Collect all interactive elements for global repulsion calculations
+            const allBucketsOnCanvas = [];
+            const allTasksOnCanvas = [];
+
             spaceRealms.forEach(realm => {
-                // CONTINUOUS DEVIL CORE REPULSION PHYSICS
+                // Continuous Devil Core repulsion
                 const distToCore = Math.hypot(realm.x, realm.y);
                 const minCoreDist = coreRadius + realm.radius + 80;
                 if (distToCore < minCoreDist && distToCore > 0) {
@@ -2308,20 +2312,19 @@
                 const isThisRealmSelected = activeSelectedRealm && activeSelectedRealm.id === realm.id;
 
                 if (!isThisRealmSelected) {
-                    // Draw non-selected Realm Planet background pass
                     renderRealmNode(realm, drawX, drawY, false);
                     return;
                 }
 
-                const allTasksInRealm = [];
-
-                // Calculate Bucket Moon & Task Satellite coordinates
+                // Update Bucket Moon & Task Satellite coordinates
                 realm.buckets.forEach(bucket => {
                     const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
                     if (activeSelectedBucket && !isSelectedBucket) return;
 
                     bucket.x = drawX + Math.cos(bucket.angle) * bucket.orbitRadius;
                     bucket.y = drawY + Math.sin(bucket.angle) * bucket.orbitRadius;
+
+                    allBucketsOnCanvas.push(bucket);
 
                     if (isSelectedBucket && bucket.tasks.length > 0) {
                         const stepSpacing = 160;
@@ -2330,6 +2333,7 @@
                         bucket.tasks.forEach((task, tIdx) => {
                             task.x = startLinearX + (tIdx * stepSpacing);
                             task.y = bucket.y;
+                            allTasksOnCanvas.push(task);
                         });
                     } else {
                         bucket.tasks.forEach(task => {
@@ -2339,39 +2343,26 @@
                             task.x = bucket.x + Math.cos(task.angle) * task.orbitRadius + hoverX;
                             task.y = bucket.y + Math.sin(task.angle) * task.orbitRadius + hoverY;
 
-                            allTasksInRealm.push({ task, bucket });
+                            allTasksOnCanvas.push(task);
                         });
                     }
                 });
 
-                // STRONG BUCKET & TASK REPULSION PHYSICS (Orbital Mode)
+                // GLOBAL MULTI-BODY REPULSION PHYSICS (Orbital Mode)
                 if (!activeSelectedBucket) {
-                    for (let i = 0; i < allTasksInRealm.length; i++) {
-                        const item1 = allTasksInRealm[i];
-                        const t1 = item1.task;
+                    // 1. Task-to-Task Repulsion (Pushes adjacent task nodes apart)
+                    for (let i = 0; i < allTasksOnCanvas.length; i++) {
+                        const t1 = allTasksOnCanvas[i];
 
-                        const dxB = t1.x - item1.bucket.x;
-                        const dyB = t1.y - item1.bucket.y;
-                        const distB = Math.hypot(dxB, dyB);
-                        const minBucketDist = item1.bucket.radius + 70; // Expanded Bucket clearance
-
-                        if (distB < minBucketDist && distB > 0) {
-                            const pushFactor = (minBucketDist - distB);
-                            t1.x += (dxB / distB) * pushFactor;
-                            t1.y += (dyB / distB) * pushFactor;
-                        }
-
-                        for (let j = i + 1; j < allTasksInRealm.length; j++) {
-                            const item2 = allTasksInRealm[j];
-                            const t2 = item2.task;
-
+                        for (let j = i + 1; j < allTasksOnCanvas.length; j++) {
+                            const t2 = allTasksOnCanvas[j];
                             const dx = t2.x - t1.x;
                             const dy = t2.y - t1.y;
                             const dist = Math.hypot(dx, dy);
-                            const minDist = 90;
+                            const minTaskDist = 110; // Clearance between task title pills
 
-                            if (dist < minDist && dist > 0) {
-                                const overlap = (minDist - dist) / 2;
+                            if (dist < minTaskDist && dist > 0) {
+                                const overlap = (minTaskDist - dist) / 2;
                                 const nx = dx / dist;
                                 const ny = dy / dist;
 
@@ -2381,10 +2372,46 @@
                                 t2.y += ny * overlap;
                             }
                         }
+
+                        // 2. Task-to-Bucket Clearance (Pushes task nodes away from ALL bucket moons)
+                        allBucketsOnCanvas.forEach(b => {
+                            const dxB = t1.x - b.x;
+                            const dyB = t1.y - b.y;
+                            const distB = Math.hypot(dxB, dyB);
+                            const minBucketDist = b.radius + 85; // Buffer around bucket moons
+
+                            if (distB < minBucketDist && distB > 0) {
+                                const pushFactor = (minBucketDist - distB);
+                                t1.x += (dxB / distB) * pushFactor;
+                                t1.y += (dyB / distB) * pushFactor;
+                            }
+                        });
+
+                        // 3. Task-to-Realm Clearance (Pushes task nodes away from Realm planets)
+                        const dxR = t1.x - drawX;
+                        const dyR = t1.y - drawY;
+                        const distR = Math.hypot(dxR, dyR);
+                        const minRealmDist = realm.radius + 110; // Buffer around central Realm planet
+
+                        if (distR < minRealmDist && distR > 0) {
+                            const pushFactor = (minRealmDist - distR);
+                            t1.x += (dxR / distR) * pushFactor;
+                            t1.y += (dyR / distR) * pushFactor;
+                        }
+
+                        // 4. Task-to-Devil Clearance
+                        const distDev = Math.hypot(t1.x, t1.y);
+                        const minDevDist = coreRadius + 90;
+                        if (distDev < minDevDist && distDev > 0) {
+                            const nxD = t1.x / distDev;
+                            const nyD = t1.y / distDev;
+                            t1.x = nxD * minDevDist;
+                            t1.y = nyD * minDevDist;
+                        }
                     }
                 }
 
-                // PASS 1 (DEPTH): RENDER TASK SATELLITE NODES & CONNECTORS FIRST (BOTTOM LAYER)
+                // LAYER 1: RENDER TASK SATELLITE NODES & CONNECTORS FIRST (BACKGROUND LAYER)
                 realm.buckets.forEach(bucket => {
                     if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
 
@@ -2407,15 +2434,6 @@
                     }
 
                     bucket.tasks.forEach(task => {
-                        // ENFORCE EXPANDED REALM PLANET SAFETY CLEARANCE
-                        const distToRealm = Math.hypot(task.x - drawX, task.y - drawY);
-                        const minRealmDist = realm.radius + 90; // Expanded Realm Planet clearance
-                        if (distToRealm < minRealmDist) {
-                            const angleFromRealm = Math.atan2(task.y - drawY, task.x - drawX);
-                            task.x = drawX + Math.cos(angleFromRealm) * minRealmDist;
-                            task.y = drawY + Math.sin(angleFromRealm) * minRealmDist;
-                        }
-
                         if (!activeSelectedBucket) {
                             spaceCtx.beginPath();
                             spaceCtx.arc(bucket.x, bucket.y, task.orbitRadius, 0, Math.PI * 2);
@@ -2426,6 +2444,7 @@
 
                         const isActiveSwipeNode = activeSwipeTaskId && String(task.id) === String(activeSwipeTaskId);
 
+                        // Glowing halo for active swipe node
                         if (isActiveSwipeNode) {
                             spaceCtx.save();
                             const pulseHalo = 18 + Math.sin(frameCount * 4) * 6;
@@ -2487,7 +2506,7 @@
                     });
                 });
 
-                // PASS 2 (DEPTH): RENDER BUCKET MOONS & BUCKET LABELS SECOND (MIDDLE LAYER)
+                // LAYER 2: RENDER BUCKET MOONS & BUCKET LABELS SECOND (MIDDLE LAYER ABOVE TASKS)
                 realm.buckets.forEach(bucket => {
                     const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
                     if (activeSelectedBucket && !isSelectedBucket) return;
@@ -2545,7 +2564,7 @@
                     spaceCtx.restore();
                 });
 
-                // PASS 3 (DEPTH): RENDER REALM PLANET & TITLE PILL BADGE LAST (TOP FOREGROUND)
+                // LAYER 3: RENDER REALM PLANET & TITLE PILL BADGE LAST (TOP FOREGROUND)
                 renderRealmNode(realm, drawX, drawY, true);
             });
 
