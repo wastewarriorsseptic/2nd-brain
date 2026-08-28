@@ -2030,7 +2030,7 @@
         }
     </script>
 
-    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (ORGANIC FLOATING REALMS) -->
+    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (MOBILE BUCKET ZOOM & VISIBILITY ENHANCEMENTS) -->
     <script>
         let isSpaceViewActive = false;
         let spaceCanvas, spaceCtx;
@@ -2165,7 +2165,7 @@
                                 isOverdue: isOverdue,
                                 isRecurring: recurringFlag,
                                 domElement: el,
-                                radius: 8,
+                                radius: 10, // Slightly enlarged task satellite
                                 floatOffset: Math.random() * Math.PI * 2
                             });
                         });
@@ -2173,17 +2173,18 @@
                         const totalTasks = Math.max(1, filteredTasks.length);
                         filteredTasks.forEach((task, tIdx) => {
                             task.angle = (tIdx / totalTasks) * Math.PI * 2;
-                            task.orbitRadius = 90 + (tIdx * 40);
+                            task.orbitRadius = 110 + (tIdx * 45); // Generous task orbit spread
                         });
 
-                        const bucketDist = 180 + (bIdx * 75);
+                        // EXPANDED BUCKET DISTANCE: Scale bucket moons up for mobile visibility (26px)
+                        const bucketDist = (isMobile ? 220 : 200) + (bIdx * 85);
 
                         return {
                             id: bucket.id,
                             name: bucket.name,
                             angle: bucketAngle,
                             orbitRadius: bucketDist,
-                            radius: 18,
+                            radius: isMobile ? 26 : 22, // Larger, mobile-friendly bucket moon size
                             tasks: filteredTasks
                         };
                     })
@@ -2369,48 +2370,54 @@
 
                 const allTasksInRealm = [];
 
-                // Render Buckets
+                // Render Buckets (Moons)
                 realm.buckets.forEach(bucket => {
                     if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
 
                     bucket.x = drawX + Math.cos(bucket.angle) * bucket.orbitRadius;
                     bucket.y = drawY + Math.sin(bucket.angle) * bucket.orbitRadius;
 
+                    // Bucket Orbit Ring around Realm Planet
                     spaceCtx.beginPath();
                     spaceCtx.arc(drawX, drawY, bucket.orbitRadius, 0, Math.PI * 2);
-                    spaceCtx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
-                    spaceCtx.lineWidth = 1.5;
+                    spaceCtx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
+                    spaceCtx.lineWidth = 1.8;
                     spaceCtx.stroke();
 
+                    // Larger Bucket Moon Body for Touch Accessibility
                     spaceCtx.beginPath();
                     spaceCtx.arc(bucket.x, bucket.y, bucket.radius, 0, Math.PI * 2);
                     spaceCtx.fillStyle = (activeSelectedBucket && activeSelectedBucket.id === bucket.id) ? '#38bdf8' : '#0284c7';
                     spaceCtx.shadowColor = '#38bdf8';
-                    spaceCtx.shadowBlur = 14;
+                    spaceCtx.shadowBlur = 18;
                     spaceCtx.fill();
 
                     spaceCtx.save();
                     spaceCtx.textAlign = 'center';
                     spaceCtx.textBaseline = 'middle';
-                    spaceCtx.font = '12px serif';
+                    spaceCtx.font = '16px serif';
                     spaceCtx.fillText('⭐️', bucket.x, bucket.y);
                     spaceCtx.restore();
 
+                    // Scaled Up Bucket Label Pill (15px Font)
                     spaceCtx.save();
                     spaceCtx.textAlign = 'center';
                     spaceCtx.textBaseline = 'middle';
                     const bLabel = `⭐️ ${bucket.name}`;
-                    spaceCtx.font = 'bold 13px sans-serif';
-                    const bWidth = spaceCtx.measureText(bucket.name).width + 30;
-                    const bPillY = bucket.y + bucket.radius + 5;
+                    spaceCtx.font = 'bold 15px sans-serif';
+                    const bWidth = spaceCtx.measureText(bucket.name).width + 36;
+                    const bPillY = bucket.y + bucket.radius + 6;
                     
-                    spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+                    spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+                    spaceCtx.strokeStyle = '#38bdf8';
+                    spaceCtx.lineWidth = 1.2;
                     spaceCtx.beginPath();
-                    spaceCtx.roundRect(bucket.x - bWidth / 2, bPillY, bWidth, 22, 6);
+                    spaceCtx.roundRect(bucket.x - bWidth / 2, bPillY, bWidth, 26, 8);
                     spaceCtx.fill();
+                    spaceCtx.stroke();
 
                     spaceCtx.fillStyle = '#38bdf8';
-                    spaceCtx.fillText(bLabel, bucket.x, bPillY + 11);
+                    spaceCtx.fillText(bLabel, bucket.x, bPillY + 13);
                     spaceCtx.restore();
 
                     bucket.tasks.forEach(task => {
@@ -2432,7 +2439,7 @@
                     const dxB = t1.x - item1.bucket.x;
                     const dyB = t1.y - item1.bucket.y;
                     const distB = Math.hypot(dxB, dyB);
-                    const minBucketDist = item1.bucket.radius + 45;
+                    const minBucketDist = item1.bucket.radius + 55;
 
                     if (distB < minBucketDist && distB > 0) {
                         const pushFactor = (minBucketDist - distB);
@@ -2447,7 +2454,7 @@
                         const dx = t2.x - t1.x;
                         const dy = t2.y - t1.y;
                         const dist = Math.hypot(dx, dy);
-                        const minDist = 85;
+                        const minDist = 90;
 
                         if (dist < minDist && dist > 0) {
                             const overlap = (minDist - dist) / 2;
@@ -2468,7 +2475,7 @@
 
                     bucket.tasks.forEach(task => {
                         const distToRealm = Math.hypot(task.x - drawX, task.y - drawY);
-                        const minAllowedDist = realm.radius + 34;
+                        const minAllowedDist = realm.radius + 40;
                         if (distToRealm < minAllowedDist) {
                             const angleFromRealm = Math.atan2(task.y - drawY, task.x - drawX);
                             task.x = drawX + Math.cos(angleFromRealm) * minAllowedDist;
@@ -2503,17 +2510,17 @@
                         spaceCtx.textAlign = 'center';
                         spaceCtx.textBaseline = 'middle';
                         const truncatedTitle = task.title.length > 18 ? task.title.substring(0, 16) + '…' : task.title;
-                        spaceCtx.font = '11px sans-serif';
-                        const tWidth = spaceCtx.measureText(truncatedTitle).width + 10;
+                        spaceCtx.font = '12px sans-serif';
+                        const tWidth = spaceCtx.measureText(truncatedTitle).width + 12;
                         const tPillY = task.y + task.radius + 4;
 
                         spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
                         spaceCtx.beginPath();
-                        spaceCtx.roundRect(task.x - tWidth / 2, tPillY, tWidth, 18, 4);
+                        spaceCtx.roundRect(task.x - tWidth / 2, tPillY, tWidth, 20, 4);
                         spaceCtx.fill();
 
                         spaceCtx.fillStyle = '#e2e8f0';
-                        spaceCtx.fillText(truncatedTitle, task.x, tPillY + 9);
+                        spaceCtx.fillText(truncatedTitle, task.x, tPillY + 10);
                         spaceCtx.restore();
                     });
                 });
@@ -2618,7 +2625,7 @@
             if (activeSelectedRealm) {
                 activeSelectedRealm.buckets.forEach(bucket => {
                     const dist = Math.hypot(worldX - bucket.x, worldY - bucket.y);
-                    if (dist <= bucket.radius + 20) {
+                    if (dist <= bucket.radius + 28) {
                         clickedBucket = bucket;
                     }
                 });
@@ -2633,7 +2640,9 @@
                     activeSelectedBucket = clickedBucket;
                     renderBucketTaskSwipeDock(clickedBucket);
 
-                    targetCameraZoom = window.innerWidth < 768 ? 1.25 : 1.45;
+                    // OPTIMIZED CAMERA ZOOM ON MOBILE FOR FULL BUCKET VISIBILITY
+                    const isMobile = window.innerWidth < 768;
+                    targetCameraZoom = isMobile ? 0.65 : 1.15;
                     targetCameraOffset = {
                         x: (window.innerWidth / 2) - (clickedBucket.x * targetCameraZoom),
                         y: (window.innerHeight / 2) - (clickedBucket.y * targetCameraZoom)
@@ -2678,7 +2687,6 @@
             } else {
                 bucket.tasks.forEach(task => {
                     const card = document.createElement('div');
-                    // Full Width Single Card Layout with Snap-Center Scrolling
                     card.className = "w-full shrink-0 snap-center bg-slate-800/95 border border-slate-700/90 hover:border-indigo-500/80 p-3 rounded-xl transition-all shadow-lg space-y-2 select-none cursor-pointer";
                     
                     let badgeClass = "bg-indigo-500/20 text-indigo-300 border-indigo-500/30";
@@ -2741,14 +2749,16 @@
                     const dx = realm.baseX - selectedRealm.baseX;
                     const dy = realm.baseY - selectedRealm.baseY;
                     const angle = Math.atan2(dy, dx);
-                    const repelDist = 380;
+                    const repelDist = 480; // WIDER REPEL: Pushes unselected realms far away on tap
 
                     realm.targetX = selectedRealm.baseX + Math.cos(angle) * (Math.hypot(dx, dy) + repelDist);
                     realm.targetY = selectedRealm.baseY + Math.sin(angle) * (Math.hypot(dx, dy) + repelDist);
                 }
             });
 
-            targetCameraZoom = window.innerWidth < 768 ? 0.90 : 1.1;
+            // OPTIMIZED CAMERA ZOOM ON MOBILE FOR FULL BUCKET VISIBILITY
+            const isMobile = window.innerWidth < 768;
+            targetCameraZoom = isMobile ? 0.60 : 0.95;
             targetCameraOffset = {
                 x: (window.innerWidth / 2) - (selectedRealm.baseX * targetCameraZoom),
                 y: (window.innerHeight / 2) - (selectedRealm.baseY * targetCameraZoom)
