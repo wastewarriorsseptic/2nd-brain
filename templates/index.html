@@ -2184,7 +2184,7 @@
                             name: bucket.name,
                             angle: bucketAngle,
                             orbitRadius: bucketDist,
-                            radius: isMobile ? 32 : 28, // Enlarged Bucket Moon Radius
+                            radius: isMobile ? 32 : 28,
                             tasks: filteredTasks
                         };
                     })
@@ -2306,69 +2306,16 @@
                 const drawY = realm.y + floatY;
 
                 const isThisRealmSelected = activeSelectedRealm && activeSelectedRealm.id === realm.id;
-                const pulseGlow = 22 + Math.sin(frameCount * 2.5 + realm.id) * 6;
 
-                spaceCtx.save();
-                spaceCtx.beginPath();
-                spaceCtx.arc(drawX, drawY, realm.radius + 18, 0, Math.PI * 2);
-                spaceCtx.fillStyle = isThisRealmSelected ? 'rgba(99, 102, 241, 0.35)' : 'rgba(99, 102, 241, 0.15)';
-                spaceCtx.fill();
-
-                spaceCtx.beginPath();
-                spaceCtx.arc(drawX, drawY, realm.radius, 0, Math.PI * 2);
-                spaceCtx.fillStyle = isThisRealmSelected ? 'rgba(79, 70, 229, 0.95)' : 'rgba(30, 41, 59, 0.95)';
-                spaceCtx.strokeStyle = isThisRealmSelected ? '#a5b4fc' : '#818cf8';
-                spaceCtx.lineWidth = isThisRealmSelected ? 5 : 3.5;
-                spaceCtx.shadowColor = isThisRealmSelected ? '#818cf8' : '#6366f1';
-                spaceCtx.shadowBlur = isThisRealmSelected ? 40 : pulseGlow;
-                spaceCtx.fill();
-                spaceCtx.stroke();
-                spaceCtx.restore();
-
-                spaceCtx.save();
-                spaceCtx.textAlign = 'center';
-                spaceCtx.textBaseline = 'middle';
-                spaceCtx.font = '42px serif';
-                spaceCtx.shadowBlur = 0;
-                spaceCtx.fillText(realm.icon, drawX, drawY);
-                spaceCtx.restore();
-
-                spaceCtx.save();
-                spaceCtx.textAlign = 'center';
-                spaceCtx.textBaseline = 'middle';
-                const beaconText = `${realm.icon} ${realm.name}`;
-                spaceCtx.font = 'bold 22px sans-serif';
-                
-                const pillPadding = 36;
-                const pillHeight = 42;
-                const bTextWidth = spaceCtx.measureText(realm.name).width + pillPadding + 28;
-                const pillX = drawX - (bTextWidth / 2);
-                
-                const isTopHalf = realm.baseY < 0;
-                const pillY = isTopHalf 
-                    ? drawY - realm.radius - pillHeight - 12 
-                    : drawY + realm.radius + 12;
-
-                spaceCtx.fillStyle = isThisRealmSelected ? 'rgba(79, 70, 229, 0.95)' : 'rgba(15, 23, 42, 0.95)';
-                spaceCtx.strokeStyle = '#818cf8';
-                spaceCtx.lineWidth = 2;
-                spaceCtx.shadowColor = '#6366f1';
-                spaceCtx.shadowBlur = 15;
-                spaceCtx.beginPath();
-                spaceCtx.roundRect(pillX, pillY, bTextWidth, pillHeight, 12);
-                spaceCtx.fill();
-                spaceCtx.stroke();
-
-                spaceCtx.fillStyle = '#ffffff';
-                spaceCtx.shadowBlur = 0;
-                spaceCtx.fillText(beaconText, drawX, pillY + (pillHeight / 2));
-                spaceCtx.restore();
-
-                if (!isThisRealmSelected) return;
+                if (!isThisRealmSelected) {
+                    // Draw non-selected Realm Planet background pass
+                    renderRealmNode(realm, drawX, drawY, false);
+                    return;
+                }
 
                 const allTasksInRealm = [];
 
-                // Calculate Buckets (Moons) Position & Tasks Layout
+                // Calculate Bucket Moon & Task Satellite coordinates
                 realm.buckets.forEach(bucket => {
                     const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
                     if (activeSelectedBucket && !isSelectedBucket) return;
@@ -2376,7 +2323,6 @@
                     bucket.x = drawX + Math.cos(bucket.angle) * bucket.orbitRadius;
                     bucket.y = drawY + Math.sin(bucket.angle) * bucket.orbitRadius;
 
-                    // CHRONOLOGICAL LINEAR LAYOUT FROM LEFT TO RIGHT
                     if (isSelectedBucket && bucket.tasks.length > 0) {
                         const stepSpacing = 160;
                         const startLinearX = bucket.x + 90;
@@ -2398,6 +2344,7 @@
                     }
                 });
 
+                // STRONG BUCKET & TASK REPULSION PHYSICS (Orbital Mode)
                 if (!activeSelectedBucket) {
                     for (let i = 0; i < allTasksInRealm.length; i++) {
                         const item1 = allTasksInRealm[i];
@@ -2406,7 +2353,7 @@
                         const dxB = t1.x - item1.bucket.x;
                         const dyB = t1.y - item1.bucket.y;
                         const distB = Math.hypot(dxB, dyB);
-                        const minBucketDist = item1.bucket.radius + 55;
+                        const minBucketDist = item1.bucket.radius + 70; // Expanded Bucket clearance
 
                         if (distB < minBucketDist && distB > 0) {
                             const pushFactor = (minBucketDist - distB);
@@ -2437,7 +2384,7 @@
                     }
                 }
 
-                // LAYER 1: RENDER TASK SATELLITES FIRST (So Bucket Moons render on top of them)
+                // PASS 1 (DEPTH): RENDER TASK SATELLITE NODES & CONNECTORS FIRST (BOTTOM LAYER)
                 realm.buckets.forEach(bucket => {
                     if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
 
@@ -2460,15 +2407,16 @@
                     }
 
                     bucket.tasks.forEach(task => {
-                        if (!activeSelectedBucket) {
-                            const distToRealm = Math.hypot(task.x - drawX, task.y - drawY);
-                            const minAllowedDist = realm.radius + 40;
-                            if (distToRealm < minAllowedDist) {
-                                const angleFromRealm = Math.atan2(task.y - drawY, task.x - drawX);
-                                task.x = drawX + Math.cos(angleFromRealm) * minAllowedDist;
-                                task.y = drawY + Math.sin(angleFromRealm) * minAllowedDist;
-                            }
+                        // ENFORCE EXPANDED REALM PLANET SAFETY CLEARANCE
+                        const distToRealm = Math.hypot(task.x - drawX, task.y - drawY);
+                        const minRealmDist = realm.radius + 90; // Expanded Realm Planet clearance
+                        if (distToRealm < minRealmDist) {
+                            const angleFromRealm = Math.atan2(task.y - drawY, task.x - drawX);
+                            task.x = drawX + Math.cos(angleFromRealm) * minRealmDist;
+                            task.y = drawY + Math.sin(angleFromRealm) * minRealmDist;
+                        }
 
+                        if (!activeSelectedBucket) {
                             spaceCtx.beginPath();
                             spaceCtx.arc(bucket.x, bucket.y, task.orbitRadius, 0, Math.PI * 2);
                             spaceCtx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
@@ -2478,7 +2426,6 @@
 
                         const isActiveSwipeNode = activeSwipeTaskId && String(task.id) === String(activeSwipeTaskId);
 
-                        // GLOWING halo for active swipe node
                         if (isActiveSwipeNode) {
                             spaceCtx.save();
                             const pulseHalo = 18 + Math.sin(frameCount * 4) * 6;
@@ -2540,21 +2487,19 @@
                     });
                 });
 
-                // LAYER 2: RENDER BUCKET MOONS & BUCKET LABELS LAST (FOREGROUND / ON TOP OF EVERYTHING)
+                // PASS 2 (DEPTH): RENDER BUCKET MOONS & BUCKET LABELS SECOND (MIDDLE LAYER)
                 realm.buckets.forEach(bucket => {
                     const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
                     if (activeSelectedBucket && !isSelectedBucket) return;
 
                     spaceCtx.save();
 
-                    // Realm Orbit Ring
                     spaceCtx.beginPath();
                     spaceCtx.arc(drawX, drawY, bucket.orbitRadius, 0, Math.PI * 2);
                     spaceCtx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
                     spaceCtx.lineWidth = 2.0;
                     spaceCtx.stroke();
 
-                    // High-Visibility Bucket Moon Body
                     spaceCtx.beginPath();
                     spaceCtx.arc(bucket.x, bucket.y, bucket.radius, 0, Math.PI * 2);
                     spaceCtx.fillStyle = isSelectedBucket ? '#0284c7' : '#0369a1';
@@ -2565,14 +2510,12 @@
                     spaceCtx.fill();
                     spaceCtx.stroke();
 
-                    // Centered Bucket Star Emoji
                     spaceCtx.textAlign = 'center';
                     spaceCtx.textBaseline = 'middle';
                     spaceCtx.font = '20px serif';
                     spaceCtx.shadowBlur = 0;
                     spaceCtx.fillText('⭐️', bucket.x, bucket.y + 1);
 
-                    // High-Visibility Bucket Label Pill Badge
                     spaceCtx.font = 'bold 17px sans-serif';
                     const nameText = bucket.name;
                     const nameWidth = spaceCtx.measureText(nameText).width;
@@ -2601,10 +2544,67 @@
 
                     spaceCtx.restore();
                 });
+
+                // PASS 3 (DEPTH): RENDER REALM PLANET & TITLE PILL BADGE LAST (TOP FOREGROUND)
+                renderRealmNode(realm, drawX, drawY, true);
             });
 
             spaceCtx.restore();
             requestAnimationFrame(renderSpaceFrame);
+        }
+
+        function renderRealmNode(realm, drawX, drawY, isSelected) {
+            const pulseGlow = 22 + Math.sin(frameCount * 2.5 + realm.id) * 6;
+
+            spaceCtx.save();
+            spaceCtx.beginPath();
+            spaceCtx.arc(drawX, drawY, realm.radius + 18, 0, Math.PI * 2);
+            spaceCtx.fillStyle = isSelected ? 'rgba(99, 102, 241, 0.35)' : 'rgba(99, 102, 241, 0.15)';
+            spaceCtx.fill();
+
+            spaceCtx.beginPath();
+            spaceCtx.arc(drawX, drawY, realm.radius, 0, Math.PI * 2);
+            spaceCtx.fillStyle = isSelected ? 'rgba(79, 70, 229, 0.95)' : 'rgba(30, 41, 59, 0.95)';
+            spaceCtx.strokeStyle = isSelected ? '#a5b4fc' : '#818cf8';
+            spaceCtx.lineWidth = isSelected ? 5 : 3.5;
+            spaceCtx.shadowColor = isSelected ? '#818cf8' : '#6366f1';
+            spaceCtx.shadowBlur = isSelected ? 40 : pulseGlow;
+            spaceCtx.fill();
+            spaceCtx.stroke();
+
+            spaceCtx.textAlign = 'center';
+            spaceCtx.textBaseline = 'middle';
+            spaceCtx.font = '42px serif';
+            spaceCtx.shadowBlur = 0;
+            spaceCtx.fillText(realm.icon, drawX, drawY);
+
+            const beaconText = `${realm.icon} ${realm.name}`;
+            spaceCtx.font = 'bold 22px sans-serif';
+            
+            const pillPadding = 36;
+            const pillHeight = 42;
+            const bTextWidth = spaceCtx.measureText(realm.name).width + pillPadding + 28;
+            const pillX = drawX - (bTextWidth / 2);
+            
+            const isTopHalf = realm.baseY < 0;
+            const pillY = isTopHalf 
+                ? drawY - realm.radius - pillHeight - 12 
+                : drawY + realm.radius + 12;
+
+            spaceCtx.fillStyle = isSelected ? 'rgba(79, 70, 229, 0.98)' : 'rgba(15, 23, 42, 0.98)';
+            spaceCtx.strokeStyle = '#818cf8';
+            spaceCtx.lineWidth = 2;
+            spaceCtx.shadowColor = '#6366f1';
+            spaceCtx.shadowBlur = 15;
+            spaceCtx.beginPath();
+            spaceCtx.roundRect(pillX, pillY, bTextWidth, pillHeight, 12);
+            spaceCtx.fill();
+            spaceCtx.stroke();
+
+            spaceCtx.fillStyle = '#ffffff';
+            spaceCtx.shadowBlur = 0;
+            spaceCtx.fillText(beaconText, drawX, pillY + (pillHeight / 2));
+            spaceCtx.restore();
         }
 
         // Pointer & Interaction Controls
