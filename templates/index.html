@@ -56,7 +56,7 @@
             touch-action: none;
         }
 
-        /* Hide scrollbars for smooth Quick-Warp dock sliding */
+        /* Hide scrollbars for smooth Quick-Warp & Task Dock sliding */
         .no-scrollbar::-webkit-scrollbar {
             display: none;
         }
@@ -428,7 +428,21 @@
         </div>
 
         <!-- Bottom Layout HUD Inspection Card & Controls Wrapper -->
-        <div class="relative z-20 pb-6 px-4 flex flex-col items-center gap-3 pointer-events-none select-none">
+        <div class="relative z-20 pb-6 px-4 flex flex-col items-center gap-3 pointer-events-none select-none w-full">
+            
+            <!-- NEW: Selected Bucket Task Swipe Horizontal Bar -->
+            <div id="bucket-task-swipe-dock" class="hidden pointer-events-auto w-full max-w-md bg-slate-900/90 border border-indigo-500/40 p-2 rounded-2xl backdrop-blur-md shadow-2xl space-y-1.5">
+                <div class="flex items-center justify-between px-2 pb-1 border-b border-slate-800/80">
+                    <span id="swipe-dock-bucket-title" class="text-[11px] font-extrabold text-indigo-300 tracking-wide uppercase truncate">
+                        ⭐️ Bucket Tasks
+                    </span>
+                    <button onclick="deselectBucketSwipeDock()" class="text-slate-400 hover:text-white text-xs font-bold px-1">✕</button>
+                </div>
+                <div id="swipe-dock-cards-wrapper" class="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 px-1">
+                    <!-- Populated dynamically when a bucket is selected -->
+                </div>
+            </div>
+
             <!-- Centered Bottom Task HUD Inspection Card -->
             <div id="space-hud-card" class="hidden pointer-events-auto w-11/12 max-w-sm bg-slate-900/95 border border-indigo-500/40 p-3.5 rounded-2xl backdrop-blur-md shadow-2xl space-y-2.5">
                 <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
@@ -2015,7 +2029,7 @@
         }
     </script>
 
-    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (ORGANIC FLOATING REALMS) -->
+    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (STRONG PHYSICS REPULSION & BUCKET TASK SWIPE DOCK) -->
     <script>
         let isSpaceViewActive = false;
         let spaceCanvas, spaceCtx;
@@ -2053,6 +2067,7 @@
                 toggleLabel.innerText = 'Space View';
                 localStorage.setItem('active_dashboard_view', 'timeline');
                 hideHudCard();
+                deselectBucketSwipeDock();
             }
         }
 
@@ -2066,7 +2081,7 @@
                 btn.className = "bg-slate-900/90 border border-slate-700/80 hover:border-indigo-500/80 px-3.5 py-1.5 rounded-full text-xs font-bold text-slate-200 flex items-center gap-1.5 shadow-lg backdrop-blur-md shrink-0 transition-all active:scale-95";
                 btn.innerHTML = `<span>${realm.icon}</span><span>${realm.name}</span>`;
                 btn.onclick = () => {
-                    activeSelectedBucket = null;
+                    deselectBucketSwipeDock();
                     focusAndRepelRealms(realm);
                 };
                 warpDock.appendChild(btn);
@@ -2157,10 +2172,12 @@
                         const totalTasks = Math.max(1, filteredTasks.length);
                         filteredTasks.forEach((task, tIdx) => {
                             task.angle = (tIdx / totalTasks) * Math.PI * 2;
-                            task.orbitRadius = 70 + (tIdx * 36);
+                            // WIDER TASK ORBIT: Prevents tasks from crowding the Bucket Moon
+                            task.orbitRadius = 90 + (tIdx * 40);
                         });
 
-                        const bucketDist = 140 + (bIdx * 55);
+                        // EXPANDED BUCKET DISTANCE: Gives Task Satellites room to orbit cleanly
+                        const bucketDist = 180 + (bIdx * 75);
 
                         return {
                             id: bucket.id,
@@ -2197,6 +2214,7 @@
         function recenterSpace() {
             activeSelectedRealm = null;
             activeSelectedBucket = null;
+            deselectBucketSwipeDock();
 
             if (spaceRealms.length === 0) {
                 targetCameraOffset = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
@@ -2253,7 +2271,7 @@
             spaceCtx.translate(cameraOffset.x, cameraOffset.y);
             spaceCtx.scale(cameraZoom, cameraZoom);
 
-            // Central Core 😈
+            // Draw Devil Central Universe Core 😈
             const pulseScale = 1 + Math.sin(frameCount * 2) * 0.08;
             const coreRadius = 48 * pulseScale;
 
@@ -2403,20 +2421,36 @@
                         task.x = bucket.x + Math.cos(task.angle) * task.orbitRadius + hoverX;
                         task.y = bucket.y + Math.sin(task.angle) * task.orbitRadius + hoverY;
 
-                        allTasksInRealm.push(task);
+                        allTasksInRealm.push({ task, bucket });
                     });
                 });
 
-                // Task Repulsion
+                // STRONG BUCKET & TASK REPULSION PHYSICS
                 for (let i = 0; i < allTasksInRealm.length; i++) {
+                    const item1 = allTasksInRealm[i];
+                    const t1 = item1.task;
+
+                    // 1. Repel Task from Bucket Moon Center
+                    const dxB = t1.x - item1.bucket.x;
+                    const dyB = t1.y - item1.bucket.y;
+                    const distB = Math.hypot(dxB, dyB);
+                    const minBucketDist = item1.bucket.radius + 45;
+
+                    if (distB < minBucketDist && distB > 0) {
+                        const pushFactor = (minBucketDist - distB);
+                        t1.x += (dxB / distB) * pushFactor;
+                        t1.y += (dyB / distB) * pushFactor;
+                    }
+
+                    // 2. Repel Tasks from each other
                     for (let j = i + 1; j < allTasksInRealm.length; j++) {
-                        const t1 = allTasksInRealm[i];
-                        const t2 = allTasksInRealm[j];
+                        const item2 = allTasksInRealm[j];
+                        const t2 = item2.task;
 
                         const dx = t2.x - t1.x;
                         const dy = t2.y - t1.y;
                         const dist = Math.hypot(dx, dy);
-                        const minDist = 65;
+                        const minDist = 85; // Stronger inter-task separation distance
 
                         if (dist < minDist && dist > 0) {
                             const overlap = (minDist - dist) / 2;
@@ -2436,8 +2470,9 @@
                     if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
 
                     bucket.tasks.forEach(task => {
+                        // Boundary Repulsion from Realm Core
                         const distToRealm = Math.hypot(task.x - drawX, task.y - drawY);
-                        const minAllowedDist = realm.radius + 34;
+                        const minAllowedDist = realm.radius + 45;
                         if (distToRealm < minAllowedDist) {
                             const angleFromRealm = Math.atan2(task.y - drawY, task.x - drawX);
                             task.x = drawX + Math.cos(angleFromRealm) * minAllowedDist;
@@ -2600,9 +2635,12 @@
                 // Toggle bucket selection inside active realm
                 if (activeSelectedBucket && activeSelectedBucket.id === clickedBucket.id) {
                     activeSelectedBucket = null;
+                    deselectBucketSwipeDock();
                     focusAndRepelRealms(activeSelectedRealm);
                 } else {
                     activeSelectedBucket = clickedBucket;
+                    renderBucketTaskSwipeDock(clickedBucket);
+
                     targetCameraZoom = window.innerWidth < 768 ? 1.25 : 1.45;
                     targetCameraOffset = {
                         x: (window.innerWidth / 2) - (clickedBucket.x * targetCameraZoom),
@@ -2627,12 +2665,69 @@
                 } else {
                     // TAP: Drill into Realm
                     activeSelectedBucket = null;
+                    deselectBucketSwipeDock();
                     focusAndRepelRealms(clickedRealm);
                 }
             } else {
                 // Tap on empty space deselects
                 hideHudCard();
             }
+        }
+
+        // SWIPE/SCROLL DOCK FOR BUCKET TASKS
+        function renderBucketTaskSwipeDock(bucket) {
+            const dock = document.getElementById('bucket-task-swipe-dock');
+            const title = document.getElementById('swipe-dock-bucket-title');
+            const wrapper = document.getElementById('swipe-dock-cards-wrapper');
+
+            if (!dock || !wrapper) return;
+
+            title.innerText = `⭐️ ${bucket.name} (${bucket.tasks.length} Tasks)`;
+            wrapper.innerHTML = '';
+
+            if (bucket.tasks.length === 0) {
+                wrapper.innerHTML = '<span class="text-xs text-slate-400 py-1 px-2">No active tasks in this bucket</span>';
+            } else {
+                bucket.tasks.forEach(task => {
+                    const card = document.createElement('div');
+                    card.className = "bg-slate-800/95 border border-slate-700 hover:border-indigo-500 px-3 py-2 rounded-xl shrink-0 cursor-pointer transition-all flex flex-col justify-between max-w-[170px] min-w-[140px]";
+                    
+                    let badgeClass = "bg-indigo-500/20 text-indigo-300";
+                    let badgeText = "⚡ Active";
+                    if (task.isOverdue) {
+                        badgeClass = "bg-rose-500/20 text-rose-300";
+                        badgeText = "⚠️ Overdue";
+                    } else if (task.isRecurring) {
+                        badgeClass = "bg-amber-500/20 text-amber-300";
+                        badgeText = "🔄 Repeat";
+                    }
+
+                    card.innerHTML = `
+                        <span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full ${badgeClass} self-start mb-1 truncate">${badgeText}</span>
+                        <h4 class="text-xs font-bold text-white truncate mb-1" title="${task.title}">${task.title}</h4>
+                        <span class="text-[10px] text-indigo-300 font-mono">📅 ${task.dueDateFormatted}</span>
+                    `;
+
+                    card.onclick = () => {
+                        // Focus camera on task satellite and open HUD
+                        targetCameraZoom = 1.6;
+                        targetCameraOffset = {
+                            x: (window.innerWidth / 2) - (task.x * targetCameraZoom),
+                            y: (window.innerHeight / 2) - (task.y * targetCameraZoom)
+                        };
+                        showHudCard(task);
+                    };
+
+                    wrapper.appendChild(card);
+                });
+            }
+
+            dock.classList.remove('hidden');
+        }
+
+        function deselectBucketSwipeDock() {
+            const dock = document.getElementById('bucket-task-swipe-dock');
+            if (dock) dock.classList.add('hidden');
         }
 
         function focusAndRepelRealms(selectedRealm) {
