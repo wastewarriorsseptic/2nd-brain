@@ -2124,7 +2124,7 @@
                     y: basePos.y,
                     targetX: basePos.x,
                     targetY: basePos.y,
-                    radius: isMobile ? 60 : 68, // 1.5x Scaled Planet Radius
+                    radius: isMobile ? 60 : 68,
                     floatOffsetPhase: (rIdx * 1.37) % (Math.PI * 2),
                     floatSpeed: 1.2 + (rIdx % 3) * 0.3,
                     buckets: realm.buckets.map((bucket, bIdx) => {
@@ -2451,17 +2451,16 @@
 
                     spaceCtx.restore();
 
-                    // CHRONOLOGICAL LINEAR HORIZONTAL LAYOUT WHEN BUCKET IS SELECTED
+                    // CHRONOLOGICAL LINEAR HORIZONTAL LAYOUT FROM LEFT TO RIGHT STARTING NEAR BUCKET
                     if (isSelectedBucket && bucket.tasks.length > 0) {
                         const stepSpacing = 160; // Horizontal pixel spacing between tasks
-                        const totalLinearWidth = (bucket.tasks.length - 1) * stepSpacing;
-                        const startLinearX = bucket.x - (totalLinearWidth / 2);
+                        const startLinearX = bucket.x + 80; // Start first node just right of bucket moon
 
-                        // Draw glowing horizontal timeline guide line connecting all task nodes
+                        // Draw glowing horizontal timeline guide line extending to the right
                         spaceCtx.save();
                         spaceCtx.beginPath();
-                        spaceCtx.moveTo(startLinearX - 40, bucket.y + 110);
-                        spaceCtx.lineTo(startLinearX + totalLinearWidth + 40, bucket.y + 110);
+                        spaceCtx.moveTo(bucket.x + bucket.radius + 5, bucket.y);
+                        spaceCtx.lineTo(startLinearX + ((bucket.tasks.length - 1) * stepSpacing) + 40, bucket.y);
                         spaceCtx.strokeStyle = 'rgba(99, 102, 241, 0.5)';
                         spaceCtx.lineWidth = 2.5;
                         spaceCtx.shadowColor = '#818cf8';
@@ -2471,7 +2470,7 @@
 
                         bucket.tasks.forEach((task, tIdx) => {
                             task.x = startLinearX + (tIdx * stepSpacing);
-                            task.y = bucket.y + 110; // Perfectly horizontal line 110px below selected bucket moon
+                            task.y = bucket.y; // Aligned directly with bucket moon horizontally
                         });
                     } else {
                         // Standard Circular Orbit positioning when bucket is NOT specifically selected
@@ -2697,15 +2696,15 @@
                     deselectBucketSwipeDock();
                     focusAndRepelRealms(activeSelectedRealm);
                 } else {
+                    hideHudCard(); // Close single-task HUD if active
                     activeSelectedBucket = clickedBucket;
                     renderBucketTaskSwipeDock(clickedBucket);
 
-                    // OPTIMIZED CAMERA ZOOM ON MOBILE FOR FULL BUCKET VISIBILITY
                     const isMobile = window.innerWidth < 768;
                     targetCameraZoom = isMobile ? 0.65 : 1.15;
                     targetCameraOffset = {
                         x: (window.innerWidth / 2) - (clickedBucket.x * targetCameraZoom),
-                        y: (window.innerHeight / 2) - ((clickedBucket.y + 60) * targetCameraZoom)
+                        y: (window.innerHeight / 2) - (clickedBucket.y * targetCameraZoom)
                     };
                 }
                 return;
@@ -2733,6 +2732,8 @@
 
         // CHRONOLOGICALLY SORTED SINGLE DETAILED SWIPEABLE CARD DOCK FOR SELECTED BUCKETS
         function renderBucketTaskSwipeDock(bucket) {
+            hideHudCard(); // Prevent dual-HUD overlay
+
             const dock = document.getElementById('bucket-task-swipe-dock');
             const title = document.getElementById('swipe-dock-bucket-title');
             const wrapper = document.getElementById('swipe-dock-cards-wrapper');
@@ -2781,12 +2782,12 @@
                     `;
 
                     card.onclick = () => {
+                        hideHudCard(); // Keep interface clean
                         targetCameraZoom = 1.6;
                         targetCameraOffset = {
                             x: (window.innerWidth / 2) - (task.x * targetCameraZoom),
                             y: (window.innerHeight / 2) - (task.y * targetCameraZoom)
                         };
-                        showHudCard(task);
                     };
 
                     wrapper.appendChild(card);
