@@ -2030,7 +2030,7 @@
         }
     </script>
 
-    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (MOBILE BUCKET ZOOM & VISIBILITY ENHANCEMENTS) -->
+    <!-- SPACE VIEW CANVAS ENGINE SCRIPT (STRONG PHYSICS REPULSION & BUCKET TASK SWIPE DOCK) -->
     <script>
         let isSpaceViewActive = false;
         let spaceCanvas, spaceCtx;
@@ -2152,7 +2152,7 @@
                             filteredTasks.push({
                                 id: el.getAttribute('data-item-id'),
                                 title: el.getAttribute('data-title') || el.querySelector('h3').innerText.trim(),
-                                dueDate: el.getAttribute('data-due-date') || '',
+                                dueDate: el.getAttribute('data-due-date') || '9999-12-31',
                                 dueTime: el.getAttribute('data-due-time') || '',
                                 dueDateFormatted: el.getAttribute('data-due-date-formatted') || '',
                                 amount: el.getAttribute('data-amount') || '',
@@ -2170,13 +2170,17 @@
                             });
                         });
 
+                        // CHRONOLOGICAL SORTING: Overdue and earliest due dates first
+                        filteredTasks.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+
                         const totalTasks = Math.max(1, filteredTasks.length);
                         filteredTasks.forEach((task, tIdx) => {
                             task.angle = (tIdx / totalTasks) * Math.PI * 2;
-                            task.orbitRadius = 110 + (tIdx * 45); // Generous task orbit spread
+                            // Sequential orbit expansion by due date order
+                            task.orbitRadius = 110 + (tIdx * 45);
                         });
 
-                        // EXPANDED BUCKET DISTANCE: Scale bucket moons up for mobile visibility (26px)
+                        // EXPANDED BUCKET DISTANCE: Scale bucket moons up for mobile visibility
                         const bucketDist = (isMobile ? 220 : 200) + (bIdx * 85);
 
                         return {
@@ -2184,7 +2188,7 @@
                             name: bucket.name,
                             angle: bucketAngle,
                             orbitRadius: bucketDist,
-                            radius: isMobile ? 26 : 22, // Larger, mobile-friendly bucket moon size
+                            radius: isMobile ? 26 : 22,
                             tasks: filteredTasks
                         };
                     })
@@ -2271,7 +2275,7 @@
             spaceCtx.translate(cameraOffset.x, cameraOffset.y);
             spaceCtx.scale(cameraZoom, cameraZoom);
 
-            // Central Core 😈
+            // Draw Devil Central Universe Core 😈
             const pulseScale = 1 + Math.sin(frameCount * 2) * 0.08;
             const coreRadius = 48 * pulseScale;
 
@@ -2671,7 +2675,7 @@
             }
         }
 
-        // SINGLE DETAILED SWIPEABLE CARD DOCK FOR SELECTED BUCKETS
+        // CHRONOLOGICALLY SORTED SINGLE DETAILED SWIPEABLE CARD DOCK FOR SELECTED BUCKETS
         function renderBucketTaskSwipeDock(bucket) {
             const dock = document.getElementById('bucket-task-swipe-dock');
             const title = document.getElementById('swipe-dock-bucket-title');
@@ -2679,24 +2683,27 @@
 
             if (!dock || !wrapper) return;
 
-            title.innerText = `⭐️ ${bucket.name} (${bucket.tasks.length} Tasks)`;
+            // Sort tasks chronologically by due date before rendering cards
+            const sortedTasks = [...bucket.tasks].sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+
+            title.innerText = `⭐️ ${bucket.name} (${sortedTasks.length} Tasks)`;
             wrapper.innerHTML = '';
 
-            if (bucket.tasks.length === 0) {
+            if (sortedTasks.length === 0) {
                 wrapper.innerHTML = '<span class="text-xs text-slate-400 py-2 px-3 block text-center w-full">No active tasks in this bucket</span>';
             } else {
-                bucket.tasks.forEach(task => {
+                sortedTasks.forEach((task, index) => {
                     const card = document.createElement('div');
                     card.className = "w-full shrink-0 snap-center bg-slate-800/95 border border-slate-700/90 hover:border-indigo-500/80 p-3 rounded-xl transition-all shadow-lg space-y-2 select-none cursor-pointer";
                     
                     let badgeClass = "bg-indigo-500/20 text-indigo-300 border-indigo-500/30";
-                    let badgeText = "⚡ Active";
+                    let badgeText = `⚡ Task ${index + 1} of ${sortedTasks.length}`;
                     if (task.isOverdue) {
                         badgeClass = "bg-rose-500/20 text-rose-300 border-rose-500/30";
-                        badgeText = "⚠️ Overdue";
+                        badgeText = `⚠️ Overdue (${index + 1}/${sortedTasks.length})`;
                     } else if (task.isRecurring) {
                         badgeClass = "bg-amber-500/20 text-amber-300 border-amber-500/30";
-                        badgeText = "🔄 Repeat";
+                        badgeText = `🔄 Repeat (${index + 1}/${sortedTasks.length})`;
                     }
 
                     const amountText = task.amount ? `<span class="text-emerald-400 font-bold text-xs">$${parseFloat(task.amount).toFixed(2)}</span>` : '';
@@ -2749,7 +2756,7 @@
                     const dx = realm.baseX - selectedRealm.baseX;
                     const dy = realm.baseY - selectedRealm.baseY;
                     const angle = Math.atan2(dy, dx);
-                    const repelDist = 480; // WIDER REPEL: Pushes unselected realms far away on tap
+                    const repelDist = 480;
 
                     realm.targetX = selectedRealm.baseX + Math.cos(angle) * (Math.hypot(dx, dy) + repelDist);
                     realm.targetY = selectedRealm.baseY + Math.sin(angle) * (Math.hypot(dx, dy) + repelDist);
