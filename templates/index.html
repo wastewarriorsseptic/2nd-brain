@@ -2074,7 +2074,11 @@
             window.addEventListener('resize', resizeSpaceCanvas);
 
             const processedGroupIds = new Set();
-            const totalRealms = Math.max(1, realmsData.length);
+            // A virtual "+" node rides along on the same ring as real realms, participating in the
+            // same spacing/physics, so it never overlaps anything and always has its own slot.
+            const addRealmButtonData = { id: '__add_realm__', name: 'Add Realm', icon: '➕', isAddButton: true, buckets: [] };
+            const combinedRealmsData = realmsData.concat([addRealmButtonData]);
+            const totalRealms = Math.max(1, combinedRealmsData.length);
 
             const isMobile = window.innerWidth < 768;
             const baseViewRadius = Math.min(window.innerWidth, window.innerHeight) * (isMobile ? 0.38 : 0.28);
@@ -2092,7 +2096,7 @@
             // ring's circumference to comfortably fit all of them side-by-side around it.
             spaceCtx.font = `bold ${realmLabelFontPx}px sans-serif`;
             let maxPillWidth = 0;
-            realmsData.forEach(r => {
+            combinedRealmsData.forEach(r => {
                 const w = spaceCtx.measureText(r.name).width + 36 + 28;
                 if (w > maxPillWidth) maxPillWidth = w;
             });
@@ -2103,7 +2107,7 @@
 
             const ringRadius = Math.max(baseViewRadius * (isMobile ? 1.05 : 1.0), minRingRadiusForSpacing);
 
-            spaceRealms = realmsData.map((realm, rIdx) => {
+            spaceRealms = combinedRealmsData.map((realm, rIdx) => {
                 const realmAngle = (rIdx / totalRealms) * Math.PI * 2 - Math.PI / 2;
 
                 const basePos = {
@@ -2115,6 +2119,7 @@
                     id: realm.id,
                     name: realm.name,
                     icon: realm.icon || '🔮',
+                    isAddButton: !!realm.isAddButton,
                     angle: realmAngle,
                     homeAngle: realmAngle,
                     orbitAngle: realmAngle,
@@ -2129,7 +2134,7 @@
                     labelFontPx: realmLabelFontPx,
                     floatOffsetPhase: (rIdx * 1.37) % (Math.PI * 2),
                     floatSpeed: 1.2 + (rIdx % 3) * 0.3,
-                    buckets: realm.buckets.map((bucket, bIdx) => {
+                    buckets: (realm.buckets || []).map((bucket, bIdx) => {
                         const totalBuckets = Math.max(1, realm.buckets.length);
                         const bucketAngle = (bIdx / totalBuckets) * Math.PI * 2;
                         
@@ -2795,36 +2800,41 @@
 
         function renderRealmNode(realm, drawX, drawY, isSelected) {
             const pulseGlow = 22 + Math.sin(frameCount * 2.5 + realm.id) * 6;
+            const isAddButton = !!realm.isAddButton;
 
             spaceCtx.save();
             spaceCtx.beginPath();
             spaceCtx.arc(drawX, drawY, realm.radius + 18, 0, Math.PI * 2);
-            spaceCtx.fillStyle = isSelected ? 'rgba(99, 102, 241, 0.35)' : 'rgba(99, 102, 241, 0.15)';
+            spaceCtx.fillStyle = isAddButton ? 'rgba(52, 211, 153, 0.12)' : (isSelected ? 'rgba(99, 102, 241, 0.35)' : 'rgba(99, 102, 241, 0.15)');
             spaceCtx.fill();
 
             spaceCtx.beginPath();
             spaceCtx.arc(drawX, drawY, realm.radius, 0, Math.PI * 2);
-            spaceCtx.fillStyle = isSelected ? 'rgba(79, 70, 229, 0.95)' : 'rgba(30, 41, 59, 0.95)';
-            spaceCtx.strokeStyle = isSelected ? '#a5b4fc' : '#818cf8';
+            spaceCtx.fillStyle = isAddButton ? 'rgba(20, 40, 34, 0.85)' : (isSelected ? 'rgba(79, 70, 229, 0.95)' : 'rgba(30, 41, 59, 0.95)');
+            spaceCtx.strokeStyle = isAddButton ? '#34d399' : (isSelected ? '#a5b4fc' : '#818cf8');
             spaceCtx.lineWidth = isSelected ? 5 : 3.5;
-            spaceCtx.shadowColor = isSelected ? '#818cf8' : '#6366f1';
+            spaceCtx.shadowColor = isAddButton ? '#34d399' : (isSelected ? '#818cf8' : '#6366f1');
             spaceCtx.shadowBlur = isSelected ? 40 : pulseGlow;
+            if (isAddButton) {
+                spaceCtx.setLineDash([10, 8]);
+            }
             spaceCtx.fill();
             spaceCtx.stroke();
+            spaceCtx.setLineDash([]);
 
             spaceCtx.textAlign = 'center';
             spaceCtx.textBaseline = 'middle';
-            spaceCtx.font = `${Math.round(realm.radius * 0.62)}px serif`;
+            spaceCtx.font = `${Math.round(realm.radius * (isAddButton ? 0.5 : 0.62))}px serif`;
             spaceCtx.shadowBlur = 0;
             spaceCtx.fillText(realm.icon, drawX, drawY);
 
-            const beaconText = `${realm.icon} ${realm.name}`;
+            const beaconText = isAddButton ? realm.name : `${realm.icon} ${realm.name}`;
             const labelFontPx = realm.labelFontPx || 22;
             spaceCtx.font = `bold ${labelFontPx}px sans-serif`;
             
             const pillPadding = 36;
             const pillHeight = Math.round(labelFontPx * 1.9);
-            const bTextWidth = spaceCtx.measureText(realm.name).width + pillPadding + 28;
+            const bTextWidth = spaceCtx.measureText(beaconText).width + pillPadding + 28;
             const pillX = drawX - (bTextWidth / 2);
             
             const isTopHalf = realm.baseY < 0;
@@ -2832,10 +2842,10 @@
                 ? drawY - realm.radius - pillHeight - 12 
                 : drawY + realm.radius + 12;
 
-            spaceCtx.fillStyle = isSelected ? 'rgba(79, 70, 229, 0.98)' : 'rgba(15, 23, 42, 0.98)';
-            spaceCtx.strokeStyle = '#818cf8';
+            spaceCtx.fillStyle = isAddButton ? 'rgba(6, 78, 59, 0.9)' : (isSelected ? 'rgba(79, 70, 229, 0.98)' : 'rgba(15, 23, 42, 0.98)');
+            spaceCtx.strokeStyle = isAddButton ? '#34d399' : '#818cf8';
             spaceCtx.lineWidth = 2;
-            spaceCtx.shadowColor = '#6366f1';
+            spaceCtx.shadowColor = isAddButton ? '#34d399' : '#6366f1';
             spaceCtx.shadowBlur = 15;
             spaceCtx.beginPath();
             spaceCtx.roundRect(pillX, pillY, bTextWidth, pillHeight, 12);
@@ -3016,6 +3026,12 @@
             });
 
             if (clickedRealm) {
+                if (clickedRealm.isAddButton) {
+                    const modal = document.getElementById('add-realm-modal');
+                    if (modal) modal.classList.remove('hidden');
+                    return;
+                }
+
                 if (activeSelectedRealm && activeSelectedRealm.id === clickedRealm.id) {
                     recenterSpace();
                 } else {
