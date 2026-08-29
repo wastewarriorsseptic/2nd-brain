@@ -3346,21 +3346,6 @@
 
         function focusAndRepelRealms(selectedRealm) {
             activeSelectedRealm = selectedRealm;
-            
-            spaceRealms.forEach(realm => {
-                if (realm.id === selectedRealm.id) {
-                    realm.targetX = selectedRealm.baseX;
-                    realm.targetY = selectedRealm.baseY;
-                } else {
-                    const dx = realm.baseX - selectedRealm.baseX;
-                    const dy = realm.baseY - selectedRealm.baseY;
-                    const angle = Math.atan2(dy, dx);
-                    const repelDist = 480;
-
-                    realm.targetX = selectedRealm.baseX + Math.cos(angle) * (Math.hypot(dx, dy) + repelDist);
-                    realm.targetY = selectedRealm.baseY + Math.sin(angle) * (Math.hypot(dx, dy) + repelDist);
-                }
-            });
 
             const isMobile = window.innerWidth < 768;
 
@@ -3395,6 +3380,28 @@
             // a realm with a huge number of buckets never zooms out past legibility - "squish, don't
             // clip" between those two limits.
             targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.16), isMobile ? 0.55 : 0.95);
+
+            // Now that we know the zoom this realm actually needs, push every OTHER realm far enough
+            // in WORLD space that it lands well off-screen at THIS zoom level. A fixed world-space
+            // repel distance isn't enough once zoom can vary a lot between a 2-bucket realm and a
+            // 12-bucket realm - a realm zoomed further out needs a proportionally bigger push to keep
+            // its neighbors from crowding back into frame.
+            const screenClearance = Math.max(window.innerWidth, window.innerHeight) * 1.1;
+            const repelDist = screenClearance / targetCameraZoom;
+
+            spaceRealms.forEach(realm => {
+                if (realm.id === selectedRealm.id) {
+                    realm.targetX = selectedRealm.baseX;
+                    realm.targetY = selectedRealm.baseY;
+                } else {
+                    const dx = realm.baseX - selectedRealm.baseX;
+                    const dy = realm.baseY - selectedRealm.baseY;
+                    const angle = Math.atan2(dy, dx);
+
+                    realm.targetX = selectedRealm.baseX + Math.cos(angle) * (Math.hypot(dx, dy) + repelDist);
+                    realm.targetY = selectedRealm.baseY + Math.sin(angle) * (Math.hypot(dx, dy) + repelDist);
+                }
+            });
 
             const centerX = (minX + maxX) / 2;
             const centerY = (minY + maxY) / 2;
