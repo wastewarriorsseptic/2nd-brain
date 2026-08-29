@@ -2444,57 +2444,14 @@
             targetCameraZoom = newZoom;
         }
 
-        // Measures a glyph's TRUE rendered pixel width by actually drawing it to a scratch canvas and
-        // scanning for non-transparent pixels - this works identically everywhere, unlike canvas
-        // TextMetrics APIs (.width, actualBoundingBoxLeft/Right), which are unreliable for at least one
-        // compound/ZWJ emoji in this app: .width under-reports its width, and actualBoundingBoxLeft/
-        // Right aren't dependably supported on mobile Safari's canvas implementation - which is exactly
-        // why this bug only ever showed up on mobile. Results are cached since the same icon/font pairs
-        // get measured every frame otherwise.
-        const glyphPixelWidthCache = {};
-        let glyphMeasureScratchCanvas = null;
-
-        function measureGlyphPixelWidth(text, font) {
-            const cacheKey = font + '::' + text;
-            if (glyphPixelWidthCache[cacheKey] !== undefined) {
-                return glyphPixelWidthCache[cacheKey];
-            }
-
-            if (!glyphMeasureScratchCanvas) {
-                glyphMeasureScratchCanvas = document.createElement('canvas');
-            }
-            const size = 160;
-            glyphMeasureScratchCanvas.width = size;
-            glyphMeasureScratchCanvas.height = size;
-            const sctx = glyphMeasureScratchCanvas.getContext('2d');
-            sctx.clearRect(0, 0, size, size);
-            sctx.font = font;
-            sctx.textAlign = 'left';
-            sctx.textBaseline = 'top';
-            sctx.fillStyle = '#ffffff';
-            sctx.fillText(text, 4, 4);
-
-            let width;
-            try {
-                const data = sctx.getImageData(0, 0, size, size).data;
-                let minX = size, maxX = -1;
-                for (let y = 0; y < size; y++) {
-                    for (let x = 0; x < size; x++) {
-                        if (data[((y * size) + x) * 4 + 3] > 10) {
-                            if (x < minX) minX = x;
-                            if (x > maxX) maxX = x;
-                        }
-                    }
-                }
-                width = maxX >= minX ? (maxX - minX + 1) : 0;
-            } catch (e) {
-                // Canvas read-back blocked (e.g. tainted canvas) - fall back to advance width.
-                sctx.font = font;
-                width = sctx.measureText(text).width;
-            }
-
-            glyphPixelWidthCache[cacheKey] = width;
-            return width;
+        // Reserves a fixed, generous width for an icon instead of trying to measure it. Every attempt
+        // to measure emoji glyph width via canvas APIs (.width, actualBoundingBoxLeft/Right, even
+        // scanning rendered pixels) has proven unreliable on mobile Safari for at least one icon in
+        // this app. Rather than keep chasing measurement accuracy, this just allocates comfortably more
+        // room than any emoji could plausibly need at a given font size - guaranteeing no overlap ever,
+        // for any icon, on any platform, at the cost of a little extra (harmless) breathing room.
+        function estimateIconWidth(fontPx) {
+            return fontPx * 1.9;
         }
 
         function renderSpaceFrame() {
@@ -2604,15 +2561,16 @@
                 const fontPx = realm.labelFontPx || 22;
                 const pillPadding = 36;
                 const pillHeight = Math.round(fontPx * 1.9);
-                const iconGap = 10;
+                const iconGap = 18;
 
                 let contentWidth;
                 if (realm.isAddButton) {
-                    contentWidth = measureGlyphPixelWidth(realm.name, `bold ${fontPx}px sans-serif`);
+                    spaceCtx.font = `bold ${fontPx}px sans-serif`;
+                    contentWidth = spaceCtx.measureText(realm.name).width;
                 } else {
-                    const iconWidth = measureGlyphPixelWidth(realm.icon, `${Math.round(fontPx * 1.15)}px serif`);
-                    const nameWidth = measureGlyphPixelWidth(realm.name, `bold ${fontPx}px sans-serif`);
-                    contentWidth = iconWidth + iconGap + nameWidth;
+                    spaceCtx.font = `bold ${fontPx}px sans-serif`;
+                    const nameWidth = spaceCtx.measureText(realm.name).width;
+                    contentWidth = estimateIconWidth(fontPx) + iconGap + nameWidth;
                 }
 
                 const width = contentWidth + pillPadding + 28;
@@ -3095,17 +3053,19 @@
 
             const pillPadding = 36;
             const pillHeight = Math.round(labelFontPx * 1.9);
-            const iconGap = 10;
+            const iconGap = 18;
+            const iconWidth = estimateIconWidth(labelFontPx);
             let bTextWidth, pillX, iconDrawX, nameDrawX;
 
             if (isAddButton) {
-                const nameWidth = measureGlyphPixelWidth(realm.name, nameFontSpec);
+                spaceCtx.font = nameFontSpec;
+                const nameWidth = spaceCtx.measureText(realm.name).width;
                 bTextWidth = nameWidth + pillPadding + 28;
                 pillX = drawX - (bTextWidth / 2);
                 nameDrawX = drawX;
             } else {
-                const iconWidth = measureGlyphPixelWidth(realm.icon, iconFontSpec);
-                const nameWidth = measureGlyphPixelWidth(realm.name, nameFontSpec);
+                spaceCtx.font = nameFontSpec;
+                const nameWidth = spaceCtx.measureText(realm.name).width;
 
                 const contentWidth = iconWidth + iconGap + nameWidth;
                 bTextWidth = contentWidth + pillPadding + 28;
