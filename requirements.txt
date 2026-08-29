@@ -10,3 +10,4 @@ python-dotenv
 authlib
 itsdangerous
 httpx
+pyjwt[crypto]
