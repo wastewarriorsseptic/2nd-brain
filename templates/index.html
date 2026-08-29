@@ -179,7 +179,7 @@
                                         <span class="shrink-0">{{ realm.icon or '🔮' }}</span> <span class="truncate">{{ realm.name }}</span>
                                     </a>
                                     {% if realm.user_id != user.id %}
-                                    <span class="shrink-0 bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded-full" title="Shared with you by another owner">👥 Shared with you</span>
+                                    <span class="shrink-0 bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded-full" title="Shared with you by {{ realm.user.name if realm.user else 'another owner' }}">👥 Shared by {{ realm.user.name if realm.user else 'owner' }}</span>
                                     {% elif collaborators_map and collaborators_map.get(realm.id) %}
                                     <span class="shrink-0 bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded-full" title="You've shared this Realm with others">👥 Shared</span>
                                     {% endif %}
@@ -1140,6 +1140,7 @@
                 name: "{{ r.name }}",
                 icon: "{{ r.icon or '🔮' }}",
                 isShared: {{ 'true' if (r.user_id != user.id) or (collaborators_map and collaborators_map.get(r.id)) else 'false' }},
+                sharedByName: "{% if r.user_id != user.id %}{{ r.user.name if r.user else 'Owner' }}{% elif collaborators_map and collaborators_map.get(r.id) %}{{ collaborators_map.get(r.id)[0].name }}{% if collaborators_map.get(r.id)|length > 1 %} +{{ collaborators_map.get(r.id)|length - 1 }}{% endif %}{% endif %}",
                 buckets: [
                     {% for b in r.buckets %}
                     { id: {{ b.id }}, name: "{{ b.name }}" },
@@ -2213,6 +2214,7 @@
                     name: realm.name,
                     icon: realm.icon || '🔮',
                     isShared: !!realm.isShared,
+                    sharedByName: realm.sharedByName || '',
                     isAddButton: !!realm.isAddButton,
                     angle: realmAngle,
                     homeAngle: realmAngle,
@@ -3189,6 +3191,35 @@
                 spaceCtx.textBaseline = 'middle';
                 spaceCtx.font = `${Math.round(badgeRadius * 1.1)}px serif`;
                 spaceCtx.fillText('👥', badgeX, badgeY + 1);
+
+                // Name of who it's shared with/by - a slightly larger bubble tucked in tight
+                // on the opposite side of the circle from the people-icon badge above, so the
+                // two never collide regardless of realm size or name length.
+                if (realm.sharedByName) {
+                    const nameBubbleAngle = Math.PI / 5;
+                    const nameFontPxSmall = Math.max(11, Math.round(badgeRadius * 0.95));
+                    spaceCtx.font = `bold ${nameFontPxSmall}px sans-serif`;
+                    const nameTextWidth = spaceCtx.measureText(realm.sharedByName).width;
+                    const bubblePaddingX = 12;
+                    const bubbleWidth = nameTextWidth + bubblePaddingX * 2;
+                    const bubbleHeight = badgeRadius * 2.3;
+                    const bubbleDist = displayRadius * 0.82 + (bubbleWidth / 2) - badgeRadius;
+                    const bubbleCx = drawX + Math.cos(nameBubbleAngle) * bubbleDist;
+                    const bubbleCy = drawY + Math.sin(nameBubbleAngle) * bubbleDist;
+
+                    spaceCtx.beginPath();
+                    spaceCtx.roundRect(bubbleCx - bubbleWidth / 2, bubbleCy - bubbleHeight / 2, bubbleWidth, bubbleHeight, bubbleHeight / 2);
+                    spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.98)';
+                    spaceCtx.strokeStyle = '#10b981';
+                    spaceCtx.lineWidth = 2;
+                    spaceCtx.fill();
+                    spaceCtx.stroke();
+
+                    spaceCtx.fillStyle = '#6ee7b7';
+                    spaceCtx.textAlign = 'center';
+                    spaceCtx.textBaseline = 'middle';
+                    spaceCtx.fillText(realm.sharedByName, bubbleCx, bubbleCy + 1);
+                }
             }
 
             spaceCtx.restore();
