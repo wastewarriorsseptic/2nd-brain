@@ -2552,19 +2552,21 @@
                 const pillPadding = 36;
                 const pillHeight = Math.round(fontPx * 1.9);
                 const iconGap = 10;
+                // A fixed estimate rather than measureText() for the icon: some compound/ZWJ emoji
+                // (e.g. the "technologist at a laptop" glyph) report a canvas text-metrics width far
+                // narrower than what actually renders, which caused icon and name to visually collide.
+                // Emoji glyphs are roughly as wide as they are tall, so basing width on font size sidesteps
+                // that measurement bug entirely for every icon, compound or simple.
+                const iconWidthEstimate = fontPx * 1.3;
 
                 let contentWidth;
                 if (realm.isAddButton) {
                     spaceCtx.font = `bold ${fontPx}px sans-serif`;
                     contentWidth = spaceCtx.measureText(realm.name).width;
                 } else {
-                    // Measure each piece in the SAME font it's actually drawn with (see renderRealmNode)
-                    // - measuring an emoji under the sans-serif name font can under-report its width.
-                    spaceCtx.font = `${Math.round(fontPx * 1.15)}px serif`;
-                    const iconWidth = spaceCtx.measureText(realm.icon).width;
                     spaceCtx.font = `bold ${fontPx}px sans-serif`;
                     const nameWidth = spaceCtx.measureText(realm.name).width;
-                    contentWidth = iconWidth + iconGap + nameWidth;
+                    contentWidth = iconWidthEstimate + iconGap + nameWidth;
                 }
 
                 const width = contentWidth + pillPadding + 28;
@@ -3048,14 +3050,13 @@
             const pillPadding = 36;
             const pillHeight = Math.round(labelFontPx * 1.9);
 
-            // Measure the icon and name SEPARATELY, and with each in the SAME font it will actually be
-            // drawn with. Measuring an emoji glyph while the "sans-serif" name font is active can
-            // under-report its width (some multi-part emoji, like the "technologist at a laptop"
-            // glyph, aren't recognized as emoji under a plain sans-serif stack even though they still
-            // render via the color-emoji fallback) - that mismatch is what caused the icon and name to
-            // visually overlap. Using the same serif stack as the big circle icon for measurement keeps
-            // the reported width consistent with what's actually drawn.
+            // A fixed estimate rather than measureText() for the icon's width: some compound/ZWJ emoji
+            // (e.g. the "technologist at a laptop" glyph) report canvas text-metrics far narrower than
+            // what actually renders, regardless of font-family - that's what caused the icon and name
+            // to visually collide even after matching fonts. Emoji glyphs are roughly as wide as they
+            // are tall, so basing width on font size sidesteps the measurement bug for every icon.
             const iconGap = 10;
+            const iconWidthEstimate = labelFontPx * 1.3;
             let bTextWidth, pillX, iconDrawX, nameDrawX;
 
             if (isAddButton) {
@@ -3064,19 +3065,16 @@
                 pillX = drawX - (bTextWidth / 2);
                 nameDrawX = drawX;
             } else {
-                spaceCtx.font = iconFontSpec;
-                const iconWidth = spaceCtx.measureText(realm.icon).width;
-
                 spaceCtx.font = nameFontSpec;
                 const nameWidth = spaceCtx.measureText(realm.name).width;
 
-                const contentWidth = iconWidth + iconGap + nameWidth;
+                const contentWidth = iconWidthEstimate + iconGap + nameWidth;
                 bTextWidth = contentWidth + pillPadding + 28;
                 pillX = drawX - (bTextWidth / 2);
 
                 const contentStartX = drawX - (contentWidth / 2);
-                iconDrawX = contentStartX + (iconWidth / 2);
-                nameDrawX = contentStartX + iconWidth + iconGap + (nameWidth / 2);
+                iconDrawX = contentStartX + (iconWidthEstimate / 2);
+                nameDrawX = contentStartX + iconWidthEstimate + iconGap + (nameWidth / 2);
             }
             
             const isTopHalf = realm.baseY < 0;
