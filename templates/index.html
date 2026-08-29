@@ -2211,7 +2211,10 @@
                 if (r.baseY > maxY) maxY = r.baseY;
             });
 
-            const padding = window.innerWidth < 768 ? 160 : 220;
+            // Padding accounts for: label pill overflow beyond the circle, plus the max distance
+            // the label-avoidance leash is allowed to nudge a realm from its home position -
+            // keeps every realm (and its label) safely on screen even after avoidance nudges.
+            const padding = window.innerWidth < 768 ? 260 : 320;
             const boundingWidth = (maxX - minX) + (padding * 2);
             const boundingHeight = (maxY - minY) + (padding * 2);
 
@@ -2450,6 +2453,25 @@
 
                 if (!anyOverlap) break;
             }
+
+            // LEASH CONSTRAINT: keep every realm close to its original circular "home" position
+            // so label/circle avoidance only nudges realms locally, instead of letting the whole
+            // layout drift away from the ring shape (and potentially off-screen).
+            const maxDriftFromHome = isMobile ? 85 : 105;
+            spaceRealms.forEach(realm => {
+                const homeDx = realm.x - realm.baseX;
+                const homeDy = realm.y - realm.baseY;
+                const homeDist = Math.hypot(homeDx, homeDy);
+
+                if (homeDist > maxDriftFromHome) {
+                    const scale = maxDriftFromHome / homeDist;
+                    realm.x = realm.baseX + homeDx * scale;
+                    realm.y = realm.baseY + homeDy * scale;
+                }
+
+                realm.drawX = realm.x + realm.floatX;
+                realm.drawY = realm.y + realm.floatY;
+            });
 
             spaceRealms.forEach(realm => {
                 const drawX = realm.drawX;
