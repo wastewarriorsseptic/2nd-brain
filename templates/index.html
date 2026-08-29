@@ -2444,16 +2444,6 @@
             targetCameraZoom = newZoom;
         }
 
-        // Reserves a fixed, generous width for an icon instead of trying to measure it. Every attempt
-        // to measure emoji glyph width via canvas APIs (.width, actualBoundingBoxLeft/Right, even
-        // scanning rendered pixels) has proven unreliable on mobile Safari for at least one icon in
-        // this app. Rather than keep chasing measurement accuracy, this just allocates comfortably more
-        // room than any emoji could plausibly need at a given font size - guaranteeing no overlap ever,
-        // for any icon, on any platform, at the cost of a little extra (harmless) breathing room.
-        function estimateIconWidth(fontPx) {
-            return fontPx * 1.9;
-        }
-
         function renderSpaceFrame() {
             if (!isSpaceViewActive) return;
 
@@ -2561,17 +2551,9 @@
                 const fontPx = realm.labelFontPx || 22;
                 const pillPadding = 36;
                 const pillHeight = Math.round(fontPx * 1.9);
-                const iconGap = 18;
 
-                let contentWidth;
-                if (realm.isAddButton) {
-                    spaceCtx.font = `bold ${fontPx}px sans-serif`;
-                    contentWidth = spaceCtx.measureText(realm.name).width;
-                } else {
-                    spaceCtx.font = `bold ${fontPx}px sans-serif`;
-                    const nameWidth = spaceCtx.measureText(realm.name).width;
-                    contentWidth = estimateIconWidth(fontPx) + iconGap + nameWidth;
-                }
+                spaceCtx.font = `bold ${fontPx}px sans-serif`;
+                const contentWidth = spaceCtx.measureText(realm.name).width;
 
                 const width = contentWidth + pillPadding + 28;
                 const x = realm.drawX - (width / 2);
@@ -3048,33 +3030,15 @@
             spaceCtx.fillText(realm.icon, drawX, drawY);
 
             const labelFontPx = realm.labelFontPx || 22;
-            const iconFontSpec = `${Math.round(labelFontPx * 1.15)}px serif`;
             const nameFontSpec = `bold ${labelFontPx}px sans-serif`;
 
             const pillPadding = 36;
             const pillHeight = Math.round(labelFontPx * 1.9);
-            const iconGap = 18;
-            const iconWidth = estimateIconWidth(labelFontPx);
-            let bTextWidth, pillX, iconDrawX, nameDrawX;
 
-            if (isAddButton) {
-                spaceCtx.font = nameFontSpec;
-                const nameWidth = spaceCtx.measureText(realm.name).width;
-                bTextWidth = nameWidth + pillPadding + 28;
-                pillX = drawX - (bTextWidth / 2);
-                nameDrawX = drawX;
-            } else {
-                spaceCtx.font = nameFontSpec;
-                const nameWidth = spaceCtx.measureText(realm.name).width;
-
-                const contentWidth = iconWidth + iconGap + nameWidth;
-                bTextWidth = contentWidth + pillPadding + 28;
-                pillX = drawX - (bTextWidth / 2);
-
-                const contentStartX = drawX - (contentWidth / 2);
-                iconDrawX = contentStartX + (iconWidth / 2);
-                nameDrawX = contentStartX + iconWidth + iconGap + (nameWidth / 2);
-            }
+            spaceCtx.font = nameFontSpec;
+            const nameWidth = spaceCtx.measureText(realm.name).width;
+            const bTextWidth = nameWidth + pillPadding + 28;
+            const pillX = drawX - (bTextWidth / 2);
             
             const isTopHalf = realm.baseY < 0;
             const pillY = isTopHalf 
@@ -3093,15 +3057,8 @@
 
             spaceCtx.fillStyle = '#ffffff';
             spaceCtx.shadowBlur = 0;
-            if (isAddButton) {
-                spaceCtx.font = nameFontSpec;
-                spaceCtx.fillText(realm.name, nameDrawX, pillY + (pillHeight / 2));
-            } else {
-                spaceCtx.font = iconFontSpec;
-                spaceCtx.fillText(realm.icon, iconDrawX, pillY + (pillHeight / 2));
-                spaceCtx.font = nameFontSpec;
-                spaceCtx.fillText(realm.name, nameDrawX, pillY + (pillHeight / 2));
-            }
+            spaceCtx.font = nameFontSpec;
+            spaceCtx.fillText(realm.name, drawX, pillY + (pillHeight / 2));
             spaceCtx.restore();
         }
 
