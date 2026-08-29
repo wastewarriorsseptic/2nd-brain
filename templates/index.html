@@ -2837,7 +2837,7 @@
                         spaceCtx.save();
                         spaceCtx.textAlign = 'center';
                         spaceCtx.textBaseline = 'middle';
-                        const truncatedTitle = task.title.length > 18 ? task.title.substring(0, 16) + '…' : task.title;
+                        const truncatedTitle = task.title.length > 40 ? task.title.substring(0, 38) + '…' : task.title;
                         spaceCtx.font = isActiveSwipeNode ? 'bold 13px sans-serif' : '12px sans-serif';
                         const tWidth = spaceCtx.measureText(truncatedTitle).width + 12;
                         const tPillY = task.y + task.radius + (isActiveSwipeNode ? 8 : 4);
