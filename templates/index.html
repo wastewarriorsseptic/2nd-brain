@@ -2161,7 +2161,7 @@
 
                         return combinedBuckets.map((bucket, bIdx) => {
                             const bucketAngle = (bIdx / totalBucketsCombined) * Math.PI * 2;
-                            const bucketDist = (isMobile ? 220 : 200) + (bIdx * 85);
+                            const bucketDist = (isMobile ? 260 : 235) + (bIdx * 150);
 
                             if (bucket.isAddButton) {
                                 return {
@@ -2171,7 +2171,7 @@
                                     parentRealmId: realm.id,
                                     angle: bucketAngle,
                                     orbitRadius: bucketDist,
-                                    radius: isMobile ? 32 : 28,
+                                    radius: isMobile ? 24 : 21,
                                     tasks: []
                                 };
                             }
@@ -2220,7 +2220,7 @@
                             const totalTasks = Math.max(1, filteredTasks.length);
                             filteredTasks.forEach((task, tIdx) => {
                                 task.angle = (tIdx / totalTasks) * Math.PI * 2;
-                                task.orbitRadius = 110 + (tIdx * 45);
+                                task.orbitRadius = 145 + (tIdx * 55);
                             });
 
                             return {
@@ -2228,7 +2228,7 @@
                                 name: bucket.name,
                                 angle: bucketAngle,
                                 orbitRadius: bucketDist,
-                                radius: isMobile ? 32 : 28,
+                                radius: isMobile ? 24 : 21,
                                 tasks: filteredTasks
                             };
                         });
@@ -2653,7 +2653,7 @@
                             const dxB = t1.x - b.x;
                             const dyB = t1.y - b.y;
                             const distB = Math.hypot(dxB, dyB);
-                            const minBucketDist = b.radius + 85;
+                            const minBucketDist = b.radius + 120;
 
                             if (distB < minBucketDist && distB > 0) {
                                 const pushFactor = (minBucketDist - distB);
