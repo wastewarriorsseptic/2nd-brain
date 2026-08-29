@@ -2224,20 +2224,39 @@
                             const tasksPerRing = 6;
                             const baseTaskOrbit = (isMobile ? 95 : 85);
                             const taskRingGap = 62;
+
+                            // Slot 0 of the innermost ring is always reserved for the "+" add-task
+                            // button, so it's always close to the bucket - never pushed out to an outer
+                            // ring no matter how many real tasks pile up.
+                            const totalOrbitSlots = filteredTasks.length + 1;
                             filteredTasks.forEach((task, tIdx) => {
-                                const ringIndex = Math.floor(tIdx / tasksPerRing);
-                                const posInRing = tIdx % tasksPerRing;
-                                const countInThisRing = Math.min(tasksPerRing, filteredTasks.length - (ringIndex * tasksPerRing));
+                                const slot = tIdx + 1;
+                                const ringIndex = Math.floor(slot / tasksPerRing);
+                                const posInRing = slot % tasksPerRing;
+                                const slotsBeforeThisRing = ringIndex * tasksPerRing;
+                                const countInThisRing = Math.min(tasksPerRing, totalOrbitSlots - slotsBeforeThisRing);
                                 task.angle = (posInRing / countInThisRing) * Math.PI * 2;
                                 task.orbitRadius = baseTaskOrbit + (ringIndex * taskRingGap);
                             });
 
+                            const addTaskCountInRing0 = Math.min(tasksPerRing, totalOrbitSlots);
+                            const addTaskButton = {
+                                id: `__add_task__${bucket.id}`,
+                                isAddButton: true,
+                                bucketId: bucket.id,
+                                realmId: realm.id,
+                                angle: 0,
+                                orbitRadius: baseTaskOrbit,
+                                radius: isMobile ? 22 : 19
+                            };
+
                             // How far this bucket's own cluster (itself + its outermost task ring + label)
                             // reaches from its own center - lets the camera frame every bucket fully,
-                            // however many tasks or buckets a realm has.
-                            const ringCount = Math.ceil(filteredTasks.length / tasksPerRing);
-                            const maxTaskOrbit = filteredTasks.length > 0 ? baseTaskOrbit + ((ringCount - 1) * taskRingGap) : 0;
-                            const bucketMaxReach = (isMobile ? 38 : 34) + maxTaskOrbit + (filteredTasks.length > 0 ? 60 : 45);
+                            // however many tasks or buckets a realm has. The add-task button always
+                            // occupies at least the innermost ring, so it's always counted here too.
+                            const ringCount = Math.max(1, Math.ceil(totalOrbitSlots / tasksPerRing));
+                            const maxTaskOrbit = baseTaskOrbit + ((ringCount - 1) * taskRingGap);
+                            const bucketMaxReach = (isMobile ? 38 : 34) + maxTaskOrbit + 60;
 
                             return {
                                 id: bucket.id,
@@ -2246,7 +2265,8 @@
                                 orbitRadius: bucketDist,
                                 radius: isMobile ? 38 : 34,
                                 maxReach: bucketMaxReach,
-                                tasks: filteredTasks
+                                tasks: filteredTasks,
+                                addTaskButton: addTaskButton
                             };
                         });
                     })()
@@ -2639,6 +2659,11 @@
 
                             allTasksOnCanvas.push(task);
                         });
+
+                        if (bucket.addTaskButton && !bucket.isAddButton) {
+                            bucket.addTaskButton.x = bucket.x + Math.cos(bucket.addTaskButton.angle) * bucket.addTaskButton.orbitRadius;
+                            bucket.addTaskButton.y = bucket.y + Math.sin(bucket.addTaskButton.angle) * bucket.addTaskButton.orbitRadius;
+                        }
                     }
                 });
 
@@ -2765,6 +2790,32 @@
                         spaceCtx.fillText(truncatedTitle, task.x, tPillY + 10);
                         spaceCtx.restore();
                     });
+
+                    // "+" add-task button - always close to the bucket, only in orbit mode (not the
+                    // linear swipe-dock view for a drilled-into bucket).
+                    if (!isSelectedBucket && bucket.addTaskButton && !bucket.isAddButton) {
+                        const atb = bucket.addTaskButton;
+                        spaceCtx.save();
+                        spaceCtx.beginPath();
+                        spaceCtx.arc(atb.x, atb.y, atb.radius, 0, Math.PI * 2);
+                        spaceCtx.fillStyle = 'rgba(20, 40, 34, 0.9)';
+                        spaceCtx.strokeStyle = '#34d399';
+                        spaceCtx.lineWidth = 2;
+                        spaceCtx.shadowColor = '#34d399';
+                        spaceCtx.shadowBlur = 16;
+                        spaceCtx.setLineDash([6, 5]);
+                        spaceCtx.fill();
+                        spaceCtx.stroke();
+                        spaceCtx.setLineDash([]);
+
+                        spaceCtx.shadowBlur = 0;
+                        spaceCtx.textAlign = 'center';
+                        spaceCtx.textBaseline = 'middle';
+                        spaceCtx.font = `${Math.round(atb.radius * 1.1)}px sans-serif`;
+                        spaceCtx.fillStyle = '#34d399';
+                        spaceCtx.fillText('+', atb.x, atb.y + 1);
+                        spaceCtx.restore();
+                    }
                 });
 
                 // LAYER 2: RENDER BUCKET MOONS & BUCKET LABELS SECOND (MIDDLE LAYER ABOVE TASKS)
@@ -3113,10 +3164,20 @@
             let clickedTask = null;
             let clickedBucket = null;
             let clickedRealm = null;
+            let clickedAddTaskButton = null;
 
             if (activeSelectedRealm) {
                 activeSelectedRealm.buckets.forEach(bucket => {
                     if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
+
+                    if (!activeSelectedBucket && bucket.addTaskButton && !bucket.isAddButton) {
+                        const atb = bucket.addTaskButton;
+                        const distAtb = Math.hypot(worldX - atb.x, worldY - atb.y);
+                        if (distAtb <= atb.radius + 14) {
+                            clickedAddTaskButton = atb;
+                        }
+                    }
+
                     bucket.tasks.forEach(task => {
                         const dist = Math.hypot(worldX - task.x, worldY - task.y);
                         if (dist <= task.radius + 18) {
@@ -3124,6 +3185,13 @@
                         }
                     });
                 });
+            }
+
+            if (clickedAddTaskButton) {
+                currentSelectedRealmId = clickedAddTaskButton.realmId;
+                currentSelectedBucketId = clickedAddTaskButton.bucketId;
+                openGlobalAddTaskModal();
+                return;
             }
 
             // Click task behavior inside bucket mode: tap selected node to unselect
