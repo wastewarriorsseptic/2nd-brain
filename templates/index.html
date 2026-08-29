@@ -2035,6 +2035,7 @@
         let longPressStartPos = null;
         let longPressFired = false;
         let longPressRealmForDelete = null;
+        let longPressTaskForDelete = null;
         let cameraOffset = { x: 0, y: 0 };
         let targetCameraOffset = { x: 0, y: 0 };
         let cameraZoom = 1;
@@ -2089,6 +2090,7 @@
                 hideHudCard();
                 deselectBucketSwipeDock();
                 longPressRealmForDelete = null;
+                longPressTaskForDelete = null;
             }
         }
 
@@ -2352,6 +2354,7 @@
             activeSelectedBucket = null;
             activeSwipeTaskId = null;
             longPressRealmForDelete = null;
+            longPressTaskForDelete = null;
             deselectBucketSwipeDock();
             persistSpaceSelection();
 
@@ -2956,6 +2959,9 @@
             if (longPressRealmForDelete) {
                 drawDeleteIcon(longPressRealmForDelete);
             }
+            if (longPressTaskForDelete) {
+                drawTaskDeleteIcon(longPressTaskForDelete);
+            }
 
             spaceCtx.restore();
             requestAnimationFrame(renderSpaceFrame);
@@ -3078,14 +3084,38 @@
 
                     const worldX = (touch.clientX - cameraOffset.x) / cameraZoom;
                     const worldY = (touch.clientY - cameraOffset.y) / cameraZoom;
-                    let pressedRealm = null;
-                    spaceRealms.forEach(realm => {
-                        if (realm.isAddButton) return;
-                        const dist = Math.hypot(worldX - realm.x, worldY - realm.y);
-                        if (dist <= realm.radius + 24) pressedRealm = realm;
-                    });
 
-                    if (pressedRealm) {
+                    // Tasks are checked first (smaller, more specific targets) - if a task is under
+                    // the finger, holding arms task-deletion; only if no task matched do we fall back
+                    // to checking for a realm underneath.
+                    let pressedTask = null;
+                    if (activeSelectedRealm) {
+                        activeSelectedRealm.buckets.forEach(bucket => {
+                            if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
+                            if (bucket.isAddButton) return;
+                            bucket.tasks.forEach(task => {
+                                const dist = Math.hypot(worldX - task.x, worldY - task.y);
+                                if (dist <= task.radius + 18) pressedTask = task;
+                            });
+                        });
+                    }
+
+                    let pressedRealm = null;
+                    if (!pressedTask) {
+                        spaceRealms.forEach(realm => {
+                            if (realm.isAddButton) return;
+                            const dist = Math.hypot(worldX - realm.x, worldY - realm.y);
+                            if (dist <= realm.radius + 24) pressedRealm = realm;
+                        });
+                    }
+
+                    if (pressedTask) {
+                        longPressTimer = setTimeout(() => {
+                            longPressFired = true;
+                            longPressTaskForDelete = pressedTask;
+                            isDragging = false;
+                        }, 550);
+                    } else if (pressedRealm) {
                         longPressTimer = setTimeout(() => {
                             longPressFired = true;
                             longPressRealmForDelete = pressedRealm;
@@ -3203,9 +3233,61 @@
             form.submit();
         }
 
+        function getTaskDeleteIconPos(task) {
+            const offsetAngle = -Math.PI / 4; // up-right diagonal off the task node
+            const dist = task.radius + 26;
+            return {
+                x: task.x + Math.cos(offsetAngle) * dist,
+                y: task.y + Math.sin(offsetAngle) * dist,
+                radius: 26
+            };
+        }
+
+        function drawTaskDeleteIcon(task) {
+            const pos = getTaskDeleteIconPos(task);
+            const pulse = 1 + Math.sin(frameCount * 5) * 0.08;
+
+            spaceCtx.save();
+
+            spaceCtx.beginPath();
+            spaceCtx.arc(pos.x, pos.y, pos.radius * 1.35 * pulse, 0, Math.PI * 2);
+            spaceCtx.fillStyle = 'rgba(225, 29, 72, 0.25)';
+            spaceCtx.fill();
+
+            spaceCtx.beginPath();
+            spaceCtx.arc(pos.x, pos.y, pos.radius * pulse, 0, Math.PI * 2);
+            spaceCtx.fillStyle = 'rgba(225, 29, 72, 0.97)';
+            spaceCtx.strokeStyle = '#fecdd3';
+            spaceCtx.lineWidth = 3;
+            spaceCtx.shadowColor = '#e11d48';
+            spaceCtx.shadowBlur = 24;
+            spaceCtx.fill();
+            spaceCtx.stroke();
+
+            spaceCtx.shadowBlur = 0;
+            spaceCtx.textAlign = 'center';
+            spaceCtx.textBaseline = 'middle';
+            spaceCtx.font = `${Math.round(pos.radius * 0.72)}px serif`;
+            spaceCtx.fillText('🗑', pos.x - (pos.radius * 0.04), pos.y + pos.radius * 0.08);
+            spaceCtx.restore();
+        }
+
         function detectClickNode(clientX, clientY) {
             const worldX = (clientX - cameraOffset.x) / cameraZoom;
             const worldY = (clientY - cameraOffset.y) / cameraZoom;
+
+            // If a task's hold-to-delete trash icon is showing, this tap either hits it (delete) or
+            // lands elsewhere (dismiss) - reuses the existing "Delete Task" modal (with its recurring
+            // series choice) exactly as the pencil/checkbox controls already do.
+            if (longPressTaskForDelete) {
+                const iconPos = getTaskDeleteIconPos(longPressTaskForDelete);
+                const dist = Math.hypot(worldX - iconPos.x, worldY - iconPos.y);
+                if (dist <= iconPos.radius + 10) {
+                    openDeleteModal(longPressTaskForDelete.id, !!longPressTaskForDelete.isRecurring);
+                }
+                longPressTaskForDelete = null;
+                return;
+            }
 
             // If the hold-to-delete trash icon is currently showing, this tap either hits it
             // (delete) or lands elsewhere (dismiss) - either way it's consumed here.
