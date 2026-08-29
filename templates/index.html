@@ -2048,6 +2048,24 @@
         let initialPinchDistance = null;
         let frameCount = 0;
         let lastTouchTime = 0;
+
+        // Remembers which realm/bucket the user drilled into, so creating a task/bucket (which does a
+        // full page reload via a normal form POST) can restore that exact spot instead of dumping the
+        // user back out to the full universe view every time.
+        function persistSpaceSelection() {
+            try {
+                if (activeSelectedRealm) {
+                    localStorage.setItem('space_view_realm_id', activeSelectedRealm.id);
+                } else {
+                    localStorage.removeItem('space_view_realm_id');
+                }
+                if (activeSelectedBucket) {
+                    localStorage.setItem('space_view_bucket_id', activeSelectedBucket.id);
+                } else {
+                    localStorage.removeItem('space_view_bucket_id');
+                }
+            } catch (e) {}
+        }
         let deviceDPR = 1;
 
         function toggleSpaceView() {
@@ -2275,8 +2293,49 @@
 
             setupSpaceEvents();
             setupHudDraggable();
-            recenterSpace();
+            restoreOrRecenterSpace();
             requestAnimationFrame(renderSpaceFrame);
+        }
+
+        // Creating a task or bucket submits a normal form and reloads the page. Without this, that
+        // reload would always land back on recenterSpace()'s full-universe view - annoying if you were
+        // deep inside a realm/bucket when you hit "Create". This restores that exact spot instead,
+        // falling back to the normal full-universe view if nothing was saved (or it no longer exists).
+        function restoreOrRecenterSpace() {
+            let savedRealmId = null;
+            let savedBucketId = null;
+            try {
+                savedRealmId = localStorage.getItem('space_view_realm_id');
+                savedBucketId = localStorage.getItem('space_view_bucket_id');
+            } catch (e) {}
+
+            if (savedRealmId) {
+                const realm = spaceRealms.find(r => !r.isAddButton && String(r.id) === String(savedRealmId));
+                if (realm) {
+                    focusAndRepelRealms(realm);
+
+                    if (savedBucketId) {
+                        const bucket = realm.buckets.find(b => !b.isAddButton && String(b.id) === String(savedBucketId));
+                        if (bucket) {
+                            hideHudCard();
+                            activeSelectedBucket = bucket;
+                            renderBucketTaskSwipeDock(bucket);
+
+                            const isMobile = window.innerWidth < 768;
+                            const bx = realm.baseX + Math.cos(bucket.angle) * bucket.orbitRadius;
+                            const by = realm.baseY + Math.sin(bucket.angle) * bucket.orbitRadius;
+                            targetCameraZoom = isMobile ? 0.65 : 1.15;
+                            targetCameraOffset = {
+                                x: (window.innerWidth / 2) - (bx * targetCameraZoom),
+                                y: (window.innerHeight / 2) - (by * targetCameraZoom)
+                            };
+                        }
+                    }
+                    return;
+                }
+            }
+
+            recenterSpace();
         }
 
         function resizeSpaceCanvas() {
@@ -2294,6 +2353,7 @@
             activeSwipeTaskId = null;
             longPressRealmForDelete = null;
             deselectBucketSwipeDock();
+            persistSpaceSelection();
 
             if (spaceRealms.length === 0) {
                 targetCameraOffset = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
@@ -3251,6 +3311,7 @@
                         y: (window.innerHeight / 2) - (clickedBucket.y * targetCameraZoom)
                     };
                 }
+                persistSpaceSelection();
                 return;
             }
 
@@ -3275,6 +3336,7 @@
                     activeSwipeTaskId = null;
                     deselectBucketSwipeDock();
                     focusAndRepelRealms(clickedRealm);
+                    persistSpaceSelection();
                 }
             } else {
                 hideHudCard();
