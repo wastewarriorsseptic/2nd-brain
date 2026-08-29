@@ -2148,68 +2148,91 @@
                     labelFontPx: realmLabelFontPx,
                     floatOffsetPhase: (rIdx * 1.37) % (Math.PI * 2),
                     floatSpeed: 1.2 + (rIdx % 3) * 0.3,
-                    buckets: (realm.buckets || []).map((bucket, bIdx) => {
-                        const totalBuckets = Math.max(1, realm.buckets.length);
-                        const bucketAngle = (bIdx / totalBuckets) * Math.PI * 2;
-                        
-                        const bucketCardElements = Array.from(document.querySelectorAll(`.timeline-card-wrapper[data-bucket-id="${bucket.id}"]`));
-                        const filteredTasks = [];
+                    buckets: (() => {
+                        const realBuckets = realm.buckets || [];
+                        // "+" bucket-creation node rides on the same spiral, always one slot past the
+                        // last real bucket - so it's automatically the most distal ring (or the only
+                        // ring if this realm has no buckets yet). Skipped entirely for the "Add Realm"
+                        // pseudo-realm, which never has real buckets of its own.
+                        const combinedBuckets = realm.isAddButton
+                            ? []
+                            : realBuckets.concat([{ id: `__add_bucket__${realm.id}`, name: 'Add Bucket', isAddButton: true }]);
+                        const totalBucketsCombined = Math.max(1, combinedBuckets.length);
 
-                        bucketCardElements.forEach((el) => {
-                            const isCompleted = el.getAttribute('data-completed') === 'true';
-                            const recurringFlag = el.getAttribute('data-recurring') === 'true';
+                        return combinedBuckets.map((bucket, bIdx) => {
+                            const bucketAngle = (bIdx / totalBucketsCombined) * Math.PI * 2;
+                            const bucketDist = (isMobile ? 220 : 200) + (bIdx * 85);
 
-                            if (isCompleted) return;
-                            
-                            if (recurringFlag) {
-                                const title = el.getAttribute('data-title') || '';
-                                const seriesKey = `${bucket.id}-${title}`;
-                                if (processedGroupIds.has(seriesKey)) return;
-                                processedGroupIds.add(seriesKey);
+                            if (bucket.isAddButton) {
+                                return {
+                                    id: bucket.id,
+                                    name: bucket.name,
+                                    isAddButton: true,
+                                    parentRealmId: realm.id,
+                                    angle: bucketAngle,
+                                    orbitRadius: bucketDist,
+                                    radius: isMobile ? 32 : 28,
+                                    tasks: []
+                                };
                             }
 
-                            const isOverdue = el.querySelector('.bg-rose-500') !== null;
+                            const bucketCardElements = Array.from(document.querySelectorAll(`.timeline-card-wrapper[data-bucket-id="${bucket.id}"]`));
+                            const filteredTasks = [];
 
-                            filteredTasks.push({
-                                id: el.getAttribute('data-item-id'),
-                                title: el.getAttribute('data-title') || el.querySelector('h3').innerText.trim(),
-                                dueDate: el.getAttribute('data-due-date') || '9999-12-31',
-                                dueTime: el.getAttribute('data-due-time') || '',
-                                dueDateFormatted: el.getAttribute('data-due-date-formatted') || '',
-                                amount: el.getAttribute('data-amount') || '',
-                                description: el.getAttribute('data-description') || '',
-                                recurrenceType: el.getAttribute('data-recurrence-type') || 'none',
-                                bucketId: bucket.id,
-                                realmId: realm.id,
-                                realmName: realm.name,
-                                bucketName: bucket.name,
-                                isOverdue: isOverdue,
-                                isRecurring: recurringFlag,
-                                domElement: el,
-                                radius: 10,
-                                floatOffset: Math.random() * Math.PI * 2
+                            bucketCardElements.forEach((el) => {
+                                const isCompleted = el.getAttribute('data-completed') === 'true';
+                                const recurringFlag = el.getAttribute('data-recurring') === 'true';
+
+                                if (isCompleted) return;
+
+                                if (recurringFlag) {
+                                    const title = el.getAttribute('data-title') || '';
+                                    const seriesKey = `${bucket.id}-${title}`;
+                                    if (processedGroupIds.has(seriesKey)) return;
+                                    processedGroupIds.add(seriesKey);
+                                }
+
+                                const isOverdue = el.querySelector('.bg-rose-500') !== null;
+
+                                filteredTasks.push({
+                                    id: el.getAttribute('data-item-id'),
+                                    title: el.getAttribute('data-title') || el.querySelector('h3').innerText.trim(),
+                                    dueDate: el.getAttribute('data-due-date') || '9999-12-31',
+                                    dueTime: el.getAttribute('data-due-time') || '',
+                                    dueDateFormatted: el.getAttribute('data-due-date-formatted') || '',
+                                    amount: el.getAttribute('data-amount') || '',
+                                    description: el.getAttribute('data-description') || '',
+                                    recurrenceType: el.getAttribute('data-recurrence-type') || 'none',
+                                    bucketId: bucket.id,
+                                    realmId: realm.id,
+                                    realmName: realm.name,
+                                    bucketName: bucket.name,
+                                    isOverdue: isOverdue,
+                                    isRecurring: recurringFlag,
+                                    domElement: el,
+                                    radius: 10,
+                                    floatOffset: Math.random() * Math.PI * 2
+                                });
                             });
+
+                            filteredTasks.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+
+                            const totalTasks = Math.max(1, filteredTasks.length);
+                            filteredTasks.forEach((task, tIdx) => {
+                                task.angle = (tIdx / totalTasks) * Math.PI * 2;
+                                task.orbitRadius = 110 + (tIdx * 45);
+                            });
+
+                            return {
+                                id: bucket.id,
+                                name: bucket.name,
+                                angle: bucketAngle,
+                                orbitRadius: bucketDist,
+                                radius: isMobile ? 32 : 28,
+                                tasks: filteredTasks
+                            };
                         });
-
-                        filteredTasks.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
-
-                        const totalTasks = Math.max(1, filteredTasks.length);
-                        filteredTasks.forEach((task, tIdx) => {
-                            task.angle = (tIdx / totalTasks) * Math.PI * 2;
-                            task.orbitRadius = 110 + (tIdx * 45);
-                        });
-
-                        const bucketDist = (isMobile ? 220 : 200) + (bIdx * 85);
-
-                        return {
-                            id: bucket.id,
-                            name: bucket.name,
-                            angle: bucketAngle,
-                            orbitRadius: bucketDist,
-                            radius: isMobile ? 32 : 28,
-                            tasks: filteredTasks
-                        };
-                    })
+                    })()
                 };
             });
 
@@ -2759,6 +2782,7 @@
                 realm.buckets.forEach(bucket => {
                     const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
                     if (activeSelectedBucket && !isSelectedBucket) return;
+                    const isAddBucketButton = !!bucket.isAddButton;
 
                     spaceCtx.save();
 
@@ -2770,19 +2794,23 @@
 
                     spaceCtx.beginPath();
                     spaceCtx.arc(bucket.x, bucket.y, bucket.radius, 0, Math.PI * 2);
-                    spaceCtx.fillStyle = isSelectedBucket ? '#0284c7' : '#0369a1';
-                    spaceCtx.strokeStyle = '#38bdf8';
+                    spaceCtx.fillStyle = isAddBucketButton ? 'rgba(20, 40, 34, 0.85)' : (isSelectedBucket ? '#0284c7' : '#0369a1');
+                    spaceCtx.strokeStyle = isAddBucketButton ? '#34d399' : '#38bdf8';
                     spaceCtx.lineWidth = 2.5;
-                    spaceCtx.shadowColor = '#38bdf8';
+                    spaceCtx.shadowColor = isAddBucketButton ? '#34d399' : '#38bdf8';
                     spaceCtx.shadowBlur = 35;
+                    if (isAddBucketButton) {
+                        spaceCtx.setLineDash([8, 6]);
+                    }
                     spaceCtx.fill();
                     spaceCtx.stroke();
+                    spaceCtx.setLineDash([]);
 
                     spaceCtx.textAlign = 'center';
                     spaceCtx.textBaseline = 'middle';
-                    spaceCtx.font = '20px serif';
+                    spaceCtx.font = isAddBucketButton ? `${Math.round(bucket.radius * 0.9)}px serif` : '20px serif';
                     spaceCtx.shadowBlur = 0;
-                    spaceCtx.fillText('⭐️', bucket.x, bucket.y + 1);
+                    spaceCtx.fillText(isAddBucketButton ? '➕' : '⭐️', bucket.x, bucket.y + 1);
 
                     spaceCtx.font = 'bold 17px sans-serif';
                     const nameText = bucket.name;
@@ -2796,10 +2824,10 @@
                         ? bucket.y - bucket.radius - bPillHeight - 10
                         : bucket.y + bucket.radius + 10;
 
-                    spaceCtx.fillStyle = isSelectedBucket ? 'rgba(3, 105, 161, 0.98)' : 'rgba(15, 23, 42, 0.98)';
-                    spaceCtx.strokeStyle = '#38bdf8';
+                    spaceCtx.fillStyle = isAddBucketButton ? 'rgba(6, 78, 59, 0.9)' : (isSelectedBucket ? 'rgba(3, 105, 161, 0.98)' : 'rgba(15, 23, 42, 0.98)');
+                    spaceCtx.strokeStyle = isAddBucketButton ? '#34d399' : '#38bdf8';
                     spaceCtx.lineWidth = 1.8;
-                    spaceCtx.shadowColor = '#38bdf8';
+                    spaceCtx.shadowColor = isAddBucketButton ? '#34d399' : '#38bdf8';
                     spaceCtx.shadowBlur = 18;
                     spaceCtx.beginPath();
                     spaceCtx.roundRect(bucket.x - (bWidth / 2), bPillY, bWidth, bPillHeight, 10);
@@ -3138,6 +3166,14 @@
             }
 
             if (clickedBucket) {
+                if (clickedBucket.isAddButton) {
+                    const realmIdField = document.getElementById('add-bucket-realm-id');
+                    if (realmIdField) realmIdField.value = clickedBucket.parentRealmId;
+                    const modal = document.getElementById('add-bucket-modal');
+                    if (modal) modal.classList.remove('hidden');
+                    return;
+                }
+
                 if (activeSelectedBucket && activeSelectedBucket.id === clickedBucket.id) {
                     activeSelectedBucket = null;
                     activeSwipeTaskId = null;
@@ -3335,7 +3371,7 @@
             });
 
             const isMobile = window.innerWidth < 768;
-            targetCameraZoom = isMobile ? 0.60 : 0.95;
+            targetCameraZoom = isMobile ? 0.42 : 0.8;
             targetCameraOffset = {
                 x: (window.innerWidth / 2) - (selectedRealm.baseX * targetCameraZoom),
                 y: (window.innerHeight / 2) - (selectedRealm.baseY * targetCameraZoom)
