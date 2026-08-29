@@ -396,10 +396,20 @@
                 <div class="text-center py-12 bg-slate-800/60 border border-slate-700/60 rounded-3xl px-6 max-w-md mx-auto my-8 shadow-2xl backdrop-blur-md">
                     <span class="text-5xl block mb-4">🔐</span>
                     <h3 class="text-2xl font-bold mb-2 text-white">Welcome to TaskMonster</h3>
-                    <p class="text-slate-400 text-sm mb-6 leading-relaxed">Sign in with your Google account to access your personal dashboard and task timeline.</p>
-                    <a href="/login" class="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-3 rounded-2xl transition shadow-lg shadow-indigo-600/30 w-full">
-                        🔑 Sign in with Google
-                    </a>
+                    <p class="text-slate-400 text-sm mb-6 leading-relaxed">Sign in to access your personal dashboard and task timeline.</p>
+                    <div class="space-y-3">
+                        <a href="/login" class="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-3 rounded-2xl transition shadow-lg shadow-indigo-600/30 w-full">
+                            🔑 Sign in with Google
+                        </a>
+                        {% if apple_signin_enabled %}
+                        <a href="/login/apple" class="inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-100 text-black font-semibold px-6 py-3 rounded-2xl transition shadow-lg w-full">
+                            <svg viewBox="0 0 384 512" class="w-5 h-5 fill-current" aria-hidden="true">
+                                <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/>
+                            </svg>
+                            Sign in with Apple
+                        </a>
+                        {% endif %}
+                    </div>
                 </div>
                 {% endif %}
             </div>
@@ -2446,6 +2456,46 @@
             targetCameraZoom = newZoom;
         }
 
+        // Wraps text to a max pixel width (measured in whatever font is CURRENTLY set on the given
+        // context) instead of letting a single line grow arbitrarily wide - this is what keeps a long
+        // task title from overlapping its neighbor, whether tasks are lined up in the linear swipe-dock
+        // view or spread around a bucket's orbit. Caps at maxLines, ellipsis-truncating the last line
+        // if there's still more text than that can hold.
+        function wrapTextToWidth(ctx, text, maxWidth, maxLines) {
+            const words = text.split(' ');
+            const allLines = [];
+            let currentLine = '';
+
+            words.forEach(word => {
+                const testLine = currentLine ? `${currentLine} ${word}` : word;
+                if (currentLine && ctx.measureText(testLine).width > maxWidth) {
+                    allLines.push(currentLine);
+                    currentLine = word;
+                } else {
+                    currentLine = testLine;
+                }
+            });
+            if (currentLine) allLines.push(currentLine);
+
+            let lines = allLines;
+            let truncated = false;
+            if (lines.length > maxLines) {
+                lines = lines.slice(0, maxLines);
+                truncated = true;
+            }
+
+            const lastIdx = lines.length - 1;
+            if (lastIdx >= 0 && (truncated || ctx.measureText(lines[lastIdx]).width > maxWidth)) {
+                let lastLine = lines[lastIdx];
+                while (lastLine.length > 1 && ctx.measureText(lastLine + '…').width > maxWidth) {
+                    lastLine = lastLine.slice(0, -1);
+                }
+                lines[lastIdx] = lastLine.replace(/[.,;:\s]+$/, '') + '…';
+            }
+
+            return lines;
+        }
+
         function renderSpaceFrame() {
             if (!isSpaceViewActive) return;
 
@@ -2868,14 +2918,24 @@
                         spaceCtx.save();
                         spaceCtx.textAlign = 'center';
                         spaceCtx.textBaseline = 'middle';
-                        const truncatedTitle = task.title.length > 40 ? task.title.substring(0, 38) + '…' : task.title;
                         spaceCtx.font = isActiveSwipeNode ? 'bold 13px sans-serif' : '12px sans-serif';
-                        const tWidth = spaceCtx.measureText(truncatedTitle).width + 12;
+
+                        // Wrap to multiple centered lines instead of one ever-widening line - this is
+                        // what keeps a long task title from overlapping the next task's label, whether
+                        // they're 160px apart in the linear swipe-dock view or spread around a bucket's
+                        // orbit ring.
+                        const maxLabelWidth = 130;
+                        const lineHeight = isActiveSwipeNode ? 16 : 15;
+                        const lines = wrapTextToWidth(spaceCtx, task.title, maxLabelWidth, 3);
+
+                        const widestLine = Math.max(...lines.map(l => spaceCtx.measureText(l).width));
+                        const tWidth = widestLine + 16;
+                        const tPillHeight = (lines.length * lineHeight) + (isActiveSwipeNode ? 10 : 8);
                         const tPillY = task.y + task.radius + (isActiveSwipeNode ? 8 : 4);
 
                         spaceCtx.fillStyle = isActiveSwipeNode ? 'rgba(30, 41, 59, 0.98)' : 'rgba(15, 23, 42, 0.9)';
                         spaceCtx.beginPath();
-                        spaceCtx.roundRect(task.x - tWidth / 2, tPillY, tWidth, 20, 4);
+                        spaceCtx.roundRect(task.x - tWidth / 2, tPillY, tWidth, tPillHeight, 4);
                         spaceCtx.fill();
 
                         if (isActiveSwipeNode) {
@@ -2885,7 +2945,10 @@
                         }
 
                         spaceCtx.fillStyle = isActiveSwipeNode ? '#ffffff' : '#e2e8f0';
-                        spaceCtx.fillText(truncatedTitle, task.x, tPillY + 10);
+                        const firstLineY = tPillY + (lineHeight / 2) + (isActiveSwipeNode ? 5 : 4);
+                        lines.forEach((line, lineIdx) => {
+                            spaceCtx.fillText(line, task.x, firstLineY + (lineIdx * lineHeight));
+                        });
                         spaceCtx.restore();
                     });
 
