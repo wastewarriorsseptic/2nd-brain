@@ -3009,32 +3009,41 @@
 
         function getDeleteIconPos(realm) {
             const offsetAngle = -Math.PI / 4; // up-right diagonal off the circle
-            const dist = realm.radius * 0.95;
+            const dist = realm.radius * 1.05;
             return {
                 x: realm.drawX + Math.cos(offsetAngle) * dist,
                 y: realm.drawY + Math.sin(offsetAngle) * dist,
-                radius: 30
+                radius: 48
             };
         }
 
         function drawDeleteIcon(realm) {
             const pos = getDeleteIconPos(realm);
+            const pulse = 1 + Math.sin(frameCount * 5) * 0.08;
+
             spaceCtx.save();
+
+            // Outer pulsing halo so it reads clearly even at a glance
             spaceCtx.beginPath();
-            spaceCtx.arc(pos.x, pos.y, pos.radius, 0, Math.PI * 2);
-            spaceCtx.fillStyle = 'rgba(225, 29, 72, 0.95)';
+            spaceCtx.arc(pos.x, pos.y, pos.radius * 1.35 * pulse, 0, Math.PI * 2);
+            spaceCtx.fillStyle = 'rgba(225, 29, 72, 0.25)';
+            spaceCtx.fill();
+
+            spaceCtx.beginPath();
+            spaceCtx.arc(pos.x, pos.y, pos.radius * pulse, 0, Math.PI * 2);
+            spaceCtx.fillStyle = 'rgba(225, 29, 72, 0.97)';
             spaceCtx.strokeStyle = '#fecdd3';
-            spaceCtx.lineWidth = 2.5;
+            spaceCtx.lineWidth = 4;
             spaceCtx.shadowColor = '#e11d48';
-            spaceCtx.shadowBlur = 20;
+            spaceCtx.shadowBlur = 30;
             spaceCtx.fill();
             spaceCtx.stroke();
 
             spaceCtx.shadowBlur = 0;
             spaceCtx.textAlign = 'center';
             spaceCtx.textBaseline = 'middle';
-            spaceCtx.font = '30px serif';
-            spaceCtx.fillText('🗑️', pos.x, pos.y + 1);
+            spaceCtx.font = '48px serif';
+            spaceCtx.fillText('🗑️', pos.x, pos.y + 2);
             spaceCtx.restore();
         }
 
