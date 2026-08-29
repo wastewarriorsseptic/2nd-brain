@@ -3043,7 +3043,7 @@
             spaceCtx.textAlign = 'center';
             spaceCtx.textBaseline = 'middle';
             spaceCtx.font = `${Math.round(pos.radius * 0.72)}px serif`;
-            spaceCtx.fillText('🗑️', pos.x, pos.y + pos.radius * 0.08);
+            spaceCtx.fillText('🗑', pos.x - (pos.radius * 0.04), pos.y + pos.radius * 0.08);
             spaceCtx.restore();
         }
 
