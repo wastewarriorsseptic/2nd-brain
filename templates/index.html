@@ -178,6 +178,11 @@
                                        class="realm-link text-xs md:text-sm font-bold flex items-center gap-1.5 min-w-0 {% if selected_realm_id == realm.id and not selected_bucket_id %}text-white{% else %}text-slate-300{% endif %}">
                                         <span class="shrink-0">{{ realm.icon or '🔮' }}</span> <span class="truncate">{{ realm.name }}</span>
                                     </a>
+                                    {% if realm.user_id != user.id %}
+                                    <span class="shrink-0 bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded-full" title="Shared with you by another owner">👥 Shared with you</span>
+                                    {% elif collaborators_map and collaborators_map.get(realm.id) %}
+                                    <span class="shrink-0 bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded-full" title="You've shared this Realm with others">👥 Shared</span>
+                                    {% endif %}
                                 </div>
 
                                 <div class="grid grid-cols-4 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-20 text-center items-center">
@@ -1134,6 +1139,7 @@
                 id: {{ r.id }},
                 name: "{{ r.name }}",
                 icon: "{{ r.icon or '🔮' }}",
+                isShared: {{ 'true' if (r.user_id != user.id) or (collaborators_map and collaborators_map.get(r.id)) else 'false' }},
                 buckets: [
                     {% for b in r.buckets %}
                     { id: {{ b.id }}, name: "{{ b.name }}" },
@@ -2206,6 +2212,7 @@
                     id: realm.id,
                     name: realm.name,
                     icon: realm.icon || '🔮',
+                    isShared: !!realm.isShared,
                     isAddButton: !!realm.isAddButton,
                     angle: realmAngle,
                     homeAngle: realmAngle,
@@ -3159,6 +3166,31 @@
             spaceCtx.shadowBlur = 0;
             spaceCtx.font = nameFontSpec;
             spaceCtx.fillText(realm.name, drawX, pillY + (pillHeight / 2));
+
+            // Small "shared" badge on the realm's own circle - independent of the label pill
+            // below/above it, so it stays visible regardless of where that pill sits.
+            if (realm.isShared && !isAddButton) {
+                const badgeAngle = -Math.PI / 4;
+                const badgeDist = displayRadius * 0.78;
+                const badgeX = drawX + Math.cos(badgeAngle) * badgeDist;
+                const badgeY = drawY + Math.sin(badgeAngle) * badgeDist;
+                const badgeRadius = Math.max(14, displayRadius * 0.22);
+
+                spaceCtx.beginPath();
+                spaceCtx.arc(badgeX, badgeY, badgeRadius, 0, Math.PI * 2);
+                spaceCtx.fillStyle = '#10b981';
+                spaceCtx.strokeStyle = '#0f172a';
+                spaceCtx.lineWidth = 3;
+                spaceCtx.shadowBlur = 0;
+                spaceCtx.fill();
+                spaceCtx.stroke();
+
+                spaceCtx.textAlign = 'center';
+                spaceCtx.textBaseline = 'middle';
+                spaceCtx.font = `${Math.round(badgeRadius * 1.1)}px serif`;
+                spaceCtx.fillText('👥', badgeX, badgeY + 1);
+            }
+
             spaceCtx.restore();
         }
 
