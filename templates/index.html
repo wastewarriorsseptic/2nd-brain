@@ -2171,7 +2171,7 @@
                                     parentRealmId: realm.id,
                                     angle: bucketAngle,
                                     orbitRadius: bucketDist,
-                                    radius: isMobile ? 24 : 21,
+                                    radius: isMobile ? 38 : 34,
                                     tasks: []
                                 };
                             }
@@ -2210,7 +2210,7 @@
                                     isOverdue: isOverdue,
                                     isRecurring: recurringFlag,
                                     domElement: el,
-                                    radius: 10,
+                                    radius: 18,
                                     floatOffset: Math.random() * Math.PI * 2
                                 });
                             });
@@ -2228,7 +2228,7 @@
                                 name: bucket.name,
                                 angle: bucketAngle,
                                 orbitRadius: bucketDist,
-                                radius: isMobile ? 24 : 21,
+                                radius: isMobile ? 38 : 34,
                                 tasks: filteredTasks
                             };
                         });
@@ -2808,9 +2808,9 @@
 
                     spaceCtx.textAlign = 'center';
                     spaceCtx.textBaseline = 'middle';
-                    spaceCtx.font = isAddBucketButton ? `${Math.round(bucket.radius * 0.9)}px serif` : '20px serif';
+                    spaceCtx.font = `${Math.round(bucket.radius * (isAddBucketButton ? 0.9 : 0.68))}px serif`;
                     spaceCtx.shadowBlur = 0;
-                    spaceCtx.fillText(isAddBucketButton ? '➕' : '⭐️', bucket.x, bucket.y + 1);
+                    spaceCtx.fillText(isAddBucketButton ? '➕' : '⭐', bucket.x - (bucket.radius * 0.03), bucket.y + (bucket.radius * 0.05));
 
                     spaceCtx.font = 'bold 17px sans-serif';
                     const nameText = bucket.name;
@@ -2857,15 +2857,18 @@
         function renderRealmNode(realm, drawX, drawY, isSelected) {
             const pulseGlow = 22 + Math.sin(frameCount * 2.5 + realm.id) * 6;
             const isAddButton = !!realm.isAddButton;
+            // Inside a focused realm, shrink the central "hub" circle so it doesn't dominate the
+            // screen and crowd out the buckets/tasks orbiting it. Overview-mode sizing is untouched.
+            const displayRadius = isSelected ? realm.radius * 0.55 : realm.radius;
 
             spaceCtx.save();
             spaceCtx.beginPath();
-            spaceCtx.arc(drawX, drawY, realm.radius + 18, 0, Math.PI * 2);
+            spaceCtx.arc(drawX, drawY, displayRadius + 18, 0, Math.PI * 2);
             spaceCtx.fillStyle = isAddButton ? 'rgba(52, 211, 153, 0.12)' : (isSelected ? 'rgba(99, 102, 241, 0.35)' : 'rgba(99, 102, 241, 0.15)');
             spaceCtx.fill();
 
             spaceCtx.beginPath();
-            spaceCtx.arc(drawX, drawY, realm.radius, 0, Math.PI * 2);
+            spaceCtx.arc(drawX, drawY, displayRadius, 0, Math.PI * 2);
             spaceCtx.fillStyle = isAddButton ? 'rgba(20, 40, 34, 0.85)' : (isSelected ? 'rgba(79, 70, 229, 0.95)' : 'rgba(30, 41, 59, 0.95)');
             spaceCtx.strokeStyle = isAddButton ? '#34d399' : (isSelected ? '#a5b4fc' : '#818cf8');
             spaceCtx.lineWidth = isSelected ? 5 : 3.5;
@@ -2880,7 +2883,7 @@
 
             spaceCtx.textAlign = 'center';
             spaceCtx.textBaseline = 'middle';
-            spaceCtx.font = `${Math.round(realm.radius * (isAddButton ? 0.5 : 0.62))}px serif`;
+            spaceCtx.font = `${Math.round(displayRadius * (isAddButton ? 0.5 : 0.62))}px serif`;
             spaceCtx.shadowBlur = 0;
             spaceCtx.fillText(realm.icon, drawX, drawY);
 
@@ -2895,8 +2898,8 @@
             
             const isTopHalf = realm.baseY < 0;
             const pillY = isTopHalf 
-                ? drawY - realm.radius - pillHeight - 12 
-                : drawY + realm.radius + 12;
+                ? drawY - displayRadius - pillHeight - 12 
+                : drawY + displayRadius + 12;
 
             spaceCtx.fillStyle = isAddButton ? 'rgba(6, 78, 59, 0.9)' : (isSelected ? 'rgba(79, 70, 229, 0.98)' : 'rgba(15, 23, 42, 0.98)');
             spaceCtx.strokeStyle = isAddButton ? '#34d399' : '#818cf8';
