@@ -2172,6 +2172,7 @@
                                     angle: bucketAngle,
                                     orbitRadius: bucketDist,
                                     radius: isMobile ? 38 : 34,
+                                    maxReach: (isMobile ? 38 : 34) + 45,
                                     tasks: []
                                 };
                             }
@@ -2231,12 +2232,20 @@
                                 task.orbitRadius = baseTaskOrbit + (ringIndex * taskRingGap);
                             });
 
+                            // How far this bucket's own cluster (itself + its outermost task ring + label)
+                            // reaches from its own center - lets the camera frame every bucket fully,
+                            // however many tasks or buckets a realm has.
+                            const ringCount = Math.ceil(filteredTasks.length / tasksPerRing);
+                            const maxTaskOrbit = filteredTasks.length > 0 ? baseTaskOrbit + ((ringCount - 1) * taskRingGap) : 0;
+                            const bucketMaxReach = (isMobile ? 38 : 34) + maxTaskOrbit + (filteredTasks.length > 0 ? 60 : 45);
+
                             return {
                                 id: bucket.id,
                                 name: bucket.name,
                                 angle: bucketAngle,
                                 orbitRadius: bucketDist,
                                 radius: isMobile ? 38 : 34,
+                                maxReach: bucketMaxReach,
                                 tasks: filteredTasks
                             };
                         });
@@ -3354,10 +3363,45 @@
             });
 
             const isMobile = window.innerWidth < 768;
-            targetCameraZoom = isMobile ? 0.42 : 0.8;
+
+            // Compute a bounding box around the realm's own circle + EVERY bucket's full cluster (its
+            // own circle plus its outermost task ring), so the camera dynamically zooms to fit however
+            // many buckets - and however far their tasks spread - this specific realm has, instead of
+            // one fixed zoom level that only works until a realm accumulates enough buckets to clip.
+            let minX = selectedRealm.baseX - selectedRealm.radius;
+            let maxX = selectedRealm.baseX + selectedRealm.radius;
+            let minY = selectedRealm.baseY - selectedRealm.radius;
+            let maxY = selectedRealm.baseY + selectedRealm.radius;
+
+            selectedRealm.buckets.forEach(bucket => {
+                const bx = selectedRealm.baseX + Math.cos(bucket.angle) * bucket.orbitRadius;
+                const by = selectedRealm.baseY + Math.sin(bucket.angle) * bucket.orbitRadius;
+                const reach = bucket.maxReach || (bucket.radius + 45);
+
+                minX = Math.min(minX, bx - reach);
+                maxX = Math.max(maxX, bx + reach);
+                minY = Math.min(minY, by - reach);
+                maxY = Math.max(maxY, by + reach);
+            });
+
+            const padding = isMobile ? 70 : 100;
+            const boundingWidth = (maxX - minX) + (padding * 2);
+            const boundingHeight = (maxY - minY) + (padding * 2);
+
+            const fitZoomX = window.innerWidth / boundingWidth;
+            const fitZoomY = window.innerHeight / boundingHeight;
+
+            // Still bounded so a realm with just one or two buckets doesn't zoom in absurdly far, and
+            // a realm with a huge number of buckets never zooms out past legibility - "squish, don't
+            // clip" between those two limits.
+            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.16), isMobile ? 0.55 : 0.95);
+
+            const centerX = (minX + maxX) / 2;
+            const centerY = (minY + maxY) / 2;
+
             targetCameraOffset = {
-                x: (window.innerWidth / 2) - (selectedRealm.baseX * targetCameraZoom),
-                y: (window.innerHeight / 2) - (selectedRealm.baseY * targetCameraZoom)
+                x: (window.innerWidth / 2) - (centerX * targetCameraZoom),
+                y: (window.innerHeight / 2) - (centerY * targetCameraZoom)
             };
         }
 
