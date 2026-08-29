@@ -3042,8 +3042,8 @@
             spaceCtx.shadowBlur = 0;
             spaceCtx.textAlign = 'center';
             spaceCtx.textBaseline = 'middle';
-            spaceCtx.font = '48px serif';
-            spaceCtx.fillText('🗑️', pos.x, pos.y + 2);
+            spaceCtx.font = `${Math.round(pos.radius * 0.72)}px serif`;
+            spaceCtx.fillText('🗑️', pos.x, pos.y + pos.radius * 0.08);
             spaceCtx.restore();
         }
 
