@@ -2046,6 +2046,7 @@
         let longPressFired = false;
         let longPressRealmForDelete = null;
         let longPressTaskForDelete = null;
+        let longPressBucketForDelete = null;
         let cameraOffset = { x: 0, y: 0 };
         let targetCameraOffset = { x: 0, y: 0 };
         let cameraZoom = 1;
@@ -2101,6 +2102,7 @@
                 deselectBucketSwipeDock();
                 longPressRealmForDelete = null;
                 longPressTaskForDelete = null;
+                longPressBucketForDelete = null;
             }
         }
 
@@ -2365,6 +2367,7 @@
             activeSwipeTaskId = null;
             longPressRealmForDelete = null;
             longPressTaskForDelete = null;
+            longPressBucketForDelete = null;
             deselectBucketSwipeDock();
             persistSpaceSelection();
 
@@ -2969,6 +2972,9 @@
             if (longPressRealmForDelete) {
                 drawDeleteIcon(longPressRealmForDelete);
             }
+            if (longPressBucketForDelete) {
+                drawBucketDeleteIcon(longPressBucketForDelete);
+            }
             if (longPressTaskForDelete) {
                 drawTaskDeleteIcon(longPressTaskForDelete);
             }
@@ -3100,7 +3106,7 @@
 
                     // Tasks are checked first (smaller, more specific targets) - if a task is under
                     // the finger, holding arms task-deletion; only if no task matched do we fall back
-                    // to checking for a realm underneath.
+                    // to checking for a bucket, then a realm underneath.
                     let pressedTask = null;
                     if (activeSelectedRealm) {
                         activeSelectedRealm.buckets.forEach(bucket => {
@@ -3113,8 +3119,18 @@
                         });
                     }
 
+                    let pressedBucket = null;
+                    if (!pressedTask && activeSelectedRealm) {
+                        activeSelectedRealm.buckets.forEach(bucket => {
+                            if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
+                            if (bucket.isAddButton) return;
+                            const dist = Math.hypot(worldX - bucket.x, worldY - bucket.y);
+                            if (dist <= bucket.radius + 24) pressedBucket = bucket;
+                        });
+                    }
+
                     let pressedRealm = null;
-                    if (!pressedTask) {
+                    if (!pressedTask && !pressedBucket) {
                         spaceRealms.forEach(realm => {
                             if (realm.isAddButton) return;
                             const dist = Math.hypot(worldX - realm.x, worldY - realm.y);
@@ -3126,6 +3142,12 @@
                         longPressTimer = setTimeout(() => {
                             longPressFired = true;
                             longPressTaskForDelete = pressedTask;
+                            isDragging = false;
+                        }, 550);
+                    } else if (pressedBucket) {
+                        longPressTimer = setTimeout(() => {
+                            longPressFired = true;
+                            longPressBucketForDelete = pressedBucket;
                             isDragging = false;
                         }, 550);
                     } else if (pressedRealm) {
@@ -3162,8 +3184,11 @@
                         e.touches[0].clientX - e.touches[1].clientX,
                         e.touches[0].clientY - e.touches[1].clientY
                     );
+                    // Apply the actual pinch ratio directly (instead of a tiny fixed +/-2% nudge) so
+                    // zooming in/out tracks how far the fingers actually moved - much snappier response,
+                    // especially noticeable when pinching out to back out of a bucket's task view.
                     const zoomFactor = currentDist / initialPinchDistance;
-                    zoomSpace(zoomFactor > 1 ? 1.02 : 0.98);
+                    zoomSpace(zoomFactor);
                     initialPinchDistance = currentDist;
                 }
             };
@@ -3285,6 +3310,63 @@
             spaceCtx.restore();
         }
 
+        function getBucketDeleteIconPos(bucket) {
+            const offsetAngle = -Math.PI / 4; // up-right diagonal off the bucket node
+            const dist = bucket.radius * 1.1;
+            return {
+                x: bucket.x + Math.cos(offsetAngle) * dist,
+                y: bucket.y + Math.sin(offsetAngle) * dist,
+                radius: 36
+            };
+        }
+
+        function drawBucketDeleteIcon(bucket) {
+            const pos = getBucketDeleteIconPos(bucket);
+            const pulse = 1 + Math.sin(frameCount * 5) * 0.08;
+
+            spaceCtx.save();
+
+            spaceCtx.beginPath();
+            spaceCtx.arc(pos.x, pos.y, pos.radius * 1.35 * pulse, 0, Math.PI * 2);
+            spaceCtx.fillStyle = 'rgba(225, 29, 72, 0.25)';
+            spaceCtx.fill();
+
+            spaceCtx.beginPath();
+            spaceCtx.arc(pos.x, pos.y, pos.radius * pulse, 0, Math.PI * 2);
+            spaceCtx.fillStyle = 'rgba(225, 29, 72, 0.97)';
+            spaceCtx.strokeStyle = '#fecdd3';
+            spaceCtx.lineWidth = 3.5;
+            spaceCtx.shadowColor = '#e11d48';
+            spaceCtx.shadowBlur = 26;
+            spaceCtx.fill();
+            spaceCtx.stroke();
+
+            spaceCtx.shadowBlur = 0;
+            spaceCtx.textAlign = 'center';
+            spaceCtx.textBaseline = 'middle';
+            spaceCtx.font = `${Math.round(pos.radius * 0.72)}px serif`;
+            spaceCtx.fillText('🗑', pos.x - (pos.radius * 0.04), pos.y + pos.radius * 0.08);
+            spaceCtx.restore();
+        }
+
+        function confirmAndDeleteBucket(bucketId, bucketName) {
+            if (!confirm(`Delete "${bucketName}" and all its Tasks?`)) return;
+
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/buckets/delete/';
+            form.style.display = 'none';
+
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'bucket_id';
+            input.value = bucketId;
+            form.appendChild(input);
+
+            document.body.appendChild(form);
+            form.submit();
+        }
+
         function detectClickNode(clientX, clientY) {
             const worldX = (clientX - cameraOffset.x) / cameraZoom;
             const worldY = (clientY - cameraOffset.y) / cameraZoom;
@@ -3299,6 +3381,17 @@
                     openDeleteModal(longPressTaskForDelete.id, !!longPressTaskForDelete.isRecurring);
                 }
                 longPressTaskForDelete = null;
+                return;
+            }
+
+            // Same pattern for a bucket's hold-to-delete trash icon.
+            if (longPressBucketForDelete) {
+                const iconPos = getBucketDeleteIconPos(longPressBucketForDelete);
+                const dist = Math.hypot(worldX - iconPos.x, worldY - iconPos.y);
+                if (dist <= iconPos.radius + 10) {
+                    confirmAndDeleteBucket(longPressBucketForDelete.id, longPressBucketForDelete.name);
+                }
+                longPressBucketForDelete = null;
                 return;
             }
 
