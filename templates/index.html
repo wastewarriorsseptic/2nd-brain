@@ -88,6 +88,21 @@
                 padding-top: max(1.5rem, env(safe-area-inset-top)) !important;
             }
         }
+
+        /* Same safe-area treatment for the Space View's floating top bar
+           (the "TaskMonster Universe" / "Close View" pills) - the flat pt-10
+           Tailwind class gave a fixed 40px regardless of notch height, which
+           landed right at the Dynamic Island's edge instead of clearly below
+           it. env(safe-area-inset-top) is 0 in a normal browser tab, so this
+           falls back to the original spacing there with no visible change. */
+        #space-view-overlay > .relative.pt-10 {
+            padding-top: max(2.5rem, calc(env(safe-area-inset-top) + 0.5rem)) !important;
+        }
+        @media (min-width: 768px) {
+            #space-view-overlay > .relative.pt-10 {
+                padding-top: max(1rem, env(safe-area-inset-top)) !important;
+            }
+        }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex">
