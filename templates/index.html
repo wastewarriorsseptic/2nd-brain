@@ -2217,10 +2217,18 @@
 
                             filteredTasks.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
 
-                            const totalTasks = Math.max(1, filteredTasks.length);
+                            // Tasks form tight concentric rings directly around THEIR OWN bucket (like
+                            // moons around a moon) instead of spiraling outward - keeps each bucket's
+                            // tasks visually grouped and unambiguous about which bucket they belong to.
+                            const tasksPerRing = 6;
+                            const baseTaskOrbit = (isMobile ? 95 : 85);
+                            const taskRingGap = 62;
                             filteredTasks.forEach((task, tIdx) => {
-                                task.angle = (tIdx / totalTasks) * Math.PI * 2;
-                                task.orbitRadius = 145 + (tIdx * 55);
+                                const ringIndex = Math.floor(tIdx / tasksPerRing);
+                                const posInRing = tIdx % tasksPerRing;
+                                const countInThisRing = Math.min(tasksPerRing, filteredTasks.length - (ringIndex * tasksPerRing));
+                                task.angle = (posInRing / countInThisRing) * Math.PI * 2;
+                                task.orbitRadius = baseTaskOrbit + (ringIndex * taskRingGap);
                             });
 
                             return {
@@ -2625,17 +2633,22 @@
                     }
                 });
 
-                // GLOBAL MULTI-BODY REPULSION PHYSICS (Orbital Mode)
+                // PER-BUCKET TASK REPULSION (Orbital Mode)
+                // Only resolves collisions between tasks that share the SAME bucket - this is what keeps
+                // each bucket's tasks visually grouped as their own tight cluster instead of a scene-wide
+                // scatter, since a task is never pushed toward/away from a bucket it doesn't belong to.
                 if (!activeSelectedBucket) {
                     for (let i = 0; i < allTasksOnCanvas.length; i++) {
                         const t1 = allTasksOnCanvas[i];
 
                         for (let j = i + 1; j < allTasksOnCanvas.length; j++) {
                             const t2 = allTasksOnCanvas[j];
+                            if (t1.bucketId !== t2.bucketId) continue;
+
                             const dx = t2.x - t1.x;
                             const dy = t2.y - t1.y;
                             const dist = Math.hypot(dx, dy);
-                            const minTaskDist = 110;
+                            const minTaskDist = t1.radius + t2.radius + 24;
 
                             if (dist < minTaskDist && dist > 0) {
                                 const overlap = (minTaskDist - dist) / 2;
@@ -2647,39 +2660,6 @@
                                 t2.x += nx * overlap;
                                 t2.y += ny * overlap;
                             }
-                        }
-
-                        allBucketsOnCanvas.forEach(b => {
-                            const dxB = t1.x - b.x;
-                            const dyB = t1.y - b.y;
-                            const distB = Math.hypot(dxB, dyB);
-                            const minBucketDist = b.radius + 120;
-
-                            if (distB < minBucketDist && distB > 0) {
-                                const pushFactor = (minBucketDist - distB);
-                                t1.x += (dxB / distB) * pushFactor;
-                                t1.y += (dyB / distB) * pushFactor;
-                            }
-                        });
-
-                        const dxR = t1.x - drawX;
-                        const dyR = t1.y - drawY;
-                        const distR = Math.hypot(dxR, dyR);
-                        const minRealmDist = realm.radius + 110;
-
-                        if (distR < minRealmDist && distR > 0) {
-                            const pushFactor = (minRealmDist - distR);
-                            t1.x += (dxR / distR) * pushFactor;
-                            t1.y += (dyR / distR) * pushFactor;
-                        }
-
-                        const distDev = Math.hypot(t1.x, t1.y);
-                        const minDevDist = coreRadius + 90;
-                        if (distDev < minDevDist && distDev > 0) {
-                            const nxD = t1.x / distDev;
-                            const nyD = t1.y / distDev;
-                            t1.x = nxD * minDevDist;
-                            t1.y = nyD * minDevDist;
                         }
                     }
                 }
