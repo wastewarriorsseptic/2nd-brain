@@ -2028,6 +2028,9 @@
         let isSpaceViewActive = false;
         let spaceCanvas, spaceCtx;
         let spaceRealms = [];
+        let currentRealmRadius = 84;
+        let currentMaxPillWidth = 0;
+        let currentLabelFontPx = 22;
         let cameraOffset = { x: 0, y: 0 };
         let targetCameraOffset = { x: 0, y: 0 };
         let cameraZoom = 1;
@@ -2106,6 +2109,12 @@
             const minRingRadiusForSpacing = (minArcSpacing * totalRealms) / (Math.PI * 2);
 
             const ringRadius = Math.max(baseViewRadius * (isMobile ? 1.05 : 1.0), minRingRadiusForSpacing);
+
+            // Stash these so recenterSpace() can compute exactly how much extra room the camera
+            // needs to fully contain every realm's circle + label, however many realms there are.
+            currentRealmRadius = realmCircleRadius;
+            currentMaxPillWidth = maxPillWidth;
+            currentLabelFontPx = realmLabelFontPx;
 
             spaceRealms = combinedRealmsData.map((realm, rIdx) => {
                 const realmAngle = (rIdx / totalRealms) * Math.PI * 2 - Math.PI / 2;
@@ -2236,18 +2245,26 @@
                 if (r.baseY > maxY) maxY = r.baseY;
             });
 
-            // Padding accounts for: label pill overflow beyond the circle, plus the max distance
-            // the label-avoidance leash is allowed to nudge a realm from its home position -
-            // keeps every realm (and its label) safely on screen even after avoidance nudges.
-            const padding = window.innerWidth < 768 ? 260 : 320;
-            const boundingWidth = (maxX - minX) + (padding * 2);
-            const boundingHeight = (maxY - minY) + (padding * 2);
+            // Padding is computed from the ACTUAL circle size + widest label pill (not a flat guess),
+            // so the camera always frames every realm fully regardless of how many realms exist or
+            // how big their labels are. Horizontal and vertical need different amounts: a label can be
+            // wider than the circle (horizontal overflow), while it always sits above/below the circle,
+            // stacking additional height on top of the circle's own radius (vertical overflow).
+            const glow = 18;
+            const pillHeight = Math.round(currentLabelFontPx * 1.9);
+            const safetyMargin = 24;
+
+            const paddingX = Math.max(currentRealmRadius + glow, currentMaxPillWidth / 2) + safetyMargin;
+            const paddingY = currentRealmRadius + glow + 12 + pillHeight + safetyMargin;
+
+            const boundingWidth = (maxX - minX) + (paddingX * 2);
+            const boundingHeight = (maxY - minY) + (paddingY * 2);
 
             const fitZoomX = window.innerWidth / boundingWidth;
             const fitZoomY = window.innerHeight / boundingHeight;
-            // Lower bound relaxed (was 0.40) so a wider ring - needed to fit many/long realm labels
-            // without overlap - always fully fits on screen instead of being clipped by an artificial floor.
-            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.22), 0.90);
+            // Lower bound relaxed further so an arbitrarily large number of realms - and the wider ring
+            // that requires - always fully fits on screen instead of being clipped by an artificial floor.
+            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.12), 0.90);
 
             const centerX = (minX + maxX) / 2;
             const centerY = (minY + maxY) / 2;
