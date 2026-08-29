@@ -2309,8 +2309,8 @@
             const allBucketsOnCanvas = [];
             const allTasksOnCanvas = [];
 
+            // Continuous Devil Core repulsion + spring-to-target (must run before label solver so drawX/drawY are current)
             spaceRealms.forEach(realm => {
-                // Continuous Devil Core repulsion
                 const distToCore = Math.hypot(realm.x, realm.y);
                 const minCoreDist = coreRadius + realm.radius + 80;
                 if (distToCore < minCoreDist && distToCore > 0) {
@@ -2322,11 +2322,73 @@
                 realm.x += (realm.targetX - realm.x) * 0.08;
                 realm.y += (realm.targetY - realm.y) * 0.08;
 
-                const floatX = Math.cos(frameCount * realm.floatSpeed + realm.floatOffsetPhase) * 6;
-                const floatY = Math.sin(frameCount * realm.floatSpeed * 0.8 + realm.floatOffsetPhase) * 6;
+                realm.floatX = Math.cos(frameCount * realm.floatSpeed + realm.floatOffsetPhase) * 6;
+                realm.floatY = Math.sin(frameCount * realm.floatSpeed * 0.8 + realm.floatOffsetPhase) * 6;
 
-                const drawX = realm.x + floatX;
-                const drawY = realm.y + floatY;
+                realm.drawX = realm.x + realm.floatX;
+                realm.drawY = realm.y + realm.floatY;
+            });
+
+            // Helper: compute a realm's label pill rect exactly as renderRealmNode draws it
+            function getRealmLabelRect(realm) {
+                spaceCtx.font = 'bold 22px sans-serif';
+                const pillPadding = 36;
+                const pillHeight = 42;
+                const width = spaceCtx.measureText(realm.name).width + pillPadding + 28;
+                const x = realm.drawX - (width / 2);
+                const isTopHalf = realm.baseY < 0;
+                const y = isTopHalf
+                    ? realm.drawY - realm.radius - pillHeight - 12
+                    : realm.drawY + realm.radius + 12;
+                return { x, y, w: width, h: pillHeight };
+            }
+
+            // REALM LABEL-TO-LABEL REPULSION SOLVER (Prevents text pills from overlapping each other)
+            const labelPadding = 8;
+            const labelSolverIterations = 6;
+            for (let iter = 0; iter < labelSolverIterations; iter++) {
+                let anyOverlap = false;
+
+                for (let i = 0; i < spaceRealms.length; i++) {
+                    const r1 = spaceRealms[i];
+                    const p1 = getRealmLabelRect(r1);
+
+                    for (let j = i + 1; j < spaceRealms.length; j++) {
+                        const r2 = spaceRealms[j];
+                        const p2 = getRealmLabelRect(r2);
+
+                        const overlapX = Math.min(p1.x + p1.w, p2.x + p2.w) - Math.max(p1.x, p2.x);
+                        const overlapY = Math.min(p1.y + p1.h, p2.y + p2.h) - Math.max(p1.y, p2.y);
+
+                        if (overlapX + labelPadding > 0 && overlapY + labelPadding > 0) {
+                            anyOverlap = true;
+
+                            // Resolve along whichever axis has the smaller penetration (Minimum Translation Vector)
+                            if (overlapX < overlapY) {
+                                const push = (overlapX + labelPadding) / 2;
+                                const dir = (p1.x + p1.w / 2) <= (p2.x + p2.w / 2) ? -1 : 1;
+                                r1.x += dir * push;
+                                r1.drawX += dir * push;
+                                r2.x -= dir * push;
+                                r2.drawX -= dir * push;
+                            } else {
+                                const push = (overlapY + labelPadding) / 2;
+                                const dir = (p1.y + p1.h / 2) <= (p2.y + p2.h / 2) ? -1 : 1;
+                                r1.y += dir * push;
+                                r1.drawY += dir * push;
+                                r2.y -= dir * push;
+                                r2.drawY -= dir * push;
+                            }
+                        }
+                    }
+                }
+
+                if (!anyOverlap) break;
+            }
+
+            spaceRealms.forEach(realm => {
+                const drawX = realm.drawX;
+                const drawY = realm.drawY;
 
                 const isThisRealmSelected = activeSelectedRealm && activeSelectedRealm.id === realm.id;
 
