@@ -2402,8 +2402,18 @@
             const boundingWidth = (maxX - minX) + (paddingX * 2);
             const boundingHeight = (maxY - minY) + (paddingY * 2);
 
+            // The "TaskMonster Universe" / "Close View" pills up top and the "+ / - / Auto-Fit" row at
+            // the bottom are fixed overlays sitting ON TOP of the canvas - they don't shrink the canvas
+            // itself, so fitting/centering against the raw window height lets the ring hide behind them
+            // (bottom realms clipped by the zoom controls) or look vertically off-center. Fit and center
+            // against the space actually left BETWEEN those two bars instead.
+            const isMobile = window.innerWidth < 768;
+            const topChrome = isMobile ? 190 : 130;
+            const bottomChrome = isMobile ? 170 : 110;
+            const usableHeight = Math.max(200, window.innerHeight - topChrome - bottomChrome);
+
             const fitZoomX = window.innerWidth / boundingWidth;
-            const fitZoomY = window.innerHeight / boundingHeight;
+            const fitZoomY = usableHeight / boundingHeight;
             // Lower bound relaxed further so an arbitrarily large number of realms - and the wider ring
             // that requires - always fully fits on screen instead of being clipped by an artificial floor.
             targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.12), 0.90);
@@ -2411,7 +2421,7 @@
             const centerX = (minX + maxX) / 2;
             const centerY = (minY + maxY) / 2;
 
-            const safeYCenter = (window.innerHeight / 2) + 20;
+            const safeYCenter = topChrome + (usableHeight / 2);
 
             targetCameraOffset = {
                 x: (window.innerWidth / 2) - (centerX * targetCameraZoom),
@@ -3698,8 +3708,14 @@
             const boundingWidth = (maxX - minX) + (padding * 2);
             const boundingHeight = (maxY - minY) + (padding * 2);
 
+            // Same fixed top/bottom UI chrome (title pills, zoom controls) sits on top of the canvas
+            // here too - fit and center against the space between them, not the raw window height.
+            const topChrome = isMobile ? 190 : 130;
+            const bottomChrome = isMobile ? 170 : 110;
+            const usableHeight = Math.max(200, window.innerHeight - topChrome - bottomChrome);
+
             const fitZoomX = window.innerWidth / boundingWidth;
-            const fitZoomY = window.innerHeight / boundingHeight;
+            const fitZoomY = usableHeight / boundingHeight;
 
             // Still bounded so a realm with just one or two buckets doesn't zoom in absurdly far, and
             // a realm with a huge number of buckets never zooms out past legibility - "squish, don't
@@ -3730,10 +3746,11 @@
 
             const centerX = (minX + maxX) / 2;
             const centerY = (minY + maxY) / 2;
+            const safeYCenter = topChrome + (usableHeight / 2);
 
             targetCameraOffset = {
                 x: (window.innerWidth / 2) - (centerX * targetCameraZoom),
-                y: (window.innerHeight / 2) - (centerY * targetCameraZoom)
+                y: safeYCenter - (centerY * targetCameraZoom)
             };
         }
 
