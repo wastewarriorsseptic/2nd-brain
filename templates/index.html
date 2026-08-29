@@ -2083,12 +2083,14 @@
             // Overlap avoidance only ever adjusts a realm's ANGLE around this ring (never its radius),
             // so the layout always reads as a clean circle instead of a scattered blob.
             //
+            const realmLabelFontPx = isMobile ? 28 : 22;
+
             // The ring radius must be big enough that, even at perfectly EVEN angle spacing (before any
             // avoidance runs), adjacent realms' circles/labels don't already overlap - otherwise the
             // solver has to fight the layout every frame and can't fully win with a limited number of
             // realms crammed onto a small ring. So: measure the widest label pill up front and size the
             // ring's circumference to comfortably fit all of them side-by-side around it.
-            spaceCtx.font = 'bold 22px sans-serif';
+            spaceCtx.font = `bold ${realmLabelFontPx}px sans-serif`;
             let maxPillWidth = 0;
             realmsData.forEach(r => {
                 const w = spaceCtx.measureText(r.name).width + 36 + 28;
@@ -2096,7 +2098,7 @@
             });
 
             const realmCircleRadius = isMobile ? 130 : 84;
-            const minArcSpacing = Math.max(maxPillWidth, realmCircleRadius * 2) + (isMobile ? 30 : 40);
+            const minArcSpacing = Math.max(maxPillWidth, realmCircleRadius * 2) + (isMobile ? 46 : 40);
             const minRingRadiusForSpacing = (minArcSpacing * totalRealms) / (Math.PI * 2);
 
             const ringRadius = Math.max(baseViewRadius * (isMobile ? 1.05 : 1.0), minRingRadiusForSpacing);
@@ -2124,6 +2126,7 @@
                     targetX: basePos.x,
                     targetY: basePos.y,
                     radius: realmCircleRadius,
+                    labelFontPx: realmLabelFontPx,
                     floatOffsetPhase: (rIdx * 1.37) % (Math.PI * 2),
                     floatSpeed: 1.2 + (rIdx % 3) * 0.3,
                     buckets: realm.buckets.map((bucket, bIdx) => {
@@ -2331,7 +2334,7 @@
             const maxAngleDrift = isMobile ? 0.5 : 0.4;
 
             if (!activeSelectedRealm) {
-                const minArcDist = isMobile ? 130 : 150;
+                const circleGap = isMobile ? 18 : 16; // the "small amount of spacing" between adjacent realm circles
                 for (let i = 0; i < spaceRealms.length; i++) {
                     const r1 = spaceRealms[i];
                     for (let j = i + 1; j < spaceRealms.length; j++) {
@@ -2339,6 +2342,7 @@
                         const angleDiff = normalizeAngleDiff(r2.orbitAngle - r1.orbitAngle);
                         const avgRadius = (r1.orbitRadius + r2.orbitRadius) / 2;
                         const arcDist = Math.abs(angleDiff) * avgRadius;
+                        const minArcDist = r1.radius + r2.radius + circleGap;
 
                         if (arcDist < minArcDist) {
                             const overlapArc = (minArcDist - arcDist) / 2;
@@ -2370,9 +2374,10 @@
 
             // Helper: compute a realm's label pill rect exactly as renderRealmNode draws it
             function getRealmLabelRect(realm) {
-                spaceCtx.font = 'bold 22px sans-serif';
+                const fontPx = realm.labelFontPx || 22;
+                spaceCtx.font = `bold ${fontPx}px sans-serif`;
                 const pillPadding = 36;
-                const pillHeight = 42;
+                const pillHeight = Math.round(fontPx * 1.9);
                 const width = spaceCtx.measureText(realm.name).width + pillPadding + 28;
                 const x = realm.drawX - (width / 2);
                 const isTopHalf = realm.baseY < 0;
@@ -2814,10 +2819,11 @@
             spaceCtx.fillText(realm.icon, drawX, drawY);
 
             const beaconText = `${realm.icon} ${realm.name}`;
-            spaceCtx.font = 'bold 22px sans-serif';
+            const labelFontPx = realm.labelFontPx || 22;
+            spaceCtx.font = `bold ${labelFontPx}px sans-serif`;
             
             const pillPadding = 36;
-            const pillHeight = 42;
+            const pillHeight = Math.round(labelFontPx * 1.9);
             const bTextWidth = spaceCtx.measureText(realm.name).width + pillPadding + 28;
             const pillX = drawX - (bTextWidth / 2);
             
