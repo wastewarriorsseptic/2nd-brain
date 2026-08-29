@@ -56,6 +56,16 @@
             touch-action: none;
         }
 
+        /* Prevent iOS's native long-press callout (Copy/Look Up/Translate) and text selection from
+           firing during our own hold-to-delete gesture on realm/task nodes. */
+        #space-canvas {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
         /* Hide scrollbars for smooth Quick-Warp & Task Dock sliding */
         .no-scrollbar::-webkit-scrollbar {
             display: none;
@@ -3070,6 +3080,9 @@
             };
 
             spaceCanvas.ontouchstart = (e) => {
+                // Stops iOS's native long-press callout menu (Copy/Look Up/Translate) from
+                // hijacking our own hold-to-delete gesture.
+                e.preventDefault();
                 lastTouchTime = Date.now();
                 if (e.touches.length === 1) {
                     isDragging = true;
