@@ -2343,12 +2343,45 @@
                 return { x, y, w: width, h: pillHeight };
             }
 
-            // REALM LABEL-TO-LABEL REPULSION SOLVER (Prevents text pills from overlapping each other)
+            // Helper: push a circle (cx, cy, radius) and a label rect apart if they overlap.
+            // Returns true if an overlap was found & resolved (positions mutated via the callback).
+            function resolveCircleRectOverlap(cx, cy, cr, rect, onResolve) {
+                const closestX = Math.max(rect.x, Math.min(cx, rect.x + rect.w));
+                const closestY = Math.max(rect.y, Math.min(cy, rect.y + rect.h));
+                const dx = cx - closestX;
+                const dy = cy - closestY;
+                const distSq = (dx * dx) + (dy * dy);
+
+                if (distSq < cr * cr) {
+                    const dist = Math.sqrt(distSq);
+                    let nx, ny;
+
+                    if (dist > 0.0001) {
+                        nx = dx / dist;
+                        ny = dy / dist;
+                    } else {
+                        // Circle center sits exactly on/inside the rect - push it straight up as a fallback
+                        nx = 0;
+                        ny = -1;
+                    }
+
+                    const overlap = (cr - dist);
+                    onResolve(overlap, nx, ny);
+                    return true;
+                }
+                return false;
+            }
+
+            // REALM LABEL REPULSION SOLVER
+            // Prevents (a) text pills overlapping each other, and (b) any realm's circle body
+            // from sitting on top of another realm's text pill.
             const labelPadding = 8;
-            const labelSolverIterations = 6;
+            const circleLabelPadding = 14;
+            const labelSolverIterations = 8;
             for (let iter = 0; iter < labelSolverIterations; iter++) {
                 let anyOverlap = false;
 
+                // (a) Label-vs-label overlap
                 for (let i = 0; i < spaceRealms.length; i++) {
                     const r1 = spaceRealms[i];
                     const p1 = getRealmLabelRect(r1);
@@ -2380,6 +2413,38 @@
                                 r2.drawY -= dir * push;
                             }
                         }
+                    }
+                }
+
+                // (b) Circle-vs-other-realm's-label overlap (e.g. a neighboring planet drifting onto a pill)
+                for (let i = 0; i < spaceRealms.length; i++) {
+                    const rCircle = spaceRealms[i];
+                    const circleR = rCircle.radius + 18; // include the glow ring so text never sits under the halo either
+
+                    for (let j = 0; j < spaceRealms.length; j++) {
+                        if (i === j) continue;
+                        const rLabel = spaceRealms[j];
+                        const rect = getRealmLabelRect(rLabel);
+
+                        const resolved = resolveCircleRectOverlap(
+                            rCircle.drawX, rCircle.drawY, circleR + circleLabelPadding, rect,
+                            (overlap, nx, ny) => {
+                                anyOverlap = true;
+                                const push = overlap / 2;
+                                // Push the circle's realm away from the label
+                                rCircle.x += nx * push;
+                                rCircle.y += ny * push;
+                                rCircle.drawX += nx * push;
+                                rCircle.drawY += ny * push;
+                                // Push the label's realm away from the circle
+                                rLabel.x -= nx * push;
+                                rLabel.y -= ny * push;
+                                rLabel.drawX -= nx * push;
+                                rLabel.drawY -= ny * push;
+                            }
+                        );
+
+                        if (resolved) anyOverlap = true;
                     }
                 }
 
