@@ -2031,6 +2031,10 @@
         let currentRealmRadius = 84;
         let currentMaxPillWidth = 0;
         let currentLabelFontPx = 22;
+        let longPressTimer = null;
+        let longPressStartPos = null;
+        let longPressFired = false;
+        let longPressRealmForDelete = null;
         let cameraOffset = { x: 0, y: 0 };
         let targetCameraOffset = { x: 0, y: 0 };
         let cameraZoom = 1;
@@ -2066,6 +2070,7 @@
                 localStorage.setItem('active_dashboard_view', 'timeline');
                 hideHudCard();
                 deselectBucketSwipeDock();
+                longPressRealmForDelete = null;
             }
         }
 
@@ -2227,6 +2232,7 @@
             activeSelectedRealm = null;
             activeSelectedBucket = null;
             activeSwipeTaskId = null;
+            longPressRealmForDelete = null;
             deselectBucketSwipeDock();
 
             if (spaceRealms.length === 0) {
@@ -2811,6 +2817,11 @@
                 renderRealmNode(realm, drawX, drawY, true);
             });
 
+            // Hold-to-delete trash icon (drawn last so it always sits on top)
+            if (longPressRealmForDelete) {
+                drawDeleteIcon(longPressRealmForDelete);
+            }
+
             spaceCtx.restore();
             requestAnimationFrame(renderSpaceFrame);
         }
@@ -2919,8 +2930,33 @@
                 if (e.touches.length === 1) {
                     isDragging = true;
                     dragStart = { x: e.touches[0].clientX - cameraOffset.x, y: e.touches[0].clientY - cameraOffset.y };
+
+                    // HOLD-TO-DELETE: if the touch lands on a (non add-button) realm, arm a timer;
+                    // if the finger stays down long enough without moving/pinching, reveal a trash icon.
+                    const touch = e.touches[0];
+                    longPressStartPos = { x: touch.clientX, y: touch.clientY };
+                    longPressFired = false;
+                    clearTimeout(longPressTimer);
+
+                    const worldX = (touch.clientX - cameraOffset.x) / cameraZoom;
+                    const worldY = (touch.clientY - cameraOffset.y) / cameraZoom;
+                    let pressedRealm = null;
+                    spaceRealms.forEach(realm => {
+                        if (realm.isAddButton) return;
+                        const dist = Math.hypot(worldX - realm.x, worldY - realm.y);
+                        if (dist <= realm.radius + 24) pressedRealm = realm;
+                    });
+
+                    if (pressedRealm) {
+                        longPressTimer = setTimeout(() => {
+                            longPressFired = true;
+                            longPressRealmForDelete = pressedRealm;
+                            isDragging = false;
+                        }, 550);
+                    }
                 } else if (e.touches.length === 2) {
                     isDragging = false;
+                    clearTimeout(longPressTimer);
                     initialPinchDistance = Math.hypot(
                         e.touches[0].clientX - e.touches[1].clientX,
                         e.touches[0].clientY - e.touches[1].clientY
@@ -2929,6 +2965,14 @@
             };
 
             spaceCanvas.ontouchmove = (e) => {
+                if (longPressStartPos && e.touches.length === 1) {
+                    const touch = e.touches[0];
+                    const moveDist = Math.hypot(touch.clientX - longPressStartPos.x, touch.clientY - longPressStartPos.y);
+                    if (moveDist > 12) {
+                        clearTimeout(longPressTimer);
+                    }
+                }
+
                 if (isDragging && e.touches.length === 1) {
                     targetCameraOffset = { x: e.touches[0].clientX - dragStart.x, y: e.touches[0].clientY - dragStart.y };
                     cameraOffset = { ...targetCameraOffset };
@@ -2946,7 +2990,16 @@
             spaceCanvas.ontouchend = (e) => {
                 isDragging = false;
                 initialPinchDistance = null;
-                
+                clearTimeout(longPressTimer);
+                longPressStartPos = null;
+
+                if (longPressFired) {
+                    // The long press already revealed the trash icon this gesture - swallow this tap
+                    // so it doesn't also register as a normal realm-select tap.
+                    longPressFired = false;
+                    return;
+                }
+
                 if (e.changedTouches.length === 1) {
                     const touch = e.changedTouches[0];
                     detectClickNode(touch.clientX, touch.clientY);
@@ -2954,9 +3007,70 @@
             };
         }
 
+        function getDeleteIconPos(realm) {
+            const offsetAngle = -Math.PI / 4; // up-right diagonal off the circle
+            const dist = realm.radius * 0.95;
+            return {
+                x: realm.drawX + Math.cos(offsetAngle) * dist,
+                y: realm.drawY + Math.sin(offsetAngle) * dist,
+                radius: 30
+            };
+        }
+
+        function drawDeleteIcon(realm) {
+            const pos = getDeleteIconPos(realm);
+            spaceCtx.save();
+            spaceCtx.beginPath();
+            spaceCtx.arc(pos.x, pos.y, pos.radius, 0, Math.PI * 2);
+            spaceCtx.fillStyle = 'rgba(225, 29, 72, 0.95)';
+            spaceCtx.strokeStyle = '#fecdd3';
+            spaceCtx.lineWidth = 2.5;
+            spaceCtx.shadowColor = '#e11d48';
+            spaceCtx.shadowBlur = 20;
+            spaceCtx.fill();
+            spaceCtx.stroke();
+
+            spaceCtx.shadowBlur = 0;
+            spaceCtx.textAlign = 'center';
+            spaceCtx.textBaseline = 'middle';
+            spaceCtx.font = '30px serif';
+            spaceCtx.fillText('🗑️', pos.x, pos.y + 1);
+            spaceCtx.restore();
+        }
+
+        function confirmAndDeleteRealm(realmId, realmName) {
+            if (!confirm(`Delete "${realmName}" along with all its Buckets and Tasks?`)) return;
+
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/realms/delete/';
+            form.style.display = 'none';
+
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'realm_id';
+            input.value = realmId;
+            form.appendChild(input);
+
+            document.body.appendChild(form);
+            form.submit();
+        }
+
         function detectClickNode(clientX, clientY) {
             const worldX = (clientX - cameraOffset.x) / cameraZoom;
             const worldY = (clientY - cameraOffset.y) / cameraZoom;
+
+            // If the hold-to-delete trash icon is currently showing, this tap either hits it
+            // (delete) or lands elsewhere (dismiss) - either way it's consumed here.
+            if (longPressRealmForDelete) {
+                const iconPos = getDeleteIconPos(longPressRealmForDelete);
+                const dist = Math.hypot(worldX - iconPos.x, worldY - iconPos.y);
+                if (dist <= iconPos.radius + 10) {
+                    confirmAndDeleteRealm(longPressRealmForDelete.id, longPressRealmForDelete.name);
+                }
+                longPressRealmForDelete = null;
+                return;
+            }
 
             // DEVIL CORE TAP DETECTION (0,0) -> RESET TO FULL UNIVERSE VIEW
             const pulseScale = 1 + Math.sin(frameCount * 2) * 0.08;
