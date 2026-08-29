@@ -2079,20 +2079,17 @@
             const isMobile = window.innerWidth < 768;
             const baseViewRadius = Math.min(window.innerWidth, window.innerHeight) * (isMobile ? 0.38 : 0.28);
 
+            // SINGLE UNIFORM ORBIT RING: every realm sits at the same distance from the Devil core.
+            // Overlap avoidance only ever adjusts a realm's ANGLE around this ring (never its radius),
+            // so the layout always reads as a clean circle instead of a scattered blob.
+            const ringRadius = baseViewRadius * (isMobile ? 1.35 : 1.05);
+
             spaceRealms = realmsData.map((realm, rIdx) => {
                 const realmAngle = (rIdx / totalRealms) * Math.PI * 2 - Math.PI / 2;
 
-                // STAGGER REALMS ON MOBILE (<768px) INTO INNER AND OUTER RINGS IF > 5 REALMS
-                let radialOffset = (rIdx % 2 === 0 ? 1.0 : 1.18);
-                if (isMobile && totalRealms > 5) {
-                    radialOffset = (rIdx % 2 === 0 ? 0.90 : 1.35);
-                }
-
-                const currentOrbitRadius = baseViewRadius * radialOffset;
-
                 const basePos = {
-                    x: Math.cos(realmAngle) * currentOrbitRadius,
-                    y: Math.sin(realmAngle) * currentOrbitRadius
+                    x: Math.cos(realmAngle) * ringRadius,
+                    y: Math.sin(realmAngle) * ringRadius
                 };
 
                 return {
@@ -2100,6 +2097,9 @@
                     name: realm.name,
                     icon: realm.icon || '🔮',
                     angle: realmAngle,
+                    homeAngle: realmAngle,
+                    orbitAngle: realmAngle,
+                    orbitRadius: ringRadius,
                     baseX: basePos.x,
                     baseY: basePos.y,
                     x: basePos.x,
@@ -2284,53 +2284,69 @@
             spaceCtx.fillText('😈', 0, 0);
             spaceCtx.restore();
 
-            // REALM-TO-REALM REPULSION PHYSICS SOLVER (Prevents Realm collisions)
+            // ORBIT-LOCKED REALM PHYSICS
+            // Every realm lives at a fixed distance (orbitRadius) from the Devil core - only its
+            // ANGLE around that ring is ever adjusted. This guarantees the realms always read as a
+            // clean circle around the core, never a scattered blob, no matter how avoidance nudges them.
             const isMobile = window.innerWidth < 768;
-            const minRealmDist = isMobile ? 140 : 160;
 
-            for (let i = 0; i < spaceRealms.length; i++) {
-                const r1 = spaceRealms[i];
-                for (let j = i + 1; j < spaceRealms.length; j++) {
-                    const r2 = spaceRealms[j];
-                    const dx = r2.x - r1.x;
-                    const dy = r2.y - r1.y;
-                    const dist = Math.hypot(dx, dy);
+            function normalizeAngleDiff(diff) {
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                return diff;
+            }
 
-                    if (dist < minRealmDist && dist > 0) {
-                        const overlap = (minRealmDist - dist) / 2;
-                        const nx = dx / dist;
-                        const ny = dy / dist;
+            function syncRealmPosFromOrbit(realm) {
+                realm.x = Math.cos(realm.orbitAngle) * realm.orbitRadius;
+                realm.y = Math.sin(realm.orbitAngle) * realm.orbitRadius;
+                realm.drawX = realm.x;
+                realm.drawY = realm.y;
+            }
 
-                        r1.x -= nx * overlap;
-                        r1.y -= ny * overlap;
-                        r2.x += nx * overlap;
-                        r2.y += ny * overlap;
+            // (1) Realm-to-realm angular repulsion (keeps neighbors from crowding the same arc)
+            // (2) Spring each realm back toward its evenly-spaced home angle, with a hard leash so
+            // avoidance can only ever nudge it locally along the ring - never let it wander far.
+            // Both are skipped while a realm is focus-selected (see the cartesian fallback further below),
+            // since that mode deliberately scatters the other realms away rather than keeping the ring.
+            const maxAngleDrift = isMobile ? 0.5 : 0.4;
+
+            if (!activeSelectedRealm) {
+                const minArcDist = isMobile ? 130 : 150;
+                for (let i = 0; i < spaceRealms.length; i++) {
+                    const r1 = spaceRealms[i];
+                    for (let j = i + 1; j < spaceRealms.length; j++) {
+                        const r2 = spaceRealms[j];
+                        const angleDiff = normalizeAngleDiff(r2.orbitAngle - r1.orbitAngle);
+                        const avgRadius = (r1.orbitRadius + r2.orbitRadius) / 2;
+                        const arcDist = Math.abs(angleDiff) * avgRadius;
+
+                        if (arcDist < minArcDist) {
+                            const overlapArc = (minArcDist - arcDist) / 2;
+                            const overlapAngle = overlapArc / avgRadius;
+                            const dir = angleDiff >= 0 ? 1 : -1;
+                            r1.orbitAngle -= dir * overlapAngle;
+                            r2.orbitAngle += dir * overlapAngle;
+                        }
                     }
                 }
+
+                spaceRealms.forEach(realm => {
+                    const angleToHome = normalizeAngleDiff(realm.homeAngle - realm.orbitAngle);
+                    realm.orbitAngle += angleToHome * 0.06;
+
+                    const deviation = normalizeAngleDiff(realm.orbitAngle - realm.homeAngle);
+                    if (deviation > maxAngleDrift) {
+                        realm.orbitAngle = realm.homeAngle + maxAngleDrift;
+                    } else if (deviation < -maxAngleDrift) {
+                        realm.orbitAngle = realm.homeAngle - maxAngleDrift;
+                    }
+
+                    syncRealmPosFromOrbit(realm);
+                });
             }
 
             const allBucketsOnCanvas = [];
             const allTasksOnCanvas = [];
-
-            // Continuous Devil Core repulsion + spring-to-target (must run before label solver so drawX/drawY are current)
-            spaceRealms.forEach(realm => {
-                const distToCore = Math.hypot(realm.x, realm.y);
-                const minCoreDist = coreRadius + realm.radius + 80;
-                if (distToCore < minCoreDist && distToCore > 0) {
-                    const angleFromCore = Math.atan2(realm.y, realm.x);
-                    realm.x = Math.cos(angleFromCore) * minCoreDist;
-                    realm.y = Math.sin(angleFromCore) * minCoreDist;
-                }
-
-                realm.x += (realm.targetX - realm.x) * 0.08;
-                realm.y += (realm.targetY - realm.y) * 0.08;
-
-                realm.floatX = Math.cos(frameCount * realm.floatSpeed + realm.floatOffsetPhase) * 6;
-                realm.floatY = Math.sin(frameCount * realm.floatSpeed * 0.8 + realm.floatOffsetPhase) * 6;
-
-                realm.drawX = realm.x + realm.floatX;
-                realm.drawY = realm.y + realm.floatY;
-            });
 
             // Helper: compute a realm's label pill rect exactly as renderRealmNode draws it
             function getRealmLabelRect(realm) {
@@ -2375,103 +2391,120 @@
                 return false;
             }
 
-            // REALM LABEL REPULSION SOLVER
+            // Helper: apply a cartesian push vector to a realm as a TANGENTIAL-ONLY angle change,
+            // so the realm slides along its ring instead of drifting off the circle.
+            function applyOrbitalPush(realm, pushX, pushY) {
+                const tangentX = -Math.sin(realm.orbitAngle);
+                const tangentY = Math.cos(realm.orbitAngle);
+                const tangentialComponent = (pushX * tangentX) + (pushY * tangentY);
+                realm.orbitAngle += tangentialComponent / realm.orbitRadius;
+                syncRealmPosFromOrbit(realm);
+            }
+
+            // REALM LABEL REPULSION SOLVER (overview mode only)
             // Prevents (a) text pills overlapping each other, and (b) any realm's circle body
-            // from sitting on top of another realm's text pill.
-            const labelPadding = 8;
-            const circleLabelPadding = 14;
-            const labelSolverIterations = 8;
-            for (let iter = 0; iter < labelSolverIterations; iter++) {
-                let anyOverlap = false;
+            // from sitting on top of another realm's text pill. Both resolve via orbital sliding only.
+            if (!activeSelectedRealm) {
+                const labelPadding = 8;
+                const circleLabelPadding = 14;
+                const labelSolverIterations = 8;
+                for (let iter = 0; iter < labelSolverIterations; iter++) {
+                    let anyOverlap = false;
 
-                // (a) Label-vs-label overlap
-                for (let i = 0; i < spaceRealms.length; i++) {
-                    const r1 = spaceRealms[i];
-                    const p1 = getRealmLabelRect(r1);
+                    // (a) Label-vs-label overlap
+                    for (let i = 0; i < spaceRealms.length; i++) {
+                        const r1 = spaceRealms[i];
+                        const p1 = getRealmLabelRect(r1);
 
-                    for (let j = i + 1; j < spaceRealms.length; j++) {
-                        const r2 = spaceRealms[j];
-                        const p2 = getRealmLabelRect(r2);
+                        for (let j = i + 1; j < spaceRealms.length; j++) {
+                            const r2 = spaceRealms[j];
+                            const p2 = getRealmLabelRect(r2);
 
-                        const overlapX = Math.min(p1.x + p1.w, p2.x + p2.w) - Math.max(p1.x, p2.x);
-                        const overlapY = Math.min(p1.y + p1.h, p2.y + p2.h) - Math.max(p1.y, p2.y);
+                            const overlapX = Math.min(p1.x + p1.w, p2.x + p2.w) - Math.max(p1.x, p2.x);
+                            const overlapY = Math.min(p1.y + p1.h, p2.y + p2.h) - Math.max(p1.y, p2.y);
 
-                        if (overlapX + labelPadding > 0 && overlapY + labelPadding > 0) {
-                            anyOverlap = true;
+                            if (overlapX + labelPadding > 0 && overlapY + labelPadding > 0) {
+                                anyOverlap = true;
 
-                            // Resolve along whichever axis has the smaller penetration (Minimum Translation Vector)
-                            if (overlapX < overlapY) {
-                                const push = (overlapX + labelPadding) / 2;
-                                const dir = (p1.x + p1.w / 2) <= (p2.x + p2.w / 2) ? -1 : 1;
-                                r1.x += dir * push;
-                                r1.drawX += dir * push;
-                                r2.x -= dir * push;
-                                r2.drawX -= dir * push;
-                            } else {
-                                const push = (overlapY + labelPadding) / 2;
-                                const dir = (p1.y + p1.h / 2) <= (p2.y + p2.h / 2) ? -1 : 1;
-                                r1.y += dir * push;
-                                r1.drawY += dir * push;
-                                r2.y -= dir * push;
-                                r2.drawY -= dir * push;
+                                // Resolve along whichever axis has the smaller penetration (Minimum Translation Vector)
+                                if (overlapX < overlapY) {
+                                    const push = (overlapX + labelPadding) / 2;
+                                    const dir = (p1.x + p1.w / 2) <= (p2.x + p2.w / 2) ? -1 : 1;
+                                    applyOrbitalPush(r1, dir * push, 0);
+                                    applyOrbitalPush(r2, -dir * push, 0);
+                                } else {
+                                    const push = (overlapY + labelPadding) / 2;
+                                    const dir = (p1.y + p1.h / 2) <= (p2.y + p2.h / 2) ? -1 : 1;
+                                    applyOrbitalPush(r1, 0, dir * push);
+                                    applyOrbitalPush(r2, 0, -dir * push);
+                                }
                             }
                         }
                     }
-                }
 
-                // (b) Circle-vs-other-realm's-label overlap (e.g. a neighboring planet drifting onto a pill)
-                for (let i = 0; i < spaceRealms.length; i++) {
-                    const rCircle = spaceRealms[i];
-                    const circleR = rCircle.radius + 18; // include the glow ring so text never sits under the halo either
+                    // (b) Circle-vs-other-realm's-label overlap (e.g. a neighboring planet drifting onto a pill)
+                    for (let i = 0; i < spaceRealms.length; i++) {
+                        const rCircle = spaceRealms[i];
+                        const circleR = rCircle.radius + 18; // include the glow ring so text never sits under the halo either
 
-                    for (let j = 0; j < spaceRealms.length; j++) {
-                        if (i === j) continue;
-                        const rLabel = spaceRealms[j];
-                        const rect = getRealmLabelRect(rLabel);
+                        for (let j = 0; j < spaceRealms.length; j++) {
+                            if (i === j) continue;
+                            const rLabel = spaceRealms[j];
+                            const rect = getRealmLabelRect(rLabel);
 
-                        const resolved = resolveCircleRectOverlap(
-                            rCircle.drawX, rCircle.drawY, circleR + circleLabelPadding, rect,
-                            (overlap, nx, ny) => {
-                                anyOverlap = true;
-                                const push = overlap / 2;
-                                // Push the circle's realm away from the label
-                                rCircle.x += nx * push;
-                                rCircle.y += ny * push;
-                                rCircle.drawX += nx * push;
-                                rCircle.drawY += ny * push;
-                                // Push the label's realm away from the circle
-                                rLabel.x -= nx * push;
-                                rLabel.y -= ny * push;
-                                rLabel.drawX -= nx * push;
-                                rLabel.drawY -= ny * push;
-                            }
-                        );
+                            const resolved = resolveCircleRectOverlap(
+                                rCircle.drawX, rCircle.drawY, circleR + circleLabelPadding, rect,
+                                (overlap, nx, ny) => {
+                                    anyOverlap = true;
+                                    const push = overlap / 2;
+                                    applyOrbitalPush(rCircle, nx * push, ny * push);
+                                    applyOrbitalPush(rLabel, -nx * push, -ny * push);
+                                }
+                            );
 
-                        if (resolved) anyOverlap = true;
+                            if (resolved) anyOverlap = true;
+                        }
                     }
+
+                    if (!anyOverlap) break;
                 }
 
-                if (!anyOverlap) break;
+                // Final pass: re-apply the home-angle leash once more (the label solver above can nudge a
+                // realm right up against maxAngleDrift) and add a tiny radial/angular "breathing" wobble
+                // purely for visual life - it never affects collision resolution.
+                spaceRealms.forEach(realm => {
+                    const deviation = normalizeAngleDiff(realm.orbitAngle - realm.homeAngle);
+                    if (deviation > maxAngleDrift) {
+                        realm.orbitAngle = realm.homeAngle + maxAngleDrift;
+                    } else if (deviation < -maxAngleDrift) {
+                        realm.orbitAngle = realm.homeAngle - maxAngleDrift;
+                    }
+                    syncRealmPosFromOrbit(realm);
+
+                    const radialFloat = Math.sin(frameCount * realm.floatSpeed + realm.floatOffsetPhase) * 5;
+                    const angularFloat = Math.cos(frameCount * realm.floatSpeed * 0.8 + realm.floatOffsetPhase) * 0.012;
+
+                    const drawAngle = realm.orbitAngle + angularFloat;
+                    const drawRadius = realm.orbitRadius + radialFloat;
+
+                    realm.drawX = Math.cos(drawAngle) * drawRadius;
+                    realm.drawY = Math.sin(drawAngle) * drawRadius;
+                });
+            } else {
+                // FOCUS MODE: a realm is selected/expanded, so the ring lock is suspended and every
+                // realm (including the selected one) simply springs toward its cartesian target -
+                // this is what lets focusAndRepelRealms() scatter the others out of the way.
+                spaceRealms.forEach(realm => {
+                    realm.x += (realm.targetX - realm.x) * 0.08;
+                    realm.y += (realm.targetY - realm.y) * 0.08;
+
+                    const floatX = Math.cos(frameCount * realm.floatSpeed + realm.floatOffsetPhase) * 6;
+                    const floatY = Math.sin(frameCount * realm.floatSpeed * 0.8 + realm.floatOffsetPhase) * 6;
+
+                    realm.drawX = realm.x + floatX;
+                    realm.drawY = realm.y + floatY;
+                });
             }
-
-            // LEASH CONSTRAINT: keep every realm close to its original circular "home" position
-            // so label/circle avoidance only nudges realms locally, instead of letting the whole
-            // layout drift away from the ring shape (and potentially off-screen).
-            const maxDriftFromHome = isMobile ? 85 : 105;
-            spaceRealms.forEach(realm => {
-                const homeDx = realm.x - realm.baseX;
-                const homeDy = realm.y - realm.baseY;
-                const homeDist = Math.hypot(homeDx, homeDy);
-
-                if (homeDist > maxDriftFromHome) {
-                    const scale = maxDriftFromHome / homeDist;
-                    realm.x = realm.baseX + homeDx * scale;
-                    realm.y = realm.baseY + homeDy * scale;
-                }
-
-                realm.drawX = realm.x + realm.floatX;
-                realm.drawY = realm.y + realm.floatY;
-            });
 
             spaceRealms.forEach(realm => {
                 const drawX = realm.drawX;
