@@ -2082,7 +2082,24 @@
             // SINGLE UNIFORM ORBIT RING: every realm sits at the same distance from the Devil core.
             // Overlap avoidance only ever adjusts a realm's ANGLE around this ring (never its radius),
             // so the layout always reads as a clean circle instead of a scattered blob.
-            const ringRadius = baseViewRadius * (isMobile ? 1.35 : 1.05);
+            //
+            // The ring radius must be big enough that, even at perfectly EVEN angle spacing (before any
+            // avoidance runs), adjacent realms' circles/labels don't already overlap - otherwise the
+            // solver has to fight the layout every frame and can't fully win with a limited number of
+            // realms crammed onto a small ring. So: measure the widest label pill up front and size the
+            // ring's circumference to comfortably fit all of them side-by-side around it.
+            spaceCtx.font = 'bold 22px sans-serif';
+            let maxPillWidth = 0;
+            realmsData.forEach(r => {
+                const w = spaceCtx.measureText(r.name).width + 36 + 28;
+                if (w > maxPillWidth) maxPillWidth = w;
+            });
+
+            const realmCircleRadius = isMobile ? 60 : 68;
+            const minArcSpacing = Math.max(maxPillWidth, realmCircleRadius * 2) + (isMobile ? 30 : 40);
+            const minRingRadiusForSpacing = (minArcSpacing * totalRealms) / (Math.PI * 2);
+
+            const ringRadius = Math.max(baseViewRadius * (isMobile ? 1.05 : 1.0), minRingRadiusForSpacing);
 
             spaceRealms = realmsData.map((realm, rIdx) => {
                 const realmAngle = (rIdx / totalRealms) * Math.PI * 2 - Math.PI / 2;
@@ -2220,7 +2237,9 @@
 
             const fitZoomX = window.innerWidth / boundingWidth;
             const fitZoomY = window.innerHeight / boundingHeight;
-            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.40), 0.90);
+            // Lower bound relaxed (was 0.40) so a wider ring - needed to fit many/long realm labels
+            // without overlap - always fully fits on screen instead of being clipped by an artificial floor.
+            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.22), 0.90);
 
             const centerX = (minX + maxX) / 2;
             const centerY = (minY + maxY) / 2;
