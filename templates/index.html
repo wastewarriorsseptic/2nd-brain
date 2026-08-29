@@ -2095,7 +2095,7 @@
                 if (w > maxPillWidth) maxPillWidth = w;
             });
 
-            const realmCircleRadius = isMobile ? 92 : 84;
+            const realmCircleRadius = isMobile ? 130 : 84;
             const minArcSpacing = Math.max(maxPillWidth, realmCircleRadius * 2) + (isMobile ? 30 : 40);
             const minRingRadiusForSpacing = (minArcSpacing * totalRealms) / (Math.PI * 2);
 
@@ -2287,7 +2287,7 @@
             // Central Core 😈
             const isMobileCore = window.innerWidth < 768;
             const pulseScale = 1 + Math.sin(frameCount * 2) * 0.08;
-            const coreRadius = (isMobileCore ? 78 : 64) * pulseScale;
+            const coreRadius = (isMobileCore ? 110 : 64) * pulseScale;
 
             spaceCtx.save();
             spaceCtx.beginPath();
@@ -2299,7 +2299,7 @@
 
             spaceCtx.textAlign = 'center';
             spaceCtx.textBaseline = 'middle';
-            spaceCtx.font = `${Math.round((isMobileCore ? 70 : 58) * pulseScale)}px serif`;
+            spaceCtx.font = `${Math.round((isMobileCore ? 99 : 58) * pulseScale)}px serif`;
             spaceCtx.shadowBlur = 0;
             spaceCtx.fillText('😈', 0, 0);
             spaceCtx.restore();
@@ -2927,7 +2927,7 @@
 
             // DEVIL CORE TAP DETECTION (0,0) -> RESET TO FULL UNIVERSE VIEW
             const pulseScale = 1 + Math.sin(frameCount * 2) * 0.08;
-            const coreRadius = (window.innerWidth < 768 ? 78 : 64) * pulseScale;
+            const coreRadius = (window.innerWidth < 768 ? 110 : 64) * pulseScale;
             const distToCore = Math.hypot(worldX, worldY);
             if (distToCore <= coreRadius + 15) {
                 recenterSpace();
