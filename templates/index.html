@@ -2552,7 +2552,11 @@
                 spaceCtx.font = `bold ${fontPx}px sans-serif`;
                 const pillPadding = 36;
                 const pillHeight = Math.round(fontPx * 1.9);
-                const width = spaceCtx.measureText(realm.name).width + pillPadding + 28;
+                const iconGap = 10;
+                const contentWidth = realm.isAddButton
+                    ? spaceCtx.measureText(realm.name).width
+                    : spaceCtx.measureText(realm.icon).width + iconGap + spaceCtx.measureText(realm.name).width;
+                const width = contentWidth + pillPadding + 28;
                 const x = realm.drawX - (width / 2);
                 const isTopHalf = realm.baseY < 0;
                 const y = isTopHalf
@@ -3026,14 +3030,36 @@
             spaceCtx.shadowBlur = 0;
             spaceCtx.fillText(realm.icon, drawX, drawY);
 
-            const beaconText = isAddButton ? realm.name : `${realm.icon} ${realm.name}`;
             const labelFontPx = realm.labelFontPx || 22;
             spaceCtx.font = `bold ${labelFontPx}px sans-serif`;
-            
+
             const pillPadding = 36;
             const pillHeight = Math.round(labelFontPx * 1.9);
-            const bTextWidth = spaceCtx.measureText(beaconText).width + pillPadding + 28;
-            const pillX = drawX - (bTextWidth / 2);
+
+            // Measure the icon and name SEPARATELY rather than as one combined string. Some emoji
+            // (multi-part "ZWJ" sequences especially) don't report/render symmetrically when
+            // concatenated with other text, which visibly threw off centering for icons like the
+            // "technologist at a laptop" glyph. Measuring and positioning each piece independently
+            // means the pill is always sized to what's actually there, and stays centered regardless
+            // of any one glyph's quirks.
+            const iconGap = 10;
+            let bTextWidth, pillX, iconDrawX, nameDrawX;
+
+            if (isAddButton) {
+                bTextWidth = spaceCtx.measureText(realm.name).width + pillPadding + 28;
+                pillX = drawX - (bTextWidth / 2);
+                nameDrawX = drawX;
+            } else {
+                const iconWidth = spaceCtx.measureText(realm.icon).width;
+                const nameWidth = spaceCtx.measureText(realm.name).width;
+                const contentWidth = iconWidth + iconGap + nameWidth;
+                bTextWidth = contentWidth + pillPadding + 28;
+                pillX = drawX - (bTextWidth / 2);
+
+                const contentStartX = drawX - (contentWidth / 2);
+                iconDrawX = contentStartX + (iconWidth / 2);
+                nameDrawX = contentStartX + iconWidth + iconGap + (nameWidth / 2);
+            }
             
             const isTopHalf = realm.baseY < 0;
             const pillY = isTopHalf 
@@ -3052,7 +3078,12 @@
 
             spaceCtx.fillStyle = '#ffffff';
             spaceCtx.shadowBlur = 0;
-            spaceCtx.fillText(beaconText, drawX, pillY + (pillHeight / 2));
+            if (isAddButton) {
+                spaceCtx.fillText(realm.name, nameDrawX, pillY + (pillHeight / 2));
+            } else {
+                spaceCtx.fillText(realm.icon, iconDrawX, pillY + (pillHeight / 2));
+                spaceCtx.fillText(realm.name, nameDrawX, pillY + (pillHeight / 2));
+            }
             spaceCtx.restore();
         }
 
