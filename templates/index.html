@@ -2549,13 +2549,24 @@
             // Helper: compute a realm's label pill rect exactly as renderRealmNode draws it
             function getRealmLabelRect(realm) {
                 const fontPx = realm.labelFontPx || 22;
-                spaceCtx.font = `bold ${fontPx}px sans-serif`;
                 const pillPadding = 36;
                 const pillHeight = Math.round(fontPx * 1.9);
                 const iconGap = 10;
-                const contentWidth = realm.isAddButton
-                    ? spaceCtx.measureText(realm.name).width
-                    : spaceCtx.measureText(realm.icon).width + iconGap + spaceCtx.measureText(realm.name).width;
+
+                let contentWidth;
+                if (realm.isAddButton) {
+                    spaceCtx.font = `bold ${fontPx}px sans-serif`;
+                    contentWidth = spaceCtx.measureText(realm.name).width;
+                } else {
+                    // Measure each piece in the SAME font it's actually drawn with (see renderRealmNode)
+                    // - measuring an emoji under the sans-serif name font can under-report its width.
+                    spaceCtx.font = `${Math.round(fontPx * 1.15)}px serif`;
+                    const iconWidth = spaceCtx.measureText(realm.icon).width;
+                    spaceCtx.font = `bold ${fontPx}px sans-serif`;
+                    const nameWidth = spaceCtx.measureText(realm.name).width;
+                    contentWidth = iconWidth + iconGap + nameWidth;
+                }
+
                 const width = contentWidth + pillPadding + 28;
                 const x = realm.drawX - (width / 2);
                 const isTopHalf = realm.baseY < 0;
@@ -3031,27 +3042,34 @@
             spaceCtx.fillText(realm.icon, drawX, drawY);
 
             const labelFontPx = realm.labelFontPx || 22;
-            spaceCtx.font = `bold ${labelFontPx}px sans-serif`;
+            const iconFontSpec = `${Math.round(labelFontPx * 1.15)}px serif`;
+            const nameFontSpec = `bold ${labelFontPx}px sans-serif`;
 
             const pillPadding = 36;
             const pillHeight = Math.round(labelFontPx * 1.9);
 
-            // Measure the icon and name SEPARATELY rather than as one combined string. Some emoji
-            // (multi-part "ZWJ" sequences especially) don't report/render symmetrically when
-            // concatenated with other text, which visibly threw off centering for icons like the
-            // "technologist at a laptop" glyph. Measuring and positioning each piece independently
-            // means the pill is always sized to what's actually there, and stays centered regardless
-            // of any one glyph's quirks.
+            // Measure the icon and name SEPARATELY, and with each in the SAME font it will actually be
+            // drawn with. Measuring an emoji glyph while the "sans-serif" name font is active can
+            // under-report its width (some multi-part emoji, like the "technologist at a laptop"
+            // glyph, aren't recognized as emoji under a plain sans-serif stack even though they still
+            // render via the color-emoji fallback) - that mismatch is what caused the icon and name to
+            // visually overlap. Using the same serif stack as the big circle icon for measurement keeps
+            // the reported width consistent with what's actually drawn.
             const iconGap = 10;
             let bTextWidth, pillX, iconDrawX, nameDrawX;
 
             if (isAddButton) {
+                spaceCtx.font = nameFontSpec;
                 bTextWidth = spaceCtx.measureText(realm.name).width + pillPadding + 28;
                 pillX = drawX - (bTextWidth / 2);
                 nameDrawX = drawX;
             } else {
+                spaceCtx.font = iconFontSpec;
                 const iconWidth = spaceCtx.measureText(realm.icon).width;
+
+                spaceCtx.font = nameFontSpec;
                 const nameWidth = spaceCtx.measureText(realm.name).width;
+
                 const contentWidth = iconWidth + iconGap + nameWidth;
                 bTextWidth = contentWidth + pillPadding + 28;
                 pillX = drawX - (bTextWidth / 2);
@@ -3079,9 +3097,12 @@
             spaceCtx.fillStyle = '#ffffff';
             spaceCtx.shadowBlur = 0;
             if (isAddButton) {
+                spaceCtx.font = nameFontSpec;
                 spaceCtx.fillText(realm.name, nameDrawX, pillY + (pillHeight / 2));
             } else {
+                spaceCtx.font = iconFontSpec;
                 spaceCtx.fillText(realm.icon, iconDrawX, pillY + (pillHeight / 2));
+                spaceCtx.font = nameFontSpec;
                 spaceCtx.fillText(realm.name, nameDrawX, pillY + (pillHeight / 2));
             }
             spaceCtx.restore();
