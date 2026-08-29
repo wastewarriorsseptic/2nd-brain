@@ -74,11 +74,25 @@
             -ms-overflow-style: none;
             scrollbar-width: none;
         }
+
+        /* Extra top padding so the sidebar header (logo, New Task button) clears
+           the iPhone notch/Dynamic Island when running edge-to-edge inside the
+           native app wrapper. env(safe-area-inset-top) is 0 in a normal desktop
+           or browser tab, so the max() falls back to the original padding there
+           with no visible change. */
+        aside.app-sidebar {
+            padding-top: max(1rem, env(safe-area-inset-top)) !important;
+        }
+        @media (min-width: 768px) {
+            aside.app-sidebar {
+                padding-top: max(1.5rem, env(safe-area-inset-top)) !important;
+            }
+        }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex">
 
-    <aside class="w-72 md:w-80 lg:w-96 bg-slate-900 md:bg-slate-800 border-r-0 md:border-r border-slate-800/80 p-4 ms:p-6 flex flex-col justify-between shrink-0 transition-all">
+    <aside class="app-sidebar w-72 md:w-80 lg:w-96 bg-slate-900 md:bg-slate-800 border-r-0 md:border-r border-slate-800/80 p-4 ms:p-6 flex flex-col justify-between shrink-0 transition-all">
         <div>
             <div class="py-1 mb-2 md:mb-3 flex items-center justify-center">
                 <h1 class="text-2xl font-bold text-indigo-400 flex items-center gap-2 text-center tracking-tight">
