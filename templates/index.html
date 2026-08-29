@@ -2702,7 +2702,13 @@
 
                     if (isSelectedBucket && bucket.tasks.length > 0) {
                         const stepSpacing = 160;
-                        const startLinearX = bucket.x + 90;
+                        const addButtonSlotX = bucket.x + 90;
+                        const startLinearX = addButtonSlotX + stepSpacing;
+
+                        if (bucket.addTaskButton && !bucket.isAddButton) {
+                            bucket.addTaskButton.x = addButtonSlotX;
+                            bucket.addTaskButton.y = bucket.y;
+                        }
 
                         bucket.tasks.forEach((task, tIdx) => {
                             task.x = startLinearX + (tIdx * stepSpacing);
@@ -2766,7 +2772,8 @@
 
                     if (isSelectedBucket && bucket.tasks.length > 0) {
                         const stepSpacing = 160;
-                        const startLinearX = bucket.x + 90;
+                        const addButtonSlotX = bucket.x + 90;
+                        const startLinearX = addButtonSlotX + stepSpacing;
 
                         spaceCtx.save();
                         spaceCtx.beginPath();
@@ -2851,9 +2858,9 @@
                         spaceCtx.restore();
                     });
 
-                    // "+" add-task button - always close to the bucket, only in orbit mode (not the
-                    // linear swipe-dock view for a drilled-into bucket).
-                    if (!isSelectedBucket && bucket.addTaskButton && !bucket.isAddButton) {
+                    // "+" add-task button - always close to the bucket, whether we're looking at the
+                    // orbit overview or drilled into this specific bucket's linear task view.
+                    if (bucket.addTaskButton && !bucket.isAddButton) {
                         const atb = bucket.addTaskButton;
                         spaceCtx.save();
                         spaceCtx.beginPath();
@@ -3230,7 +3237,7 @@
                 activeSelectedRealm.buckets.forEach(bucket => {
                     if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
 
-                    if (!activeSelectedBucket && bucket.addTaskButton && !bucket.isAddButton) {
+                    if (bucket.addTaskButton && !bucket.isAddButton) {
                         const atb = bucket.addTaskButton;
                         const distAtb = Math.hypot(worldX - atb.x, worldY - atb.y);
                         if (distAtb <= atb.radius + 14) {
