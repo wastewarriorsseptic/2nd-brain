@@ -4223,6 +4223,7 @@
             dummyBtn.setAttribute('data-due-date', task.dueDate);
             dummyBtn.setAttribute('data-due-time', task.dueTime);
             dummyBtn.setAttribute('data-amount', task.amount);
+            dummyBtn.setAttribute('data-is-shoppable', task.isShoppable ? 'true' : 'false');
             dummyBtn.setAttribute('data-description', task.description);
             dummyBtn.setAttribute('data-recurring', task.isRecurring ? 'true' : 'false');
             dummyBtn.setAttribute('data-recurrence-type', task.recurrenceType);
@@ -4378,6 +4379,7 @@
             dummyBtn.setAttribute('data-due-date', activeSelectedTask.dueDate);
             dummyBtn.setAttribute('data-due-time', activeSelectedTask.dueTime);
             dummyBtn.setAttribute('data-amount', activeSelectedTask.amount);
+            dummyBtn.setAttribute('data-is-shoppable', activeSelectedTask.isShoppable ? 'true' : 'false');
             dummyBtn.setAttribute('data-description', activeSelectedTask.description);
             dummyBtn.setAttribute('data-recurring', activeSelectedTask.isRecurring ? 'true' : 'false');
             dummyBtn.setAttribute('data-recurrence-type', activeSelectedTask.recurrenceType);
