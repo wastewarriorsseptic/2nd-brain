@@ -534,7 +534,7 @@
                     </div>
 
                     <button id="hud-shop-btn" onclick="openAmazonShopFromHud()" title="Shop on Amazon"
-                            class="hidden text-slate-400 hover:text-amber-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-800 shrink-0">
+                            class="text-slate-400 hover:text-amber-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-800 shrink-0">
                         🛒
                     </button>
 
@@ -4178,6 +4178,9 @@
 
                     const amountText = task.amount ? `<span class="text-emerald-400 font-bold text-xs">$${parseFloat(task.amount).toFixed(2)}</span>` : '';
                     const descText = task.description ? `<p class="text-slate-400 text-xs line-clamp-2 leading-relaxed mt-1">${task.description}</p>` : '';
+                    const shopBtnHtml = task.isShoppable
+                        ? `<button onclick="event.stopPropagation(); openAmazonSearch(${JSON.stringify(task.title).replace(/"/g, '&quot;')}, ${JSON.stringify(task.amount).replace(/"/g, '&quot;')})" title="Shop on Amazon" class="text-slate-400 hover:text-amber-400 text-xs">🛒</button>`
+                        : '';
 
                     card.innerHTML = `
                         <div class="flex items-center justify-between gap-2 border-b border-slate-700/50 pb-1.5">
@@ -4188,6 +4191,7 @@
                                     <input type="hidden" name="item_id" value="${task.id}">
                                     <button type="submit" title="Mark Complete" class="w-5 h-5 rounded border border-slate-600 hover:border-emerald-400 text-slate-400 hover:text-emerald-400 flex items-center justify-center text-xs transition">✓</button>
                                 </form>
+                                ${shopBtnHtml}
                                 <button onclick="event.stopPropagation(); openEditItemFromTask(${JSON.stringify(task).replace(/"/g, '&quot;')})" title="Edit Task" class="text-slate-400 hover:text-indigo-400 text-xs">✏️</button>
                             </div>
                         </div>
@@ -4352,9 +4356,6 @@
             title.innerText = task.title;
             date.innerText = `📅 ${task.dueDateFormatted}`;
             idInput.value = task.id;
-
-            const shopBtn = document.getElementById('hud-shop-btn');
-            if (shopBtn) shopBtn.classList.toggle('hidden', !task.isShoppable);
 
             if (task.isOverdue) {
                 badgeStatus.innerText = '⚠️ Overdue';
