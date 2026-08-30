@@ -538,18 +538,19 @@ def find_reorder_suggestion(session: Session, item: "Item") -> Optional[dict]:
     }
 
 def find_recurring_suggestion(session: Session, new_item: "Item") -> Optional[dict]:
-    """Called right after a brand-new task is created. If a similar-titled task already exists in the
-    same bucket and isn't already part of a recurring series, this looks like something the user keeps
-    manually recreating by hand - suggests converting it into a real recurring task instead, with an
-    interval estimated from history when there's enough to go on. Reuses the exact same fuzzy-title
-    matching as reorder detection, just triggered at creation instead of completion."""
-    if new_item.recurring_group_id:
+    """Called right after a brand-new task is created. If a similar-titled SHOPPABLE task already exists
+    in the same bucket and isn't already part of a recurring series, this looks like something the user
+    keeps manually recreating by hand - suggests converting it into a real recurring task instead, with
+    an interval estimated from history when there's enough to go on. Scoped to shoppable tasks only,
+    same as reorder detection, so this stays predictable rather than firing on every kind of task."""
+    if not new_item.is_shoppable or new_item.recurring_group_id:
         return None
 
     prior_items = session.exec(
         select(Item).where(
             Item.bucket_id == new_item.bucket_id,
             Item.id != new_item.id,
+            Item.is_shoppable == True,
         )
     ).all()
 
