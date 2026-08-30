@@ -2351,7 +2351,12 @@
                             // actual room to push a crowded bucket/task label further out without the
                             // camera cropping it off-screen - labels can now legitimately use that space
                             // to guarantee full visibility instead of overlapping.
-                            const bucketMaxReach = (isMobile ? 38 : 34) + maxTaskOrbit + 150;
+                            // This buffer must comfortably exceed the largest possible label push
+                            // distance (see resolveLabelPushback's maxPush at each call site) - if it's
+                            // smaller, the camera fits to a box that's too tight for where a label can
+                            // actually end up, clipping it right at the frame edge. Sized here with real
+                            // margin above the current caps rather than matching them exactly.
+                            const bucketMaxReach = (isMobile ? 38 : 34) + maxTaskOrbit + 220;
 
                             return {
                                 id: bucket.id,
@@ -3015,7 +3020,7 @@
                         const desiredTPillY = task.baseY + task.radius + (isActiveSwipeNode ? 12 : 8);
 
                         const taskLabelRect = { x: task.baseX - tWidth / 2, y: desiredTPillY, w: tWidth, h: tPillHeight, dirY: 1, ownerBucketId: bucket.id };
-                        resolveLabelPushback(taskLabelRect, focusLabelRects, 110);
+                        resolveLabelPushback(taskLabelRect, focusLabelRects, 55);
                         focusLabelRects.push(taskLabelRect);
 
                         // Ease toward the resolved position rather than snapping straight to it - other
@@ -3139,7 +3144,7 @@
                     }
 
                     const bucketLabelRect = { x: bucket.x - bWidth / 2, y: desiredBPillY, w: bWidth, h: bPillHeight, dirY: isBucketInBottomHalf ? 1 : -1 };
-                    resolveLabelPushback(bucketLabelRect, focusLabelRects, 220);
+                    resolveLabelPushback(bucketLabelRect, focusLabelRects, 100);
                     focusLabelRects.push(bucketLabelRect);
 
                     // Same easing as task labels - avoids a visible snap if the resolved position
