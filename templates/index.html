@@ -2042,16 +2042,18 @@
             document.getElementById('edit-bucket-modal').classList.remove('hidden');
         }
 
-        // Builds an Amazon search URL from a title, with a budget (if given) used as a max-price filter
-        // via Amazon's own "high-price" search parameter (in cents) - opens in a new tab, ready for the
-        // user to pick and buy the exact item themselves. No Amazon API involved; this is just a
-        // well-formed search link, so it needs no API key, no approval process, and can never place an
-        // order without the person's own final tap.
+        // Builds an Amazon search URL from a title, with a budget (if given) used as a max-price filter.
+        // Uses Amazon's "rh=p_36:MIN-MAX" price-range refinement (values in cents) rather than the older
+        // "low-price"/"high-price" params, which don't reliably filter results anymore - confirmed
+        // working as of Aug 2026. Opens in a new tab, ready for the user to pick and buy the exact item
+        // themselves. No Amazon API involved; this is just a well-formed search link, so it needs no API
+        // key, no approval process, and can never place an order without the person's own final tap.
         function openAmazonSearch(title, amount) {
             let url = `https://www.amazon.com/s?k=${encodeURIComponent(title || '')}`;
             const budget = parseFloat(amount);
             if (!isNaN(budget) && budget > 0) {
-                url += `&high-price=${Math.round(budget * 100)}`;
+                const maxCents = Math.round(budget * 100);
+                url += `&rh=p_36:0-${maxCents}`;
             }
             window.open(url, '_blank', 'noopener,noreferrer');
         }
@@ -4178,9 +4180,7 @@
 
                     const amountText = task.amount ? `<span class="text-emerald-400 font-bold text-xs">$${parseFloat(task.amount).toFixed(2)}</span>` : '';
                     const descText = task.description ? `<p class="text-slate-400 text-xs line-clamp-2 leading-relaxed mt-1">${task.description}</p>` : '';
-                    const shopBtnHtml = task.isShoppable
-                        ? `<button onclick="event.stopPropagation(); openAmazonSearch(${JSON.stringify(task.title).replace(/"/g, '&quot;')}, ${JSON.stringify(task.amount).replace(/"/g, '&quot;')})" title="Shop on Amazon" class="text-slate-400 hover:text-amber-400 text-xs">🛒</button>`
-                        : '';
+                    const shopBtnHtml = `<button onclick="event.stopPropagation(); openAmazonSearch(${JSON.stringify(task.title).replace(/"/g, '&quot;')}, ${JSON.stringify(task.amount).replace(/"/g, '&quot;')})" title="Shop on Amazon" class="text-slate-400 hover:text-amber-400 text-xs">🛒</button>`;
 
                     card.innerHTML = `
                         <div class="flex items-center justify-between gap-2 border-b border-slate-700/50 pb-1.5">
