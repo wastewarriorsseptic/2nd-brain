@@ -2996,15 +2996,21 @@
                         }
                         spaceCtx.fill();
 
-                        spaceCtx.save();
-                        spaceCtx.textAlign = 'center';
-                        spaceCtx.textBaseline = 'middle';
-                        spaceCtx.font = isActiveSwipeNode ? 'bold 26px sans-serif' : '24px sans-serif';
+                        // Task title labels only render once you're actually inside this specific
+                        // bucket (the linear swipe-dock view, with real horizontal room per task). In
+                        // the realm overview, only the dot itself shows - this is what actually removes
+                        // the clutter, rather than another attempt at smarter label placement for a
+                        // dozen small pills competing with the bucket labels for the same tight space.
+                        if (isSelectedBucket) {
+                            spaceCtx.save();
+                            spaceCtx.textAlign = 'center';
+                            spaceCtx.textBaseline = 'middle';
+                            spaceCtx.font = isActiveSwipeNode ? 'bold 26px sans-serif' : '24px sans-serif';
 
-                        // Wrap to multiple centered lines instead of one ever-widening line - this is
-                        // what keeps a long task title from overlapping the next task's label, whether
-                        // they're 160px apart in the linear swipe-dock view or spread around a bucket's
-                        // orbit ring.
+                            // Wrap to multiple centered lines instead of one ever-widening line - this is
+                            // what keeps a long task title from overlapping the next task's label, whether
+                            // they're 160px apart in the linear swipe-dock view or spread around a bucket's
+                            // orbit ring.
                         const maxLabelWidth = 220;
                         const lineHeight = isActiveSwipeNode ? 30 : 28;
                         const lines = wrapTextToWidth(spaceCtx, task.title, maxLabelWidth, 3);
@@ -3041,11 +3047,9 @@
                         lines.forEach((line, lineIdx) => {
                             spaceCtx.fillText(line, task.baseX, firstLineY + (lineIdx * lineHeight));
                         });
-                        spaceCtx.restore();
+                            spaceCtx.restore();
+                        }
                     });
-
-                    // "+" add-task button - always close to the bucket, whether we're looking at the
-                    // orbit overview or drilled into this specific bucket's linear task view.
                     if (bucket.addTaskButton && !bucket.isAddButton) {
                         const atb = bucket.addTaskButton;
                         spaceCtx.save();
