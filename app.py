@@ -91,35 +91,17 @@ APPLE_CLIENT_ID = os.getenv("APPLE_CLIENT_ID")
 APPLE_TEAM_ID = os.getenv("APPLE_TEAM_ID")
 APPLE_KEY_ID = os.getenv("APPLE_KEY_ID")
 
-_raw_apple_key = os.getenv("APPLE_PRIVATE_KEY", "")
-
-# TEMP DIAGNOSTIC - remove once Sign in with Apple is confirmed working.
-# Prints shape info about the raw env var WITHOUT leaking the actual key material,
-# so we can see exactly how Render is storing it (real newlines? literal \n? quotes?).
-if _raw_apple_key:
-    print(
-        f"[apple-key-debug] len={len(_raw_apple_key)} "
-        f"real_newlines={_raw_apple_key.count(chr(10))} "
-        f"literal_backslash_n={_raw_apple_key.count('\\\\n')} "
-        f"starts_with_quote={_raw_apple_key[:1] in ('\"', chr(39))} "
-        f"first20={_raw_apple_key[:20]!r} "
-        f"last20={_raw_apple_key[-20:]!r}",
-        flush=True,
-    )
-
 def _normalize_apple_private_key(raw: str) -> str:
     """Handles whichever way the .p8 contents ended up in the env var: real newlines,
     literal "\\n" sequences, double-escaped "\\\\n", stray surrounding quotes, or
     trailing/leading whitespace."""
     key = raw.strip()
-    # Strip accidental wrapping quotes (single or double).
     if len(key) >= 2 and key[0] == key[-1] and key[0] in ('"', "'"):
         key = key[1:-1].strip()
-    # Handle double-escaped backslash-n (e.g. "\\\\n") before single-escaped.
     key = key.replace("\\\\n", "\n").replace("\\n", "\n").replace("\r\n", "\n")
     return key.strip() + "\n"
 
-APPLE_PRIVATE_KEY = _normalize_apple_private_key(_raw_apple_key)
+APPLE_PRIVATE_KEY = _normalize_apple_private_key(os.getenv("APPLE_PRIVATE_KEY", ""))
 
 def generate_apple_client_secret():
     """Builds the ES256-signed JWT Apple requires in place of a normal client secret. Valid for ~150
