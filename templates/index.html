@@ -2404,7 +2404,7 @@
                             const isMobile = window.innerWidth < 768;
                             const bx = realm.baseX + Math.cos(bucket.angle) * bucket.orbitRadius;
                             const by = realm.baseY + Math.sin(bucket.angle) * bucket.orbitRadius;
-                            targetCameraZoom = isMobile ? 0.192 : 0.33;
+                            targetCameraZoom = isMobile ? 0.24 : 0.413;
                             targetCameraOffset = {
                                 x: (window.innerWidth / 2) - (bx * targetCameraZoom),
                                 y: (window.innerHeight / 2) - (by * targetCameraZoom)
@@ -3859,7 +3859,7 @@
                     renderBucketTaskSwipeDock(clickedBucket);
 
                     const isMobile = window.innerWidth < 768;
-                    targetCameraZoom = isMobile ? 0.192 : 0.33;
+                    targetCameraZoom = isMobile ? 0.24 : 0.413;
                     targetCameraOffset = {
                         x: (window.innerWidth / 2) - (clickedBucket.x * targetCameraZoom),
                         y: (window.innerHeight / 2) - (clickedBucket.y * targetCameraZoom)
@@ -3907,7 +3907,7 @@
             // tight 1.35 regardless of device, which silently overrode every other zoom-out change
             // since this runs immediately after a bucket opens or a task is tapped.
             const isMobileTaskFocus = window.innerWidth < 768;
-            targetCameraZoom = isMobileTaskFocus ? 0.192 : 0.33;
+            targetCameraZoom = isMobileTaskFocus ? 0.24 : 0.413;
             const verticalHudOffset = (window.innerHeight * 0.18);
             targetCameraOffset = {
                 x: (window.innerWidth / 2) - (task.x * targetCameraZoom),
