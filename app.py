@@ -2,6 +2,8 @@ import os
 import shutil
 import uuid
 import sqlite3
+import time
+import json as _json
 from datetime import datetime, timedelta, timezone
 from calendar import monthrange
 from typing import Optional, List
@@ -17,6 +19,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import resend
 from resend.exceptions import ResendError
 from dotenv import load_dotenv
+import jwt  # PyJWT - used to generate Apple's short-lived ES256 client secret
 
 from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
@@ -70,6 +73,45 @@ def send_email_alert(
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-brain-key-2026")
+
+# --- Apple Sign In Configuration ---
+# Apple doesn't use a static client secret like Google - it requires a short-lived JWT signed with
+# your "Sign in with Apple" private key (the .p8 file from Apple Developer > Certificates, Identifiers
+# & Profiles > Keys). All four of these come from your Apple Developer account:
+#   APPLE_CLIENT_ID    - your Services ID (e.g. "app.usetaskmonster.signin"), NOT your App ID
+#   APPLE_TEAM_ID       - your 10-character Apple Developer Team ID
+#   APPLE_KEY_ID        - the 10-character Key ID shown when you created the Sign in with Apple key
+#   APPLE_PRIVATE_KEY   - the full contents of the downloaded .p8 file (including the BEGIN/END lines).
+#                         If stored as a single-line env var, use literal "\n" for line breaks - they're
+#                         converted back to real newlines below.
+APPLE_CLIENT_ID = os.getenv("APPLE_CLIENT_ID")
+APPLE_TEAM_ID = os.getenv("APPLE_TEAM_ID")
+APPLE_KEY_ID = os.getenv("APPLE_KEY_ID")
+APPLE_PRIVATE_KEY = os.getenv("APPLE_PRIVATE_KEY", "").replace("\\n", "\n")
+
+def generate_apple_client_secret():
+    """Builds the ES256-signed JWT Apple requires in place of a normal client secret. Valid for ~150
+    days (Apple's hard max is 6 months) - if the app process runs longer than that without a restart,
+    this needs to be regenerated (a normal redeploy does this automatically since it's computed at
+    import time below)."""
+    if not (APPLE_CLIENT_ID and APPLE_TEAM_ID and APPLE_KEY_ID and APPLE_PRIVATE_KEY):
+        return None
+    now = int(time.time())
+    payload = {
+        "iss": APPLE_TEAM_ID,
+        "iat": now,
+        "exp": now + 86400 * 150,
+        "aud": "https://appleid.apple.com",
+        "sub": APPLE_CLIENT_ID,
+    }
+    try:
+        return jwt.encode(payload, APPLE_PRIVATE_KEY, algorithm="ES256", headers={"kid": APPLE_KEY_ID})
+    except Exception as e:
+        print(f"Could not generate Apple client secret (check APPLE_PRIVATE_KEY format): {e}", flush=True)
+        return None
+
+APPLE_CLIENT_SECRET = generate_apple_client_secret()
+APPLE_SIGNIN_ENABLED = bool(APPLE_CLIENT_ID and APPLE_CLIENT_SECRET)
 
 # --- Database Setup (Render PostgreSQL with Local SQLite Fallback) ---
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -218,6 +260,22 @@ oauth.register(
     server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
     client_kwargs={'scope': 'openid email profile'}
 )
+
+if APPLE_SIGNIN_ENABLED:
+    oauth.register(
+        name='apple',
+        client_id=APPLE_CLIENT_ID,
+        client_secret=APPLE_CLIENT_SECRET,
+        server_metadata_url='https://appleid.apple.com/.well-known/openid-configuration',
+        client_kwargs={
+            'scope': 'name email',
+            # Apple requires form_post (not a plain redirect) whenever the "name"/"email" scopes are
+            # requested, so the callback below is a POST route, not the GET route Google uses.
+            'response_mode': 'form_post',
+        },
+    )
+else:
+    print("Sign in with Apple disabled: missing APPLE_CLIENT_ID/TEAM_ID/KEY_ID/PRIVATE_KEY.", flush=True)
 
 # --- Scheduler ---
 scheduler = BackgroundScheduler()
@@ -368,30 +426,58 @@ def get_current_user(request: Request, session: Session) -> Optional[User]:
         return None
     return session.get(User, user_id)
 
+def user_owns_realm(session: Session, user: Optional[User], realm_id: Optional[int]) -> bool:
+    """True only if this user is the realm's actual owner. Used to gate destructive or
+    ownership-level actions (deleting the realm, renaming it, sharing/unsharing it) that
+    shouldn't be available to collaborators, even ones with full task/bucket access."""
+    if not user or not realm_id:
+        return False
+    realm = session.get(Realm, realm_id)
+    return bool(realm and realm.user_id == user.id)
+
+def user_can_access_realm(session: Session, user: Optional[User], realm_id: Optional[int]) -> bool:
+    """True if this user owns the realm OR has been granted collaborator access to it via
+    RealmShare. Used to gate everyday actions (adding/editing/completing buckets and tasks)
+    that both the owner and any collaborator should be able to do."""
+    if not user or not realm_id:
+        return False
+    if user_owns_realm(session, user, realm_id):
+        return True
+    share = session.exec(
+        select(RealmShare).where(RealmShare.realm_id == realm_id, RealmShare.user_id == user.id)
+    ).first()
+    return share is not None
+
+def user_can_access_bucket(session: Session, user: Optional[User], bucket_id: Optional[int]) -> bool:
+    """True if this user has access (owner or collaborator) to the realm a bucket lives in."""
+    if not user or not bucket_id:
+        return False
+    bucket = session.get(Bucket, bucket_id)
+    if not bucket:
+        return False
+    return user_can_access_realm(session, user, bucket.realm_id)
+
+def user_can_access_item(session: Session, user: Optional[User], item_id: Optional[int]) -> bool:
+    """True if this user has access (owner or collaborator) to the realm a task lives in."""
+    if not user or not item_id:
+        return False
+    item = session.get(Item, item_id)
+    if not item:
+        return False
+    return user_can_access_bucket(session, user, item.bucket_id)
+
 @app.on_event("startup")
 def on_startup():
     run_automated_backup()
     safe_apply_migrations()
     SQLModel.metadata.create_all(engine)
 
-@app.get("/login")
-async def login(request: Request):
-    redirect_uri = request.url_for("auth_callback")
-    return await oauth.google.authorize_redirect(
-        request, 
-        redirect_uri, 
-        prompt="select_account"
-    )
-
-@app.get("/auth/callback")
-async def auth_callback(request: Request):
-    token = await oauth.google.authorize_access_token(request)
-    user_info = token.get('userinfo')
-    if not user_info or not user_info.get('email'):
-        return RedirectResponse(url="/")
-
-    email = user_info['email'].lower()
-    name = user_info.get('name', email.split('@')[0])
+def find_or_create_user_and_log_in(request: Request, email: str, name: str):
+    """Shared by every sign-in provider (Google, Apple, ...) - looks up or creates the User by email,
+    sets up default realms for brand-new accounts, claims any pending realm-share invites sent to this
+    email, and stores the session. Keying purely on email (not provider) means someone who signs in
+    with Google today and Apple tomorrow, using the same email address, lands on the same account."""
+    email = email.lower()
 
     with Session(engine) as session:
         user = session.exec(select(User).where(User.email == email)).first()
@@ -425,6 +511,73 @@ async def auth_callback(request: Request):
         session.commit()
         request.session['user_id'] = user.id
 
+@app.get("/login")
+async def login(request: Request):
+    redirect_uri = request.url_for("auth_callback")
+    return await oauth.google.authorize_redirect(
+        request, 
+        redirect_uri, 
+        prompt="select_account"
+    )
+
+@app.get("/auth/callback")
+async def auth_callback(request: Request):
+    token = await oauth.google.authorize_access_token(request)
+    user_info = token.get('userinfo')
+    if not user_info or not user_info.get('email'):
+        return RedirectResponse(url="/")
+
+    email = user_info['email'].lower()
+    name = user_info.get('name', email.split('@')[0])
+    find_or_create_user_and_log_in(request, email, name)
+
+    return RedirectResponse(url="/", status_code=303)
+
+@app.get("/login/apple")
+async def login_apple(request: Request):
+    if not APPLE_SIGNIN_ENABLED:
+        return RedirectResponse(url="/")
+    redirect_uri = request.url_for("auth_callback_apple")
+    return await oauth.apple.authorize_redirect(request, redirect_uri)
+
+@app.post("/auth/callback/apple")
+async def auth_callback_apple(request: Request):
+    if not APPLE_SIGNIN_ENABLED:
+        return RedirectResponse(url="/")
+
+    try:
+        token = await oauth.apple.authorize_access_token(request)
+    except Exception as e:
+        print(f"Apple sign-in failed: {e}", flush=True)
+        return RedirectResponse(url="/")
+
+    user_info = token.get('userinfo')
+    if not user_info or not user_info.get('email'):
+        return RedirectResponse(url="/")
+
+    email = user_info['email'].lower()
+
+    # Apple sends the user's name only ONCE - on the very first authorization - as a separate "user"
+    # form field (a JSON string), never again on any later sign-in. If we don't capture it here, it's
+    # gone for good, so we fall back to the email's local part only when this "user" field is absent
+    # (i.e. every sign-in after the first).
+    name = None
+    form = await request.form()
+    raw_user = form.get('user')
+    if raw_user:
+        try:
+            parsed = _json.loads(raw_user)
+            name_parts = parsed.get('name', {})
+            first = name_parts.get('firstName', '')
+            last = name_parts.get('lastName', '')
+            name = f"{first} {last}".strip() or None
+        except (ValueError, TypeError):
+            pass
+    if not name:
+        name = email.split('@')[0]
+
+    find_or_create_user_and_log_in(request, email, name)
+
     return RedirectResponse(url="/", status_code=303)
 
 @app.get("/logout")
@@ -447,7 +600,8 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
                 name="index.html", 
                 context={
                     "user": None,
-                    "today": today_date
+                    "today": today_date,
+                    "apple_signin_enabled": APPLE_SIGNIN_ENABLED
                 }
             )
 
@@ -509,8 +663,11 @@ def create_realm(request: Request, name: str = Form(...), icon: str = Form("🔮
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/realms/update/")
-def update_realm(realm_id: int = Form(...), name: str = Form(...), icon: str = Form("🔮")):
+def update_realm(request: Request, realm_id: int = Form(...), name: str = Form(...), icon: str = Form("🔮")):
     with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user_owns_realm(session, user, realm_id):
+            return RedirectResponse(url="/", status_code=303)
         realm = session.get(Realm, realm_id)
         if realm:
             realm.name = name
@@ -520,9 +677,14 @@ def update_realm(realm_id: int = Form(...), name: str = Form(...), icon: str = F
     return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
 
 @app.post("/realms/reorder/")
-def reorder_realms(order: List[int] = Body(...)):
+def reorder_realms(request: Request, order: List[int] = Body(...)):
     with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return JSONResponse({"status": "unauthorized"}, status_code=401)
         for idx, realm_id in enumerate(order):
+            if not user_owns_realm(session, user, realm_id):
+                continue
             realm = session.get(Realm, realm_id)
             if realm:
                 realm.sort_order = idx
@@ -531,8 +693,11 @@ def reorder_realms(order: List[int] = Body(...)):
     return JSONResponse({"status": "ok"})
 
 @app.post("/realms/delete/")
-def delete_realm(realm_id: int = Form(...)):
+def delete_realm(request: Request, realm_id: int = Form(...)):
     with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user_owns_realm(session, user, realm_id):
+            return RedirectResponse(url="/", status_code=303)
         realm = session.get(Realm, realm_id)
         if realm:
             for bucket in realm.buckets:
@@ -549,7 +714,12 @@ def delete_realm(realm_id: int = Form(...)):
 def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(...)):
     target_email = email.strip().lower()
     api_key = os.getenv("RESEND_API_KEY")
-    
+
+    with Session(engine) as session:
+        current_user = get_current_user(request, session)
+        if not user_owns_realm(session, current_user, realm_id):
+            return RedirectResponse(url="/", status_code=303)
+
     if not api_key:
         print("Skipping invite emails: RESEND_API_KEY is missing.", flush=True)
         return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
@@ -662,6 +832,10 @@ def create_bucket(
             first_realm = session.exec(select(Realm).where(Realm.user_id == user.id)).first()
             if first_realm:
                 target_realm_id = first_realm.id
+        elif not user_can_access_realm(session, user, target_realm_id):
+            # A realm_id was explicitly given but this user has no owner/collaborator
+            # relationship to it - refuse rather than silently writing into someone else's realm.
+            return RedirectResponse(url="/", status_code=303)
 
         if target_realm_id:
             max_order = len(session.exec(select(Bucket).where(Bucket.realm_id == target_realm_id)).all())
@@ -672,8 +846,11 @@ def create_bucket(
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/buckets/update/")
-def update_bucket(bucket_id: int = Form(...), name: str = Form(...), icon: str = Form("📌")):
+def update_bucket(request: Request, bucket_id: int = Form(...), name: str = Form(...), icon: str = Form("📌")):
     with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user_can_access_bucket(session, user, bucket_id):
+            return RedirectResponse(url="/", status_code=303)
         bucket = session.get(Bucket, bucket_id)
         if bucket:
             bucket.name = name
@@ -683,9 +860,14 @@ def update_bucket(bucket_id: int = Form(...), name: str = Form(...), icon: str =
     return RedirectResponse(url=f"/?bucket_id={bucket_id}", status_code=303)
 
 @app.post("/buckets/reorder/")
-def reorder_buckets(order: List[int] = Body(...)):
+def reorder_buckets(request: Request, order: List[int] = Body(...)):
     with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return JSONResponse({"status": "unauthorized"}, status_code=401)
         for idx, bucket_id in enumerate(order):
+            if not user_can_access_bucket(session, user, bucket_id):
+                continue
             bucket = session.get(Bucket, bucket_id)
             if bucket:
                 bucket.sort_order = idx
@@ -694,8 +876,11 @@ def reorder_buckets(order: List[int] = Body(...)):
     return JSONResponse({"status": "ok"})
 
 @app.post("/buckets/delete/")
-def delete_bucket(bucket_id: int = Form(...)):
+def delete_bucket(request: Request, bucket_id: int = Form(...)):
     with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user_can_access_bucket(session, user, bucket_id):
+            return RedirectResponse(url="/", status_code=303)
         bucket = session.get(Bucket, bucket_id)
         if bucket:
             realm_id = bucket.realm_id
@@ -782,6 +967,8 @@ def create_item(
 
     with Session(engine) as session:
         current_user = get_current_user(request, session)
+        if not user_can_access_bucket(session, current_user, bucket_id):
+            return RedirectResponse(url="/", status_code=303)
         created_by_name = current_user.name if current_user else "A collaborator"
         created_by_email = current_user.email if current_user else None
 
@@ -861,8 +1048,11 @@ def create_item(
     return RedirectResponse(url=f"/?bucket_id={bucket_id}", status_code=303)
 
 @app.post("/items/delete/")
-def delete_item(item_id: int = Form(...), delete_series: bool = Form(False)):
+def delete_item(request: Request, item_id: int = Form(...), delete_series: bool = Form(False)):
     with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user_can_access_item(session, user, item_id):
+            return RedirectResponse(url="/", status_code=303)
         item = session.get(Item, item_id)
         if item:
             bucket_id = item.bucket_id
@@ -886,6 +1076,9 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
     redirect_url = referer if referer else "/"
 
     with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user_can_access_item(session, user, item_id):
+            return RedirectResponse(url=redirect_url, status_code=303)
         item = session.get(Item, item_id)
         if item:
             was_completed = item.is_completed
@@ -1018,6 +1211,14 @@ def update_item(
     new_due_date = datetime.strptime(due_date, "%Y-%m-%d").replace(hour=hour, minute=minute, second=0)
 
     with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user_can_access_item(session, user, item_id):
+            return RedirectResponse(url=redirect_url, status_code=303)
+        # If this edit also relocates the task to a different bucket, make sure the user has
+        # access to that destination too - not just the bucket the task started in.
+        if bucket_id and not user_can_access_bucket(session, user, bucket_id):
+            return RedirectResponse(url=redirect_url, status_code=303)
+
         item = session.get(Item, item_id)
         if not item:
             return RedirectResponse(url=redirect_url, status_code=303)
