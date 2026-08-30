@@ -74,11 +74,112 @@
             -ms-overflow-style: none;
             scrollbar-width: none;
         }
+
+        /* Extra top padding so the sidebar header (logo, New Task button) clears
+           the iPhone notch/Dynamic Island when running edge-to-edge inside the
+           native app wrapper. env(safe-area-inset-top) is 0 in a normal desktop
+           or browser tab, so the max() falls back to the original padding there
+           with no visible change. */
+        aside.app-sidebar {
+            padding-top: max(1rem, env(safe-area-inset-top)) !important;
+        }
+        @media (min-width: 768px) {
+            aside.app-sidebar {
+                padding-top: max(1.5rem, env(safe-area-inset-top)) !important;
+            }
+        }
+
+        /* Same safe-area treatment for the Space View's floating top bar
+           (the "TaskMonster Universe" / "Close View" pills) - the flat pt-10
+           Tailwind class gave a fixed 40px regardless of notch height, which
+           landed right at the Dynamic Island's edge instead of clearly below
+           it. env(safe-area-inset-top) is 0 in a normal browser tab, so this
+           falls back to the original spacing there with no visible change. */
+        #space-view-overlay > .relative.pt-10 {
+            padding-top: max(2.5rem, calc(env(safe-area-inset-top) + 0.5rem)) !important;
+        }
+        @media (min-width: 768px) {
+            #space-view-overlay > .relative.pt-10 {
+                padding-top: max(1rem, env(safe-area-inset-top)) !important;
+            }
+        }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex">
 
-    <aside class="w-72 md:w-80 lg:w-96 bg-slate-900 md:bg-slate-800 border-r-0 md:border-r border-slate-800/80 p-4 ms:p-6 flex flex-col justify-between shrink-0 transition-all">
+    <!-- Reorder pattern suggestion toast - shown after completing a shoppable task, only when a real
+         pattern (2+ matching completions) was detected server-side. See find_reorder_suggestion() in
+         app.py and the query-param handling in the script below. -->
+    <div id="reorder-suggestion-toast" class="hidden fixed bottom-4 right-4 left-4 md:left-auto md:w-96 z-[60] bg-slate-800 border border-indigo-500/50 rounded-2xl p-4 shadow-2xl">
+        <div class="flex items-start gap-3">
+            <span class="text-2xl shrink-0">🔁</span>
+            <div class="flex-1 min-w-0">
+                <p class="text-sm text-slate-200 leading-snug">
+                    You usually reorder <span id="reorder-toast-title" class="font-bold text-white"></span>
+                    every ~<span id="reorder-toast-days" class="font-bold text-white"></span> days.
+                </p>
+                <p id="reorder-toast-confidence" class="text-[11px] text-slate-500 mt-0.5"></p>
+                <div class="flex items-center gap-2 mt-3">
+                    <button onclick="acceptReorderSuggestion()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition">
+                        ✅ Schedule the next one
+                    </button>
+                    <button onclick="dismissReorderSuggestion()" class="px-3 py-1.5 text-slate-400 hover:text-white text-xs font-semibold transition">
+                        Dismiss
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Silently submitted by acceptReorderSuggestion() - same /items/ endpoint every other task
+         creation already uses, just pre-filled and posted without opening the full Add Task modal. -->
+    <form id="reorder-create-form" action="/items/" method="POST" class="hidden">
+        <input type="hidden" name="title" id="reorder-form-title">
+        <input type="hidden" name="bucket_id" id="reorder-form-bucket-id">
+        <input type="hidden" name="due_date" id="reorder-form-due-date">
+        <input type="hidden" name="reminder_offset" value="0">
+        <input type="hidden" name="amount" id="reorder-form-amount">
+        <input type="hidden" name="is_shoppable" value="true">
+    </form>
+
+    <!-- Recurring-pattern suggestion toast - shown after CREATING a task that looks similar to one
+         you've made before (see find_recurring_suggestion() in app.py). Distinct from the reorder toast
+         above, which fires on completion instead. -->
+    <div id="recurring-suggestion-toast" class="hidden fixed bottom-4 right-4 left-4 md:left-auto md:w-96 z-[60] bg-slate-800 border border-emerald-500/50 rounded-2xl p-4 shadow-2xl">
+        <div class="flex items-start gap-3">
+            <span class="text-2xl shrink-0">🔂</span>
+            <div class="flex-1 min-w-0">
+                <p class="text-sm text-slate-200 leading-snug">
+                    Looks like you've created <span id="recurring-toast-title" class="font-bold text-white"></span>
+                    before, about every <span id="recurring-toast-days" class="font-bold text-white"></span> days.
+                </p>
+                <p class="text-[11px] text-slate-500 mt-0.5">Want to make it a real recurring task instead of recreating it by hand each time?</p>
+                <div class="flex items-center gap-2 mt-3">
+                    <button onclick="acceptRecurringSuggestion()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition">
+                        ✅ Make it recurring
+                    </button>
+                    <button onclick="dismissRecurringSuggestion()" class="px-3 py-1.5 text-slate-400 hover:text-white text-xs font-semibold transition">
+                        No, keep as one-off
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Silently submitted by acceptRecurringSuggestion() to create the actual recurring series, using
+         the exact same /items/ endpoint and recurrence fields the full Add Task modal already uses. -->
+    <form id="recur-create-form" action="/items/" method="POST" class="hidden">
+        <input type="hidden" name="title" id="recur-form-title">
+        <input type="hidden" name="bucket_id" id="recur-form-bucket-id">
+        <input type="hidden" name="due_date" id="recur-form-due-date">
+        <input type="hidden" name="reminder_offset" value="0">
+        <input type="hidden" name="recurrence_type" value="daily">
+        <input type="hidden" name="interval" id="recur-form-interval">
+        <input type="hidden" name="amount" id="recur-form-amount">
+        <input type="hidden" name="is_shoppable" id="recur-form-shoppable">
+    </form>
+
+    <aside class="app-sidebar w-72 md:w-60 lg:w-72 bg-slate-900 md:bg-slate-800 border-r-0 md:border-r border-slate-800/80 p-4 ms:p-6 flex flex-col justify-between shrink-0 transition-all">
         <div>
             <div class="py-1 mb-2 md:mb-3 flex items-center justify-center">
                 <h1 class="text-2xl font-bold text-indigo-400 flex items-center gap-2 text-center tracking-tight">
@@ -149,6 +250,11 @@
                                        class="realm-link text-xs md:text-sm font-bold flex items-center gap-1.5 min-w-0 {% if selected_realm_id == realm.id and not selected_bucket_id %}text-white{% else %}text-slate-300{% endif %}">
                                         <span class="shrink-0">{{ realm.icon or '🔮' }}</span> <span class="truncate">{{ realm.name }}</span>
                                     </a>
+                                    {% if realm.user_id != user.id %}
+                                    <span class="shrink-0 bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded-full" title="Shared with you by {{ realm.user.name if realm.user else 'another owner' }}">👥 Shared by {{ realm.user.name if realm.user else 'owner' }}</span>
+                                    {% elif collaborators_map and collaborators_map.get(realm.id) %}
+                                    <span class="shrink-0 bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded-full" title="You've shared this Realm with others">👥 Shared</span>
+                                    {% endif %}
                                 </div>
 
                                 <div class="grid grid-cols-4 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-20 text-center items-center">
@@ -269,6 +375,7 @@
                              data-due-time="{% if item.due_date.strftime('%H:%M') != '09:00' %}{{ item.due_date.strftime('%H:%M') }}{% endif %}"
                              data-due-date-formatted="{{ item.due_date.strftime('%b %d, %Y') }}"
                              data-amount="{{ item.amount or '' }}"
+                             data-is-shoppable="{{ 'true' if item.is_shoppable else 'false' }}"
                              data-description="{{ item.description or '' }}"
                              data-title="{{ item.title }}"
                              data-item-id="{{ item.id }}"
@@ -348,12 +455,22 @@
                                     {% endif %}
 
                                     <div class="flex items-center gap-1">
+                                        {% if item.is_shoppable %}
+                                        <button onclick="openAmazonShop(this)"
+                                                data-title="{{ item.title }}"
+                                                data-amount="{{ item.amount or '' }}"
+                                                title="Shop on Amazon"
+                                                class="text-slate-500 hover:text-amber-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-700/50">
+                                            🛒
+                                        </button>
+                                        {% endif %}
                                         <button onclick="openEditItem(this)"
                                                 data-id="{{ item.id }}"
                                                 data-title="{{ item.title }}"
                                                 data-due-date="{{ item.due_date.strftime('%Y-%m-%d') }}"
                                                 data-due-time="{% if item.due_date.strftime('%H:%M') != '09:00' %}{{ item.due_date.strftime('%H:%M') }}{% endif %}"
                                                 data-amount="{{ item.amount or '' }}"
+                                                data-is-shoppable="{{ 'true' if item.is_shoppable else 'false' }}"
                                                 data-description="{{ item.description or '' }}"
                                                 data-recurring="{{ 'true' if (item.recurrence_type and item.recurrence_type != 'none') or item.recurring_group_id else 'false' }}"
                                                 data-recurrence-type="{{ item.recurrence_type or 'none' }}"
@@ -396,10 +513,20 @@
                 <div class="text-center py-12 bg-slate-800/60 border border-slate-700/60 rounded-3xl px-6 max-w-md mx-auto my-8 shadow-2xl backdrop-blur-md">
                     <span class="text-5xl block mb-4">🔐</span>
                     <h3 class="text-2xl font-bold mb-2 text-white">Welcome to TaskMonster</h3>
-                    <p class="text-slate-400 text-sm mb-6 leading-relaxed">Sign in with your Google account to access your personal dashboard and task timeline.</p>
-                    <a href="/login" class="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-3 rounded-2xl transition shadow-lg shadow-indigo-600/30 w-full">
-                        🔑 Sign in with Google
-                    </a>
+                    <p class="text-slate-400 text-sm mb-6 leading-relaxed">Sign in to access your personal dashboard and task timeline.</p>
+                    <div class="space-y-3">
+                        <a href="/login" class="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-3 rounded-2xl transition shadow-lg shadow-indigo-600/30 w-full">
+                            🔑 Sign in with Google
+                        </a>
+                        {% if apple_signin_enabled %}
+                        <a href="/login/apple" class="inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-100 text-black font-semibold px-6 py-3 rounded-2xl transition shadow-lg w-full">
+                            <svg viewBox="0 0 384 512" class="w-5 h-5 fill-current" aria-hidden="true">
+                                <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/>
+                            </svg>
+                            Sign in with Apple
+                        </a>
+                        {% endif %}
+                    </div>
                 </div>
                 {% endif %}
             </div>
@@ -477,6 +604,11 @@
                         <h3 id="hud-task-title" class="text-sm font-bold text-white break-words leading-snug">Task Title</h3>
                         <p id="hud-task-date" class="text-[11px] text-indigo-300 font-mono mt-0.5">📅 Due Date</p>
                     </div>
+
+                    <button id="hud-shop-btn" onclick="openAmazonShopFromHud()" title="Shop on Amazon"
+                            class="text-slate-400 hover:text-amber-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-800 shrink-0">
+                        🛒
+                    </button>
 
                     <button id="hud-edit-btn" onclick="triggerHudEdit()" title="Edit Task"
                             class="text-slate-400 hover:text-indigo-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-800 shrink-0">
@@ -576,6 +708,7 @@
                             <div onclick="selectEmoji('add-realm', '🔥')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🔥</div>
                             <div onclick="selectEmoji('add-realm', '🎨')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎨</div>
                             <div onclick="selectEmoji('add-realm', '🎵')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎵</div>
+                            <div onclick="selectEmoji('add-realm', '😈')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">😈</div>
                         </div>
                     </div>
                     <div class="flex-1 min-w-0">
@@ -667,15 +800,16 @@
                             <div onclick="selectEmoji('edit-realm', '🏆')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🏆</div>
                             <div onclick="selectEmoji('edit-realm', '🚀')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🚀</div>
                             <div onclick="selectEmoji('edit-realm', '🌱')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🌱</div>
-                            <div onclick="selectEmoji('add-realm', '🎁')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎁</div>
-                            <div onclick="selectEmoji('add-realm', '🧠')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🧠</div>
-                            <div onclick="selectEmoji('add-realm', '⚙️')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">⚙️</div>
-                            <div onclick="selectEmoji('add-realm', '💡')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💡</div>
-                            <div onclick="selectEmoji('add-realm', '📦')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">📦</div>
-                            <div onclick="selectEmoji('add-realm', '🌟')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🌟</div>
-                            <div onclick="selectEmoji('add-realm', '🔥')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🔥</div>
-                            <div onclick="selectEmoji('add-realm', '🎨')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎨</div>
-                            <div onclick="selectEmoji('add-realm', '🎵')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎵</div>
+                            <div onclick="selectEmoji('edit-realm', '🎁')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎁</div>
+                            <div onclick="selectEmoji('edit-realm', '🧠')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🧠</div>
+                            <div onclick="selectEmoji('edit-realm', '⚙️')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">⚙️</div>
+                            <div onclick="selectEmoji('edit-realm', '💡')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💡</div>
+                            <div onclick="selectEmoji('edit-realm', '📦')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">📦</div>
+                            <div onclick="selectEmoji('edit-realm', '🌟')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🌟</div>
+                            <div onclick="selectEmoji('edit-realm', '🔥')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🔥</div>
+                            <div onclick="selectEmoji('edit-realm', '🎨')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎨</div>
+                            <div onclick="selectEmoji('edit-realm', '🎵')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎵</div>
+                            <div onclick="selectEmoji('edit-realm', '😈')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">😈</div>
                         </div>
                     </div>
                     <div class="flex-1 min-w-0">
@@ -850,6 +984,14 @@
                            class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
                 </div>
 
+                <div class="w-full flex items-start gap-2">
+                    <input type="checkbox" name="is_shoppable" id="add-item-shoppable" value="true"
+                           class="mt-0.5 rounded border-slate-700 bg-slate-900 text-indigo-500 focus:ring-indigo-500 cursor-pointer shrink-0">
+                    <label for="add-item-shoppable" class="text-xs font-semibold text-slate-400 cursor-pointer leading-snug">
+                        🛒 Shoppable on Amazon <span class="font-normal text-slate-500">(the Amount above becomes your budget - a "Shop" button opens Amazon pre-filtered to it)</span>
+                    </label>
+                </div>
+
                 <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Due Date</label>
                     <input type="date" name="due_date" required value="{{ today.strftime('%Y-%m-%d') }}" onclick="this.showPicker()"
@@ -948,6 +1090,14 @@
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Amount ($ optional)</label>
                     <input type="number" step="0.01" name="amount" id="edit-item-amount" placeholder="0.00" 
                            class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                </div>
+
+                <div class="w-full flex items-start gap-2">
+                    <input type="checkbox" name="is_shoppable" id="edit-item-shoppable" value="true"
+                           class="mt-0.5 rounded border-slate-700 bg-slate-900 text-indigo-500 focus:ring-indigo-500 cursor-pointer shrink-0">
+                    <label for="edit-item-shoppable" class="text-xs font-semibold text-slate-400 cursor-pointer leading-snug">
+                        🛒 Shoppable on Amazon <span class="font-normal text-slate-500">(the Amount above becomes your budget - a "Shop" button opens Amazon pre-filtered to it)</span>
+                    </label>
                 </div>
 
                 <div class="w-full">
@@ -1093,6 +1243,8 @@
                 id: {{ r.id }},
                 name: "{{ r.name }}",
                 icon: "{{ r.icon or '🔮' }}",
+                isShared: {{ 'true' if (r.user_id != user.id) or (collaborators_map and collaborators_map.get(r.id)) else 'false' }},
+                sharedByName: "{% if r.user_id != user.id %}{{ r.user.name if r.user else 'Owner' }}{% elif collaborators_map and collaborators_map.get(r.id) %}{{ collaborators_map.get(r.id)[0].name }}{% if collaborators_map.get(r.id)|length > 1 %} +{{ collaborators_map.get(r.id)|length - 1 }}{% endif %}{% endif %}",
                 buckets: [
                     {% for b in r.buckets %}
                     { id: {{ b.id }}, name: "{{ b.name }}" },
@@ -1726,6 +1878,8 @@
             }
 
             updateSelectionUI();
+            checkForReorderSuggestion();
+            checkForRecurringSuggestion();
 
             const realmsContainer = document.getElementById('realms-container');
             if (realmsContainer) {
@@ -1962,12 +2116,170 @@
             document.getElementById('edit-bucket-modal').classList.remove('hidden');
         }
 
+        // Builds an Amazon search URL from a title, with a budget (if given) used as a max-price filter.
+        // Uses Amazon's "rh=p_36:MIN-MAX" price-range refinement (values in cents) rather than the older
+        // "low-price"/"high-price" params, which don't reliably filter results anymore - confirmed
+        // working as of Aug 2026. Opens in a new tab, ready for the user to pick and buy the exact item
+        // themselves. No Amazon API involved; this is just a well-formed search link, so it needs no API
+        // key, no approval process, and can never place an order without the person's own final tap.
+        function openAmazonSearch(title, amount) {
+            let url = `https://www.amazon.com/s?k=${encodeURIComponent(title || '')}`;
+            const budget = parseFloat(amount);
+            if (!isNaN(budget) && budget > 0) {
+                const maxCents = Math.round(budget * 100);
+                url += `&rh=p_36:0-${maxCents}`;
+            }
+            window.open(url, '_blank', 'noopener,noreferrer');
+        }
+
+        // Reorder pattern suggestion - see find_reorder_suggestion() in app.py. That function only ever
+        // runs server-side right after a shoppable task is completed, and passes its result back as
+        // query params on the redirect - this just checks for those params once, on page load.
+        let pendingReorderSuggestion = null;
+
+        function checkForReorderSuggestion() {
+            const params = new URLSearchParams(window.location.search);
+            const title = params.get('reorder_title');
+            const days = params.get('reorder_days');
+            const bucketId = params.get('reorder_bucket_id');
+
+            if (!title || !days || !bucketId) return;
+
+            pendingReorderSuggestion = {
+                title: title,
+                days: parseInt(days, 10),
+                bucketId: bucketId,
+                amount: params.get('reorder_amount') || '',
+                count: parseInt(params.get('reorder_count') || '2', 10)
+            };
+
+            document.getElementById('reorder-toast-title').innerText = `"${title}"`;
+            document.getElementById('reorder-toast-days').innerText = pendingReorderSuggestion.days;
+            document.getElementById('reorder-toast-confidence').innerText =
+                pendingReorderSuggestion.count >= 3
+                    ? `Based on your last ${pendingReorderSuggestion.count} reorders`
+                    : `Early estimate - just one prior reorder so far`;
+
+            document.getElementById('reorder-suggestion-toast').classList.remove('hidden');
+
+            // Strip the reorder_* params from the URL so refreshing or sharing the link doesn't
+            // re-show the same suggestion - the query string did its job carrying the data over from
+            // the redirect, it doesn't need to stick around.
+            const cleanUrl = window.location.pathname +
+                (params.toString() ? '?' + Array.from(params.entries())
+                    .filter(([k]) => !k.startsWith('reorder_'))
+                    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+                    .join('&') : '');
+            history.replaceState({}, '', cleanUrl || window.location.pathname);
+        }
+
+        function acceptReorderSuggestion() {
+            if (!pendingReorderSuggestion) return;
+
+            const dueDate = new Date();
+            dueDate.setDate(dueDate.getDate() + pendingReorderSuggestion.days);
+            const yyyy = dueDate.getFullYear();
+            const mm = String(dueDate.getMonth() + 1).padStart(2, '0');
+            const dd = String(dueDate.getDate()).padStart(2, '0');
+
+            document.getElementById('reorder-form-title').value = pendingReorderSuggestion.title;
+            document.getElementById('reorder-form-bucket-id').value = pendingReorderSuggestion.bucketId;
+            document.getElementById('reorder-form-due-date').value = `${yyyy}-${mm}-${dd}`;
+            document.getElementById('reorder-form-amount').value = pendingReorderSuggestion.amount;
+
+            document.getElementById('reorder-create-form').submit();
+        }
+
+        function dismissReorderSuggestion() {
+            pendingReorderSuggestion = null;
+            document.getElementById('reorder-suggestion-toast').classList.add('hidden');
+        }
+
+        // Recurring-pattern suggestion - see find_recurring_suggestion() in app.py. Fires right after
+        // CREATING a task that looks similar to one made before, as opposed to the reorder toast above
+        // which fires on completion.
+        let pendingRecurringSuggestion = null;
+
+        function checkForRecurringSuggestion() {
+            const params = new URLSearchParams(window.location.search);
+            const title = params.get('recur_title');
+            const days = params.get('recur_days');
+            const itemId = params.get('recur_item_id');
+            const dueDate = params.get('recur_due_date');
+
+            if (!title || !days || !itemId || !dueDate) return;
+
+            pendingRecurringSuggestion = {
+                title: title,
+                days: parseInt(days, 10),
+                itemId: itemId,
+                dueDate: dueDate,
+                bucketId: params.get('bucket_id') || '',
+                amount: params.get('recur_amount') || '',
+                shoppable: params.get('recur_shoppable') === 'true'
+            };
+
+            document.getElementById('recurring-toast-title').innerText = `"${title}"`;
+            document.getElementById('recurring-toast-days').innerText = pendingRecurringSuggestion.days;
+            document.getElementById('recurring-suggestion-toast').classList.remove('hidden');
+
+            // Same URL cleanup approach as the reorder toast - strip only this feature's own params.
+            const cleanUrl = window.location.pathname +
+                (params.toString() ? '?' + Array.from(params.entries())
+                    .filter(([k]) => !k.startsWith('recur_'))
+                    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+                    .join('&') : '');
+            history.replaceState({}, '', cleanUrl || window.location.pathname);
+        }
+
+        async function acceptRecurringSuggestion() {
+            if (!pendingRecurringSuggestion) return;
+
+            // Remove the one-off task first (via fetch, so this doesn't navigate away before the
+            // second form below gets its turn), then create the real recurring series in its place -
+            // same /items/delete/ and /items/ endpoints every other task action already uses.
+            const deleteData = new FormData();
+            deleteData.append('item_id', pendingRecurringSuggestion.itemId);
+            await fetch('/items/delete/', { method: 'POST', body: deleteData });
+
+            document.getElementById('recur-form-title').value = pendingRecurringSuggestion.title;
+            document.getElementById('recur-form-bucket-id').value = pendingRecurringSuggestion.bucketId;
+            document.getElementById('recur-form-due-date').value = pendingRecurringSuggestion.dueDate;
+            document.getElementById('recur-form-interval').value = pendingRecurringSuggestion.days;
+            document.getElementById('recur-form-amount').value = pendingRecurringSuggestion.amount;
+            document.getElementById('recur-form-shoppable').value = pendingRecurringSuggestion.shoppable ? 'true' : 'false';
+
+            document.getElementById('recur-create-form').submit();
+        }
+
+        function dismissRecurringSuggestion() {
+            pendingRecurringSuggestion = null;
+            document.getElementById('recurring-suggestion-toast').classList.add('hidden');
+        }
+
+        // Dashboard task-card version - reads the title/amount off the button's own data attributes,
+        // matching the same pattern openEditItem already uses.
+        function openAmazonShop(element) {
+            const title = element.getAttribute('data-title') || '';
+            const amount = element.getAttribute('data-amount') || '';
+            openAmazonSearch(title, amount);
+        }
+
+        // Space View HUD card version - reads straight off the currently-selected task object rather
+        // than a data attribute, since the HUD button isn't re-rendered per task the way dashboard cards
+        // are; showHudCard() just keeps activeSelectedTask pointed at whichever task is open.
+        function openAmazonShopFromHud() {
+            if (!activeSelectedTask) return;
+            openAmazonSearch(activeSelectedTask.title, activeSelectedTask.amount);
+        }
+
         function openEditItem(element) {
             const id = element.getAttribute('data-id');
             const title = element.getAttribute('data-title') || '';
             const dueDate = element.getAttribute('data-due-date') || '';
             const dueTime = element.getAttribute('data-due-time') || '';
             const amount = element.getAttribute('data-amount') || '';
+            const isShoppable = element.getAttribute('data-is-shoppable') === 'true';
             const description = element.getAttribute('data-description') || '';
             const isRecurring = element.getAttribute('data-recurring') === 'true';
             const recurrenceType = element.getAttribute('data-recurrence-type') || 'none';
@@ -1979,6 +2291,7 @@
             document.getElementById('edit-item-due-date').value = dueDate;
             document.getElementById('edit-item-due-time').value = dueTime;
             document.getElementById('edit-item-amount').value = amount;
+            document.getElementById('edit-item-shoppable').checked = isShoppable;
             document.getElementById('edit-item-description').value = description;
 
             // Set Realm & Bucket dropdown selections
@@ -2127,7 +2440,7 @@
             // Overlap avoidance only ever adjusts a realm's ANGLE around this ring (never its radius),
             // so the layout always reads as a clean circle instead of a scattered blob.
             //
-            const realmLabelFontPx = isMobile ? 42 : 33;
+            const realmLabelFontPx = isMobile ? 52 : 42;
 
             // The ring radius must be big enough that, even at perfectly EVEN angle spacing (before any
             // avoidance runs), adjacent realms' circles/labels don't already overlap - otherwise the
@@ -2141,11 +2454,11 @@
                 if (w > maxPillWidth) maxPillWidth = w;
             });
 
-            const realmCircleRadius = isMobile ? 130 : 84;
+            const realmCircleRadius = isMobile ? 169 : 109;
             const minArcSpacing = Math.max(maxPillWidth, realmCircleRadius * 2) + (isMobile ? 46 : 40);
             const minRingRadiusForSpacing = (minArcSpacing * totalRealms) / (Math.PI * 2);
 
-            const ringRadius = Math.max(baseViewRadius * (isMobile ? 1.05 : 1.0), minRingRadiusForSpacing);
+            const ringRadius = Math.max(baseViewRadius * (isMobile ? 1.05 : 1.0), minRingRadiusForSpacing, (isMobile ? 150 : 102) + 60);
 
             // Stash these so recenterSpace() can compute exactly how much extra room the camera
             // needs to fully contain every realm's circle + label, however many realms there are.
@@ -2165,6 +2478,8 @@
                     id: realm.id,
                     name: realm.name,
                     icon: realm.icon || '🔮',
+                    isShared: !!realm.isShared,
+                    sharedByName: realm.sharedByName || '',
                     isAddButton: !!realm.isAddButton,
                     angle: realmAngle,
                     homeAngle: realmAngle,
@@ -2191,9 +2506,21 @@
                             : realBuckets.concat([{ id: `__add_bucket__${realm.id}`, name: 'Add Bucket', isAddButton: true }]);
                         const totalBucketsCombined = Math.max(1, combinedBuckets.length);
 
+                        // Each bucket gets its own distinct ring, spiraling outward by index - restored
+                        // per feedback (a shared single ring was the wrong direction). Kept noticeably
+                        // tighter than the original spacing (260px base / +150px per ring) so realms with
+                        // just a few buckets still zoom in reasonably rather than sitting zoomed far out
+                        // to accommodate a spiral that could in theory reach much further.
+                        // Base distance for the innermost bucket ring - sized so that even a task
+                        // orbiting straight back toward the realm (bucketBaseDist - baseTaskOrbit) still
+                        // lands clearly outside the realm's own clickable radius (realm.radius + 24).
+                        const bucketBaseDist = isMobile ? 320 : 260;
+                        const bucketRingGap = isMobile ? 165 : 145;
+
                         return combinedBuckets.map((bucket, bIdx) => {
                             const bucketAngle = (bIdx / totalBucketsCombined) * Math.PI * 2;
-                            const bucketDist = (isMobile ? 260 : 235) + (bIdx * 150);
+                            const bucketDist = bucketBaseDist + (bIdx * bucketRingGap);
+
 
                             if (bucket.isAddButton) {
                                 return {
@@ -2234,6 +2561,7 @@
                                     dueTime: el.getAttribute('data-due-time') || '',
                                     dueDateFormatted: el.getAttribute('data-due-date-formatted') || '',
                                     amount: el.getAttribute('data-amount') || '',
+                                    isShoppable: el.getAttribute('data-is-shoppable') === 'true',
                                     description: el.getAttribute('data-description') || '',
                                     recurrenceType: el.getAttribute('data-recurrence-type') || 'none',
                                     bucketId: bucket.id,
@@ -2254,8 +2582,8 @@
                             // moons around a moon) instead of spiraling outward - keeps each bucket's
                             // tasks visually grouped and unambiguous about which bucket they belong to.
                             const tasksPerRing = 6;
-                            const baseTaskOrbit = (isMobile ? 95 : 85);
-                            const taskRingGap = 62;
+                            const baseTaskOrbit = (isMobile ? 120 : 108);
+                            const taskRingGap = 78;
 
                             // Slot 0 of the innermost ring is always reserved for the "+" add-task
                             // button, so it's always close to the bucket - never pushed out to an outer
@@ -2288,7 +2616,11 @@
                             // occupies at least the innermost ring, so it's always counted here too.
                             const ringCount = Math.max(1, Math.ceil(totalOrbitSlots / tasksPerRing));
                             const maxTaskOrbit = baseTaskOrbit + ((ringCount - 1) * taskRingGap);
-                            const bucketMaxReach = (isMobile ? 38 : 34) + maxTaskOrbit + 60;
+                            // The +150 buffer (up from a flat 60) gives the label collision solver
+                            // actual room to push a crowded bucket/task label further out without the
+                            // camera cropping it off-screen - labels can now legitimately use that space
+                            // to guarantee full visibility instead of overlapping.
+                            const bucketMaxReach = (isMobile ? 38 : 34) + maxTaskOrbit + 150;
 
                             return {
                                 id: bucket.id,
@@ -2338,7 +2670,7 @@
                             const isMobile = window.innerWidth < 768;
                             const bx = realm.baseX + Math.cos(bucket.angle) * bucket.orbitRadius;
                             const by = realm.baseY + Math.sin(bucket.angle) * bucket.orbitRadius;
-                            targetCameraZoom = isMobile ? 0.65 : 1.15;
+                            targetCameraZoom = isMobile ? 0.24 : 0.413;
                             targetCameraOffset = {
                                 x: (window.innerWidth / 2) - (bx * targetCameraZoom),
                                 y: (window.innerHeight / 2) - (by * targetCameraZoom)
@@ -2362,6 +2694,11 @@
         }
 
         function recenterSpace() {
+            // Drop the synthetic "All Tasks" realm (see openAllTasksTimeline) if it's present - it's a
+            // client-side-only construct built fresh each time the devil core is tapped, not something
+            // that should linger in the universe view after leaving it.
+            spaceRealms = spaceRealms.filter(r => r.id !== '__all_tasks_realm__');
+
             activeSelectedRealm = null;
             activeSelectedBucket = null;
             activeSwipeTaskId = null;
@@ -2429,6 +2766,98 @@
             };
         }
 
+        function openAllTasksTimeline() {
+            // Every task from every real realm and bucket, flattened into one list. Each task object
+            // already carries realmName/bucketName (set during initial data prep), so the HUD card and
+            // swipe-dock cards work completely unchanged for a task pulled from anywhere.
+            const allTasksFlat = [];
+            spaceRealms.forEach(realm => {
+                if (realm.isAddButton) return;
+                realm.buckets.forEach(bucket => {
+                    if (bucket.isAddButton) return;
+                    bucket.tasks.forEach(task => allTasksFlat.push(task));
+                });
+            });
+
+            const isMobile = window.innerWidth < 768;
+
+            // A synthetic bucket + realm, shaped exactly like a real one (every field the render/click
+            // code actually reads from a realm or bucket object, matched) - this is what lets the
+            // existing linear-timeline rendering, date labels, HUD, and swipe-dock all work completely
+            // unchanged, rather than building a second parallel rendering path for this one view.
+            const allTasksBucket = {
+                id: '__all_tasks_bucket__',
+                name: 'All Tasks',
+                isAddButton: false,
+                tasks: allTasksFlat,
+                addTaskButton: null,
+                angle: 0,
+                orbitRadius: 0,
+                radius: isMobile ? 38 : 34,
+                maxReach: (isMobile ? 38 : 34) + 500,
+                x: 0, y: 0
+            };
+
+            const allTasksRealm = {
+                id: '__all_tasks_realm__',
+                name: 'Every Task',
+                icon: '😈',
+                isAddButton: false,
+                isShared: false,
+                sharedByName: '',
+                radius: isMobile ? 169 : 109,
+                labelFontPx: isMobile ? 52 : 42,
+                orbitAngle: 0,
+                homeAngle: 0,
+                orbitRadius: 0,
+                floatSpeed: 1.4,
+                floatOffsetPhase: 0,
+                baseX: 0, baseY: 0,
+                x: 0, y: 0,
+                drawX: 0, drawY: 0,
+                targetX: 0, targetY: 0,
+                buckets: [allTasksBucket]
+            };
+
+            // Drop any leftover synthetic realm from a previous visit before adding a fresh one - avoids
+            // ever ending up with two of these stacked in the array.
+            spaceRealms = spaceRealms.filter(r => r.id !== '__all_tasks_realm__');
+            spaceRealms.push(allTasksRealm);
+
+            hideHudCard();
+            activeSelectedRealm = allTasksRealm;
+            activeSelectedBucket = allTasksBucket;
+            renderBucketTaskSwipeDock(allTasksBucket);
+
+            const zoomVal = isMobile ? 0.24 : 0.413;
+            targetCameraZoom = zoomVal;
+            targetCameraOffset = {
+                x: (window.innerWidth / 2) - (allTasksBucket.x * zoomVal),
+                y: (window.innerHeight / 2) - (allTasksBucket.y * zoomVal)
+            };
+
+            // Push every real realm far enough away in world space that it lands well off-screen at
+            // this zoom level - same pattern focusAndRepelRealms uses for a normal realm focus. Without
+            // this, every other realm just sits at its normal orbit position, which happens to be close
+            // enough to the origin to overlap the task chain we're centered on.
+            const screenClearance = Math.max(window.innerWidth, window.innerHeight) * 1.1;
+            const repelDist = screenClearance / zoomVal;
+
+            spaceRealms.forEach(r => {
+                if (r.id === allTasksRealm.id) {
+                    r.targetX = allTasksRealm.baseX;
+                    r.targetY = allTasksRealm.baseY;
+                } else {
+                    const dx = r.baseX - allTasksRealm.baseX;
+                    const dy = r.baseY - allTasksRealm.baseY;
+                    const dist = Math.hypot(dx, dy) || 1;
+                    const angle = Math.atan2(dy, dx);
+                    r.targetX = allTasksRealm.baseX + Math.cos(angle) * (dist + repelDist);
+                    r.targetY = allTasksRealm.baseY + Math.sin(angle) * (dist + repelDist);
+                }
+            });
+        }
+
         function zoomSpace(factor) {
             const oldZoom = targetCameraZoom;
             const newZoom = Math.min(Math.max(0.2, oldZoom * factor), 2.5);
@@ -2444,14 +2873,65 @@
             targetCameraZoom = newZoom;
         }
 
-        // Reserves a fixed, generous width for an icon instead of trying to measure it. Every attempt
-        // to measure emoji glyph width via canvas APIs (.width, actualBoundingBoxLeft/Right, even
-        // scanning rendered pixels) has proven unreliable on mobile Safari for at least one icon in
-        // this app. Rather than keep chasing measurement accuracy, this just allocates comfortably more
-        // room than any emoji could plausibly need at a given font size - guaranteeing no overlap ever,
-        // for any icon, on any platform, at the cost of a little extra (harmless) breathing room.
-        function estimateIconWidth(fontPx) {
-            return fontPx * 1.9;
+        // Wraps text to a max pixel width (measured in whatever font is CURRENTLY set on the given
+        // context) instead of letting a single line grow arbitrarily wide - this is what keeps a long
+        // task title from overlapping its neighbor, whether tasks are lined up in the linear swipe-dock
+        // view or spread around a bucket's orbit. Caps at maxLines, ellipsis-truncating the last line
+        // if there's still more text than that can hold.
+        function wrapTextToWidth(ctx, text, maxWidth, maxLines) {
+            const words = text.split(' ');
+            const allLines = [];
+            let currentLine = '';
+
+            words.forEach(word => {
+                const testLine = currentLine ? `${currentLine} ${word}` : word;
+                if (currentLine && ctx.measureText(testLine).width > maxWidth) {
+                    allLines.push(currentLine);
+                    currentLine = word;
+                } else {
+                    currentLine = testLine;
+                }
+            });
+            if (currentLine) allLines.push(currentLine);
+
+            let lines = allLines;
+            let truncated = false;
+            if (lines.length > maxLines) {
+                lines = lines.slice(0, maxLines);
+                truncated = true;
+            }
+
+            const lastIdx = lines.length - 1;
+            if (lastIdx >= 0 && (truncated || ctx.measureText(lines[lastIdx]).width > maxWidth)) {
+                let lastLine = lines[lastIdx];
+                while (lastLine.length > 1 && ctx.measureText(lastLine + '…').width > maxWidth) {
+                    lastLine = lastLine.slice(0, -1);
+                }
+                lines[lastIdx] = lastLine.replace(/[.,;:\s]+$/, '') + '…';
+            }
+
+            return lines;
+        }
+
+        // "Today" / "Tomorrow" / "Yesterday" for anything within a day of now, otherwise falls back to
+        // the server-formatted date string already attached to the task. Compares plain Y/M/D only
+        // (constructing local Date objects from the parts rather than parsing the ISO string directly)
+        // so a date-only value like "2026-08-31" can't drift a day off depending on the browser's
+        // timezone relative to UTC midnight.
+        function getRelativeDateLabel(dueDateStr, formattedFallback) {
+            if (!dueDateStr) return formattedFallback || '';
+            const parts = dueDateStr.split('-');
+            if (parts.length !== 3) return formattedFallback || dueDateStr;
+
+            const due = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const diffDays = Math.round((due - today) / 86400000);
+
+            if (diffDays === 0) return 'Today';
+            if (diffDays === 1) return 'Tomorrow';
+            if (diffDays === -1) return 'Yesterday';
+            return formattedFallback || due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         }
 
         function renderSpaceFrame() {
@@ -2471,25 +2951,35 @@
             spaceCtx.translate(cameraOffset.x, cameraOffset.y);
             spaceCtx.scale(cameraZoom, cameraZoom);
 
-            // Central Core 😈
+            // Central Core 😈 - only drawn in the full-universe overview. Once you've drilled into a
+            // specific realm, the core no longer has a meaningful place on screen (the camera is now
+            // framing that realm's own bucket cluster, not the ring around the core) and was liable to
+            // land right on top of a bucket or task depending on where that realm happened to sit - so
+            // it simply doesn't render while a realm is selected.
             const isMobileCore = window.innerWidth < 768;
             const pulseScale = 1 + Math.sin(frameCount * 2) * 0.08;
-            const coreRadius = (isMobileCore ? 110 : 64) * pulseScale;
+            // Sized to comfortably contain the emoji at its new font-size (198/116px) with room to
+            // spare, rather than scaling the circle by the full +100% too - that would have made the
+            // core's own halo larger than the realm orbit ring itself on smaller screens.
+            const coreRadius = (isMobileCore ? 150 : 102) * pulseScale;
 
-            spaceCtx.save();
-            spaceCtx.beginPath();
-            spaceCtx.arc(0, 0, coreRadius, 0, Math.PI * 2);
-            spaceCtx.fillStyle = 'rgba(30, 41, 59, 0.95)';
-            spaceCtx.shadowColor = '#818cf8';
-            spaceCtx.shadowBlur = 50 + Math.sin(frameCount * 2) * 15;
-            spaceCtx.fill();
+            if (!activeSelectedRealm) {
+                spaceCtx.save();
+                spaceCtx.beginPath();
+                spaceCtx.arc(0, 0, coreRadius, 0, Math.PI * 2);
+                spaceCtx.fillStyle = 'rgba(30, 41, 59, 0.95)';
+                spaceCtx.shadowColor = '#818cf8';
+                spaceCtx.shadowBlur = 50 + Math.sin(frameCount * 2) * 15;
+                spaceCtx.fill();
 
-            spaceCtx.textAlign = 'center';
-            spaceCtx.textBaseline = 'middle';
-            spaceCtx.font = `${Math.round((isMobileCore ? 99 : 58) * pulseScale)}px serif`;
-            spaceCtx.shadowBlur = 0;
-            spaceCtx.fillText('😈', 0, 0);
-            spaceCtx.restore();
+                spaceCtx.textAlign = 'center';
+                spaceCtx.textBaseline = 'middle';
+                // +100% from the original 99/58px.
+                spaceCtx.font = `${Math.round((isMobileCore ? 198 : 116) * pulseScale)}px serif`;
+                spaceCtx.shadowBlur = 0;
+                spaceCtx.fillText('😈', 0, 0);
+                spaceCtx.restore();
+            }
 
             // ORBIT-LOCKED REALM PHYSICS
             // Every realm lives at a fixed distance (orbitRadius) from the Devil core - only its
@@ -2561,17 +3051,9 @@
                 const fontPx = realm.labelFontPx || 22;
                 const pillPadding = 36;
                 const pillHeight = Math.round(fontPx * 1.9);
-                const iconGap = 18;
 
-                let contentWidth;
-                if (realm.isAddButton) {
-                    spaceCtx.font = `bold ${fontPx}px sans-serif`;
-                    contentWidth = spaceCtx.measureText(realm.name).width;
-                } else {
-                    spaceCtx.font = `bold ${fontPx}px sans-serif`;
-                    const nameWidth = spaceCtx.measureText(realm.name).width;
-                    contentWidth = estimateIconWidth(fontPx) + iconGap + nameWidth;
-                }
+                spaceCtx.font = `bold ${fontPx}px sans-serif`;
+                const contentWidth = spaceCtx.measureText(realm.name).width;
 
                 const width = contentWidth + pillPadding + 28;
                 const x = realm.drawX - (width / 2);
@@ -2757,9 +3239,16 @@
                             bucket.addTaskButton.y = bucket.y;
                         }
 
-                        bucket.tasks.forEach((task, tIdx) => {
+                        // Sorted by due date so the line actually reads left-to-right chronologically -
+                        // this also lets us put "Today / Tomorrow / [date]" labels above the chain that
+                        // are guaranteed to make sense, rather than assigning positions in whatever raw
+                        // order the tasks happen to come back in.
+                        const linearSortedTasks = [...bucket.tasks].sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+                        linearSortedTasks.forEach((task, tIdx) => {
                             task.x = startLinearX + (tIdx * stepSpacing);
                             task.y = bucket.y;
+                            task.baseX = task.x;
+                            task.baseY = task.y;
                             allTasksOnCanvas.push(task);
                         });
                     } else {
@@ -2767,8 +3256,14 @@
                             const hoverX = Math.cos(frameCount + task.floatOffset) * 3;
                             const hoverY = Math.sin(frameCount + task.floatOffset) * 3;
 
-                            task.x = bucket.x + Math.cos(task.angle) * task.orbitRadius + hoverX;
-                            task.y = bucket.y + Math.sin(task.angle) * task.orbitRadius + hoverY;
+                            // Labels anchor to the stable, pre-hover position - only the circle itself
+                            // gets the tiny floating wobble. Feeding the live wobble into the label's
+                            // position fed the collision solver a slightly different input every frame,
+                            // which was enough to flicker labels in and out of "overlapping".
+                            task.baseX = bucket.x + Math.cos(task.angle) * task.orbitRadius;
+                            task.baseY = bucket.y + Math.sin(task.angle) * task.orbitRadius;
+                            task.x = task.baseX + hoverX;
+                            task.y = task.baseY + hoverY;
 
                             allTasksOnCanvas.push(task);
                         });
@@ -2779,6 +3274,19 @@
                         }
                     }
                 });
+
+                // Reserve the realm's own name pill as a fixed obstacle BEFORE any task/bucket label
+                // is placed, even though it's visually drawn last (on top) - this is what stops a
+                // task or bucket label from ever landing underneath "Apartment" itself.
+                // Reserve the realm's own name pill AND its circle body as fixed obstacles before any
+                // task/bucket label is placed. The circle wasn't included before, which is why a task
+                // orbiting close to the realm could still end up with its label rendered right on top of
+                // the realm's own icon.
+                const focusHubRadius = realm.radius * 0.55;
+                const focusLabelRects = [
+                    computeRealmPillRect(realm, drawX, drawY, focusHubRadius),
+                    { x: drawX - focusHubRadius - 18, y: drawY - focusHubRadius - 18, w: (focusHubRadius + 18) * 2, h: (focusHubRadius + 18) * 2 }
+                ];
 
                 // PER-BUCKET TASK REPULSION (Orbital Mode)
                 // Only resolves collisions between tasks that share the SAME bucket - this is what keeps
@@ -2817,7 +3325,7 @@
 
                     const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
 
-                    if (isSelectedBucket && bucket.tasks.length > 0) {
+                    if (isSelectedBucket && bucket.tasks.length > 0 && bucket.id !== '__all_tasks_bucket__') {
                         const stepSpacing = 160;
                         const addButtonSlotX = bucket.x + 90;
                         const startLinearX = addButtonSlotX + stepSpacing;
@@ -2836,10 +3344,13 @@
 
                     bucket.tasks.forEach(task => {
                         if (!activeSelectedBucket) {
+                            // Kept intentionally very faint - this only marks how far this one bucket's
+                            // own tasks orbit, not a real "ring" like the shared bucket-to-realm circle,
+                            // so it shouldn't visually compete with that actual ring.
                             spaceCtx.beginPath();
                             spaceCtx.arc(bucket.x, bucket.y, task.orbitRadius, 0, Math.PI * 2);
-                            spaceCtx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
-                            spaceCtx.lineWidth = 0.6;
+                            spaceCtx.strokeStyle = 'rgba(148, 163, 184, 0.06)';
+                            spaceCtx.lineWidth = 0.5;
                             spaceCtx.stroke();
                         }
 
@@ -2881,17 +3392,66 @@
                         }
                         spaceCtx.fill();
 
+                        // Date row above the chain, "Today / Tomorrow / [date]" - only makes sense in
+                        // the linear view where tasks are laid out left-to-right in date order (see the
+                        // sort applied when positioning them above).
+                        if (isSelectedBucket) {
+                            spaceCtx.save();
+                            spaceCtx.textAlign = 'center';
+                            spaceCtx.textBaseline = 'middle';
+                            spaceCtx.font = isActiveSwipeNode ? 'bold 22px sans-serif' : '20px sans-serif';
+
+                            const dateLabel = getRelativeDateLabel(task.dueDate, task.dueDateFormatted);
+                            const isSoon = dateLabel === 'Today' || dateLabel === 'Tomorrow';
+
+                            spaceCtx.fillStyle = task.isOverdue ? '#fda4af' : (isSoon ? '#5eead4' : '#94a3b8');
+                            spaceCtx.shadowColor = task.isOverdue ? '#f43f5e' : (isSoon ? '#2dd4bf' : 'transparent');
+                            spaceCtx.shadowBlur = isSoon || task.isOverdue ? 10 : 0;
+                            spaceCtx.fillText(dateLabel, task.x, task.y - task.radius - 26);
+                            spaceCtx.restore();
+                        }
+
+                        // Task title labels only render once you're actually inside this specific
+                        // bucket (the linear swipe-dock view, with real horizontal room per task). In
+                        // the realm overview, only the dot itself shows.
+                        if (isSelectedBucket) {
                         spaceCtx.save();
                         spaceCtx.textAlign = 'center';
                         spaceCtx.textBaseline = 'middle';
-                        const truncatedTitle = task.title.length > 40 ? task.title.substring(0, 38) + '…' : task.title;
-                        spaceCtx.font = isActiveSwipeNode ? 'bold 13px sans-serif' : '12px sans-serif';
-                        const tWidth = spaceCtx.measureText(truncatedTitle).width + 12;
-                        const tPillY = task.y + task.radius + (isActiveSwipeNode ? 8 : 4);
+                        spaceCtx.font = isActiveSwipeNode ? 'bold 26px sans-serif' : '24px sans-serif';
+
+                        // Wrap to multiple centered lines instead of one ever-widening line - this is
+                        // what keeps a long task title from overlapping the next task's label, whether
+                        // they're 160px apart in the linear swipe-dock view or spread around a bucket's
+                        // orbit ring.
+                        const maxLabelWidth = 220;
+                        const lineHeight = isActiveSwipeNode ? 30 : 28;
+                        const lines = wrapTextToWidth(spaceCtx, task.title, maxLabelWidth, 3);
+
+                        const widestLine = Math.max(...lines.map(l => spaceCtx.measureText(l).width));
+                        const tWidth = widestLine + 24;
+                        const tPillHeight = (lines.length * lineHeight) + (isActiveSwipeNode ? 16 : 12);
+                        const desiredTPillY = task.baseY + task.radius + (isActiveSwipeNode ? 12 : 8);
+
+                        const taskLabelRect = { x: task.baseX - tWidth / 2, y: desiredTPillY, w: tWidth, h: tPillHeight, dirY: 1, ownerBucketId: bucket.id };
+                        resolveLabelPushback(taskLabelRect, focusLabelRects, 110);
+                        focusLabelRects.push(taskLabelRect);
+
+                        // Ease toward the resolved position rather than snapping straight to it - other
+                        // labels still react to the true instant target above, but this specific pill's
+                        // on-screen position glides into any change instead of jumping.
+                        if (task._labelY === undefined) task._labelY = taskLabelRect.y;
+                        task._labelY += (taskLabelRect.y - task._labelY) * 0.12;
+                        const tPillY = task._labelY;
+
+                        // Stash the final on-screen rect so tapping the text itself (not just the dot)
+                        // can be treated identically to tapping the node - see the hit-test in
+                        // detectClickNode.
+                        task._labelRect = { x: task.baseX - tWidth / 2, y: tPillY, w: tWidth, h: tPillHeight };
 
                         spaceCtx.fillStyle = isActiveSwipeNode ? 'rgba(30, 41, 59, 0.98)' : 'rgba(15, 23, 42, 0.9)';
                         spaceCtx.beginPath();
-                        spaceCtx.roundRect(task.x - tWidth / 2, tPillY, tWidth, 20, 4);
+                        spaceCtx.roundRect(task.baseX - tWidth / 2, tPillY, tWidth, tPillHeight, 4);
                         spaceCtx.fill();
 
                         if (isActiveSwipeNode) {
@@ -2901,8 +3461,12 @@
                         }
 
                         spaceCtx.fillStyle = isActiveSwipeNode ? '#ffffff' : '#e2e8f0';
-                        spaceCtx.fillText(truncatedTitle, task.x, tPillY + 10);
+                        const firstLineY = tPillY + (lineHeight / 2) + (isActiveSwipeNode ? 5 : 4);
+                        lines.forEach((line, lineIdx) => {
+                            spaceCtx.fillText(line, task.baseX, firstLineY + (lineIdx * lineHeight));
+                        });
                         spaceCtx.restore();
+                        }
                     });
 
                     // "+" add-task button - always close to the bucket, whether we're looking at the
@@ -2934,6 +3498,11 @@
 
                 // LAYER 2: RENDER BUCKET MOONS & BUCKET LABELS SECOND (MIDDLE LAYER ABOVE TASKS)
                 realm.buckets.forEach(bucket => {
+                    // The synthetic "All Tasks" bucket (see openAllTasksTimeline) skips this whole layer
+                    // entirely - no circle, no orbit ring, no label - so the linear task chain is the
+                    // only thing on screen besides the devil core itself.
+                    if (bucket.id === '__all_tasks_bucket__') return;
+
                     const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
                     if (activeSelectedBucket && !isSelectedBucket) return;
                     const isAddBucketButton = !!bucket.isAddButton;
@@ -2966,17 +3535,56 @@
                     spaceCtx.shadowBlur = 0;
                     spaceCtx.fillText(isAddBucketButton ? '➕' : '⭐', bucket.x - (bucket.radius * 0.03), bucket.y + (bucket.radius * 0.05));
 
-                    spaceCtx.font = 'bold 17px sans-serif';
+                    // Synced to the realm's own label size (same value used in both Universe overview
+                    // and this focused view) plus 30%, rather than a flat independent constant - so
+                    // bucket labels always scale consistently with however big the realm label is set.
+                    const bucketLabelFontPx = Math.round((realm.labelFontPx || 22) * 1.3);
+                    spaceCtx.font = `bold ${bucketLabelFontPx}px sans-serif`;
                     const nameText = bucket.name;
                     const nameWidth = spaceCtx.measureText(nameText).width;
-                    const paddingX = 18;
+                    const paddingX = Math.round(bucketLabelFontPx * 0.69);
                     const bWidth = nameWidth + (paddingX * 2);
-                    const bPillHeight = 30;
+                    const bPillHeight = Math.round(bucketLabelFontPx * 1.5);
                     
                     const isBucketInBottomHalf = bucket.y > 0;
-                    const bPillY = isBucketInBottomHalf
-                        ? bucket.y - bucket.radius - bPillHeight - 10
-                        : bucket.y + bucket.radius + 10;
+                    // Point away from the realm's center (matching how the realm's own label points away
+                    // from screen-center) rather than toward it - pointing inward was aiming buckets'
+                    // labels straight at the crowded middle of the realm, including their own orbiting
+                    // tasks, which is exactly backwards for avoiding collisions.
+                    let desiredBPillY = isBucketInBottomHalf
+                        ? bucket.y + bucket.radius + 14
+                        : bucket.y - bucket.radius - bPillHeight - 14;
+
+                    // Start already clear of THIS bucket's own task labels, rather than starting right at
+                    // the bucket's edge and relying on the generic solver to react its way past however
+                    // many of its own tasks happen to be in that direction. Without this, a bucket with
+                    // several tasks could get pushed further and further until its own name ends up
+                    // visually below one of its own tasks - a confusing hierarchy even once nothing is
+                    // technically overlapping anymore.
+                    const ownTaskRects = focusLabelRects.filter(r => r.ownerBucketId === bucket.id);
+                    if (ownTaskRects.length > 0) {
+                        if (isBucketInBottomHalf) {
+                            const lowestOwnTaskEdge = Math.max(...ownTaskRects.map(r => r.y + r.h));
+                            desiredBPillY = Math.max(desiredBPillY, lowestOwnTaskEdge + 14);
+                        } else {
+                            const highestOwnTaskEdge = Math.min(...ownTaskRects.map(r => r.y));
+                            desiredBPillY = Math.min(desiredBPillY, highestOwnTaskEdge - bPillHeight - 14);
+                        }
+                    }
+
+                    const bucketLabelRect = { x: bucket.x - bWidth / 2, y: desiredBPillY, w: bWidth, h: bPillHeight, dirY: isBucketInBottomHalf ? 1 : -1 };
+                    resolveLabelPushback(bucketLabelRect, focusLabelRects, 220);
+                    focusLabelRects.push(bucketLabelRect);
+
+                    // Same easing as task labels - avoids a visible snap if the resolved position
+                    // shifts frame to frame.
+                    if (bucket._labelY === undefined) bucket._labelY = bucketLabelRect.y;
+                    bucket._labelY += (bucketLabelRect.y - bucket._labelY) * 0.12;
+                    const bPillY = bucket._labelY;
+
+                    // Stash the final on-screen rect so tapping the bucket's text label can be treated
+                    // identically to tapping its node - see the hit-test in detectClickNode.
+                    bucket._labelRect = { x: bucket.x - bWidth / 2, y: bPillY, w: bWidth, h: bPillHeight };
 
                     spaceCtx.fillStyle = isAddBucketButton ? 'rgba(6, 78, 59, 0.9)' : (isSelectedBucket ? 'rgba(3, 105, 161, 0.98)' : 'rgba(15, 23, 42, 0.98)');
                     spaceCtx.strokeStyle = isAddBucketButton ? '#34d399' : '#38bdf8';
@@ -3014,6 +3622,56 @@
             requestAnimationFrame(renderSpaceFrame);
         }
 
+        // Computes the realm's own name-pill rect using the exact same sizing math renderRealmNode
+        // uses to draw it - factored out so it can be reserved as a fixed obstacle for the bucket/task
+        // label solver below BEFORE the realm's own pill is actually drawn (it's drawn last, on top,
+        // but other labels still need to know where it'll be so they can steer clear of it).
+        function computeRealmPillRect(realm, drawX, drawY, displayRadius) {
+            const labelFontPx = realm.labelFontPx || 22;
+            spaceCtx.font = `bold ${labelFontPx}px sans-serif`;
+            const pillPadding = 36;
+            const pillHeight = Math.round(labelFontPx * 1.9);
+            const nameWidth = spaceCtx.measureText(realm.name).width;
+            const bTextWidth = nameWidth + pillPadding + 28;
+            const pillX = drawX - (bTextWidth / 2);
+            const isTopHalf = realm.baseY < 0;
+            const pillY = isTopHalf
+                ? drawY - displayRadius - pillHeight - 12
+                : drawY + displayRadius + 12;
+            return { x: pillX, y: pillY, w: bTextWidth, h: pillHeight };
+        }
+
+        // Nudges `rect` further along its own preferred direction (dirY: -1 further up/away, +1
+        // further down/away from whatever circle it's attached to) until it no longer overlaps any
+        // rect already in `existingRects`. Purely vertical, since every label here is already anchored
+        // directly above or below its circle - this just lets it drift a bit further out when something
+        // is already occupying the spot closer in, rather than jumping sideways in a confusing way.
+        // Capped by maxPush so a label in a genuinely crowded spot drifts a limited, still-readable
+        // distance from its own node rather than sliding arbitrarily far away trying to find open space -
+        // a small residual overlap in an extreme case is better than a label nobody can tell belongs to
+        // its node anymore.
+        function resolveLabelPushback(rect, existingRects, maxPush = 90, maxIterations = 12) {
+            const padding = 8;
+            const startY = rect.y;
+            for (let iter = 0; iter < maxIterations; iter++) {
+                let moved = false;
+                for (const other of existingRects) {
+                    const overlapX = Math.min(rect.x + rect.w, other.x + other.w) - Math.max(rect.x, other.x);
+                    const overlapY = Math.min(rect.y + rect.h, other.y + other.h) - Math.max(rect.y, other.y);
+                    if (overlapX + padding > 0 && overlapY + padding > 0) {
+                        const pushedSoFar = Math.abs(rect.y - startY);
+                        const remainingBudget = maxPush - pushedSoFar;
+                        if (remainingBudget <= 0) continue;
+                        const actualPush = Math.min(overlapY + padding, remainingBudget);
+                        rect.y += rect.dirY * actualPush;
+                        moved = true;
+                    }
+                }
+                if (!moved) break;
+            }
+            return rect;
+        }
+
         function renderRealmNode(realm, drawX, drawY, isSelected) {
             const pulseGlow = 22 + Math.sin(frameCount * 2.5 + realm.id) * 6;
             const isAddButton = !!realm.isAddButton;
@@ -3047,34 +3705,20 @@
             spaceCtx.shadowBlur = 0;
             spaceCtx.fillText(realm.icon, drawX, drawY);
 
+            // The synthetic "All Tasks" realm (see openAllTasksTimeline) skips its own name label pill
+            // entirely - just the circle and emoji stay, still fully tappable to go back to the universe
+            // view, without a floating text label competing with the task chain right next to it.
+            if (realm.id !== '__all_tasks_realm__') {
             const labelFontPx = realm.labelFontPx || 22;
-            const iconFontSpec = `${Math.round(labelFontPx * 1.15)}px serif`;
             const nameFontSpec = `bold ${labelFontPx}px sans-serif`;
 
             const pillPadding = 36;
             const pillHeight = Math.round(labelFontPx * 1.9);
-            const iconGap = 18;
-            const iconWidth = estimateIconWidth(labelFontPx);
-            let bTextWidth, pillX, iconDrawX, nameDrawX;
 
-            if (isAddButton) {
-                spaceCtx.font = nameFontSpec;
-                const nameWidth = spaceCtx.measureText(realm.name).width;
-                bTextWidth = nameWidth + pillPadding + 28;
-                pillX = drawX - (bTextWidth / 2);
-                nameDrawX = drawX;
-            } else {
-                spaceCtx.font = nameFontSpec;
-                const nameWidth = spaceCtx.measureText(realm.name).width;
-
-                const contentWidth = iconWidth + iconGap + nameWidth;
-                bTextWidth = contentWidth + pillPadding + 28;
-                pillX = drawX - (bTextWidth / 2);
-
-                const contentStartX = drawX - (contentWidth / 2);
-                iconDrawX = contentStartX + (iconWidth / 2);
-                nameDrawX = contentStartX + iconWidth + iconGap + (nameWidth / 2);
-            }
+            spaceCtx.font = nameFontSpec;
+            const nameWidth = spaceCtx.measureText(realm.name).width;
+            const bTextWidth = nameWidth + pillPadding + 28;
+            const pillX = drawX - (bTextWidth / 2);
             
             const isTopHalf = realm.baseY < 0;
             const pillY = isTopHalf 
@@ -3093,15 +3737,63 @@
 
             spaceCtx.fillStyle = '#ffffff';
             spaceCtx.shadowBlur = 0;
-            if (isAddButton) {
-                spaceCtx.font = nameFontSpec;
-                spaceCtx.fillText(realm.name, nameDrawX, pillY + (pillHeight / 2));
-            } else {
-                spaceCtx.font = iconFontSpec;
-                spaceCtx.fillText(realm.icon, iconDrawX, pillY + (pillHeight / 2));
-                spaceCtx.font = nameFontSpec;
-                spaceCtx.fillText(realm.name, nameDrawX, pillY + (pillHeight / 2));
+            spaceCtx.font = nameFontSpec;
+            spaceCtx.fillText(realm.name, drawX, pillY + (pillHeight / 2));
             }
+
+            // Small "shared" badge on the realm's own circle - independent of the label pill
+            // below/above it, so it stays visible regardless of where that pill sits.
+            if (realm.isShared && !isAddButton) {
+                const badgeAngle = -Math.PI / 4;
+                const badgeDist = displayRadius * 0.78;
+                const badgeX = drawX + Math.cos(badgeAngle) * badgeDist;
+                const badgeY = drawY + Math.sin(badgeAngle) * badgeDist;
+                const badgeRadius = Math.max(14, displayRadius * 0.22);
+
+                spaceCtx.beginPath();
+                spaceCtx.arc(badgeX, badgeY, badgeRadius, 0, Math.PI * 2);
+                spaceCtx.fillStyle = '#10b981';
+                spaceCtx.strokeStyle = '#0f172a';
+                spaceCtx.lineWidth = 3;
+                spaceCtx.shadowBlur = 0;
+                spaceCtx.fill();
+                spaceCtx.stroke();
+
+                spaceCtx.textAlign = 'center';
+                spaceCtx.textBaseline = 'middle';
+                spaceCtx.font = `${Math.round(badgeRadius * 1.1)}px serif`;
+                spaceCtx.fillText('👥', badgeX, badgeY + 1);
+
+                // Name of who it's shared with/by - a slightly larger bubble tucked in tight
+                // on the opposite side of the circle from the people-icon badge above, so the
+                // two never collide regardless of realm size or name length.
+                if (realm.sharedByName) {
+                    const nameBubbleAngle = Math.PI / 5;
+                    const nameFontPxSmall = Math.max(11, Math.round(badgeRadius * 0.95));
+                    spaceCtx.font = `bold ${nameFontPxSmall}px sans-serif`;
+                    const nameTextWidth = spaceCtx.measureText(realm.sharedByName).width;
+                    const bubblePaddingX = 12;
+                    const bubbleWidth = nameTextWidth + bubblePaddingX * 2;
+                    const bubbleHeight = badgeRadius * 2.3;
+                    const bubbleDist = displayRadius * 0.82 + (bubbleWidth / 2) - badgeRadius;
+                    const bubbleCx = drawX + Math.cos(nameBubbleAngle) * bubbleDist;
+                    const bubbleCy = drawY + Math.sin(nameBubbleAngle) * bubbleDist;
+
+                    spaceCtx.beginPath();
+                    spaceCtx.roundRect(bubbleCx - bubbleWidth / 2, bubbleCy - bubbleHeight / 2, bubbleWidth, bubbleHeight, bubbleHeight / 2);
+                    spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.98)';
+                    spaceCtx.strokeStyle = '#10b981';
+                    spaceCtx.lineWidth = 2;
+                    spaceCtx.fill();
+                    spaceCtx.stroke();
+
+                    spaceCtx.fillStyle = '#6ee7b7';
+                    spaceCtx.textAlign = 'center';
+                    spaceCtx.textBaseline = 'middle';
+                    spaceCtx.fillText(realm.sharedByName, bubbleCx, bubbleCy + 1);
+                }
+            }
+
             spaceCtx.restore();
         }
 
@@ -3466,13 +4158,17 @@
                 return;
             }
 
-            // DEVIL CORE TAP DETECTION (0,0) -> RESET TO FULL UNIVERSE VIEW
-            const pulseScale = 1 + Math.sin(frameCount * 2) * 0.08;
-            const coreRadius = (window.innerWidth < 768 ? 110 : 64) * pulseScale;
-            const distToCore = Math.hypot(worldX, worldY);
-            if (distToCore <= coreRadius + 15) {
-                recenterSpace();
-                return;
+            // DEVIL CORE TAP DETECTION (0,0) -> OPEN A LINEAR TIMELINE OF EVERY TASK IN EVERY REALM
+            // Only active in the full-universe overview - the core isn't drawn (or tappable) while a
+            // realm is focused, so there's no invisible hit-area left behind at the origin.
+            if (!activeSelectedRealm) {
+                const pulseScale = 1 + Math.sin(frameCount * 2) * 0.08;
+                const coreRadius = (window.innerWidth < 768 ? 150 : 102) * pulseScale;
+                const distToCore = Math.hypot(worldX, worldY);
+                if (distToCore <= coreRadius + 15) {
+                    openAllTasksTimeline();
+                    return;
+                }
             }
 
             let clickedTask = null;
@@ -3494,7 +4190,16 @@
 
                     bucket.tasks.forEach(task => {
                         const dist = Math.hypot(worldX - task.x, worldY - task.y);
-                        if (dist <= task.radius + 18) {
+                        const hitNode = dist <= task.radius + 18;
+
+                        // Tapping the task's text label now does exactly what tapping its dot does -
+                        // task._labelRect is only ever set while this task's own label is actually
+                        // rendered (inside its own bucket's view), so there's no risk of a stale rect
+                        // from a different bucket being checked here.
+                        const r = task._labelRect;
+                        const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
+
+                        if (hitNode || hitLabel) {
                             clickedTask = task;
                         }
                     });
@@ -3518,6 +4223,13 @@
                         activeSwipeTaskId = clickedTask.id;
                         focusCameraOnTask(clickedTask);
 
+                        // The X button on this dock only hides it (deselectBucketSwipeDock), it doesn't
+                        // tear anything down - so re-showing it here is all that's needed to bring it
+                        // back for a newly tapped task, rather than leaving it hidden even though the
+                        // selection state underneath had already updated correctly.
+                        const dock = document.getElementById('bucket-task-swipe-dock');
+                        if (dock) dock.classList.remove('hidden');
+
                         const wrapper = document.getElementById('swipe-dock-cards-wrapper');
                         const targetCard = wrapper ? wrapper.querySelector(`[data-swipe-task-id="${clickedTask.id}"]`) : null;
                         if (targetCard) {
@@ -3532,8 +4244,20 @@
 
             if (activeSelectedRealm) {
                 activeSelectedRealm.buckets.forEach(bucket => {
+                    // The synthetic "All Tasks" bucket sits at the same position as the devil core
+                    // itself, so leaving it in this check would swallow every tap meant for the devil
+                    // (re-opening/closing the bucket) before the realm-level "tap again to go back to
+                    // the universe" logic below ever gets a chance to run.
+                    if (bucket.id === '__all_tasks_bucket__') return;
+
                     const dist = Math.hypot(worldX - bucket.x, worldY - bucket.y);
-                    if (dist <= bucket.radius + 28) {
+                    const hitNode = dist <= bucket.radius + 28;
+
+                    // Tapping the bucket's text label now does exactly what tapping its node does.
+                    const r = bucket._labelRect;
+                    const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
+
+                    if (hitNode || hitLabel) {
                         clickedBucket = bucket;
                     }
                 });
@@ -3559,7 +4283,7 @@
                     renderBucketTaskSwipeDock(clickedBucket);
 
                     const isMobile = window.innerWidth < 768;
-                    targetCameraZoom = isMobile ? 0.65 : 1.15;
+                    targetCameraZoom = isMobile ? 0.24 : 0.413;
                     targetCameraOffset = {
                         x: (window.innerWidth / 2) - (clickedBucket.x * targetCameraZoom),
                         y: (window.innerHeight / 2) - (clickedBucket.y * targetCameraZoom)
@@ -3570,7 +4294,11 @@
             }
 
             spaceRealms.forEach(realm => {
-                const dist = Math.hypot(worldX - realm.x, worldY - realm.y);
+                // Use drawX/drawY (the realm's actual rendered position, including its small floating
+                // wobble) rather than the raw x/y - while focused, those two can differ by a few pixels,
+                // which was enough to occasionally miss a tap on the realm's own hub circle when trying
+                // to tap it a second time to return to the full universe view.
+                const dist = Math.hypot(worldX - realm.drawX, worldY - realm.drawY);
                 if (dist <= realm.radius + 24) {
                     clickedRealm = realm;
                 }
@@ -3598,7 +4326,12 @@
         }
 
         function focusCameraOnTask(task) {
-            targetCameraZoom = 1.35;
+            // Matches the same zoom level used when a bucket is first opened (see
+            // renderBucketTaskSwipeDock/click-bucket handlers) - this was previously hardcoded to a
+            // tight 1.35 regardless of device, which silently overrode every other zoom-out change
+            // since this runs immediately after a bucket opens or a task is tapped.
+            const isMobileTaskFocus = window.innerWidth < 768;
+            targetCameraZoom = isMobileTaskFocus ? 0.24 : 0.413;
             const verticalHudOffset = (window.innerHeight * 0.18);
             targetCameraOffset = {
                 x: (window.innerWidth / 2) - (task.x * targetCameraZoom),
@@ -3646,6 +4379,7 @@
 
                     const amountText = task.amount ? `<span class="text-emerald-400 font-bold text-xs">$${parseFloat(task.amount).toFixed(2)}</span>` : '';
                     const descText = task.description ? `<p class="text-slate-400 text-xs line-clamp-2 leading-relaxed mt-1">${task.description}</p>` : '';
+                    const shopBtnHtml = `<button onclick="event.stopPropagation(); openAmazonSearch(${JSON.stringify(task.title).replace(/"/g, '&quot;')}, ${JSON.stringify(task.amount).replace(/"/g, '&quot;')})" title="Shop on Amazon" class="text-slate-400 hover:text-amber-400 text-xs">🛒</button>`;
 
                     card.innerHTML = `
                         <div class="flex items-center justify-between gap-2 border-b border-slate-700/50 pb-1.5">
@@ -3656,6 +4390,7 @@
                                     <input type="hidden" name="item_id" value="${task.id}">
                                     <button type="submit" title="Mark Complete" class="w-5 h-5 rounded border border-slate-600 hover:border-emerald-400 text-slate-400 hover:text-emerald-400 flex items-center justify-center text-xs transition">✓</button>
                                 </form>
+                                ${shopBtnHtml}
                                 <button onclick="event.stopPropagation(); openEditItemFromTask(${JSON.stringify(task).replace(/"/g, '&quot;')})" title="Edit Task" class="text-slate-400 hover:text-indigo-400 text-xs">✏️</button>
                             </div>
                         </div>
@@ -3691,6 +4426,7 @@
             dummyBtn.setAttribute('data-due-date', task.dueDate);
             dummyBtn.setAttribute('data-due-time', task.dueTime);
             dummyBtn.setAttribute('data-amount', task.amount);
+            dummyBtn.setAttribute('data-is-shoppable', task.isShoppable ? 'true' : 'false');
             dummyBtn.setAttribute('data-description', task.description);
             dummyBtn.setAttribute('data-recurring', task.isRecurring ? 'true' : 'false');
             dummyBtn.setAttribute('data-recurrence-type', task.recurrenceType);
@@ -3768,8 +4504,11 @@
 
             // Still bounded so a realm with just one or two buckets doesn't zoom in absurdly far, and
             // a realm with a huge number of buckets never zooms out past legibility - "squish, don't
-            // clip" between those two limits.
-            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.16), isMobile ? 0.55 : 0.95);
+            // clip" between those two limits. The upper bound is a ceiling, not a target - fitZoomX/Y
+            // above already guarantee every bucket and its full task-orbit reach stays on screen, so
+            // raising this just lets a realm with few, tightly-clustered buckets zoom in as far as it
+            // actually can before it'd need to squish anything.
+            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.16), isMobile ? 0.85 : 1.1);
 
             // Now that we know the zoom this realm actually needs, push every OTHER realm far enough
             // in WORLD space that it lands well off-screen at THIS zoom level. A fixed world-space
@@ -3840,6 +4579,7 @@
             dummyBtn.setAttribute('data-due-date', activeSelectedTask.dueDate);
             dummyBtn.setAttribute('data-due-time', activeSelectedTask.dueTime);
             dummyBtn.setAttribute('data-amount', activeSelectedTask.amount);
+            dummyBtn.setAttribute('data-is-shoppable', activeSelectedTask.isShoppable ? 'true' : 'false');
             dummyBtn.setAttribute('data-description', activeSelectedTask.description);
             dummyBtn.setAttribute('data-recurring', activeSelectedTask.isRecurring ? 'true' : 'false');
             dummyBtn.setAttribute('data-recurrence-type', activeSelectedTask.recurrenceType);

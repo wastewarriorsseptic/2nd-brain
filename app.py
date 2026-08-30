@@ -537,6 +537,60 @@ def find_reorder_suggestion(session: Session, item: "Item") -> Optional[dict]:
         "bucket_id": item.bucket_id,
     }
 
+def find_recurring_suggestion(session: Session, new_item: "Item") -> Optional[dict]:
+    """Called right after a brand-new task is created. If a similar-titled task already exists in the
+    same bucket and isn't already part of a recurring series, this looks like something the user keeps
+    manually recreating by hand - suggests converting it into a real recurring task instead, with an
+    interval estimated from history when there's enough to go on. Reuses the exact same fuzzy-title
+    matching as reorder detection, just triggered at creation instead of completion."""
+    if new_item.recurring_group_id:
+        return None
+
+    prior_items = session.exec(
+        select(Item).where(
+            Item.bucket_id == new_item.bucket_id,
+            Item.id != new_item.id,
+        )
+    ).all()
+
+    matched_prior = [
+        p for p in prior_items
+        if not p.recurring_group_id and _titles_match_for_reorder(p.title, new_item.title)
+    ]
+    if not matched_prior:
+        return None
+
+    # Prefer real completion timestamps for the interval estimate when available (same signal reorder
+    # detection uses) - falls back to comparing due dates if none of the matches have been completed yet.
+    # The new item itself never has a completed_at yet at creation time, so "now" (the actual moment
+    # this new task is being created) stands in as its data point instead.
+    completed_matches = [p for p in matched_prior if p.is_completed and p.completed_at]
+    if completed_matches:
+        all_dates = sorted([p.completed_at for p in completed_matches] + [datetime.now()])
+    else:
+        all_dates = sorted([p.due_date for p in matched_prior] + [new_item.due_date])
+
+    if len(all_dates) < 2:
+        return None
+
+    gaps_days = [
+        (all_dates[i] - all_dates[i - 1]).total_seconds() / 86400
+        for i in range(1, len(all_dates))
+    ]
+    avg_days = round(sum(gaps_days) / len(gaps_days))
+    if avg_days < 1:
+        return None
+
+    return {
+        "avg_days": avg_days,
+        "match_count": len(matched_prior) + 1,
+        "title": new_item.title,
+        "amount": new_item.amount,
+        "is_shoppable": new_item.is_shoppable,
+        "bucket_id": new_item.bucket_id,
+        "new_item_id": new_item.id,
+    }
+
 @app.on_event("startup")
 def on_startup():
     run_automated_backup()
@@ -1124,7 +1178,23 @@ def create_item(
 
         session.commit()
 
-    return RedirectResponse(url=f"/?bucket_id={bucket_id}", status_code=303)
+        recurring_suggestion = None
+        if recurrence_type == "none" and new_item:
+            session.refresh(new_item)
+            recurring_suggestion = find_recurring_suggestion(session, new_item)
+
+    redirect_url = f"/?bucket_id={bucket_id}"
+    if recurring_suggestion:
+        redirect_url += (
+            f"&recur_title={quote(recurring_suggestion['title'])}"
+            f"&recur_days={recurring_suggestion['avg_days']}"
+            f"&recur_count={recurring_suggestion['match_count']}"
+            f"&recur_item_id={recurring_suggestion['new_item_id']}"
+            f"&recur_due_date={new_item.due_date.strftime('%Y-%m-%d')}"
+            f"&recur_amount={new_item.amount or ''}"
+            f"&recur_shoppable={'true' if new_item.is_shoppable else 'false'}"
+        )
+    return RedirectResponse(url=redirect_url, status_code=303)
 
 @app.post("/items/delete/")
 def delete_item(request: Request, item_id: int = Form(...), delete_series: bool = Form(False)):
