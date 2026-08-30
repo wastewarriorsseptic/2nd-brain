@@ -248,7 +248,7 @@
                                     <a href="{% if selected_realm_id == realm.id and not selected_bucket_id %}/{% else %}/?realm_id={{ realm.id }}{% endif %}" 
                                        onclick="selectRealm(event, {{ realm.id }})"
                                        class="realm-link text-xs md:text-sm font-bold flex items-center gap-1.5 min-w-0 flex-1 {% if selected_realm_id == realm.id and not selected_bucket_id %}text-white{% else %}text-slate-300{% endif %}">
-                                        <span class="shrink-0">{{ realm.icon or '🔮' }}</span> <span class="truncate">{{ realm.name }}</span>
+                                        <span class="shrink-0">{{ realm.icon or '🔮' }}</span> <span class="truncate min-w-0">{{ realm.name }}</span>
                                     </a>
                                     {% if realm.user_id != user.id %}
                                     <span class="shrink min-w-0 truncate max-w-[90px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded-full" title="Shared with you by {{ realm.user.name if realm.user else 'another owner' }}">👥 Shared by {{ realm.user.name if realm.user else 'owner' }}</span>
@@ -282,7 +282,7 @@
                                         <a href="{% if selected_bucket_id == bucket.id %}/?realm_id={{ realm.id }}{% else %}/?bucket_id={{ bucket.id }}{% endif %}" 
                                            onclick="selectBucket(event, {{ bucket.id }}, {{ realm.id }})"
                                            class="bucket-link text-sm flex items-center gap-2 min-w-0 flex-1">
-                                            <span class="shrink-0">⭐️</span> <span class="truncate">{{ bucket.name }}</span>
+                                            <span class="shrink-0">⭐️</span> <span class="truncate min-w-0">{{ bucket.name }}</span>
                                         </a>
                                     </div>
 
