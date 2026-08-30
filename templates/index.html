@@ -2457,14 +2457,26 @@
             });
 
             const realmCircleRadius = isMobile ? 169 : 109;
-            const minArcSpacing = Math.max(maxPillWidth, realmCircleRadius * 2) + (isMobile ? 46 : 40);
+
+            // FEW-REALMS FIX: with only a couple of realms (plus the "+" button), the full-size
+            // circles used for bigger universes end up crowded/overlapping even though the spacing
+            // math technically keeps them from touching edge-to-edge - there's just too little
+            // breathing room. Below this threshold, shrink the circles slightly and give them extra
+            // margin; at or above it, everything is completely unchanged from before.
+            const FEW_REALMS_THRESHOLD = 5;
+            const isFewRealms = totalRealms <= FEW_REALMS_THRESHOLD;
+            const fewRealmsRadiusScale = isFewRealms ? 0.78 : 1;
+            const effectiveRealmRadius = realmCircleRadius * fewRealmsRadiusScale;
+            const extraFewRealmsMargin = isFewRealms ? (isMobile ? 60 : 45) : 0;
+
+            const minArcSpacing = Math.max(maxPillWidth, effectiveRealmRadius * 2) + (isMobile ? 46 : 40) + extraFewRealmsMargin;
             const minRingRadiusForSpacing = (minArcSpacing * totalRealms) / (Math.PI * 2);
 
             const ringRadius = Math.max(baseViewRadius * (isMobile ? 1.05 : 1.0), minRingRadiusForSpacing, (isMobile ? 150 : 102) + 60);
 
             // Stash these so recenterSpace() can compute exactly how much extra room the camera
             // needs to fully contain every realm's circle + label, however many realms there are.
-            currentRealmRadius = realmCircleRadius;
+            currentRealmRadius = effectiveRealmRadius;
             currentMaxPillWidth = maxPillWidth;
             currentLabelFontPx = realmLabelFontPx;
 
@@ -2493,7 +2505,7 @@
                     y: basePos.y,
                     targetX: basePos.x,
                     targetY: basePos.y,
-                    radius: realmCircleRadius,
+                    radius: effectiveRealmRadius,
                     labelFontPx: realmLabelFontPx,
                     floatOffsetPhase: (rIdx * 1.37) % (Math.PI * 2),
                     floatSpeed: 1.2 + (rIdx % 3) * 0.3,
