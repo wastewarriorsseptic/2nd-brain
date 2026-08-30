@@ -87,9 +87,9 @@ SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-brain-key-2026")
 #   APPLE_PRIVATE_KEY   - the full contents of the downloaded .p8 file (including the BEGIN/END lines).
 #                         If stored as a single-line env var, use literal "\n" for line breaks - they're
 #                         converted back to real newlines below.
-APPLE_CLIENT_ID = os.getenv("APPLE_CLIENT_ID", "").strip() or None
-APPLE_TEAM_ID = os.getenv("APPLE_TEAM_ID", "").strip() or None
-APPLE_KEY_ID = os.getenv("APPLE_KEY_ID", "").strip() or None
+APPLE_CLIENT_ID = os.getenv("APPLE_CLIENT_ID")
+APPLE_TEAM_ID = os.getenv("APPLE_TEAM_ID")
+APPLE_KEY_ID = os.getenv("APPLE_KEY_ID")
 
 def _normalize_apple_private_key(raw: str) -> str:
     """Handles whichever way the .p8 contents ended up in the env var: real newlines,
@@ -125,6 +125,23 @@ def generate_apple_client_secret():
         return None
 
 APPLE_CLIENT_SECRET = generate_apple_client_secret()
+
+# TEMP DIAGNOSTIC - remove once invalid_client is resolved.
+# Decodes the generated client-secret JWT's header and payload WITHOUT verifying the
+# signature, so we can see exactly what iss/sub/aud/kid values are being sent to Apple.
+if APPLE_CLIENT_SECRET:
+    try:
+        _header = jwt.get_unverified_header(APPLE_CLIENT_SECRET)
+        _claims = jwt.decode(APPLE_CLIENT_SECRET, options={"verify_signature": False})
+        print(
+            f"[apple-jwt-debug] header_kid={_header.get('kid')!r} header_alg={_header.get('alg')!r} "
+            f"claims_iss={_claims.get('iss')!r} claims_sub={_claims.get('sub')!r} "
+            f"claims_aud={_claims.get('aud')!r} claims_iat={_claims.get('iat')} claims_exp={_claims.get('exp')} "
+            f"env_client_id={APPLE_CLIENT_ID!r} env_team_id={APPLE_TEAM_ID!r} env_key_id={APPLE_KEY_ID!r}",
+            flush=True,
+        )
+    except Exception as e:
+        print(f"[apple-jwt-debug] could not decode generated JWT: {e}", flush=True)
 APPLE_SIGNIN_ENABLED = bool(APPLE_CLIENT_ID and APPLE_CLIENT_SECRET)
 
 # --- Database Setup (Render PostgreSQL with Local SQLite Fallback) ---
