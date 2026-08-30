@@ -2189,7 +2189,7 @@
                 if (w > maxPillWidth) maxPillWidth = w;
             });
 
-            const realmCircleRadius = isMobile ? 130 : 84;
+            const realmCircleRadius = isMobile ? 169 : 109;
             const minArcSpacing = Math.max(maxPillWidth, realmCircleRadius * 2) + (isMobile ? 46 : 40);
             const minRingRadiusForSpacing = (minArcSpacing * totalRealms) / (Math.PI * 2);
 
@@ -3117,12 +3117,16 @@
                     spaceCtx.shadowBlur = 0;
                     spaceCtx.fillText(isAddBucketButton ? '➕' : '⭐', bucket.x - (bucket.radius * 0.03), bucket.y + (bucket.radius * 0.05));
 
-                    spaceCtx.font = 'bold 32px sans-serif';
+                    // Synced to the realm's own label size (same value used in both Universe overview
+                    // and this focused view) plus 30%, rather than a flat independent constant - so
+                    // bucket labels always scale consistently with however big the realm label is set.
+                    const bucketLabelFontPx = Math.round((realm.labelFontPx || 22) * 1.3);
+                    spaceCtx.font = `bold ${bucketLabelFontPx}px sans-serif`;
                     const nameText = bucket.name;
                     const nameWidth = spaceCtx.measureText(nameText).width;
-                    const paddingX = 22;
+                    const paddingX = Math.round(bucketLabelFontPx * 0.69);
                     const bWidth = nameWidth + (paddingX * 2);
-                    const bPillHeight = 48;
+                    const bPillHeight = Math.round(bucketLabelFontPx * 1.5);
                     
                     const isBucketInBottomHalf = bucket.y > 0;
                     // Point away from the realm's center (matching how the realm's own label points away
@@ -3783,6 +3787,13 @@
                         activeSwipeTaskId = clickedTask.id;
                         focusCameraOnTask(clickedTask);
 
+                        // The X button on this dock only hides it (deselectBucketSwipeDock), it doesn't
+                        // tear anything down - so re-showing it here is all that's needed to bring it
+                        // back for a newly tapped task, rather than leaving it hidden even though the
+                        // selection state underneath had already updated correctly.
+                        const dock = document.getElementById('bucket-task-swipe-dock');
+                        if (dock) dock.classList.remove('hidden');
+
                         const wrapper = document.getElementById('swipe-dock-cards-wrapper');
                         const targetCard = wrapper ? wrapper.querySelector(`[data-swipe-task-id="${clickedTask.id}"]`) : null;
                         if (targetCard) {
@@ -3869,9 +3880,8 @@
         function focusCameraOnTask(task) {
             // Matches the same zoom level used when a bucket is first opened (see
             // renderBucketTaskSwipeDock/click-bucket handlers) - this was previously hardcoded to a
-            // tight 1.35 regardless of device, which is why every previous zoom-out adjustment elsewhere
-            // never actually showed up: this ran immediately afterward and silently overrode it back to
-            // a tight close-up every single time a bucket was opened or a task was tapped.
+            // tight 1.35 regardless of device, which silently overrode every other zoom-out change
+            // since this runs immediately after a bucket opens or a task is tapped.
             const isMobileTaskFocus = window.innerWidth < 768;
             targetCameraZoom = isMobileTaskFocus ? 0.192 : 0.33;
             const verticalHudOffset = (window.innerHeight * 0.18);
