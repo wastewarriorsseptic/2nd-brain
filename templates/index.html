@@ -2428,6 +2428,11 @@
         }
 
         function recenterSpace() {
+            // Drop the synthetic "All Tasks" realm (see openAllTasksTimeline) if it's present - it's a
+            // client-side-only construct built fresh each time the devil core is tapped, not something
+            // that should linger in the universe view after leaving it.
+            spaceRealms = spaceRealms.filter(r => r.id !== '__all_tasks_realm__');
+
             activeSelectedRealm = null;
             activeSelectedBucket = null;
             activeSwipeTaskId = null;
@@ -2492,6 +2497,77 @@
             targetCameraOffset = {
                 x: (window.innerWidth / 2) - (centerX * targetCameraZoom),
                 y: safeYCenter - (centerY * targetCameraZoom)
+            };
+        }
+
+        function openAllTasksTimeline() {
+            // Every task from every real realm and bucket, flattened into one list. Each task object
+            // already carries realmName/bucketName (set during initial data prep), so the HUD card and
+            // swipe-dock cards work completely unchanged for a task pulled from anywhere.
+            const allTasksFlat = [];
+            spaceRealms.forEach(realm => {
+                if (realm.isAddButton) return;
+                realm.buckets.forEach(bucket => {
+                    if (bucket.isAddButton) return;
+                    bucket.tasks.forEach(task => allTasksFlat.push(task));
+                });
+            });
+
+            const isMobile = window.innerWidth < 768;
+
+            // A synthetic bucket + realm, shaped exactly like a real one (every field the render/click
+            // code actually reads from a realm or bucket object, matched) - this is what lets the
+            // existing linear-timeline rendering, date labels, HUD, and swipe-dock all work completely
+            // unchanged, rather than building a second parallel rendering path for this one view.
+            const allTasksBucket = {
+                id: '__all_tasks_bucket__',
+                name: 'All Tasks',
+                isAddButton: false,
+                tasks: allTasksFlat,
+                addTaskButton: null,
+                angle: 0,
+                orbitRadius: 0,
+                radius: isMobile ? 38 : 34,
+                maxReach: (isMobile ? 38 : 34) + 500,
+                x: 0, y: 0
+            };
+
+            const allTasksRealm = {
+                id: '__all_tasks_realm__',
+                name: 'Every Task',
+                icon: '😈',
+                isAddButton: false,
+                isShared: false,
+                sharedByName: '',
+                radius: isMobile ? 169 : 109,
+                labelFontPx: isMobile ? 52 : 42,
+                orbitAngle: 0,
+                homeAngle: 0,
+                orbitRadius: 0,
+                floatSpeed: 1.4,
+                floatOffsetPhase: 0,
+                baseX: 0, baseY: 0,
+                x: 0, y: 0,
+                drawX: 0, drawY: 0,
+                targetX: 0, targetY: 0,
+                buckets: [allTasksBucket]
+            };
+
+            // Drop any leftover synthetic realm from a previous visit before adding a fresh one - avoids
+            // ever ending up with two of these stacked in the array.
+            spaceRealms = spaceRealms.filter(r => r.id !== '__all_tasks_realm__');
+            spaceRealms.push(allTasksRealm);
+
+            hideHudCard();
+            activeSelectedRealm = allTasksRealm;
+            activeSelectedBucket = allTasksBucket;
+            renderBucketTaskSwipeDock(allTasksBucket);
+
+            const zoomVal = isMobile ? 0.24 : 0.413;
+            targetCameraZoom = zoomVal;
+            targetCameraOffset = {
+                x: (window.innerWidth / 2) - (allTasksBucket.x * zoomVal),
+                y: (window.innerHeight / 2) - (allTasksBucket.y * zoomVal)
             };
         }
 
@@ -3785,7 +3861,7 @@
                 return;
             }
 
-            // DEVIL CORE TAP DETECTION (0,0) -> RESET TO FULL UNIVERSE VIEW
+            // DEVIL CORE TAP DETECTION (0,0) -> OPEN A LINEAR TIMELINE OF EVERY TASK IN EVERY REALM
             // Only active in the full-universe overview - the core isn't drawn (or tappable) while a
             // realm is focused, so there's no invisible hit-area left behind at the origin.
             if (!activeSelectedRealm) {
@@ -3793,7 +3869,7 @@
                 const coreRadius = (window.innerWidth < 768 ? 150 : 102) * pulseScale;
                 const distToCore = Math.hypot(worldX, worldY);
                 if (distToCore <= coreRadius + 15) {
-                    recenterSpace();
+                    openAllTasksTimeline();
                     return;
                 }
             }
