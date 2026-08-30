@@ -2550,6 +2550,27 @@
             return lines;
         }
 
+        // "Today" / "Tomorrow" / "Yesterday" for anything within a day of now, otherwise falls back to
+        // the server-formatted date string already attached to the task. Compares plain Y/M/D only
+        // (constructing local Date objects from the parts rather than parsing the ISO string directly)
+        // so a date-only value like "2026-08-31" can't drift a day off depending on the browser's
+        // timezone relative to UTC midnight.
+        function getRelativeDateLabel(dueDateStr, formattedFallback) {
+            if (!dueDateStr) return formattedFallback || '';
+            const parts = dueDateStr.split('-');
+            if (parts.length !== 3) return formattedFallback || dueDateStr;
+
+            const due = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const diffDays = Math.round((due - today) / 86400000);
+
+            if (diffDays === 0) return 'Today';
+            if (diffDays === 1) return 'Tomorrow';
+            if (diffDays === -1) return 'Yesterday';
+            return formattedFallback || due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+
         function renderSpaceFrame() {
             if (!isSpaceViewActive) return;
 
@@ -2855,7 +2876,12 @@
                             bucket.addTaskButton.y = bucket.y;
                         }
 
-                        bucket.tasks.forEach((task, tIdx) => {
+                        // Sorted by due date so the line actually reads left-to-right chronologically -
+                        // this also lets us put "Today / Tomorrow / [date]" labels above the chain that
+                        // are guaranteed to make sense, rather than assigning positions in whatever raw
+                        // order the tasks happen to come back in.
+                        const linearSortedTasks = [...bucket.tasks].sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+                        linearSortedTasks.forEach((task, tIdx) => {
                             task.x = startLinearX + (tIdx * stepSpacing);
                             task.y = bucket.y;
                             task.baseX = task.x;
@@ -3002,6 +3028,25 @@
                             spaceCtx.shadowBlur = isActiveSwipeNode ? 20 : 8;
                         }
                         spaceCtx.fill();
+
+                        // Date row above the chain, "Today / Tomorrow / [date]" - only makes sense in
+                        // the linear view where tasks are laid out left-to-right in date order (see the
+                        // sort applied when positioning them above).
+                        if (isSelectedBucket) {
+                            spaceCtx.save();
+                            spaceCtx.textAlign = 'center';
+                            spaceCtx.textBaseline = 'middle';
+                            spaceCtx.font = isActiveSwipeNode ? 'bold 22px sans-serif' : '20px sans-serif';
+
+                            const dateLabel = getRelativeDateLabel(task.dueDate, task.dueDateFormatted);
+                            const isSoon = dateLabel === 'Today' || dateLabel === 'Tomorrow';
+
+                            spaceCtx.fillStyle = task.isOverdue ? '#fda4af' : (isSoon ? '#5eead4' : '#94a3b8');
+                            spaceCtx.shadowColor = task.isOverdue ? '#f43f5e' : (isSoon ? '#2dd4bf' : 'transparent');
+                            spaceCtx.shadowBlur = isSoon || task.isOverdue ? 10 : 0;
+                            spaceCtx.fillText(dateLabel, task.x, task.y - task.radius - 26);
+                            spaceCtx.restore();
+                        }
 
                         // Task title labels only render once you're actually inside this specific
                         // bucket (the linear swipe-dock view, with real horizontal room per task). In
