@@ -247,11 +247,11 @@
                                     <span class="realm-handle {% if selected_realm_id == realm.id and not selected_bucket_id %}text-indigo-200{% else %}text-slate-500{% endif %} cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
                                     <a href="{% if selected_realm_id == realm.id and not selected_bucket_id %}/{% else %}/?realm_id={{ realm.id }}{% endif %}" 
                                        onclick="selectRealm(event, {{ realm.id }})"
-                                       class="realm-link text-xs md:text-sm font-bold flex items-center gap-1.5 min-w-0 {% if selected_realm_id == realm.id and not selected_bucket_id %}text-white{% else %}text-slate-300{% endif %}">
+                                       class="realm-link text-xs md:text-sm font-bold flex items-center gap-1.5 min-w-0 flex-1 {% if selected_realm_id == realm.id and not selected_bucket_id %}text-white{% else %}text-slate-300{% endif %}">
                                         <span class="shrink-0">{{ realm.icon or '🔮' }}</span> <span class="truncate">{{ realm.name }}</span>
                                     </a>
                                     {% if realm.user_id != user.id %}
-                                    <span class="shrink-0 bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded-full" title="Shared with you by {{ realm.user.name if realm.user else 'another owner' }}">👥 Shared by {{ realm.user.name if realm.user else 'owner' }}</span>
+                                    <span class="shrink min-w-0 truncate max-w-[90px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded-full" title="Shared with you by {{ realm.user.name if realm.user else 'another owner' }}">👥 Shared by {{ realm.user.name if realm.user else 'owner' }}</span>
                                     {% elif collaborators_map and collaborators_map.get(realm.id) %}
                                     <span class="shrink-0 bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded-full" title="You've shared this Realm with others">👥 Shared</span>
                                     {% endif %}
