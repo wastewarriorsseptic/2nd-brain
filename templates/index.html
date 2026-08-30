@@ -2838,6 +2838,8 @@
                         bucket.tasks.forEach((task, tIdx) => {
                             task.x = startLinearX + (tIdx * stepSpacing);
                             task.y = bucket.y;
+                            task.baseX = task.x;
+                            task.baseY = task.y;
                             allTasksOnCanvas.push(task);
                         });
                     } else {
@@ -2845,8 +2847,14 @@
                             const hoverX = Math.cos(frameCount + task.floatOffset) * 3;
                             const hoverY = Math.sin(frameCount + task.floatOffset) * 3;
 
-                            task.x = bucket.x + Math.cos(task.angle) * task.orbitRadius + hoverX;
-                            task.y = bucket.y + Math.sin(task.angle) * task.orbitRadius + hoverY;
+                            // Labels anchor to the stable, pre-hover position - only the circle itself
+                            // gets the tiny floating wobble. Feeding the live wobble into the label's
+                            // position fed the collision solver a slightly different input every frame,
+                            // which was enough to flicker labels in and out of "overlapping".
+                            task.baseX = bucket.x + Math.cos(task.angle) * task.orbitRadius;
+                            task.baseY = bucket.y + Math.sin(task.angle) * task.orbitRadius;
+                            task.x = task.baseX + hoverX;
+                            task.y = task.baseY + hoverY;
 
                             allTasksOnCanvas.push(task);
                         });
@@ -2967,29 +2975,35 @@
                         spaceCtx.save();
                         spaceCtx.textAlign = 'center';
                         spaceCtx.textBaseline = 'middle';
-                        spaceCtx.font = isActiveSwipeNode ? 'bold 40px sans-serif' : '36px sans-serif';
+                        spaceCtx.font = isActiveSwipeNode ? 'bold 26px sans-serif' : '24px sans-serif';
 
                         // Wrap to multiple centered lines instead of one ever-widening line - this is
                         // what keeps a long task title from overlapping the next task's label, whether
                         // they're 160px apart in the linear swipe-dock view or spread around a bucket's
                         // orbit ring.
-                        const maxLabelWidth = 340;
-                        const lineHeight = isActiveSwipeNode ? 46 : 42;
+                        const maxLabelWidth = 220;
+                        const lineHeight = isActiveSwipeNode ? 30 : 28;
                         const lines = wrapTextToWidth(spaceCtx, task.title, maxLabelWidth, 3);
 
                         const widestLine = Math.max(...lines.map(l => spaceCtx.measureText(l).width));
-                        const tWidth = widestLine + 36;
-                        const tPillHeight = (lines.length * lineHeight) + (isActiveSwipeNode ? 22 : 18);
-                        const desiredTPillY = task.y + task.radius + (isActiveSwipeNode ? 12 : 8);
+                        const tWidth = widestLine + 24;
+                        const tPillHeight = (lines.length * lineHeight) + (isActiveSwipeNode ? 16 : 12);
+                        const desiredTPillY = task.baseY + task.radius + (isActiveSwipeNode ? 12 : 8);
 
-                        const taskLabelRect = { x: task.x - tWidth / 2, y: desiredTPillY, w: tWidth, h: tPillHeight, dirY: 1 };
+                        const taskLabelRect = { x: task.baseX - tWidth / 2, y: desiredTPillY, w: tWidth, h: tPillHeight, dirY: 1 };
                         resolveLabelPushback(taskLabelRect, focusLabelRects);
                         focusLabelRects.push(taskLabelRect);
-                        const tPillY = taskLabelRect.y;
+
+                        // Ease toward the resolved position rather than snapping straight to it - other
+                        // labels still react to the true instant target above, but this specific pill's
+                        // on-screen position glides into any change instead of jumping.
+                        if (task._labelY === undefined) task._labelY = taskLabelRect.y;
+                        task._labelY += (taskLabelRect.y - task._labelY) * 0.25;
+                        const tPillY = task._labelY;
 
                         spaceCtx.fillStyle = isActiveSwipeNode ? 'rgba(30, 41, 59, 0.98)' : 'rgba(15, 23, 42, 0.9)';
                         spaceCtx.beginPath();
-                        spaceCtx.roundRect(task.x - tWidth / 2, tPillY, tWidth, tPillHeight, 4);
+                        spaceCtx.roundRect(task.baseX - tWidth / 2, tPillY, tWidth, tPillHeight, 4);
                         spaceCtx.fill();
 
                         if (isActiveSwipeNode) {
@@ -3001,7 +3015,7 @@
                         spaceCtx.fillStyle = isActiveSwipeNode ? '#ffffff' : '#e2e8f0';
                         const firstLineY = tPillY + (lineHeight / 2) + (isActiveSwipeNode ? 5 : 4);
                         lines.forEach((line, lineIdx) => {
-                            spaceCtx.fillText(line, task.x, firstLineY + (lineIdx * lineHeight));
+                            spaceCtx.fillText(line, task.baseX, firstLineY + (lineIdx * lineHeight));
                         });
                         spaceCtx.restore();
                     });
@@ -3067,22 +3081,31 @@
                     spaceCtx.shadowBlur = 0;
                     spaceCtx.fillText(isAddBucketButton ? '➕' : '⭐', bucket.x - (bucket.radius * 0.03), bucket.y + (bucket.radius * 0.05));
 
-                    spaceCtx.font = 'bold 48px sans-serif';
+                    spaceCtx.font = 'bold 32px sans-serif';
                     const nameText = bucket.name;
                     const nameWidth = spaceCtx.measureText(nameText).width;
-                    const paddingX = 30;
+                    const paddingX = 22;
                     const bWidth = nameWidth + (paddingX * 2);
-                    const bPillHeight = 68;
+                    const bPillHeight = 48;
                     
                     const isBucketInBottomHalf = bucket.y > 0;
+                    // Point away from the realm's center (matching how the realm's own label points away
+                    // from screen-center) rather than toward it - pointing inward was aiming buckets'
+                    // labels straight at the crowded middle of the realm, including their own orbiting
+                    // tasks, which is exactly backwards for avoiding collisions.
                     const desiredBPillY = isBucketInBottomHalf
-                        ? bucket.y - bucket.radius - bPillHeight - 14
-                        : bucket.y + bucket.radius + 14;
+                        ? bucket.y + bucket.radius + 14
+                        : bucket.y - bucket.radius - bPillHeight - 14;
 
-                    const bucketLabelRect = { x: bucket.x - bWidth / 2, y: desiredBPillY, w: bWidth, h: bPillHeight, dirY: isBucketInBottomHalf ? -1 : 1 };
+                    const bucketLabelRect = { x: bucket.x - bWidth / 2, y: desiredBPillY, w: bWidth, h: bPillHeight, dirY: isBucketInBottomHalf ? 1 : -1 };
                     resolveLabelPushback(bucketLabelRect, focusLabelRects);
                     focusLabelRects.push(bucketLabelRect);
-                    const bPillY = bucketLabelRect.y;
+
+                    // Same easing as task labels - avoids a visible snap if the resolved position
+                    // shifts frame to frame.
+                    if (bucket._labelY === undefined) bucket._labelY = bucketLabelRect.y;
+                    bucket._labelY += (bucketLabelRect.y - bucket._labelY) * 0.25;
+                    const bPillY = bucket._labelY;
 
                     spaceCtx.fillStyle = isAddBucketButton ? 'rgba(6, 78, 59, 0.9)' : (isSelectedBucket ? 'rgba(3, 105, 161, 0.98)' : 'rgba(15, 23, 42, 0.98)');
                     spaceCtx.strokeStyle = isAddBucketButton ? '#34d399' : '#38bdf8';
