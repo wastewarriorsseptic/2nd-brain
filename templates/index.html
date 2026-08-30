@@ -3036,6 +3036,11 @@
                         task._labelY += (taskLabelRect.y - task._labelY) * 0.12;
                         const tPillY = task._labelY;
 
+                        // Stash the final on-screen rect so tapping the text itself (not just the dot)
+                        // can be treated identically to tapping the node - see the hit-test in
+                        // detectClickNode.
+                        task._labelRect = { x: task.baseX - tWidth / 2, y: tPillY, w: tWidth, h: tPillHeight };
+
                         spaceCtx.fillStyle = isActiveSwipeNode ? 'rgba(30, 41, 59, 0.98)' : 'rgba(15, 23, 42, 0.9)';
                         spaceCtx.beginPath();
                         spaceCtx.roundRect(task.baseX - tWidth / 2, tPillY, tWidth, tPillHeight, 4);
@@ -3763,7 +3768,16 @@
 
                     bucket.tasks.forEach(task => {
                         const dist = Math.hypot(worldX - task.x, worldY - task.y);
-                        if (dist <= task.radius + 18) {
+                        const hitNode = dist <= task.radius + 18;
+
+                        // Tapping the task's text label now does exactly what tapping its dot does -
+                        // task._labelRect is only ever set while this task's own label is actually
+                        // rendered (inside its own bucket's view), so there's no risk of a stale rect
+                        // from a different bucket being checked here.
+                        const r = task._labelRect;
+                        const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
+
+                        if (hitNode || hitLabel) {
                             clickedTask = task;
                         }
                     });
