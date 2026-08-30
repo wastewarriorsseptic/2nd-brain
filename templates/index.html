@@ -3892,8 +3892,11 @@
 
             // Still bounded so a realm with just one or two buckets doesn't zoom in absurdly far, and
             // a realm with a huge number of buckets never zooms out past legibility - "squish, don't
-            // clip" between those two limits.
-            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.16), isMobile ? 0.55 : 0.95);
+            // clip" between those two limits. The upper bound is a ceiling, not a target - fitZoomX/Y
+            // above already guarantee every bucket and its full task-orbit reach stays on screen, so
+            // raising this just lets a realm with few, tightly-clustered buckets zoom in as far as it
+            // actually can before it'd need to squish anything.
+            targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.16), isMobile ? 0.85 : 1.1);
 
             // Now that we know the zoom this realm actually needs, push every OTHER realm far enough
             // in WORLD space that it lands well off-screen at THIS zoom level. A fixed world-space
