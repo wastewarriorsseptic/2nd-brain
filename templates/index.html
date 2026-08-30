@@ -3117,12 +3117,16 @@
                     spaceCtx.shadowBlur = 0;
                     spaceCtx.fillText(isAddBucketButton ? '➕' : '⭐', bucket.x - (bucket.radius * 0.03), bucket.y + (bucket.radius * 0.05));
 
-                    spaceCtx.font = 'bold 32px sans-serif';
+                    // Synced to the realm's own label size (same value used in both Universe overview
+                    // and this focused view) plus 30%, rather than a flat independent constant - so
+                    // bucket labels always scale consistently with however big the realm label is set.
+                    const bucketLabelFontPx = Math.round((realm.labelFontPx || 22) * 1.3);
+                    spaceCtx.font = `bold ${bucketLabelFontPx}px sans-serif`;
                     const nameText = bucket.name;
                     const nameWidth = spaceCtx.measureText(nameText).width;
-                    const paddingX = 22;
+                    const paddingX = Math.round(bucketLabelFontPx * 0.69);
                     const bWidth = nameWidth + (paddingX * 2);
-                    const bPillHeight = 48;
+                    const bPillHeight = Math.round(bucketLabelFontPx * 1.5);
                     
                     const isBucketInBottomHalf = bucket.y > 0;
                     // Point away from the realm's center (matching how the realm's own label points away
