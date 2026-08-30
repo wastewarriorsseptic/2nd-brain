@@ -2944,10 +2944,13 @@
 
                     bucket.tasks.forEach(task => {
                         if (!activeSelectedBucket) {
+                            // Kept intentionally very faint - this only marks how far this one bucket's
+                            // own tasks orbit, not a real "ring" like the shared bucket-to-realm circle,
+                            // so it shouldn't visually compete with that actual ring.
                             spaceCtx.beginPath();
                             spaceCtx.arc(bucket.x, bucket.y, task.orbitRadius, 0, Math.PI * 2);
-                            spaceCtx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
-                            spaceCtx.lineWidth = 0.6;
+                            spaceCtx.strokeStyle = 'rgba(148, 163, 184, 0.06)';
+                            spaceCtx.lineWidth = 0.5;
                             spaceCtx.stroke();
                         }
 
@@ -3007,7 +3010,7 @@
                         const tPillHeight = (lines.length * lineHeight) + (isActiveSwipeNode ? 16 : 12);
                         const desiredTPillY = task.baseY + task.radius + (isActiveSwipeNode ? 12 : 8);
 
-                        const taskLabelRect = { x: task.baseX - tWidth / 2, y: desiredTPillY, w: tWidth, h: tPillHeight, dirY: 1 };
+                        const taskLabelRect = { x: task.baseX - tWidth / 2, y: desiredTPillY, w: tWidth, h: tPillHeight, dirY: 1, ownerBucketId: bucket.id };
                         resolveLabelPushback(taskLabelRect, focusLabelRects, 500);
                         focusLabelRects.push(taskLabelRect);
 
@@ -3110,9 +3113,26 @@
                     // from screen-center) rather than toward it - pointing inward was aiming buckets'
                     // labels straight at the crowded middle of the realm, including their own orbiting
                     // tasks, which is exactly backwards for avoiding collisions.
-                    const desiredBPillY = isBucketInBottomHalf
+                    let desiredBPillY = isBucketInBottomHalf
                         ? bucket.y + bucket.radius + 14
                         : bucket.y - bucket.radius - bPillHeight - 14;
+
+                    // Start already clear of THIS bucket's own task labels, rather than starting right at
+                    // the bucket's edge and relying on the generic solver to react its way past however
+                    // many of its own tasks happen to be in that direction. Without this, a bucket with
+                    // several tasks could get pushed further and further until its own name ends up
+                    // visually below one of its own tasks - a confusing hierarchy even once nothing is
+                    // technically overlapping anymore.
+                    const ownTaskRects = focusLabelRects.filter(r => r.ownerBucketId === bucket.id);
+                    if (ownTaskRects.length > 0) {
+                        if (isBucketInBottomHalf) {
+                            const lowestOwnTaskEdge = Math.max(...ownTaskRects.map(r => r.y + r.h));
+                            desiredBPillY = Math.max(desiredBPillY, lowestOwnTaskEdge + 14);
+                        } else {
+                            const highestOwnTaskEdge = Math.min(...ownTaskRects.map(r => r.y));
+                            desiredBPillY = Math.min(desiredBPillY, highestOwnTaskEdge - bPillHeight - 14);
+                        }
+                    }
 
                     const bucketLabelRect = { x: bucket.x - bWidth / 2, y: desiredBPillY, w: bWidth, h: bPillHeight, dirY: isBucketInBottomHalf ? 1 : -1 };
                     resolveLabelPushback(bucketLabelRect, focusLabelRects, 500);
