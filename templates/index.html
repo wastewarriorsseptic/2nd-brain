@@ -3169,6 +3169,10 @@
                     bucket._labelY += (bucketLabelRect.y - bucket._labelY) * 0.12;
                     const bPillY = bucket._labelY;
 
+                    // Stash the final on-screen rect so tapping the bucket's text label can be treated
+                    // identically to tapping its node - see the hit-test in detectClickNode.
+                    bucket._labelRect = { x: bucket.x - bWidth / 2, y: bPillY, w: bWidth, h: bPillHeight };
+
                     spaceCtx.fillStyle = isAddBucketButton ? 'rgba(6, 78, 59, 0.9)' : (isSelectedBucket ? 'rgba(3, 105, 161, 0.98)' : 'rgba(15, 23, 42, 0.98)');
                     spaceCtx.strokeStyle = isAddBucketButton ? '#34d399' : '#38bdf8';
                     spaceCtx.lineWidth = 1.8;
@@ -3823,7 +3827,13 @@
             if (activeSelectedRealm) {
                 activeSelectedRealm.buckets.forEach(bucket => {
                     const dist = Math.hypot(worldX - bucket.x, worldY - bucket.y);
-                    if (dist <= bucket.radius + 28) {
+                    const hitNode = dist <= bucket.radius + 28;
+
+                    // Tapping the bucket's text label now does exactly what tapping its node does.
+                    const r = bucket._labelRect;
+                    const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
+
+                    if (hitNode || hitLabel) {
                         clickedBucket = bucket;
                     }
                 });
