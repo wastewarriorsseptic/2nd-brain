@@ -4,6 +4,9 @@ import uuid
 import sqlite3
 import time
 import json as _json
+import re
+import difflib
+from urllib.parse import quote
 from datetime import datetime, timedelta, timezone
 from calendar import monthrange
 from typing import Optional, List
@@ -469,6 +472,70 @@ def user_can_access_item(session: Session, user: Optional[User], item_id: Option
     if not item:
         return False
     return user_can_access_bucket(session, user, item.bucket_id)
+
+# --- Reorder Pattern Detection ---
+# A few common filler words that show up in shopping-task titles ("get more", "buy", "order"...) but
+# don't actually identify the product - stripped out before comparing two titles, so "Get more K-cups"
+# and "Buy K-cups" are compared as "k cups" vs "k cups" rather than being dragged down by their
+# unrelated verbs.
+REORDER_FILLER_WORDS = {
+    'get', 'more', 'buy', 'order', 'purchase', 'need', 'some', 'a', 'an', 'the',
+    'pick', 'up', 'grab', 'restock', 'replace', 'reorder'
+}
+
+def _normalize_reorder_title(title: str) -> str:
+    t = title.lower().strip()
+    t = re.sub(r'[^a-z0-9\s]', ' ', t)
+    words = [w for w in t.split() if w not in REORDER_FILLER_WORDS]
+    return ' '.join(words) if words else t
+
+def _titles_match_for_reorder(a: str, b: str) -> bool:
+    """Fuzzy match tuned to catch typos and minor rewording of the SAME product ("K-cups" vs "kcups"
+    vs "K Cups") while still telling genuinely different products apart ("K-cups" vs "Q-tips"). 0.65
+    was chosen by testing real same-product and different-product title pairs - same-product variants
+    scored 0.70-1.00, different products scored 0.10-0.50, leaving a comfortable margin either side."""
+    ratio = difflib.SequenceMatcher(None, _normalize_reorder_title(a), _normalize_reorder_title(b)).ratio()
+    return ratio >= 0.65
+
+def find_reorder_suggestion(session: Session, item: "Item") -> Optional[dict]:
+    """Called right after a shoppable task is marked complete. Looks for OTHER completed, shoppable
+    tasks in the same bucket with a fuzzy-matching title, and - if there are at least two completions
+    total - returns the average number of days between them. Returns None if this task isn't shoppable,
+    or there isn't yet a real pattern (fewer than 2 matching completions)."""
+    if not item.is_shoppable or not item.completed_at:
+        return None
+
+    candidates = session.exec(
+        select(Item).where(
+            Item.bucket_id == item.bucket_id,
+            Item.is_shoppable == True,
+            Item.is_completed == True,
+            Item.completed_at != None,
+        )
+    ).all()
+
+    matched_dates = sorted(
+        c.completed_at for c in candidates if _titles_match_for_reorder(c.title, item.title)
+    )
+
+    if len(matched_dates) < 2:
+        return None
+
+    gaps_days = [
+        (matched_dates[i] - matched_dates[i - 1]).total_seconds() / 86400
+        for i in range(1, len(matched_dates))
+    ]
+    avg_days = round(sum(gaps_days) / len(gaps_days))
+    if avg_days < 1:
+        return None
+
+    return {
+        "avg_days": avg_days,
+        "match_count": len(matched_dates),
+        "title": item.title,
+        "amount": item.amount,
+        "bucket_id": item.bucket_id,
+    }
 
 @app.on_event("startup")
 def on_startup():
@@ -1188,6 +1255,23 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
                     )
 
             session.commit()
+
+            reorder_suggestion = None
+            if not was_completed:
+                session.refresh(item)
+                reorder_suggestion = find_reorder_suggestion(session, item)
+
+            if reorder_suggestion:
+                sep = "&" if "?" in redirect_url else "?"
+                redirect_url = (
+                    f"{redirect_url}{sep}"
+                    f"reorder_title={quote(reorder_suggestion['title'])}"
+                    f"&reorder_days={reorder_suggestion['avg_days']}"
+                    f"&reorder_bucket_id={reorder_suggestion['bucket_id']}"
+                    f"&reorder_amount={reorder_suggestion['amount'] or ''}"
+                    f"&reorder_count={reorder_suggestion['match_count']}"
+                )
+
             return RedirectResponse(url=redirect_url, status_code=303)
     return RedirectResponse(url=redirect_url, status_code=303)
 

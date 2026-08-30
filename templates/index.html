@@ -107,6 +107,41 @@
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex">
 
+    <!-- Reorder pattern suggestion toast - shown after completing a shoppable task, only when a real
+         pattern (2+ matching completions) was detected server-side. See find_reorder_suggestion() in
+         app.py and the query-param handling in the script below. -->
+    <div id="reorder-suggestion-toast" class="hidden fixed bottom-4 right-4 left-4 md:left-auto md:w-96 z-[60] bg-slate-800 border border-indigo-500/50 rounded-2xl p-4 shadow-2xl">
+        <div class="flex items-start gap-3">
+            <span class="text-2xl shrink-0">🔁</span>
+            <div class="flex-1 min-w-0">
+                <p class="text-sm text-slate-200 leading-snug">
+                    You usually reorder <span id="reorder-toast-title" class="font-bold text-white"></span>
+                    every ~<span id="reorder-toast-days" class="font-bold text-white"></span> days.
+                </p>
+                <p id="reorder-toast-confidence" class="text-[11px] text-slate-500 mt-0.5"></p>
+                <div class="flex items-center gap-2 mt-3">
+                    <button onclick="acceptReorderSuggestion()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition">
+                        ✅ Schedule the next one
+                    </button>
+                    <button onclick="dismissReorderSuggestion()" class="px-3 py-1.5 text-slate-400 hover:text-white text-xs font-semibold transition">
+                        Dismiss
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Silently submitted by acceptReorderSuggestion() - same /items/ endpoint every other task
+         creation already uses, just pre-filled and posted without opening the full Add Task modal. -->
+    <form id="reorder-create-form" action="/items/" method="POST" class="hidden">
+        <input type="hidden" name="title" id="reorder-form-title">
+        <input type="hidden" name="bucket_id" id="reorder-form-bucket-id">
+        <input type="hidden" name="due_date" id="reorder-form-due-date">
+        <input type="hidden" name="reminder_offset" value="0">
+        <input type="hidden" name="amount" id="reorder-form-amount">
+        <input type="hidden" name="is_shoppable" value="true">
+    </form>
+
     <aside class="app-sidebar w-72 md:w-60 lg:w-72 bg-slate-900 md:bg-slate-800 border-r-0 md:border-r border-slate-800/80 p-4 ms:p-6 flex flex-col justify-between shrink-0 transition-all">
         <div>
             <div class="py-1 mb-2 md:mb-3 flex items-center justify-center">
@@ -1806,6 +1841,7 @@
             }
 
             updateSelectionUI();
+            checkForReorderSuggestion();
 
             const realmsContainer = document.getElementById('realms-container');
             if (realmsContainer) {
@@ -2056,6 +2092,69 @@
                 url += `&rh=p_36:0-${maxCents}`;
             }
             window.open(url, '_blank', 'noopener,noreferrer');
+        }
+
+        // Reorder pattern suggestion - see find_reorder_suggestion() in app.py. That function only ever
+        // runs server-side right after a shoppable task is completed, and passes its result back as
+        // query params on the redirect - this just checks for those params once, on page load.
+        let pendingReorderSuggestion = null;
+
+        function checkForReorderSuggestion() {
+            const params = new URLSearchParams(window.location.search);
+            const title = params.get('reorder_title');
+            const days = params.get('reorder_days');
+            const bucketId = params.get('reorder_bucket_id');
+
+            if (!title || !days || !bucketId) return;
+
+            pendingReorderSuggestion = {
+                title: title,
+                days: parseInt(days, 10),
+                bucketId: bucketId,
+                amount: params.get('reorder_amount') || '',
+                count: parseInt(params.get('reorder_count') || '2', 10)
+            };
+
+            document.getElementById('reorder-toast-title').innerText = `"${title}"`;
+            document.getElementById('reorder-toast-days').innerText = pendingReorderSuggestion.days;
+            document.getElementById('reorder-toast-confidence').innerText =
+                pendingReorderSuggestion.count >= 3
+                    ? `Based on your last ${pendingReorderSuggestion.count} reorders`
+                    : `Early estimate - just one prior reorder so far`;
+
+            document.getElementById('reorder-suggestion-toast').classList.remove('hidden');
+
+            // Strip the reorder_* params from the URL so refreshing or sharing the link doesn't
+            // re-show the same suggestion - the query string did its job carrying the data over from
+            // the redirect, it doesn't need to stick around.
+            const cleanUrl = window.location.pathname +
+                (params.toString() ? '?' + Array.from(params.entries())
+                    .filter(([k]) => !k.startsWith('reorder_'))
+                    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+                    .join('&') : '');
+            history.replaceState({}, '', cleanUrl || window.location.pathname);
+        }
+
+        function acceptReorderSuggestion() {
+            if (!pendingReorderSuggestion) return;
+
+            const dueDate = new Date();
+            dueDate.setDate(dueDate.getDate() + pendingReorderSuggestion.days);
+            const yyyy = dueDate.getFullYear();
+            const mm = String(dueDate.getMonth() + 1).padStart(2, '0');
+            const dd = String(dueDate.getDate()).padStart(2, '0');
+
+            document.getElementById('reorder-form-title').value = pendingReorderSuggestion.title;
+            document.getElementById('reorder-form-bucket-id').value = pendingReorderSuggestion.bucketId;
+            document.getElementById('reorder-form-due-date').value = `${yyyy}-${mm}-${dd}`;
+            document.getElementById('reorder-form-amount').value = pendingReorderSuggestion.amount;
+
+            document.getElementById('reorder-create-form').submit();
+        }
+
+        function dismissReorderSuggestion() {
+            pendingReorderSuggestion = null;
+            document.getElementById('reorder-suggestion-toast').classList.add('hidden');
         }
 
         // Dashboard task-card version - reads the title/amount off the button's own data attributes,
