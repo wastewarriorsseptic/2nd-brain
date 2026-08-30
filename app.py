@@ -1215,6 +1215,7 @@ def update_item(
 
     # Same manual string parsing as create_item - see the comment there for why.
     is_shoppable_flag = is_shoppable is not None and is_shoppable.strip().lower() in ("true", "on", "1", "yes")
+    print(f"[SHOP DEBUG] update_item item_id={item_id} raw is_shoppable form value = {is_shoppable!r}, parsed flag = {is_shoppable_flag}", flush=True)
 
     hour, minute = 9, 0
     if due_time and due_time.strip():
@@ -1330,6 +1331,8 @@ def update_item(
             session.add(item)
             
         session.commit()
+        session.refresh(item)
+        print(f"[SHOP DEBUG] after update_item commit+refresh, item.id={item.id} is_shoppable={item.is_shoppable!r}", flush=True)
         return RedirectResponse(url=redirect_url, status_code=303)
 
 @app.post("/users/timezone/")
