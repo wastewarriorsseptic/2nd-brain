@@ -87,9 +87,9 @@ SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-brain-key-2026")
 #   APPLE_PRIVATE_KEY   - the full contents of the downloaded .p8 file (including the BEGIN/END lines).
 #                         If stored as a single-line env var, use literal "\n" for line breaks - they're
 #                         converted back to real newlines below.
-APPLE_CLIENT_ID = os.getenv("APPLE_CLIENT_ID", "").strip() or None
-APPLE_TEAM_ID = os.getenv("APPLE_TEAM_ID", "").strip() or None
-APPLE_KEY_ID = os.getenv("APPLE_KEY_ID", "").strip() or None
+APPLE_CLIENT_ID = os.getenv("APPLE_CLIENT_ID")
+APPLE_TEAM_ID = os.getenv("APPLE_TEAM_ID")
+APPLE_KEY_ID = os.getenv("APPLE_KEY_ID")
 
 def _normalize_apple_private_key(raw: str) -> str:
     """Handles whichever way the .p8 contents ended up in the env var: real newlines,
@@ -125,6 +125,23 @@ def generate_apple_client_secret():
         return None
 
 APPLE_CLIENT_SECRET = generate_apple_client_secret()
+
+# TEMP DIAGNOSTIC - remove once invalid_client is resolved.
+# Decodes the generated client-secret JWT's header and payload WITHOUT verifying the
+# signature, so we can see exactly what iss/sub/aud/kid values are being sent to Apple.
+if APPLE_CLIENT_SECRET:
+    try:
+        _header = jwt.get_unverified_header(APPLE_CLIENT_SECRET)
+        _claims = jwt.decode(APPLE_CLIENT_SECRET, options={"verify_signature": False})
+        print(
+            f"[apple-jwt-debug] header_kid={_header.get('kid')!r} header_alg={_header.get('alg')!r} "
+            f"claims_iss={_claims.get('iss')!r} claims_sub={_claims.get('sub')!r} "
+            f"claims_aud={_claims.get('aud')!r} claims_iat={_claims.get('iat')} claims_exp={_claims.get('exp')} "
+            f"env_client_id={APPLE_CLIENT_ID!r} env_team_id={APPLE_TEAM_ID!r} env_key_id={APPLE_KEY_ID!r}",
+            flush=True,
+        )
+    except Exception as e:
+        print(f"[apple-jwt-debug] could not decode generated JWT: {e}", flush=True)
 APPLE_SIGNIN_ENABLED = bool(APPLE_CLIENT_ID and APPLE_CLIENT_SECRET)
 
 # --- Database Setup (Render PostgreSQL with Local SQLite Fallback) ---
@@ -291,14 +308,11 @@ if APPLE_SIGNIN_ENABLED:
         client_secret=APPLE_CLIENT_SECRET,
         server_metadata_url='https://appleid.apple.com/.well-known/openid-configuration',
         client_kwargs={
-            'scope': 'name email',
+            'scope': 'openid name email',
             # Apple requires form_post (not a plain redirect) whenever the "name"/"email" scopes are
             # requested, so the callback below is a POST route, not the GET route Google uses.
             'response_mode': 'form_post',
         },
-        # Apple's token endpoint requires the client secret as a POST body parameter, not HTTP Basic
-        # Auth (Authlib's default). Without this, Apple rejects the request with a bare "invalid_client".
-        token_endpoint_auth_method='client_secret_post',
     )
 else:
     print("Sign in with Apple disabled: missing APPLE_CLIENT_ID/TEAM_ID/KEY_ID/PRIVATE_KEY.", flush=True)
@@ -688,17 +702,18 @@ async def login_apple(request: Request):
 @app.post("/auth/callback/apple")
 async def auth_callback_apple(request: Request):
     if not APPLE_SIGNIN_ENABLED:
-        return RedirectResponse(url="/")
+        return RedirectResponse(url="/", status_code=303)
 
     try:
         token = await oauth.apple.authorize_access_token(request)
     except Exception as e:
         print(f"Apple sign-in failed: {e}", flush=True)
-        return RedirectResponse(url="/")
+        return RedirectResponse(url="/", status_code=303)
 
     user_info = token.get('userinfo')
     if not user_info or not user_info.get('email'):
-        return RedirectResponse(url="/")
+        print(f"Apple sign-in: no usable userinfo in token response (keys={list(token.keys())})", flush=True)
+        return RedirectResponse(url="/", status_code=303)
 
     email = user_info['email'].lower()
 
