@@ -2858,6 +2858,11 @@
                     }
                 });
 
+                // Reserve the realm's own name pill as a fixed obstacle BEFORE any task/bucket label
+                // is placed, even though it's visually drawn last (on top) - this is what stops a
+                // task or bucket label from ever landing underneath "Apartment" itself.
+                const focusLabelRects = [computeRealmPillRect(realm, drawX, drawY, realm.radius * 0.55)];
+
                 // PER-BUCKET TASK REPULSION (Orbital Mode)
                 // Only resolves collisions between tasks that share the SAME bucket - this is what keeps
                 // each bucket's tasks visually grouped as their own tight cluster instead of a scene-wide
@@ -2975,7 +2980,12 @@
                         const widestLine = Math.max(...lines.map(l => spaceCtx.measureText(l).width));
                         const tWidth = widestLine + 36;
                         const tPillHeight = (lines.length * lineHeight) + (isActiveSwipeNode ? 22 : 18);
-                        const tPillY = task.y + task.radius + (isActiveSwipeNode ? 12 : 8);
+                        const desiredTPillY = task.y + task.radius + (isActiveSwipeNode ? 12 : 8);
+
+                        const taskLabelRect = { x: task.x - tWidth / 2, y: desiredTPillY, w: tWidth, h: tPillHeight, dirY: 1 };
+                        resolveLabelPushback(taskLabelRect, focusLabelRects);
+                        focusLabelRects.push(taskLabelRect);
+                        const tPillY = taskLabelRect.y;
 
                         spaceCtx.fillStyle = isActiveSwipeNode ? 'rgba(30, 41, 59, 0.98)' : 'rgba(15, 23, 42, 0.9)';
                         spaceCtx.beginPath();
@@ -3065,9 +3075,14 @@
                     const bPillHeight = 68;
                     
                     const isBucketInBottomHalf = bucket.y > 0;
-                    const bPillY = isBucketInBottomHalf
+                    const desiredBPillY = isBucketInBottomHalf
                         ? bucket.y - bucket.radius - bPillHeight - 14
                         : bucket.y + bucket.radius + 14;
+
+                    const bucketLabelRect = { x: bucket.x - bWidth / 2, y: desiredBPillY, w: bWidth, h: bPillHeight, dirY: isBucketInBottomHalf ? -1 : 1 };
+                    resolveLabelPushback(bucketLabelRect, focusLabelRects);
+                    focusLabelRects.push(bucketLabelRect);
+                    const bPillY = bucketLabelRect.y;
 
                     spaceCtx.fillStyle = isAddBucketButton ? 'rgba(6, 78, 59, 0.9)' : (isSelectedBucket ? 'rgba(3, 105, 161, 0.98)' : 'rgba(15, 23, 42, 0.98)');
                     spaceCtx.strokeStyle = isAddBucketButton ? '#34d399' : '#38bdf8';
@@ -3103,6 +3118,47 @@
 
             spaceCtx.restore();
             requestAnimationFrame(renderSpaceFrame);
+        }
+
+        // Computes the realm's own name-pill rect using the exact same sizing math renderRealmNode
+        // uses to draw it - factored out so it can be reserved as a fixed obstacle for the bucket/task
+        // label solver below BEFORE the realm's own pill is actually drawn (it's drawn last, on top,
+        // but other labels still need to know where it'll be so they can steer clear of it).
+        function computeRealmPillRect(realm, drawX, drawY, displayRadius) {
+            const labelFontPx = realm.labelFontPx || 22;
+            spaceCtx.font = `bold ${labelFontPx}px sans-serif`;
+            const pillPadding = 36;
+            const pillHeight = Math.round(labelFontPx * 1.9);
+            const nameWidth = spaceCtx.measureText(realm.name).width;
+            const bTextWidth = nameWidth + pillPadding + 28;
+            const pillX = drawX - (bTextWidth / 2);
+            const isTopHalf = realm.baseY < 0;
+            const pillY = isTopHalf
+                ? drawY - displayRadius - pillHeight - 12
+                : drawY + displayRadius + 12;
+            return { x: pillX, y: pillY, w: bTextWidth, h: pillHeight };
+        }
+
+        // Nudges `rect` further along its own preferred direction (dirY: -1 further up/away, +1
+        // further down/away from whatever circle it's attached to) until it no longer overlaps any
+        // rect already in `existingRects`. Purely vertical, since every label here is already anchored
+        // directly above or below its circle - this just lets it drift a bit further out when something
+        // is already occupying the spot closer in, rather than jumping sideways in a confusing way.
+        function resolveLabelPushback(rect, existingRects, maxIterations = 12) {
+            const padding = 8;
+            for (let iter = 0; iter < maxIterations; iter++) {
+                let moved = false;
+                for (const other of existingRects) {
+                    const overlapX = Math.min(rect.x + rect.w, other.x + other.w) - Math.max(rect.x, other.x);
+                    const overlapY = Math.min(rect.y + rect.h, other.y + other.h) - Math.max(rect.y, other.y);
+                    if (overlapX + padding > 0 && overlapY + padding > 0) {
+                        rect.y += rect.dirY * (overlapY + padding);
+                        moved = true;
+                    }
+                }
+                if (!moved) break;
+            }
+            return rect;
         }
 
         function renderRealmNode(realm, drawX, drawY, isSelected) {
