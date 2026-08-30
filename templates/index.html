@@ -2241,22 +2241,18 @@
                             : realBuckets.concat([{ id: `__add_bucket__${realm.id}`, name: 'Add Bucket', isAddButton: true }]);
                         const totalBucketsCombined = Math.max(1, combinedBuckets.length);
 
-                        // A single ring sized to how many buckets actually exist - same principle as the
-                        // realm overview ring - instead of the old fixed spiral (260px, +150px per bucket
-                        // regardless of count), which kept the camera zoomed out even for a realm with
-                        // only 2-3 buckets, since the bounding box was sized for a spiral that could in
-                        // theory reach much further out.
-                        spaceCtx.font = 'bold 32px sans-serif';
-                        const bucketCircleRadius = isMobile ? 38 : 34;
-                        const bucketPillWidths = combinedBuckets.map(b => spaceCtx.measureText(b.name).width + 44);
-                        const maxBucketPillWidth = Math.max(...bucketPillWidths, bucketCircleRadius * 2);
-                        const minBucketArcSpacing = Math.max(maxBucketPillWidth, bucketCircleRadius * 2) + (isMobile ? 40 : 34);
-                        const minBucketRingRadius = (minBucketArcSpacing * totalBucketsCombined) / (Math.PI * 2);
-                        const bucketRingRadius = Math.max(isMobile ? 150 : 130, minBucketRingRadius);
+                        // Each bucket gets its own distinct ring, spiraling outward by index - restored
+                        // per feedback (a shared single ring was the wrong direction). Kept noticeably
+                        // tighter than the original spacing (260px base / +150px per ring) so realms with
+                        // just a few buckets still zoom in reasonably rather than sitting zoomed far out
+                        // to accommodate a spiral that could in theory reach much further.
+                        const bucketBaseDist = isMobile ? 175 : 155;
+                        const bucketRingGap = isMobile ? 115 : 100;
 
                         return combinedBuckets.map((bucket, bIdx) => {
                             const bucketAngle = (bIdx / totalBucketsCombined) * Math.PI * 2;
-                            const bucketDist = bucketRingRadius;
+                            const bucketDist = bucketBaseDist + (bIdx * bucketRingGap);
+
 
                             if (bucket.isAddButton) {
                                 return {
