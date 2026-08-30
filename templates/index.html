@@ -2175,7 +2175,7 @@
             // Overlap avoidance only ever adjusts a realm's ANGLE around this ring (never its radius),
             // so the layout always reads as a clean circle instead of a scattered blob.
             //
-            const realmLabelFontPx = isMobile ? 76 : 59;
+            const realmLabelFontPx = isMobile ? 52 : 42;
 
             // The ring radius must be big enough that, even at perfectly EVEN angle spacing (before any
             // avoidance runs), adjacent realms' circles/labels don't already overlap - otherwise the
@@ -2189,7 +2189,7 @@
                 if (w > maxPillWidth) maxPillWidth = w;
             });
 
-            const realmCircleRadius = isMobile ? 169 : 109;
+            const realmCircleRadius = isMobile ? 130 : 84;
             const minArcSpacing = Math.max(maxPillWidth, realmCircleRadius * 2) + (isMobile ? 46 : 40);
             const minRingRadiusForSpacing = (minArcSpacing * totalRealms) / (Math.PI * 2);
 
@@ -3033,7 +3033,7 @@
                         // labels still react to the true instant target above, but this specific pill's
                         // on-screen position glides into any change instead of jumping.
                         if (task._labelY === undefined) task._labelY = taskLabelRect.y;
-                        task._labelY += (taskLabelRect.y - task._labelY) * 0.25;
+                        task._labelY += (taskLabelRect.y - task._labelY) * 0.12;
                         const tPillY = task._labelY;
 
                         spaceCtx.fillStyle = isActiveSwipeNode ? 'rgba(30, 41, 59, 0.98)' : 'rgba(15, 23, 42, 0.9)';
@@ -3117,16 +3117,12 @@
                     spaceCtx.shadowBlur = 0;
                     spaceCtx.fillText(isAddBucketButton ? '➕' : '⭐', bucket.x - (bucket.radius * 0.03), bucket.y + (bucket.radius * 0.05));
 
-                    // Synced to the realm's own label size (same value used in both Universe overview
-                    // and this focused view) plus 30%, rather than a flat independent constant - so
-                    // bucket labels always scale consistently with however big the realm label is set.
-                    const bucketLabelFontPx = Math.round((realm.labelFontPx || 22) * 1.3);
-                    spaceCtx.font = `bold ${bucketLabelFontPx}px sans-serif`;
+                    spaceCtx.font = 'bold 32px sans-serif';
                     const nameText = bucket.name;
                     const nameWidth = spaceCtx.measureText(nameText).width;
-                    const paddingX = Math.round(bucketLabelFontPx * 0.69);
+                    const paddingX = 22;
                     const bWidth = nameWidth + (paddingX * 2);
-                    const bPillHeight = Math.round(bucketLabelFontPx * 1.5);
+                    const bPillHeight = 48;
                     
                     const isBucketInBottomHalf = bucket.y > 0;
                     // Point away from the realm's center (matching how the realm's own label points away
@@ -3161,7 +3157,7 @@
                     // Same easing as task labels - avoids a visible snap if the resolved position
                     // shifts frame to frame.
                     if (bucket._labelY === undefined) bucket._labelY = bucketLabelRect.y;
-                    bucket._labelY += (bucketLabelRect.y - bucket._labelY) * 0.25;
+                    bucket._labelY += (bucketLabelRect.y - bucket._labelY) * 0.12;
                     const bPillY = bucket._labelY;
 
                     spaceCtx.fillStyle = isAddBucketButton ? 'rgba(6, 78, 59, 0.9)' : (isSelectedBucket ? 'rgba(3, 105, 161, 0.98)' : 'rgba(15, 23, 42, 0.98)');
