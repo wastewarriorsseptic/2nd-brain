@@ -2569,6 +2569,27 @@
                 x: (window.innerWidth / 2) - (allTasksBucket.x * zoomVal),
                 y: (window.innerHeight / 2) - (allTasksBucket.y * zoomVal)
             };
+
+            // Push every real realm far enough away in world space that it lands well off-screen at
+            // this zoom level - same pattern focusAndRepelRealms uses for a normal realm focus. Without
+            // this, every other realm just sits at its normal orbit position, which happens to be close
+            // enough to the origin to overlap the task chain we're centered on.
+            const screenClearance = Math.max(window.innerWidth, window.innerHeight) * 1.1;
+            const repelDist = screenClearance / zoomVal;
+
+            spaceRealms.forEach(r => {
+                if (r.id === allTasksRealm.id) {
+                    r.targetX = allTasksRealm.baseX;
+                    r.targetY = allTasksRealm.baseY;
+                } else {
+                    const dx = r.baseX - allTasksRealm.baseX;
+                    const dy = r.baseY - allTasksRealm.baseY;
+                    const dist = Math.hypot(dx, dy) || 1;
+                    const angle = Math.atan2(dy, dx);
+                    r.targetX = allTasksRealm.baseX + Math.cos(angle) * (dist + repelDist);
+                    r.targetY = allTasksRealm.baseY + Math.sin(angle) * (dist + repelDist);
+                }
+            });
         }
 
         function zoomSpace(factor) {
