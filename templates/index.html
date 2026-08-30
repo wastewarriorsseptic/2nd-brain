@@ -2553,7 +2553,11 @@
                                     angle: bucketAngle,
                                     orbitRadius: bucketDist,
                                     radius: isMobile ? 38 : 34,
-                                    maxReach: (isMobile ? 38 : 34) + 45,
+                                    // Matches the +150 buffer real buckets get below (not the old +45) -
+                                    // "Add Bucket" renders as a big bold label pill, same as a real bucket's
+                                    // name, so the camera needs the same clearance or this pill overflows
+                                    // off-screen instead of the view zooming out enough to include it.
+                                    maxReach: (isMobile ? 38 : 34) + 150,
                                     tasks: []
                                 };
                             }
