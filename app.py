@@ -308,7 +308,7 @@ if APPLE_SIGNIN_ENABLED:
         client_secret=APPLE_CLIENT_SECRET,
         server_metadata_url='https://appleid.apple.com/.well-known/openid-configuration',
         client_kwargs={
-            'scope': 'openid name email',
+            'scope': 'name email',
             # Apple requires form_post (not a plain redirect) whenever the "name"/"email" scopes are
             # requested, so the callback below is a POST route, not the GET route Google uses.
             'response_mode': 'form_post',
@@ -696,24 +696,28 @@ async def auth_callback(request: Request):
 async def login_apple(request: Request):
     if not APPLE_SIGNIN_ENABLED:
         return RedirectResponse(url="/")
-    redirect_uri = request.url_for("auth_callback_apple")
+    # Hardcoded rather than request.url_for(...): Render terminates HTTPS at its edge and
+    # forwards plain HTTP internally, so without proxy-header trust configured, url_for()
+    # would build "http://usetaskmonster.app/..." here - which doesn't match the "https://"
+    # Return URL registered with Apple's Services ID, and Apple surfaces that mismatch as a
+    # bare invalid_client with no description.
+    redirect_uri = "https://usetaskmonster.app/auth/callback/apple"
     return await oauth.apple.authorize_redirect(request, redirect_uri)
 
 @app.post("/auth/callback/apple")
 async def auth_callback_apple(request: Request):
     if not APPLE_SIGNIN_ENABLED:
-        return RedirectResponse(url="/", status_code=303)
+        return RedirectResponse(url="/")
 
     try:
         token = await oauth.apple.authorize_access_token(request)
     except Exception as e:
         print(f"Apple sign-in failed: {e}", flush=True)
-        return RedirectResponse(url="/", status_code=303)
+        return RedirectResponse(url="/")
 
     user_info = token.get('userinfo')
     if not user_info or not user_info.get('email'):
-        print(f"Apple sign-in: no usable userinfo in token response (keys={list(token.keys())})", flush=True)
-        return RedirectResponse(url="/", status_code=303)
+        return RedirectResponse(url="/")
 
     email = user_info['email'].lower()
 
