@@ -2246,7 +2246,13 @@
                         // tighter than the original spacing (260px base / +150px per ring) so realms with
                         // just a few buckets still zoom in reasonably rather than sitting zoomed far out
                         // to accommodate a spiral that could in theory reach much further.
-                        const bucketBaseDist = isMobile ? 220 : 195;
+                        // Base distance for the innermost bucket ring - sized so that even a task
+                        // orbiting straight back toward the realm (bucketBaseDist - baseTaskOrbit) still
+                        // lands clearly outside the realm's own clickable radius (realm.radius + 24).
+                        // The old 220/195 values left only ~100px of clearance against a ~154px hit-zone
+                        // on mobile, meaning several of a bucket's own tasks could sit right on top of
+                        // the realm's tap target.
+                        const bucketBaseDist = isMobile ? 320 : 260;
                         const bucketRingGap = isMobile ? 165 : 145;
 
                         return combinedBuckets.map((bucket, bIdx) => {
@@ -3002,15 +3008,15 @@
                         // the clutter, rather than another attempt at smarter label placement for a
                         // dozen small pills competing with the bucket labels for the same tight space.
                         if (isSelectedBucket) {
-                            spaceCtx.save();
-                            spaceCtx.textAlign = 'center';
-                            spaceCtx.textBaseline = 'middle';
-                            spaceCtx.font = isActiveSwipeNode ? 'bold 26px sans-serif' : '24px sans-serif';
+                        spaceCtx.save();
+                        spaceCtx.textAlign = 'center';
+                        spaceCtx.textBaseline = 'middle';
+                        spaceCtx.font = isActiveSwipeNode ? 'bold 26px sans-serif' : '24px sans-serif';
 
-                            // Wrap to multiple centered lines instead of one ever-widening line - this is
-                            // what keeps a long task title from overlapping the next task's label, whether
-                            // they're 160px apart in the linear swipe-dock view or spread around a bucket's
-                            // orbit ring.
+                        // Wrap to multiple centered lines instead of one ever-widening line - this is
+                        // what keeps a long task title from overlapping the next task's label, whether
+                        // they're 160px apart in the linear swipe-dock view or spread around a bucket's
+                        // orbit ring.
                         const maxLabelWidth = 220;
                         const lineHeight = isActiveSwipeNode ? 30 : 28;
                         const lines = wrapTextToWidth(spaceCtx, task.title, maxLabelWidth, 3);
@@ -3047,9 +3053,12 @@
                         lines.forEach((line, lineIdx) => {
                             spaceCtx.fillText(line, task.baseX, firstLineY + (lineIdx * lineHeight));
                         });
-                            spaceCtx.restore();
+                        spaceCtx.restore();
                         }
                     });
+
+                    // "+" add-task button - always close to the bucket, whether we're looking at the
+                    // orbit overview or drilled into this specific bucket's linear task view.
                     if (bucket.addTaskButton && !bucket.isAddButton) {
                         const atb = bucket.addTaskButton;
                         spaceCtx.save();
