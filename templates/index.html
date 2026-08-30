@@ -2175,7 +2175,7 @@
             // Overlap avoidance only ever adjusts a realm's ANGLE around this ring (never its radius),
             // so the layout always reads as a clean circle instead of a scattered blob.
             //
-            const realmLabelFontPx = isMobile ? 42 : 33;
+            const realmLabelFontPx = isMobile ? 76 : 59;
 
             // The ring radius must be big enough that, even at perfectly EVEN angle spacing (before any
             // avoidance runs), adjacent realms' circles/labels don't already overlap - otherwise the
@@ -2193,7 +2193,7 @@
             const minArcSpacing = Math.max(maxPillWidth, realmCircleRadius * 2) + (isMobile ? 46 : 40);
             const minRingRadiusForSpacing = (minArcSpacing * totalRealms) / (Math.PI * 2);
 
-            const ringRadius = Math.max(baseViewRadius * (isMobile ? 1.05 : 1.0), minRingRadiusForSpacing);
+            const ringRadius = Math.max(baseViewRadius * (isMobile ? 1.05 : 1.0), minRingRadiusForSpacing, (isMobile ? 150 : 102) + 60);
 
             // Stash these so recenterSpace() can compute exactly how much extra room the camera
             // needs to fully contain every realm's circle + label, however many realms there are.
@@ -2249,9 +2249,6 @@
                         // Base distance for the innermost bucket ring - sized so that even a task
                         // orbiting straight back toward the realm (bucketBaseDist - baseTaskOrbit) still
                         // lands clearly outside the realm's own clickable radius (realm.radius + 24).
-                        // The old 220/195 values left only ~100px of clearance against a ~154px hit-zone
-                        // on mobile, meaning several of a bucket's own tasks could sit right on top of
-                        // the realm's tap target.
                         const bucketBaseDist = isMobile ? 320 : 260;
                         const bucketRingGap = isMobile ? 165 : 145;
 
@@ -2577,7 +2574,10 @@
             // it simply doesn't render while a realm is selected.
             const isMobileCore = window.innerWidth < 768;
             const pulseScale = 1 + Math.sin(frameCount * 2) * 0.08;
-            const coreRadius = (isMobileCore ? 110 : 64) * pulseScale;
+            // Sized to comfortably contain the emoji at its new font-size (198/116px) with room to
+            // spare, rather than scaling the circle by the full +100% too - that would have made the
+            // core's own halo larger than the realm orbit ring itself on smaller screens.
+            const coreRadius = (isMobileCore ? 150 : 102) * pulseScale;
 
             if (!activeSelectedRealm) {
                 spaceCtx.save();
@@ -2590,7 +2590,8 @@
 
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
-                spaceCtx.font = `${Math.round((isMobileCore ? 99 : 58) * pulseScale)}px serif`;
+                // +100% from the original 99/58px.
+                spaceCtx.font = `${Math.round((isMobileCore ? 198 : 116) * pulseScale)}px serif`;
                 spaceCtx.shadowBlur = 0;
                 spaceCtx.fillText('😈', 0, 0);
                 spaceCtx.restore();
@@ -3004,9 +3005,7 @@
 
                         // Task title labels only render once you're actually inside this specific
                         // bucket (the linear swipe-dock view, with real horizontal room per task). In
-                        // the realm overview, only the dot itself shows - this is what actually removes
-                        // the clutter, rather than another attempt at smarter label placement for a
-                        // dozen small pills competing with the bucket labels for the same tight space.
+                        // the realm overview, only the dot itself shows.
                         if (isSelectedBucket) {
                         spaceCtx.save();
                         spaceCtx.textAlign = 'center';
@@ -3733,7 +3732,7 @@
             // realm is focused, so there's no invisible hit-area left behind at the origin.
             if (!activeSelectedRealm) {
                 const pulseScale = 1 + Math.sin(frameCount * 2) * 0.08;
-                const coreRadius = (window.innerWidth < 768 ? 110 : 64) * pulseScale;
+                const coreRadius = (window.innerWidth < 768 ? 150 : 102) * pulseScale;
                 const distToCore = Math.hypot(worldX, worldY);
                 if (distToCore <= coreRadius + 15) {
                     recenterSpace();
