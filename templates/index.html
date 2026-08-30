@@ -2404,7 +2404,7 @@
                             const isMobile = window.innerWidth < 768;
                             const bx = realm.baseX + Math.cos(bucket.angle) * bucket.orbitRadius;
                             const by = realm.baseY + Math.sin(bucket.angle) * bucket.orbitRadius;
-                            targetCameraZoom = isMobile ? 0.32 : 0.55;
+                            targetCameraZoom = isMobile ? 0.192 : 0.33;
                             targetCameraOffset = {
                                 x: (window.innerWidth / 2) - (bx * targetCameraZoom),
                                 y: (window.innerHeight / 2) - (by * targetCameraZoom)
@@ -3824,7 +3824,7 @@
                     renderBucketTaskSwipeDock(clickedBucket);
 
                     const isMobile = window.innerWidth < 768;
-                    targetCameraZoom = isMobile ? 0.32 : 0.55;
+                    targetCameraZoom = isMobile ? 0.192 : 0.33;
                     targetCameraOffset = {
                         x: (window.innerWidth / 2) - (clickedBucket.x * targetCameraZoom),
                         y: (window.innerHeight / 2) - (clickedBucket.y * targetCameraZoom)
