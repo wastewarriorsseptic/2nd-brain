@@ -3038,7 +3038,7 @@
 
                     const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
 
-                    if (isSelectedBucket && bucket.tasks.length > 0) {
+                    if (isSelectedBucket && bucket.tasks.length > 0 && bucket.id !== '__all_tasks_bucket__') {
                         const stepSpacing = 160;
                         const addButtonSlotX = bucket.x + 90;
                         const startLinearX = addButtonSlotX + stepSpacing;
@@ -3211,6 +3211,11 @@
 
                 // LAYER 2: RENDER BUCKET MOONS & BUCKET LABELS SECOND (MIDDLE LAYER ABOVE TASKS)
                 realm.buckets.forEach(bucket => {
+                    // The synthetic "All Tasks" bucket (see openAllTasksTimeline) skips this whole layer
+                    // entirely - no circle, no orbit ring, no label - so the linear task chain is the
+                    // only thing on screen besides the devil core itself.
+                    if (bucket.id === '__all_tasks_bucket__') return;
+
                     const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
                     if (activeSelectedBucket && !isSelectedBucket) return;
                     const isAddBucketButton = !!bucket.isAddButton;
@@ -3413,6 +3418,10 @@
             spaceCtx.shadowBlur = 0;
             spaceCtx.fillText(realm.icon, drawX, drawY);
 
+            // The synthetic "All Tasks" realm (see openAllTasksTimeline) skips its own name label pill
+            // entirely - just the circle and emoji stay, still fully tappable to go back to the universe
+            // view, without a floating text label competing with the task chain right next to it.
+            if (realm.id !== '__all_tasks_realm__') {
             const labelFontPx = realm.labelFontPx || 22;
             const nameFontSpec = `bold ${labelFontPx}px sans-serif`;
 
@@ -3443,6 +3452,7 @@
             spaceCtx.shadowBlur = 0;
             spaceCtx.font = nameFontSpec;
             spaceCtx.fillText(realm.name, drawX, pillY + (pillHeight / 2));
+            }
 
             // Small "shared" badge on the realm's own circle - independent of the label pill
             // below/above it, so it stays visible regardless of where that pill sits.
