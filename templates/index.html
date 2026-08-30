@@ -2351,7 +2351,11 @@
                             // occupies at least the innermost ring, so it's always counted here too.
                             const ringCount = Math.max(1, Math.ceil(totalOrbitSlots / tasksPerRing));
                             const maxTaskOrbit = baseTaskOrbit + ((ringCount - 1) * taskRingGap);
-                            const bucketMaxReach = (isMobile ? 38 : 34) + maxTaskOrbit + 60;
+                            // The +150 buffer (up from a flat 60) gives the label collision solver
+                            // actual room to push a crowded bucket/task label further out without the
+                            // camera cropping it off-screen - labels can now legitimately use that space
+                            // to guarantee full visibility instead of overlapping.
+                            const bucketMaxReach = (isMobile ? 38 : 34) + maxTaskOrbit + 150;
 
                             return {
                                 id: bucket.id,
@@ -3004,7 +3008,7 @@
                         const desiredTPillY = task.baseY + task.radius + (isActiveSwipeNode ? 12 : 8);
 
                         const taskLabelRect = { x: task.baseX - tWidth / 2, y: desiredTPillY, w: tWidth, h: tPillHeight, dirY: 1 };
-                        resolveLabelPushback(taskLabelRect, focusLabelRects, 70);
+                        resolveLabelPushback(taskLabelRect, focusLabelRects, 500);
                         focusLabelRects.push(taskLabelRect);
 
                         // Ease toward the resolved position rather than snapping straight to it - other
@@ -3111,7 +3115,7 @@
                         : bucket.y - bucket.radius - bPillHeight - 14;
 
                     const bucketLabelRect = { x: bucket.x - bWidth / 2, y: desiredBPillY, w: bWidth, h: bPillHeight, dirY: isBucketInBottomHalf ? 1 : -1 };
-                    resolveLabelPushback(bucketLabelRect, focusLabelRects, 130);
+                    resolveLabelPushback(bucketLabelRect, focusLabelRects, 500);
                     focusLabelRects.push(bucketLabelRect);
 
                     // Same easing as task labels - avoids a visible snap if the resolved position
