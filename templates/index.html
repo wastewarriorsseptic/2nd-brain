@@ -244,7 +244,7 @@
                             <div id="realm-row-{{ realm.id }}" data-realm-name="{{ realm.name }}" data-realm-icon="{{ realm.icon or '🔮' }}"
                                  class="realm-item-row flex items-center justify-between group mb-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-150 {% if selected_realm_id == realm.id and not selected_bucket_id %}bg-indigo-600 text-white font-semibold shadow-md{% endif %}">
                                 <div class="flex items-center gap-2 flex-1 min-w-0 mr-2">
-                                    <span class="realm-handle {% if selected_realm_id == realm.id and not selected_bucket_id %}text-indigo-200{% else %}text-slate-500{% endif %} cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
+                                    <span class="realm-handle {% if selected_realm_id == realm.id and not selected_bucket_id %}text-indigo-200{% else %}text-slate-500{% endif %} cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0 md:w-0 md:opacity-0 md:overflow-hidden group-hover:md:w-4 group-hover:md:opacity-100 transition-all">⋮⋮</span>
                                     <a href="{% if selected_realm_id == realm.id and not selected_bucket_id %}/{% else %}/?realm_id={{ realm.id }}{% endif %}" 
                                        onclick="selectRealm(event, {{ realm.id }})"
                                        class="realm-link text-xs md:text-sm font-bold flex items-center gap-1.5 min-w-0 flex-1 {% if selected_realm_id == realm.id and not selected_bucket_id %}text-white{% else %}text-slate-300{% endif %}">
@@ -278,7 +278,7 @@
                                 <div id="bucket-row-{{ bucket.id }}" data-bucket-name="{{ bucket.name }}" data-bucket-icon="⭐️" data-parent-realm-id="{{ realm.id }}"
                                      class="bucket-item bucket-item-row flex items-center justify-between group rounded-xl {% if selected_bucket_id == bucket.id %}bg-indigo-600 text-white font-medium shadow-md{% else %}text-slate-300{% endif %} px-2.5 py-1.5 transition-all duration-150" data-id="{{ bucket.id }}">
                                     <div class="flex items-center gap-2 flex-1 min-w-0 mr-2">
-                                        <span class="bucket-handle text-slate-500 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0">⋮⋮</span>
+                                        <span class="bucket-handle text-slate-500 cursor-grab active:cursor-grabbing text-xs font-mono select-none shrink-0 md:w-0 md:opacity-0 md:overflow-hidden group-hover:md:w-4 group-hover:md:opacity-100 transition-all">⋮⋮</span>
                                         <a href="{% if selected_bucket_id == bucket.id %}/?realm_id={{ realm.id }}{% else %}/?bucket_id={{ bucket.id }}{% endif %}" 
                                            onclick="selectBucket(event, {{ bucket.id }}, {{ realm.id }})"
                                            class="bucket-link text-sm flex items-center gap-2 min-w-0 flex-1">
