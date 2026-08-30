@@ -3867,7 +3867,13 @@
         }
 
         function focusCameraOnTask(task) {
-            targetCameraZoom = 1.35;
+            // Matches the same zoom level used when a bucket is first opened (see
+            // renderBucketTaskSwipeDock/click-bucket handlers) - this was previously hardcoded to a
+            // tight 1.35 regardless of device, which is why every previous zoom-out adjustment elsewhere
+            // never actually showed up: this ran immediately afterward and silently overrode it back to
+            // a tight close-up every single time a bucket was opened or a task was tapped.
+            const isMobileTaskFocus = window.innerWidth < 768;
+            targetCameraZoom = isMobileTaskFocus ? 0.192 : 0.33;
             const verticalHudOffset = (window.innerHeight * 0.18);
             targetCameraOffset = {
                 x: (window.innerWidth / 2) - (task.x * targetCameraZoom),
