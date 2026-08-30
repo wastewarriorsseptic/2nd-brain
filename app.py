@@ -912,9 +912,13 @@ def create_item(
     month_days: Optional[str] = Form(""),
     months: Optional[str] = Form(""),
     amount: Optional[float] = Form(None),
-    is_shoppable: bool = Form(False),
+    is_shoppable: Optional[str] = Form(None),
     description: Optional[str] = Form(None)
 ):
+    # An unchecked checkbox sends nothing at all; a checked one sends "on" by default (or "true", since
+    # the form now sets that explicitly) - parsing this ourselves as a string sidesteps any ambiguity in
+    # how FastAPI/Pydantic would otherwise coerce a raw form value into a bool.
+    is_shoppable_flag = is_shoppable is not None and is_shoppable.strip().lower() in ("true", "on", "1", "yes")
     hour, minute = 9, 0
     if due_time and due_time.strip():
         try:
@@ -984,7 +988,7 @@ def create_item(
                 bucket_id=bucket_id,
                 due_date=target_due_date,
                 amount=amount,
-                is_shoppable=is_shoppable,
+                is_shoppable=is_shoppable_flag,
                 description=description,
                 recurring_group_id=group_id,
                 recurrence_type=recurrence_type
@@ -1199,13 +1203,16 @@ def update_item(
     month_days: Optional[str] = Form(""),
     months: Optional[str] = Form(""),
     amount: Optional[float] = Form(None),
-    is_shoppable: bool = Form(False),
+    is_shoppable: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
     bucket_id: Optional[int] = Form(None),
     update_series: bool = Form(False)
 ):
     referer = request.headers.get("referer")
     redirect_url = referer if referer else "/"
+
+    # Same manual string parsing as create_item - see the comment there for why.
+    is_shoppable_flag = is_shoppable is not None and is_shoppable.strip().lower() in ("true", "on", "1", "yes")
 
     hour, minute = 9, 0
     if due_time and due_time.strip():
@@ -1248,7 +1255,7 @@ def update_item(
             item.title = title
             item.due_date = new_due_date
             item.amount = amount
-            item.is_shoppable = is_shoppable
+            item.is_shoppable = is_shoppable_flag
             item.description = description
             item.bucket_id = target_bucket_id
             item.recurrence_type = recurrence_type
@@ -1302,7 +1309,7 @@ def update_item(
                         bucket_id=target_bucket_id,
                         due_date=target_due_date,
                         amount=amount,
-                        is_shoppable=is_shoppable,
+                        is_shoppable=is_shoppable_flag,
                         description=description,
                         recurring_group_id=item.recurring_group_id,
                         recurrence_type=recurrence_type
@@ -1312,7 +1319,7 @@ def update_item(
             item.title = title
             item.due_date = new_due_date
             item.amount = amount
-            item.is_shoppable = is_shoppable
+            item.is_shoppable = is_shoppable_flag
             item.description = description
             item.bucket_id = target_bucket_id
             item.recurrence_type = recurrence_type
