@@ -257,7 +257,7 @@
                                     {% endif %}
                                 </div>
 
-                                <div class="grid grid-cols-4 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-20 text-center items-center">
+                                <div class="grid grid-cols-4 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 md:w-0 md:overflow-hidden group-hover:opacity-100 group-hover:md:w-20 transition-all w-20 text-center items-center">
                                     {% if selected_realm_id == realm.id and not selected_bucket_id %}
                                     <button onclick="event.stopPropagation(); document.getElementById('add-bucket-modal').classList.remove('hidden')" 
                                             title="Add Bucket to {{ realm.name }}" class="w-5 text-center text-xs font-bold text-white hover:text-indigo-200">➕</button>
@@ -286,7 +286,7 @@
                                         </a>
                                     </div>
 
-                                    <div class="grid grid-cols-3 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 group-hover:opacity-100 transition w-16 text-center items-center">
+                                    <div class="grid grid-cols-3 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 md:w-0 md:overflow-hidden group-hover:opacity-100 group-hover:md:w-16 transition-all w-16 text-center items-center">
                                         {% if selected_bucket_id == bucket.id %}
                                         <button onclick="event.stopPropagation(); document.getElementById('add-item-modal').classList.remove('hidden')" 
                                                 title="Add Task to {{ bucket.name }}" class="w-5 text-center text-xs font-bold text-white hover:text-indigo-200">➕</button>
