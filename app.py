@@ -919,6 +919,7 @@ def create_item(
     # the form now sets that explicitly) - parsing this ourselves as a string sidesteps any ambiguity in
     # how FastAPI/Pydantic would otherwise coerce a raw form value into a bool.
     is_shoppable_flag = is_shoppable is not None and is_shoppable.strip().lower() in ("true", "on", "1", "yes")
+    print(f"[SHOP DEBUG] create_item raw is_shoppable form value = {is_shoppable!r}, parsed flag = {is_shoppable_flag}", flush=True)
     hour, minute = 9, 0
     if due_time and due_time.strip():
         try:
@@ -996,6 +997,7 @@ def create_item(
             session.add(new_item)
             session.commit()
             session.refresh(new_item)
+            print(f"[SHOP DEBUG] after commit+refresh, new_item.id={new_item.id} is_shoppable={new_item.is_shoppable!r}", flush=True)
 
             if reminder_offset == -1:
                 for day in range(1, 4):
