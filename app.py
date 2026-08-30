@@ -632,9 +632,11 @@ def find_or_create_user_and_log_in(request: Request, email: str, name: str):
             session.commit()
             session.refresh(user)
 
-            personal = Realm(name="Personal", icon="🔮", sort_order=0, user_id=user.id)
-            finance = Realm(name="Finance", icon="🔮", sort_order=1, user_id=user.id)
-            session.add_all([personal, finance])
+            shopping = Realm(name="Shopping", icon="🛒", sort_order=0, user_id=user.id)
+            home = Realm(name="Home", icon="🏡", sort_order=1, user_id=user.id)
+            work = Realm(name="Work", icon="💼", sort_order=2, user_id=user.id)
+            goals = Realm(name="Goals", icon="🏆", sort_order=3, user_id=user.id)
+            session.add_all([shopping, home, work, goals])
             session.commit()
 
         # Claim any pending invites for this email address
