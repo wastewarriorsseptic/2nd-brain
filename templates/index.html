@@ -2242,16 +2242,20 @@
                         const totalBucketsCombined = Math.max(1, combinedBuckets.length);
 
                         // Each bucket gets its own distinct ring, spiraling outward by index - restored
-                        // per feedback (a shared single ring was the wrong direction). Kept noticeably
-                        // tighter than the original spacing (260px base / +150px per ring) so realms with
-                        // just a few buckets still zoom in reasonably rather than sitting zoomed far out
-                        // to accommodate a spiral that could in theory reach much further.
-                        const bucketBaseDist = isMobile ? 175 : 155;
-                        const bucketRingGap = isMobile ? 115 : 100;
+                        // per feedback (a shared single ring was the wrong direction). The base distance
+                        // is computed, not guessed, so the innermost ring always clears the realm's own
+                        // hub circle plus that bucket's own inner task ring - a fixed guess here is what
+                        // let a task bleed visually behind the realm's circle once the spacing got tight.
+                        const focusedHubRadius = realm.radius * 0.55;
+                        const bucketCircleR = isMobile ? 38 : 34;
+                        const baseTaskOrbitForSpacing = isMobile ? 95 : 85;
+                        const bucketBaseDist = focusedHubRadius + bucketCircleR + baseTaskOrbitForSpacing + 30;
+                        const bucketRingGap = isMobile ? 135 : 115;
 
                         return combinedBuckets.map((bucket, bIdx) => {
                             const bucketAngle = (bIdx / totalBucketsCombined) * Math.PI * 2;
                             const bucketDist = bucketBaseDist + (bIdx * bucketRingGap);
+
 
 
                             if (bucket.isAddButton) {
@@ -2347,11 +2351,15 @@
                             // occupies at least the innermost ring, so it's always counted here too.
                             const ringCount = Math.max(1, Math.ceil(totalOrbitSlots / tasksPerRing));
                             const maxTaskOrbit = baseTaskOrbit + ((ringCount - 1) * taskRingGap);
+                            // Clean reach (no extra camera buffer) - this is how far this bucket's own
+                            // task cluster actually extends, used to start the bucket's own label already
+                            // outside all of its own tasks rather than reactively pushing past them.
+                            const taskClusterReach = (isMobile ? 38 : 34) + maxTaskOrbit;
                             // The +150 buffer (up from a flat 60) gives the label collision solver
                             // actual room to push a crowded bucket/task label further out without the
                             // camera cropping it off-screen - labels can now legitimately use that space
                             // to guarantee full visibility instead of overlapping.
-                            const bucketMaxReach = (isMobile ? 38 : 34) + maxTaskOrbit + 150;
+                            const bucketMaxReach = taskClusterReach + 150;
 
                             return {
                                 id: bucket.id,
@@ -2360,6 +2368,7 @@
                                 orbitRadius: bucketDist,
                                 radius: isMobile ? 38 : 34,
                                 maxReach: bucketMaxReach,
+                                taskClusterReach: taskClusterReach,
                                 tasks: filteredTasks,
                                 addTaskButton: addTaskButton
                             };
@@ -3004,22 +3013,49 @@
                         const widestLine = Math.max(...lines.map(l => spaceCtx.measureText(l).width));
                         const tWidth = widestLine + 24;
                         const tPillHeight = (lines.length * lineHeight) + (isActiveSwipeNode ? 16 : 12);
-                        const desiredTPillY = task.baseY + task.radius + (isActiveSwipeNode ? 12 : 8);
 
-                        const taskLabelRect = { x: task.baseX - tWidth / 2, y: desiredTPillY, w: tWidth, h: tPillHeight, dirY: 1, ownerBucketId: bucket.id };
+                        // In the linear swipe-dock timeline, every task sits in a horizontal row, so
+                        // "always below" is correct there. In the orbit view, point radially outward from
+                        // the BUCKET's own center through the task instead - that's what spreads task
+                        // labels out in whichever direction each task actually orbits, rather than every
+                        // task in a bucket competing for the same spot directly underneath it.
+                        let taskDirX = 0, taskDirY = 1;
+                        let tLabelCx = task.baseX;
+                        let tLabelCy = task.baseY + task.radius + (isActiveSwipeNode ? 12 : 8);
+
+                        if (!isSelectedBucket) {
+                            const bDx = task.baseX - bucket.x;
+                            const bDy = task.baseY - bucket.y;
+                            const bDist = Math.hypot(bDx, bDy) || 1;
+                            taskDirX = bDx / bDist;
+                            taskDirY = bDy / bDist;
+                            const taskLabelGap = task.radius + (isActiveSwipeNode ? 16 : 12);
+                            tLabelCx = task.baseX + taskDirX * taskLabelGap;
+                            tLabelCy = task.baseY + taskDirY * taskLabelGap;
+                        }
+
+                        const taskLabelRect = {
+                            x: tLabelCx - tWidth / 2,
+                            y: tLabelCy - tPillHeight / 2,
+                            w: tWidth, h: tPillHeight,
+                            dirX: taskDirX, dirY: taskDirY,
+                            ownerBucketId: bucket.id
+                        };
                         resolveLabelPushback(taskLabelRect, focusLabelRects, 500);
                         focusLabelRects.push(taskLabelRect);
 
                         // Ease toward the resolved position rather than snapping straight to it - other
                         // labels still react to the true instant target above, but this specific pill's
                         // on-screen position glides into any change instead of jumping.
-                        if (task._labelY === undefined) task._labelY = taskLabelRect.y;
+                        if (task._labelX === undefined) { task._labelX = taskLabelRect.x; task._labelY = taskLabelRect.y; }
+                        task._labelX += (taskLabelRect.x - task._labelX) * 0.25;
                         task._labelY += (taskLabelRect.y - task._labelY) * 0.25;
+                        const tPillX = task._labelX;
                         const tPillY = task._labelY;
 
                         spaceCtx.fillStyle = isActiveSwipeNode ? 'rgba(30, 41, 59, 0.98)' : 'rgba(15, 23, 42, 0.9)';
                         spaceCtx.beginPath();
-                        spaceCtx.roundRect(task.baseX - tWidth / 2, tPillY, tWidth, tPillHeight, 4);
+                        spaceCtx.roundRect(tPillX, tPillY, tWidth, tPillHeight, 4);
                         spaceCtx.fill();
 
                         if (isActiveSwipeNode) {
@@ -3030,8 +3066,9 @@
 
                         spaceCtx.fillStyle = isActiveSwipeNode ? '#ffffff' : '#e2e8f0';
                         const firstLineY = tPillY + (lineHeight / 2) + (isActiveSwipeNode ? 5 : 4);
+                        const textCenterX = tPillX + (tWidth / 2);
                         lines.forEach((line, lineIdx) => {
-                            spaceCtx.fillText(line, task.baseX, firstLineY + (lineIdx * lineHeight));
+                            spaceCtx.fillText(line, textCenterX, firstLineY + (lineIdx * lineHeight));
                         });
                         spaceCtx.restore();
                     });
@@ -3104,40 +3141,36 @@
                     const bWidth = nameWidth + (paddingX * 2);
                     const bPillHeight = 48;
                     
-                    const isBucketInBottomHalf = bucket.y > 0;
-                    // Point away from the realm's center (matching how the realm's own label points away
-                    // from screen-center) rather than toward it - pointing inward was aiming buckets'
-                    // labels straight at the crowded middle of the realm, including their own orbiting
-                    // tasks, which is exactly backwards for avoiding collisions.
-                    let desiredBPillY = isBucketInBottomHalf
-                        ? bucket.y + bucket.radius + 14
-                        : bucket.y - bucket.radius - bPillHeight - 14;
+                    // Points radially outward - away from the realm center, straight through the bucket
+                    // - and starts already OUTSIDE this bucket's own full task cluster (taskClusterReach),
+                    // not just past the bare circle. That second part is what actually stops the label
+                    // from starting inside its own task ring and having to fight its way past several of
+                    // its own tasks reactively - it simply begins beyond all of them.
+                    const realmToBucketDx = bucket.x - drawX;
+                    const realmToBucketDy = bucket.y - drawY;
+                    const realmToBucketDist = Math.hypot(realmToBucketDx, realmToBucketDy) || 1;
+                    const bucketDirX = realmToBucketDx / realmToBucketDist;
+                    const bucketDirY = realmToBucketDy / realmToBucketDist;
 
-                    // Start already clear of THIS bucket's own task labels, rather than starting right at
-                    // the bucket's edge and relying on the generic solver to react its way past however
-                    // many of its own tasks happen to be in that direction. Without this, a bucket with
-                    // several tasks could get pushed further and further until its own name ends up
-                    // visually below one of its own tasks - a confusing hierarchy even once nothing is
-                    // technically overlapping anymore.
-                    const ownTaskRects = focusLabelRects.filter(r => r.ownerBucketId === bucket.id);
-                    if (ownTaskRects.length > 0) {
-                        if (isBucketInBottomHalf) {
-                            const lowestOwnTaskEdge = Math.max(...ownTaskRects.map(r => r.y + r.h));
-                            desiredBPillY = Math.max(desiredBPillY, lowestOwnTaskEdge + 14);
-                        } else {
-                            const highestOwnTaskEdge = Math.min(...ownTaskRects.map(r => r.y));
-                            desiredBPillY = Math.min(desiredBPillY, highestOwnTaskEdge - bPillHeight - 14);
-                        }
-                    }
+                    const bucketLabelGap = (bucket.taskClusterReach || bucket.radius + 40) + 16;
+                    const bLabelCx = bucket.x + bucketDirX * bucketLabelGap;
+                    const bLabelCy = bucket.y + bucketDirY * bucketLabelGap;
 
-                    const bucketLabelRect = { x: bucket.x - bWidth / 2, y: desiredBPillY, w: bWidth, h: bPillHeight, dirY: isBucketInBottomHalf ? 1 : -1 };
+                    const bucketLabelRect = {
+                        x: bLabelCx - bWidth / 2,
+                        y: bLabelCy - bPillHeight / 2,
+                        w: bWidth, h: bPillHeight,
+                        dirX: bucketDirX, dirY: bucketDirY
+                    };
                     resolveLabelPushback(bucketLabelRect, focusLabelRects, 500);
                     focusLabelRects.push(bucketLabelRect);
 
                     // Same easing as task labels - avoids a visible snap if the resolved position
                     // shifts frame to frame.
-                    if (bucket._labelY === undefined) bucket._labelY = bucketLabelRect.y;
+                    if (bucket._labelX === undefined) { bucket._labelX = bucketLabelRect.x; bucket._labelY = bucketLabelRect.y; }
+                    bucket._labelX += (bucketLabelRect.x - bucket._labelX) * 0.25;
                     bucket._labelY += (bucketLabelRect.y - bucket._labelY) * 0.25;
+                    const bPillX = bucket._labelX;
                     const bPillY = bucket._labelY;
 
                     spaceCtx.fillStyle = isAddBucketButton ? 'rgba(6, 78, 59, 0.9)' : (isSelectedBucket ? 'rgba(3, 105, 161, 0.98)' : 'rgba(15, 23, 42, 0.98)');
@@ -3146,13 +3179,13 @@
                     spaceCtx.shadowColor = isAddBucketButton ? '#34d399' : '#38bdf8';
                     spaceCtx.shadowBlur = 18;
                     spaceCtx.beginPath();
-                    spaceCtx.roundRect(bucket.x - (bWidth / 2), bPillY, bWidth, bPillHeight, 10);
+                    spaceCtx.roundRect(bPillX, bPillY, bWidth, bPillHeight, 10);
                     spaceCtx.fill();
                     spaceCtx.stroke();
 
                     spaceCtx.fillStyle = '#ffffff';
                     spaceCtx.shadowBlur = 0;
-                    spaceCtx.fillText(nameText, bucket.x, bPillY + (bPillHeight / 2));
+                    spaceCtx.fillText(nameText, bPillX + (bWidth / 2), bPillY + (bPillHeight / 2));
 
                     spaceCtx.restore();
                 });
@@ -3195,29 +3228,28 @@
             return { x: pillX, y: pillY, w: bTextWidth, h: pillHeight };
         }
 
-        // Nudges `rect` further along its own preferred direction (dirY: -1 further up/away, +1
-        // further down/away from whatever circle it's attached to) until it no longer overlaps any
-        // rect already in `existingRects`. Purely vertical, since every label here is already anchored
-        // directly above or below its circle - this just lets it drift a bit further out when something
-        // is already occupying the spot closer in, rather than jumping sideways in a confusing way.
-        // Capped by maxPush so a label in a genuinely crowded spot drifts a limited, still-readable
-        // distance from its own node rather than sliding arbitrarily far away trying to find open space -
-        // a small residual overlap in an extreme case is better than a label nobody can tell belongs to
-        // its node anymore.
+        // Nudges `rect` further along its own preferred direction (dirX/dirY: a unit vector pointing
+        // away from whatever node it's attached to) until it no longer overlaps any rect already in
+        // `existingRects`. Works in any direction, not just up/down - this is what lets each label fan
+        // out radially (away from the realm for a bucket, away from its bucket for a task) instead of
+        // every label competing for the same "above or below" real estate. Capped by maxPush so a label
+        // in a genuinely crowded spot drifts a limited distance before the camera's own margin (sized to
+        // match) runs out, rather than sliding arbitrarily far.
         function resolveLabelPushback(rect, existingRects, maxPush = 90, maxIterations = 12) {
             const padding = 8;
-            const startY = rect.y;
+            let pushed = 0;
             for (let iter = 0; iter < maxIterations; iter++) {
                 let moved = false;
                 for (const other of existingRects) {
                     const overlapX = Math.min(rect.x + rect.w, other.x + other.w) - Math.max(rect.x, other.x);
                     const overlapY = Math.min(rect.y + rect.h, other.y + other.h) - Math.max(rect.y, other.y);
                     if (overlapX + padding > 0 && overlapY + padding > 0) {
-                        const pushedSoFar = Math.abs(rect.y - startY);
-                        const remainingBudget = maxPush - pushedSoFar;
+                        const remainingBudget = maxPush - pushed;
                         if (remainingBudget <= 0) continue;
-                        const actualPush = Math.min(overlapY + padding, remainingBudget);
-                        rect.y += rect.dirY * actualPush;
+                        const step = Math.min(Math.max(overlapX, overlapY) + padding, remainingBudget);
+                        rect.x += rect.dirX * step;
+                        rect.y += rect.dirY * step;
+                        pushed += step;
                         moved = true;
                     }
                 }
