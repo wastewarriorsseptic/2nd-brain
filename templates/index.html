@@ -2241,9 +2241,22 @@
                             : realBuckets.concat([{ id: `__add_bucket__${realm.id}`, name: 'Add Bucket', isAddButton: true }]);
                         const totalBucketsCombined = Math.max(1, combinedBuckets.length);
 
+                        // A single ring sized to how many buckets actually exist - same principle as the
+                        // realm overview ring - instead of the old fixed spiral (260px, +150px per bucket
+                        // regardless of count), which kept the camera zoomed out even for a realm with
+                        // only 2-3 buckets, since the bounding box was sized for a spiral that could in
+                        // theory reach much further out.
+                        spaceCtx.font = 'bold 32px sans-serif';
+                        const bucketCircleRadius = isMobile ? 38 : 34;
+                        const bucketPillWidths = combinedBuckets.map(b => spaceCtx.measureText(b.name).width + 44);
+                        const maxBucketPillWidth = Math.max(...bucketPillWidths, bucketCircleRadius * 2);
+                        const minBucketArcSpacing = Math.max(maxBucketPillWidth, bucketCircleRadius * 2) + (isMobile ? 40 : 34);
+                        const minBucketRingRadius = (minBucketArcSpacing * totalBucketsCombined) / (Math.PI * 2);
+                        const bucketRingRadius = Math.max(isMobile ? 150 : 130, minBucketRingRadius);
+
                         return combinedBuckets.map((bucket, bIdx) => {
                             const bucketAngle = (bIdx / totalBucketsCombined) * Math.PI * 2;
-                            const bucketDist = (isMobile ? 260 : 235) + (bIdx * 150);
+                            const bucketDist = bucketRingRadius;
 
                             if (bucket.isAddButton) {
                                 return {
@@ -2991,7 +3004,7 @@
                         const desiredTPillY = task.baseY + task.radius + (isActiveSwipeNode ? 12 : 8);
 
                         const taskLabelRect = { x: task.baseX - tWidth / 2, y: desiredTPillY, w: tWidth, h: tPillHeight, dirY: 1 };
-                        resolveLabelPushback(taskLabelRect, focusLabelRects);
+                        resolveLabelPushback(taskLabelRect, focusLabelRects, 70);
                         focusLabelRects.push(taskLabelRect);
 
                         // Ease toward the resolved position rather than snapping straight to it - other
@@ -3098,7 +3111,7 @@
                         : bucket.y - bucket.radius - bPillHeight - 14;
 
                     const bucketLabelRect = { x: bucket.x - bWidth / 2, y: desiredBPillY, w: bWidth, h: bPillHeight, dirY: isBucketInBottomHalf ? 1 : -1 };
-                    resolveLabelPushback(bucketLabelRect, focusLabelRects);
+                    resolveLabelPushback(bucketLabelRect, focusLabelRects, 130);
                     focusLabelRects.push(bucketLabelRect);
 
                     // Same easing as task labels - avoids a visible snap if the resolved position
@@ -3167,15 +3180,24 @@
         // rect already in `existingRects`. Purely vertical, since every label here is already anchored
         // directly above or below its circle - this just lets it drift a bit further out when something
         // is already occupying the spot closer in, rather than jumping sideways in a confusing way.
-        function resolveLabelPushback(rect, existingRects, maxIterations = 12) {
+        // Capped by maxPush so a label in a genuinely crowded spot drifts a limited, still-readable
+        // distance from its own node rather than sliding arbitrarily far away trying to find open space -
+        // a small residual overlap in an extreme case is better than a label nobody can tell belongs to
+        // its node anymore.
+        function resolveLabelPushback(rect, existingRects, maxPush = 90, maxIterations = 12) {
             const padding = 8;
+            const startY = rect.y;
             for (let iter = 0; iter < maxIterations; iter++) {
                 let moved = false;
                 for (const other of existingRects) {
                     const overlapX = Math.min(rect.x + rect.w, other.x + other.w) - Math.max(rect.x, other.x);
                     const overlapY = Math.min(rect.y + rect.h, other.y + other.h) - Math.max(rect.y, other.y);
                     if (overlapX + padding > 0 && overlapY + padding > 0) {
-                        rect.y += rect.dirY * (overlapY + padding);
+                        const pushedSoFar = Math.abs(rect.y - startY);
+                        const remainingBudget = maxPush - pushedSoFar;
+                        if (remainingBudget <= 0) continue;
+                        const actualPush = Math.min(overlapY + padding, remainingBudget);
+                        rect.y += rect.dirY * actualPush;
                         moved = true;
                     }
                 }
