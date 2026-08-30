@@ -2962,20 +2962,20 @@
                         spaceCtx.save();
                         spaceCtx.textAlign = 'center';
                         spaceCtx.textBaseline = 'middle';
-                        spaceCtx.font = isActiveSwipeNode ? 'bold 13px sans-serif' : '12px sans-serif';
+                        spaceCtx.font = isActiveSwipeNode ? 'bold 40px sans-serif' : '36px sans-serif';
 
                         // Wrap to multiple centered lines instead of one ever-widening line - this is
                         // what keeps a long task title from overlapping the next task's label, whether
                         // they're 160px apart in the linear swipe-dock view or spread around a bucket's
                         // orbit ring.
-                        const maxLabelWidth = 130;
-                        const lineHeight = isActiveSwipeNode ? 16 : 15;
+                        const maxLabelWidth = 340;
+                        const lineHeight = isActiveSwipeNode ? 46 : 42;
                         const lines = wrapTextToWidth(spaceCtx, task.title, maxLabelWidth, 3);
 
                         const widestLine = Math.max(...lines.map(l => spaceCtx.measureText(l).width));
-                        const tWidth = widestLine + 16;
-                        const tPillHeight = (lines.length * lineHeight) + (isActiveSwipeNode ? 10 : 8);
-                        const tPillY = task.y + task.radius + (isActiveSwipeNode ? 8 : 4);
+                        const tWidth = widestLine + 36;
+                        const tPillHeight = (lines.length * lineHeight) + (isActiveSwipeNode ? 22 : 18);
+                        const tPillY = task.y + task.radius + (isActiveSwipeNode ? 12 : 8);
 
                         spaceCtx.fillStyle = isActiveSwipeNode ? 'rgba(30, 41, 59, 0.98)' : 'rgba(15, 23, 42, 0.9)';
                         spaceCtx.beginPath();
@@ -3057,17 +3057,17 @@
                     spaceCtx.shadowBlur = 0;
                     spaceCtx.fillText(isAddBucketButton ? '➕' : '⭐', bucket.x - (bucket.radius * 0.03), bucket.y + (bucket.radius * 0.05));
 
-                    spaceCtx.font = 'bold 17px sans-serif';
+                    spaceCtx.font = 'bold 48px sans-serif';
                     const nameText = bucket.name;
                     const nameWidth = spaceCtx.measureText(nameText).width;
-                    const paddingX = 18;
+                    const paddingX = 30;
                     const bWidth = nameWidth + (paddingX * 2);
-                    const bPillHeight = 30;
+                    const bPillHeight = 68;
                     
                     const isBucketInBottomHalf = bucket.y > 0;
                     const bPillY = isBucketInBottomHalf
-                        ? bucket.y - bucket.radius - bPillHeight - 10
-                        : bucket.y + bucket.radius + 10;
+                        ? bucket.y - bucket.radius - bPillHeight - 14
+                        : bucket.y + bucket.radius + 14;
 
                     spaceCtx.fillStyle = isAddBucketButton ? 'rgba(6, 78, 59, 0.9)' : (isSelectedBucket ? 'rgba(3, 105, 161, 0.98)' : 'rgba(15, 23, 42, 0.98)');
                     spaceCtx.strokeStyle = isAddBucketButton ? '#34d399' : '#38bdf8';
