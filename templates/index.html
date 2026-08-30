@@ -3978,6 +3978,12 @@
 
             if (activeSelectedRealm) {
                 activeSelectedRealm.buckets.forEach(bucket => {
+                    // The synthetic "All Tasks" bucket sits at the same position as the devil core
+                    // itself, so leaving it in this check would swallow every tap meant for the devil
+                    // (re-opening/closing the bucket) before the realm-level "tap again to go back to
+                    // the universe" logic below ever gets a chance to run.
+                    if (bucket.id === '__all_tasks_bucket__') return;
+
                     const dist = Math.hypot(worldX - bucket.x, worldY - bucket.y);
                     const hitNode = dist <= bucket.radius + 28;
 
