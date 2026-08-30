@@ -153,6 +153,7 @@ def safe_apply_migrations():
         with engine.begin() as conn:
             conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS recurrence_type VARCHAR DEFAULT \'none\';'))
             conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;'))
+            conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS is_shoppable BOOLEAN DEFAULT FALSE;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT \'UTC\';'))
     else:
         sqlite_file_name = "brain.db"
@@ -178,6 +179,8 @@ def safe_apply_migrations():
                 cursor.execute('ALTER TABLE item ADD COLUMN "recurrence_type" VARCHAR DEFAULT "none";')
             if 'completed_at' not in item_cols:
                 cursor.execute('ALTER TABLE item ADD COLUMN "completed_at" TIMESTAMP;')
+            if 'is_shoppable' not in item_cols:
+                cursor.execute('ALTER TABLE item ADD COLUMN "is_shoppable" BOOLEAN DEFAULT 0;')
 
             cursor.execute("PRAGMA table_info(users);")
             user_cols = [col[1] for col in cursor.fetchall()]
@@ -219,6 +222,7 @@ class Item(SQLModel, table=True):
     title: str
     description: Optional[str] = None
     amount: Optional[float] = None
+    is_shoppable: bool = Field(default=False)
     due_date: datetime
     is_completed: bool = False
     completed_at: Optional[datetime] = Field(default=None)
@@ -908,6 +912,7 @@ def create_item(
     month_days: Optional[str] = Form(""),
     months: Optional[str] = Form(""),
     amount: Optional[float] = Form(None),
+    is_shoppable: bool = Form(False),
     description: Optional[str] = Form(None)
 ):
     hour, minute = 9, 0
@@ -979,6 +984,7 @@ def create_item(
                 bucket_id=bucket_id,
                 due_date=target_due_date,
                 amount=amount,
+                is_shoppable=is_shoppable,
                 description=description,
                 recurring_group_id=group_id,
                 recurrence_type=recurrence_type
@@ -1193,6 +1199,7 @@ def update_item(
     month_days: Optional[str] = Form(""),
     months: Optional[str] = Form(""),
     amount: Optional[float] = Form(None),
+    is_shoppable: bool = Form(False),
     description: Optional[str] = Form(None),
     bucket_id: Optional[int] = Form(None),
     update_series: bool = Form(False)
@@ -1241,6 +1248,7 @@ def update_item(
             item.title = title
             item.due_date = new_due_date
             item.amount = amount
+            item.is_shoppable = is_shoppable
             item.description = description
             item.bucket_id = target_bucket_id
             item.recurrence_type = recurrence_type
@@ -1294,6 +1302,7 @@ def update_item(
                         bucket_id=target_bucket_id,
                         due_date=target_due_date,
                         amount=amount,
+                        is_shoppable=is_shoppable,
                         description=description,
                         recurring_group_id=item.recurring_group_id,
                         recurrence_type=recurrence_type
@@ -1303,6 +1312,7 @@ def update_item(
             item.title = title
             item.due_date = new_due_date
             item.amount = amount
+            item.is_shoppable = is_shoppable
             item.description = description
             item.bucket_id = target_bucket_id
             item.recurrence_type = recurrence_type

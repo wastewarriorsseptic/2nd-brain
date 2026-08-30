@@ -303,6 +303,7 @@
                              data-due-time="{% if item.due_date.strftime('%H:%M') != '09:00' %}{{ item.due_date.strftime('%H:%M') }}{% endif %}"
                              data-due-date-formatted="{{ item.due_date.strftime('%b %d, %Y') }}"
                              data-amount="{{ item.amount or '' }}"
+                             data-is-shoppable="{{ 'true' if item.is_shoppable else 'false' }}"
                              data-description="{{ item.description or '' }}"
                              data-title="{{ item.title }}"
                              data-item-id="{{ item.id }}"
@@ -382,12 +383,22 @@
                                     {% endif %}
 
                                     <div class="flex items-center gap-1">
+                                        {% if item.is_shoppable %}
+                                        <button onclick="openAmazonShop(this)"
+                                                data-title="{{ item.title }}"
+                                                data-amount="{{ item.amount or '' }}"
+                                                title="Shop on Amazon"
+                                                class="text-slate-500 hover:text-amber-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-700/50">
+                                            🛒
+                                        </button>
+                                        {% endif %}
                                         <button onclick="openEditItem(this)"
                                                 data-id="{{ item.id }}"
                                                 data-title="{{ item.title }}"
                                                 data-due-date="{{ item.due_date.strftime('%Y-%m-%d') }}"
                                                 data-due-time="{% if item.due_date.strftime('%H:%M') != '09:00' %}{{ item.due_date.strftime('%H:%M') }}{% endif %}"
                                                 data-amount="{{ item.amount or '' }}"
+                                                data-is-shoppable="{{ 'true' if item.is_shoppable else 'false' }}"
                                                 data-description="{{ item.description or '' }}"
                                                 data-recurring="{{ 'true' if (item.recurrence_type and item.recurrence_type != 'none') or item.recurring_group_id else 'false' }}"
                                                 data-recurrence-type="{{ item.recurrence_type or 'none' }}"
@@ -521,6 +532,11 @@
                         <h3 id="hud-task-title" class="text-sm font-bold text-white break-words leading-snug">Task Title</h3>
                         <p id="hud-task-date" class="text-[11px] text-indigo-300 font-mono mt-0.5">📅 Due Date</p>
                     </div>
+
+                    <button id="hud-shop-btn" onclick="openAmazonShopFromHud()" title="Shop on Amazon"
+                            class="hidden text-slate-400 hover:text-amber-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-800 shrink-0">
+                        🛒
+                    </button>
 
                     <button id="hud-edit-btn" onclick="triggerHudEdit()" title="Edit Task"
                             class="text-slate-400 hover:text-indigo-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-800 shrink-0">
@@ -896,6 +912,14 @@
                            class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
                 </div>
 
+                <div class="w-full flex items-start gap-2">
+                    <input type="checkbox" name="is_shoppable" id="add-item-shoppable"
+                           class="mt-0.5 rounded border-slate-700 bg-slate-900 text-indigo-500 focus:ring-indigo-500 cursor-pointer shrink-0">
+                    <label for="add-item-shoppable" class="text-xs font-semibold text-slate-400 cursor-pointer leading-snug">
+                        🛒 Shoppable on Amazon <span class="font-normal text-slate-500">(the Amount above becomes your budget - a "Shop" button opens Amazon pre-filtered to it)</span>
+                    </label>
+                </div>
+
                 <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Due Date</label>
                     <input type="date" name="due_date" required value="{{ today.strftime('%Y-%m-%d') }}" onclick="this.showPicker()"
@@ -994,6 +1018,14 @@
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Amount ($ optional)</label>
                     <input type="number" step="0.01" name="amount" id="edit-item-amount" placeholder="0.00" 
                            class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                </div>
+
+                <div class="w-full flex items-start gap-2">
+                    <input type="checkbox" name="is_shoppable" id="edit-item-shoppable"
+                           class="mt-0.5 rounded border-slate-700 bg-slate-900 text-indigo-500 focus:ring-indigo-500 cursor-pointer shrink-0">
+                    <label for="edit-item-shoppable" class="text-xs font-semibold text-slate-400 cursor-pointer leading-snug">
+                        🛒 Shoppable on Amazon <span class="font-normal text-slate-500">(the Amount above becomes your budget - a "Shop" button opens Amazon pre-filtered to it)</span>
+                    </label>
                 </div>
 
                 <div class="w-full">
@@ -2010,12 +2042,43 @@
             document.getElementById('edit-bucket-modal').classList.remove('hidden');
         }
 
+        // Builds an Amazon search URL from a title, with a budget (if given) used as a max-price filter
+        // via Amazon's own "high-price" search parameter (in cents) - opens in a new tab, ready for the
+        // user to pick and buy the exact item themselves. No Amazon API involved; this is just a
+        // well-formed search link, so it needs no API key, no approval process, and can never place an
+        // order without the person's own final tap.
+        function openAmazonSearch(title, amount) {
+            let url = `https://www.amazon.com/s?k=${encodeURIComponent(title || '')}`;
+            const budget = parseFloat(amount);
+            if (!isNaN(budget) && budget > 0) {
+                url += `&high-price=${Math.round(budget * 100)}`;
+            }
+            window.open(url, '_blank', 'noopener,noreferrer');
+        }
+
+        // Dashboard task-card version - reads the title/amount off the button's own data attributes,
+        // matching the same pattern openEditItem already uses.
+        function openAmazonShop(element) {
+            const title = element.getAttribute('data-title') || '';
+            const amount = element.getAttribute('data-amount') || '';
+            openAmazonSearch(title, amount);
+        }
+
+        // Space View HUD card version - reads straight off the currently-selected task object rather
+        // than a data attribute, since the HUD button isn't re-rendered per task the way dashboard cards
+        // are; showHudCard() just keeps activeSelectedTask pointed at whichever task is open.
+        function openAmazonShopFromHud() {
+            if (!activeSelectedTask) return;
+            openAmazonSearch(activeSelectedTask.title, activeSelectedTask.amount);
+        }
+
         function openEditItem(element) {
             const id = element.getAttribute('data-id');
             const title = element.getAttribute('data-title') || '';
             const dueDate = element.getAttribute('data-due-date') || '';
             const dueTime = element.getAttribute('data-due-time') || '';
             const amount = element.getAttribute('data-amount') || '';
+            const isShoppable = element.getAttribute('data-is-shoppable') === 'true';
             const description = element.getAttribute('data-description') || '';
             const isRecurring = element.getAttribute('data-recurring') === 'true';
             const recurrenceType = element.getAttribute('data-recurrence-type') || 'none';
@@ -2027,6 +2090,7 @@
             document.getElementById('edit-item-due-date').value = dueDate;
             document.getElementById('edit-item-due-time').value = dueTime;
             document.getElementById('edit-item-amount').value = amount;
+            document.getElementById('edit-item-shoppable').checked = isShoppable;
             document.getElementById('edit-item-description').value = description;
 
             // Set Realm & Bucket dropdown selections
@@ -2296,6 +2360,7 @@
                                     dueTime: el.getAttribute('data-due-time') || '',
                                     dueDateFormatted: el.getAttribute('data-due-date-formatted') || '',
                                     amount: el.getAttribute('data-amount') || '',
+                                    isShoppable: el.getAttribute('data-is-shoppable') === 'true',
                                     description: el.getAttribute('data-description') || '',
                                     recurrenceType: el.getAttribute('data-recurrence-type') || 'none',
                                     bucketId: bucket.id,
@@ -4286,6 +4351,9 @@
             title.innerText = task.title;
             date.innerText = `📅 ${task.dueDateFormatted}`;
             idInput.value = task.id;
+
+            const shopBtn = document.getElementById('hud-shop-btn');
+            if (shopBtn) shopBtn.classList.toggle('hidden', !task.isShoppable);
 
             if (task.isOverdue) {
                 badgeStatus.innerText = '⚠️ Overdue';
