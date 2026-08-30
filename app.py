@@ -87,9 +87,9 @@ SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-brain-key-2026")
 #   APPLE_PRIVATE_KEY   - the full contents of the downloaded .p8 file (including the BEGIN/END lines).
 #                         If stored as a single-line env var, use literal "\n" for line breaks - they're
 #                         converted back to real newlines below.
-APPLE_CLIENT_ID = os.getenv("APPLE_CLIENT_ID")
-APPLE_TEAM_ID = os.getenv("APPLE_TEAM_ID")
-APPLE_KEY_ID = os.getenv("APPLE_KEY_ID")
+APPLE_CLIENT_ID = os.getenv("APPLE_CLIENT_ID", "").strip() or None
+APPLE_TEAM_ID = os.getenv("APPLE_TEAM_ID", "").strip() or None
+APPLE_KEY_ID = os.getenv("APPLE_KEY_ID", "").strip() or None
 
 def _normalize_apple_private_key(raw: str) -> str:
     """Handles whichever way the .p8 contents ended up in the env var: real newlines,
