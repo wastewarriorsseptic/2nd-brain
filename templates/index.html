@@ -2390,8 +2390,10 @@
         let initialPinchDistance = null;
         let frameCount = 0;
         let lastTouchTime = 0;
+        // Always starts collapsed - deliberately NOT persisted across page reloads (which happen
+        // often in this app, e.g. after completing a task), so the digest never reopens expanded on
+        // its own. Only an explicit tap opens it, each time.
         let dailyDigestExpanded = false;
-        try { dailyDigestExpanded = localStorage.getItem('daily_digest_expanded') === 'true'; } catch (e) {}
 
         // Remembers which realm/bucket the user drilled into, so creating a task/bucket (which does a
         // full page reload via a normal form POST) can restore that exact spot instead of dumping the
@@ -2525,7 +2527,6 @@
 
         function toggleDailyDigestExpanded() {
             dailyDigestExpanded = !dailyDigestExpanded;
-            try { localStorage.setItem('daily_digest_expanded', dailyDigestExpanded ? 'true' : 'false'); } catch (e) {}
             applyDailyDigestExpandedState();
         }
 
@@ -2560,6 +2561,11 @@
         function navigateToDigestItem(realmId, bucketId, itemId) {
             const realm = spaceRealms.find(r => !r.isAddButton && String(r.id) === String(realmId));
             if (!realm) return;
+
+            // Collapse it now, not just hide it - so it comes back minimized (not expanded) the next
+            // time the user returns to Universe view, rather than staying open in the background.
+            dailyDigestExpanded = false;
+            applyDailyDigestExpandedState();
 
             activeSelectedBucket = null;
             activeSwipeTaskId = null;
