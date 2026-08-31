@@ -2576,21 +2576,42 @@
             activeSelectedBucket = bucket;
             renderBucketTaskSwipeDock(bucket);
 
+            // bucket.x/y (and task.x/y) are ONLY ever written by the render loop, and only for
+            // whichever bucket is already the active selection as of last frame (see renderSpaceFrame's
+            // `if (activeSelectedBucket && !isSelectedBucket) return;` guard). Since we just selected a
+            // realm+bucket that's brand new this instant, those properties are still undefined here -
+            // reading them handed the camera a NaN target, which silently corrupts every canvas
+            // transform from that point on and froze the whole view. Recomputing from realm.baseX/baseY
+            // (always a real, stable number, set once at construction) is guaranteed never to be NaN;
+            // the render loop takes over and lerps smoothly to the true position on the very next frame,
+            // so this one-frame approximation is imperceptible.
+            const bucketWorldX = realm.baseX + Math.cos(bucket.angle) * bucket.orbitRadius;
+            const bucketWorldY = realm.baseY + Math.sin(bucket.angle) * bucket.orbitRadius;
+
             const isMobile = window.innerWidth < 768;
             targetCameraZoom = isMobile ? 0.24 : 0.413;
             targetCameraOffset = {
-                x: (window.innerWidth / 2) - (bucket.x * targetCameraZoom),
-                y: (window.innerHeight / 2) - (bucket.y * targetCameraZoom)
+                x: (window.innerWidth / 2) - (bucketWorldX * targetCameraZoom),
+                y: (window.innerHeight / 2) - (bucketWorldY * targetCameraZoom)
             };
 
             // Completed tasks are never rendered as nodes in Space View (the per-bucket scan that
             // builds bucket.tasks skips them outright), so a "Completed Yesterday" entry can only land
             // you on its bucket - everything else (overdue/today/tomorrow) resolves to the exact task
-            // node here and gets the tighter, precisely-centered focus instead.
+            // node here and gets the tighter, precisely-centered focus instead. task.angle/orbitRadius
+            // (unlike task.x/y) ARE set once at construction and always valid, so this stays NaN-safe.
             const task = itemId ? bucket.tasks.find(t => String(t.id) === String(itemId)) : null;
             if (task) {
                 activeSwipeTaskId = task.id;
-                focusCameraOnTask(task);
+
+                const taskWorldX = bucketWorldX + Math.cos(task.angle) * task.orbitRadius;
+                const taskWorldY = bucketWorldY + Math.sin(task.angle) * task.orbitRadius;
+                const verticalHudOffset = (window.innerHeight * 0.18);
+                targetCameraOffset = {
+                    x: (window.innerWidth / 2) - (taskWorldX * targetCameraZoom),
+                    y: (window.innerHeight / 2) - (taskWorldY * targetCameraZoom) - verticalHudOffset
+                };
+
                 const dock = document.getElementById('bucket-task-swipe-dock');
                 if (dock) dock.classList.remove('hidden');
                 const wrapper = document.getElementById('swipe-dock-cards-wrapper');
