@@ -3513,11 +3513,11 @@
                     allBucketsOnCanvas.push(bucket);
 
                     if (isSelectedBucket && bucket.tasks.length > 0) {
-                        // Must clear the widest a label can possibly be (maxLabelWidth 300 + its 24px
-                        // padding = 324px), or two adjacent full-width labels are guaranteed to overlap
+                        // Must clear the widest a label can possibly be (maxLabelWidth 380 + its 24px
+                        // padding = 404px), or two adjacent full-width labels are guaranteed to overlap
                         // horizontally no matter what the (vertical-only) label-pushback solver does -
                         // that solver can shove a label up/down to dodge a neighbor, but never sideways.
-                        const stepSpacing = 360;
+                        const stepSpacing = 420;
                         const addButtonSlotX = bucket.x + 90;
                         const startLinearX = addButtonSlotX + stepSpacing;
 
@@ -3613,7 +3613,7 @@
                     const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
 
                     if (isSelectedBucket && bucket.tasks.length > 0 && bucket.id !== '__all_tasks_bucket__') {
-                        const stepSpacing = 360; // Kept in sync with the matching constant above
+                        const stepSpacing = 420; // Kept in sync with the matching constant above
                         const addButtonSlotX = bucket.x + 90;
                         const startLinearX = addButtonSlotX + stepSpacing;
 
@@ -3686,7 +3686,7 @@
                             spaceCtx.save();
                             spaceCtx.textAlign = 'center';
                             spaceCtx.textBaseline = 'middle';
-                            spaceCtx.font = isActiveSwipeNode ? 'bold 44px sans-serif' : '40px sans-serif';
+                            spaceCtx.font = isActiveSwipeNode ? 'bold 46px sans-serif' : '42px sans-serif';
 
                             const dateLabel = getRelativeDateLabel(task.dueDate, task.dueDateFormatted);
                             const isSoon = dateLabel === 'Today' || dateLabel === 'Tomorrow';
@@ -3705,15 +3705,18 @@
                         spaceCtx.save();
                         spaceCtx.textAlign = 'center';
                         spaceCtx.textBaseline = 'middle';
-                        spaceCtx.font = isActiveSwipeNode ? 'bold 50px sans-serif' : '46px sans-serif';
+                        spaceCtx.font = isActiveSwipeNode ? 'bold 52px sans-serif' : '48px sans-serif';
 
                         // Wrap to multiple centered lines instead of one ever-widening line - this is
                         // what keeps a long task title from overlapping the next task's label, whether
                         // they're 160px apart in the linear swipe-dock view or spread around a bucket's
                         // orbit ring. maxLines is generous (8) rather than a tight cap - truncating with
-                        // "…" hid real task text, which is worse than a taller label.
-                        const maxLabelWidth = 300;
-                        const lineHeight = isActiveSwipeNode ? 58 : 54;
+                        // "…" hid real task text, which is worse than a taller label. Wider than it needs
+                        // to be for short titles on purpose: a narrow wrap turns a long title into a very
+                        // TALL column that can run out of vertical room to dodge the realm's own hub
+                        // circle - trading width for height here directly avoids that.
+                        const maxLabelWidth = 380;
+                        const lineHeight = isActiveSwipeNode ? 60 : 56;
                         const lines = wrapTextToWidth(spaceCtx, task.title, maxLabelWidth, 8);
 
                         const widestLine = Math.max(...lines.map(l => spaceCtx.measureText(l).width));
@@ -3722,7 +3725,7 @@
                         const desiredTPillY = task.baseY + task.radius + (isActiveSwipeNode ? 12 : 8);
 
                         const taskLabelRect = { x: task.baseX - tWidth / 2, y: desiredTPillY, w: tWidth, h: tPillHeight, dirY: 1, ownerBucketId: bucket.id };
-                        resolveLabelPushback(taskLabelRect, focusLabelRects, 200);
+                        resolveLabelPushback(taskLabelRect, focusLabelRects, 320);
                         focusLabelRects.push(taskLabelRect);
 
                         // Ease toward the resolved position rather than snapping straight to it - other
