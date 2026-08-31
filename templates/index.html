@@ -559,6 +559,21 @@
                     ✖ Close View
                 </button>
             </div>
+
+            <!-- Daily Digest HUD: same Overdue / Due Today / Due Tomorrow / Completed Yesterday
+                 breakdown as the daily morning email, but only ever shown at the top-level Universe
+                 view (hidden the instant a realm is selected) - see updateDailyDigestVisibility(). -->
+            <div id="daily-digest-hud" class="hidden">
+                <div id="daily-digest-header" onclick="toggleDailyDigestExpanded()"
+                     class="pointer-events-auto cursor-pointer bg-slate-900/90 border border-indigo-500/40 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2 text-xs font-bold text-indigo-300 hover:text-white transition w-fit">
+                    <span>📋 Daily Digest</span>
+                    <span id="daily-digest-count-badge" class="hidden bg-indigo-500/30 text-indigo-200 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full border border-indigo-400/30">0</span>
+                    <span id="daily-digest-chevron" class="text-[10px]">▾</span>
+                </div>
+                <div id="daily-digest-body-wrapper" class="hidden pointer-events-auto mt-2 w-11/12 max-w-sm max-h-[55vh] overflow-y-auto bg-slate-900/95 border border-indigo-500/40 rounded-2xl backdrop-blur-md shadow-2xl p-3.5 space-y-3 text-xs">
+                    <!-- Populated dynamically by renderDailyDigest() -->
+                </div>
+            </div>
         </div>
 
         <!-- Bottom Layout HUD Inspection Card & Controls Wrapper -->
@@ -2375,6 +2390,8 @@
         let initialPinchDistance = null;
         let frameCount = 0;
         let lastTouchTime = 0;
+        let dailyDigestExpanded = false;
+        try { dailyDigestExpanded = localStorage.getItem('daily_digest_expanded') === 'true'; } catch (e) {}
 
         // Remembers which realm/bucket the user drilled into, so creating a task/bucket (which does a
         // full page reload via a normal form POST) can restore that exact spot instead of dumping the
@@ -2394,6 +2411,144 @@
             } catch (e) {}
         }
         let deviceDPR = 1;
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.innerText = str == null ? '' : String(str);
+            return div.innerHTML;
+        }
+
+        // Mirrors send_daily_snapshot_emails()'s categorization exactly (overdue / due today / due
+        // tomorrow / completed yesterday), but computed client-side from the same data-* attributes
+        // the dashboard timeline already renders, using the BROWSER's local date - not scoped to a
+        // single bucket like the Space View's own per-bucket task scan (that one skips completed
+        // tasks entirely), since this digest needs every task across every realm/bucket, completed
+        // or not.
+        function computeDailyDigestData() {
+            const now = new Date();
+            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const tomorrowStart = new Date(todayStart);
+            tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+            const yesterdayStart = new Date(todayStart);
+            yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+
+            const overdue = [];
+            const dueToday = [];
+            const dueTomorrow = [];
+            const completedYesterday = [];
+
+            document.querySelectorAll('.timeline-card-wrapper').forEach(el => {
+                const title = el.getAttribute('data-title') || '';
+                const realmId = el.getAttribute('data-realm-id');
+                const bucketId = el.getAttribute('data-bucket-id');
+                const realm = realmsData.find(r => String(r.id) === String(realmId));
+                const bucket = realm ? realm.buckets.find(b => String(b.id) === String(bucketId)) : null;
+                const realmName = realm ? realm.name : '';
+                const bucketName = bucket ? bucket.name : '';
+                const entry = { title, realmName, bucketName };
+
+                if (el.getAttribute('data-completed') === 'true') {
+                    const completedAtStr = el.getAttribute('data-completed-at');
+                    if (!completedAtStr) return;
+                    const completedDate = new Date(completedAtStr);
+                    if (isNaN(completedDate.getTime())) return;
+                    const completedDayStart = new Date(completedDate.getFullYear(), completedDate.getMonth(), completedDate.getDate());
+                    if (completedDayStart.getTime() === yesterdayStart.getTime()) {
+                        completedYesterday.push(entry);
+                    }
+                    return;
+                }
+
+                const dueDateStr = el.getAttribute('data-due-date');
+                if (!dueDateStr) return;
+                const dueDate = new Date(dueDateStr + 'T00:00:00');
+                if (isNaN(dueDate.getTime())) return;
+
+                if (dueDate < todayStart) {
+                    entry.daysLate = Math.round((todayStart - dueDate) / 86400000);
+                    overdue.push(entry);
+                } else if (dueDate.getTime() === todayStart.getTime()) {
+                    dueToday.push(entry);
+                } else if (dueDate.getTime() === tomorrowStart.getTime()) {
+                    dueTomorrow.push(entry);
+                }
+            });
+
+            overdue.sort((a, b) => b.daysLate - a.daysLate);
+            return { overdue, dueToday, dueTomorrow, completedYesterday };
+        }
+
+        function renderDailyDigest() {
+            const badge = document.getElementById('daily-digest-count-badge');
+            const body = document.getElementById('daily-digest-body-wrapper');
+            if (!badge || !body) return;
+
+            const data = computeDailyDigestData();
+            const urgentCount = data.overdue.length + data.dueToday.length;
+            if (urgentCount > 0) {
+                badge.innerText = urgentCount;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+
+            function renderSection(titleHtml, items, emptyMsg, isOverdueSection) {
+                let inner;
+                if (items.length === 0) {
+                    inner = `<p class="text-slate-500 text-[11px] italic">${emptyMsg}</p>`;
+                } else {
+                    const rows = items.map(it => {
+                        const locationTag = (it.realmName || it.bucketName)
+                            ? `<span class="text-slate-500 text-[10px]"> [${escapeHtml(it.realmName)}${it.bucketName ? ' / ' + escapeHtml(it.bucketName) : ''}]</span>`
+                            : '';
+                        const overdueTag = isOverdueSection
+                            ? `<span class="text-rose-400 font-bold text-[10px] ml-1">(${it.daysLate}d late)</span>`
+                            : '';
+                        return `<li class="text-slate-200 leading-snug"><span class="font-semibold">${escapeHtml(it.title)}</span>${overdueTag}${locationTag}</li>`;
+                    }).join('');
+                    inner = `<ul class="space-y-1 list-disc list-inside">${rows}</ul>`;
+                }
+                return `<div><h4 class="text-[11px] font-extrabold tracking-wide mb-1">${titleHtml}</h4>${inner}</div>`;
+            }
+
+            body.innerHTML = [
+                renderSection('⚠️ Overdue', data.overdue, 'No overdue tasks!', true),
+                renderSection('📅 Due Today', data.dueToday, 'Nothing due today.', false),
+                renderSection('🔜 Due Tomorrow', data.dueTomorrow, 'Nothing scheduled for tomorrow.', false),
+                renderSection('✅ Completed Yesterday', data.completedYesterday, 'Nothing completed yesterday.', false)
+            ].join('<div class="border-t border-slate-800/80"></div>');
+        }
+
+        function toggleDailyDigestExpanded() {
+            dailyDigestExpanded = !dailyDigestExpanded;
+            try { localStorage.setItem('daily_digest_expanded', dailyDigestExpanded ? 'true' : 'false'); } catch (e) {}
+            applyDailyDigestExpandedState();
+        }
+
+        function applyDailyDigestExpandedState() {
+            const body = document.getElementById('daily-digest-body-wrapper');
+            const chevron = document.getElementById('daily-digest-chevron');
+            if (!body || !chevron) return;
+            body.classList.toggle('hidden', !dailyDigestExpanded);
+            chevron.innerText = dailyDigestExpanded ? '▲' : '▾';
+        }
+
+        // The Daily Digest only ever makes sense at the top-level Universe view - inside a realm or
+        // bucket there's already a focused task list on screen, so the digest would just be visual
+        // clutter. Called from every place that changes activeSelectedRealm (recenterSpace,
+        // focusAndRepelRealms, openAllTasksTimeline) so it's always in sync with the current view.
+        function updateDailyDigestVisibility() {
+            const hud = document.getElementById('daily-digest-hud');
+            if (!hud) return;
+            if (activeSelectedRealm) {
+                hud.classList.add('hidden');
+            } else {
+                renderDailyDigest();
+                applyDailyDigestExpandedState();
+                hud.classList.remove('hidden');
+            }
+        }
+
 
         function toggleSpaceView() {
             const overlay = document.getElementById('space-view-overlay');
@@ -2737,6 +2892,7 @@
             if (spaceRealms.length === 0) {
                 targetCameraOffset = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
                 targetCameraZoom = 0.85;
+                updateDailyDigestVisibility();
                 return;
             }
 
@@ -2790,6 +2946,7 @@
                 x: (window.innerWidth / 2) - (centerX * targetCameraZoom),
                 y: safeYCenter - (centerY * targetCameraZoom)
             };
+            updateDailyDigestVisibility();
         }
 
         function openAllTasksTimeline() {
@@ -2882,6 +3039,7 @@
                     r.targetY = allTasksRealm.baseY + Math.sin(angle) * (dist + repelDist);
                 }
             });
+            updateDailyDigestVisibility();
         }
 
         function zoomSpace(factor) {
@@ -4568,6 +4726,7 @@
                 x: (window.innerWidth / 2) - (centerX * targetCameraZoom),
                 y: safeYCenter - (centerY * targetCameraZoom)
             };
+            updateDailyDigestVisibility();
         }
 
         function showHudCard(task) {
