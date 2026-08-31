@@ -3682,7 +3682,7 @@
                             spaceCtx.save();
                             spaceCtx.textAlign = 'center';
                             spaceCtx.textBaseline = 'middle';
-                            spaceCtx.font = isActiveSwipeNode ? 'bold 22px sans-serif' : '20px sans-serif';
+                            spaceCtx.font = isActiveSwipeNode ? 'bold 33px sans-serif' : '30px sans-serif';
 
                             const dateLabel = getRelativeDateLabel(task.dueDate, task.dueDateFormatted);
                             const isSoon = dateLabel === 'Today' || dateLabel === 'Tomorrow';
@@ -3690,7 +3690,7 @@
                             spaceCtx.fillStyle = task.isOverdue ? '#fda4af' : (isSoon ? '#5eead4' : '#94a3b8');
                             spaceCtx.shadowColor = task.isOverdue ? '#f43f5e' : (isSoon ? '#2dd4bf' : 'transparent');
                             spaceCtx.shadowBlur = isSoon || task.isOverdue ? 10 : 0;
-                            spaceCtx.fillText(dateLabel, task.x, task.y - task.radius - 26);
+                            spaceCtx.fillText(dateLabel, task.x, task.y - task.radius - 30);
                             spaceCtx.restore();
                         }
 
@@ -3701,14 +3701,14 @@
                         spaceCtx.save();
                         spaceCtx.textAlign = 'center';
                         spaceCtx.textBaseline = 'middle';
-                        spaceCtx.font = isActiveSwipeNode ? 'bold 26px sans-serif' : '24px sans-serif';
+                        spaceCtx.font = isActiveSwipeNode ? 'bold 39px sans-serif' : '36px sans-serif';
 
                         // Wrap to multiple centered lines instead of one ever-widening line - this is
                         // what keeps a long task title from overlapping the next task's label, whether
                         // they're 160px apart in the linear swipe-dock view or spread around a bucket's
                         // orbit ring.
-                        const maxLabelWidth = 220;
-                        const lineHeight = isActiveSwipeNode ? 30 : 28;
+                        const maxLabelWidth = 260;
+                        const lineHeight = isActiveSwipeNode ? 45 : 42;
                         const lines = wrapTextToWidth(spaceCtx, task.title, maxLabelWidth, 3);
 
                         const widestLine = Math.max(...lines.map(l => spaceCtx.measureText(l).width));
