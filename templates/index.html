@@ -2993,8 +2993,13 @@
             // itself, so fitting/centering against the raw window height lets the ring hide behind them
             // (bottom realms clipped by the zoom controls) or look vertically off-center. Fit and center
             // against the space actually left BETWEEN those two bars instead.
+            //
+            // topChrome is taller than focusAndRepelRealms' copy of this same constant below: the Daily
+            // Digest pill row only ever renders in THIS (Universe overview) view, adding real height to
+            // the top bar that this framing math needs to account for - without it, realms render too
+            // close to the top and visually collide with that pill.
             const isMobile = window.innerWidth < 768;
-            const topChrome = isMobile ? 190 : 130;
+            const topChrome = isMobile ? 244 : 180;
             const bottomChrome = isMobile ? 170 : 110;
             const usableHeight = Math.max(200, window.innerHeight - topChrome - bottomChrome);
 
