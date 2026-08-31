@@ -3513,11 +3513,11 @@
                     allBucketsOnCanvas.push(bucket);
 
                     if (isSelectedBucket && bucket.tasks.length > 0) {
-                        // Matches the bigger title/date fonts, and no-truncation titles can now run
-                        // noticeably wider - at the original 160px spacing, wider text overlapped the
-                        // next task's label entirely (dates especially, which have no vertical-pushback
-                        // collision avoidance at all, unlike titles).
-                        const stepSpacing = 260;
+                        // Must clear the widest a label can possibly be (maxLabelWidth 300 + its 24px
+                        // padding = 324px), or two adjacent full-width labels are guaranteed to overlap
+                        // horizontally no matter what the (vertical-only) label-pushback solver does -
+                        // that solver can shove a label up/down to dodge a neighbor, but never sideways.
+                        const stepSpacing = 360;
                         const addButtonSlotX = bucket.x + 90;
                         const startLinearX = addButtonSlotX + stepSpacing;
 
@@ -3613,7 +3613,7 @@
                     const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
 
                     if (isSelectedBucket && bucket.tasks.length > 0 && bucket.id !== '__all_tasks_bucket__') {
-                        const stepSpacing = 260; // Kept in sync with the matching constant above
+                        const stepSpacing = 360; // Kept in sync with the matching constant above
                         const addButtonSlotX = bucket.x + 90;
                         const startLinearX = addButtonSlotX + stepSpacing;
 
