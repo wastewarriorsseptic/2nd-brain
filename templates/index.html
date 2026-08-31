@@ -3829,7 +3829,22 @@
                     const bWidth = nameWidth + (paddingX * 2);
                     const bPillHeight = Math.round(bucketLabelFontPx * 1.5);
                     
-                    const isBucketInBottomHalf = bucket.y > 0;
+                    // Decide above/below using the bucket's STABLE, non-wobbling static position
+                    // (realm.baseY + its own orbit offset), not the live bucket.y - that includes a
+                    // small per-frame floating wobble, which for any bucket sitting near the vertical
+                    // midline was enough to flip the sign every few frames, snapping its label from
+                    // above to below the circle and back ("swapping poles"). Caching the decision with
+                    // a small hysteresis margin (rather than a fresh comparison every frame) keeps it
+                    // fully stable even for a bucket sitting exactly on that midline.
+                    const bucketStaticY = realm.baseY + Math.sin(bucket.angle) * bucket.orbitRadius;
+                    if (bucket._isInBottomHalf === undefined) {
+                        bucket._isInBottomHalf = bucketStaticY > 0;
+                    } else if (bucket._isInBottomHalf && bucketStaticY < -20) {
+                        bucket._isInBottomHalf = false;
+                    } else if (!bucket._isInBottomHalf && bucketStaticY > 20) {
+                        bucket._isInBottomHalf = true;
+                    }
+                    const isBucketInBottomHalf = bucket._isInBottomHalf;
                     // Point away from the realm's center (matching how the realm's own label points away
                     // from screen-center) rather than toward it - pointing inward was aiming buckets'
                     // labels straight at the crowded middle of the realm, including their own orbiting
