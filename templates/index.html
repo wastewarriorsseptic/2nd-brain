@@ -3513,11 +3513,11 @@
                     allBucketsOnCanvas.push(bucket);
 
                     if (isSelectedBucket && bucket.tasks.length > 0) {
-                        // Matches the 50% bigger title/date fonts - at the old 160px spacing, wider
-                        // text from that font bump started overlapping the next task's label entirely
-                        // (dates especially, which have no vertical-pushback collision avoidance at all,
-                        // unlike titles).
-                        const stepSpacing = 240;
+                        // Matches the bigger title/date fonts, and no-truncation titles can now run
+                        // noticeably wider - at the original 160px spacing, wider text overlapped the
+                        // next task's label entirely (dates especially, which have no vertical-pushback
+                        // collision avoidance at all, unlike titles).
+                        const stepSpacing = 260;
                         const addButtonSlotX = bucket.x + 90;
                         const startLinearX = addButtonSlotX + stepSpacing;
 
@@ -3613,7 +3613,7 @@
                     const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
 
                     if (isSelectedBucket && bucket.tasks.length > 0 && bucket.id !== '__all_tasks_bucket__') {
-                        const stepSpacing = 240; // Kept in sync with the matching constant above
+                        const stepSpacing = 260; // Kept in sync with the matching constant above
                         const addButtonSlotX = bucket.x + 90;
                         const startLinearX = addButtonSlotX + stepSpacing;
 
@@ -3686,7 +3686,7 @@
                             spaceCtx.save();
                             spaceCtx.textAlign = 'center';
                             spaceCtx.textBaseline = 'middle';
-                            spaceCtx.font = isActiveSwipeNode ? 'bold 22px sans-serif' : '20px sans-serif';
+                            spaceCtx.font = isActiveSwipeNode ? 'bold 44px sans-serif' : '40px sans-serif';
 
                             const dateLabel = getRelativeDateLabel(task.dueDate, task.dueDateFormatted);
                             const isSoon = dateLabel === 'Today' || dateLabel === 'Tomorrow';
@@ -3694,7 +3694,7 @@
                             spaceCtx.fillStyle = task.isOverdue ? '#fda4af' : (isSoon ? '#5eead4' : '#94a3b8');
                             spaceCtx.shadowColor = task.isOverdue ? '#f43f5e' : (isSoon ? '#2dd4bf' : 'transparent');
                             spaceCtx.shadowBlur = isSoon || task.isOverdue ? 10 : 0;
-                            spaceCtx.fillText(dateLabel, task.x, task.y - task.radius - 26);
+                            spaceCtx.fillText(dateLabel, task.x, task.y - task.radius - 34);
                             spaceCtx.restore();
                         }
 
@@ -3705,15 +3705,16 @@
                         spaceCtx.save();
                         spaceCtx.textAlign = 'center';
                         spaceCtx.textBaseline = 'middle';
-                        spaceCtx.font = isActiveSwipeNode ? 'bold 26px sans-serif' : '24px sans-serif';
+                        spaceCtx.font = isActiveSwipeNode ? 'bold 50px sans-serif' : '46px sans-serif';
 
                         // Wrap to multiple centered lines instead of one ever-widening line - this is
                         // what keeps a long task title from overlapping the next task's label, whether
                         // they're 160px apart in the linear swipe-dock view or spread around a bucket's
-                        // orbit ring.
-                        const maxLabelWidth = 220;
-                        const lineHeight = isActiveSwipeNode ? 30 : 28;
-                        const lines = wrapTextToWidth(spaceCtx, task.title, maxLabelWidth, 3);
+                        // orbit ring. maxLines is generous (8) rather than a tight cap - truncating with
+                        // "…" hid real task text, which is worse than a taller label.
+                        const maxLabelWidth = 300;
+                        const lineHeight = isActiveSwipeNode ? 58 : 54;
+                        const lines = wrapTextToWidth(spaceCtx, task.title, maxLabelWidth, 8);
 
                         const widestLine = Math.max(...lines.map(l => spaceCtx.measureText(l).width));
                         const tWidth = widestLine + 24;
@@ -3721,7 +3722,7 @@
                         const desiredTPillY = task.baseY + task.radius + (isActiveSwipeNode ? 12 : 8);
 
                         const taskLabelRect = { x: task.baseX - tWidth / 2, y: desiredTPillY, w: tWidth, h: tPillHeight, dirY: 1, ownerBucketId: bucket.id };
-                        resolveLabelPushback(taskLabelRect, focusLabelRects, 150);
+                        resolveLabelPushback(taskLabelRect, focusLabelRects, 200);
                         focusLabelRects.push(taskLabelRect);
 
                         // Ease toward the resolved position rather than snapping straight to it - other
