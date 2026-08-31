@@ -3513,7 +3513,11 @@
                     allBucketsOnCanvas.push(bucket);
 
                     if (isSelectedBucket && bucket.tasks.length > 0) {
-                        const stepSpacing = 160;
+                        // Matches the 50% bigger title/date fonts - at the old 160px spacing, wider
+                        // text from that font bump started overlapping the next task's label entirely
+                        // (dates especially, which have no vertical-pushback collision avoidance at all,
+                        // unlike titles).
+                        const stepSpacing = 240;
                         const addButtonSlotX = bucket.x + 90;
                         const startLinearX = addButtonSlotX + stepSpacing;
 
@@ -3609,7 +3613,7 @@
                     const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
 
                     if (isSelectedBucket && bucket.tasks.length > 0 && bucket.id !== '__all_tasks_bucket__') {
-                        const stepSpacing = 160;
+                        const stepSpacing = 240; // Kept in sync with the matching constant above
                         const addButtonSlotX = bucket.x + 90;
                         const startLinearX = addButtonSlotX + stepSpacing;
 
@@ -3682,7 +3686,7 @@
                             spaceCtx.save();
                             spaceCtx.textAlign = 'center';
                             spaceCtx.textBaseline = 'middle';
-                            spaceCtx.font = isActiveSwipeNode ? 'bold 33px sans-serif' : '30px sans-serif';
+                            spaceCtx.font = isActiveSwipeNode ? 'bold 22px sans-serif' : '20px sans-serif';
 
                             const dateLabel = getRelativeDateLabel(task.dueDate, task.dueDateFormatted);
                             const isSoon = dateLabel === 'Today' || dateLabel === 'Tomorrow';
@@ -3690,7 +3694,7 @@
                             spaceCtx.fillStyle = task.isOverdue ? '#fda4af' : (isSoon ? '#5eead4' : '#94a3b8');
                             spaceCtx.shadowColor = task.isOverdue ? '#f43f5e' : (isSoon ? '#2dd4bf' : 'transparent');
                             spaceCtx.shadowBlur = isSoon || task.isOverdue ? 10 : 0;
-                            spaceCtx.fillText(dateLabel, task.x, task.y - task.radius - 30);
+                            spaceCtx.fillText(dateLabel, task.x, task.y - task.radius - 26);
                             spaceCtx.restore();
                         }
 
@@ -3701,14 +3705,14 @@
                         spaceCtx.save();
                         spaceCtx.textAlign = 'center';
                         spaceCtx.textBaseline = 'middle';
-                        spaceCtx.font = isActiveSwipeNode ? 'bold 39px sans-serif' : '36px sans-serif';
+                        spaceCtx.font = isActiveSwipeNode ? 'bold 26px sans-serif' : '24px sans-serif';
 
                         // Wrap to multiple centered lines instead of one ever-widening line - this is
                         // what keeps a long task title from overlapping the next task's label, whether
                         // they're 160px apart in the linear swipe-dock view or spread around a bucket's
                         // orbit ring.
-                        const maxLabelWidth = 260;
-                        const lineHeight = isActiveSwipeNode ? 45 : 42;
+                        const maxLabelWidth = 220;
+                        const lineHeight = isActiveSwipeNode ? 30 : 28;
                         const lines = wrapTextToWidth(spaceCtx, task.title, maxLabelWidth, 3);
 
                         const widestLine = Math.max(...lines.map(l => spaceCtx.measureText(l).width));
@@ -3717,7 +3721,7 @@
                         const desiredTPillY = task.baseY + task.radius + (isActiveSwipeNode ? 12 : 8);
 
                         const taskLabelRect = { x: task.baseX - tWidth / 2, y: desiredTPillY, w: tWidth, h: tPillHeight, dirY: 1, ownerBucketId: bucket.id };
-                        resolveLabelPushback(taskLabelRect, focusLabelRects, 110);
+                        resolveLabelPushback(taskLabelRect, focusLabelRects, 150);
                         focusLabelRects.push(taskLabelRect);
 
                         // Ease toward the resolved position rather than snapping straight to it - other
