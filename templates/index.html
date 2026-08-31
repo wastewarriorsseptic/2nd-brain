@@ -2445,7 +2445,7 @@
                 const bucket = realm ? realm.buckets.find(b => String(b.id) === String(bucketId)) : null;
                 const realmName = realm ? realm.name : '';
                 const bucketName = bucket ? bucket.name : '';
-                const entry = { title, realmName, bucketName };
+                const entry = { title, realmName, bucketName, realmId, bucketId, itemId: el.getAttribute('data-item-id') };
 
                 if (el.getAttribute('data-completed') === 'true') {
                     const completedAtStr = el.getAttribute('data-completed-at');
@@ -2504,7 +2504,11 @@
                         const overdueTag = isOverdueSection
                             ? `<span class="text-rose-400 font-bold text-[10px] ml-1">(${it.daysLate}d late)</span>`
                             : '';
-                        return `<li class="text-slate-200 leading-snug"><span class="font-semibold">${escapeHtml(it.title)}</span>${overdueTag}${locationTag}</li>`;
+                        // Tapping a task jumps straight to it in Space View (see navigateToDigestItem,
+                        // wired up via event delegation on the body wrapper below) - realmId is the one
+                        // thing we always need; bucketId/itemId may be missing for an orphaned task, in
+                        // which case navigateToDigestItem just falls back to opening the realm.
+                        return `<li class="text-slate-200 leading-snug cursor-pointer hover:text-white transition" data-nav-realm-id="${escapeHtml(it.realmId)}" data-nav-bucket-id="${escapeHtml(it.bucketId)}" data-nav-item-id="${escapeHtml(it.itemId)}"><span class="font-semibold hover:underline">${escapeHtml(it.title)}</span>${overdueTag}${locationTag}</li>`;
                     }).join('');
                     inner = `<ul class="space-y-1 list-disc list-inside">${rows}</ul>`;
                 }
@@ -2548,6 +2552,69 @@
                 hud.classList.remove('hidden');
             }
         }
+
+        // Jumps from a Daily Digest list item straight to that task's spot in Space View, reusing the
+        // exact same realm -> bucket -> task focus sequence a manual tap-tap-tap through the universe
+        // would trigger (see detectClickNode's clickedBucket/clickedTask branches), rather than
+        // duplicating that positioning math a second time here.
+        function navigateToDigestItem(realmId, bucketId, itemId) {
+            const realm = spaceRealms.find(r => !r.isAddButton && String(r.id) === String(realmId));
+            if (!realm) return;
+
+            activeSelectedBucket = null;
+            activeSwipeTaskId = null;
+            deselectBucketSwipeDock();
+            focusAndRepelRealms(realm);
+
+            const bucket = bucketId ? realm.buckets.find(b => !b.isAddButton && String(b.id) === String(bucketId)) : null;
+            if (!bucket) {
+                persistSpaceSelection();
+                return;
+            }
+
+            hideHudCard();
+            activeSelectedBucket = bucket;
+            renderBucketTaskSwipeDock(bucket);
+
+            const isMobile = window.innerWidth < 768;
+            targetCameraZoom = isMobile ? 0.24 : 0.413;
+            targetCameraOffset = {
+                x: (window.innerWidth / 2) - (bucket.x * targetCameraZoom),
+                y: (window.innerHeight / 2) - (bucket.y * targetCameraZoom)
+            };
+
+            // Completed tasks are never rendered as nodes in Space View (the per-bucket scan that
+            // builds bucket.tasks skips them outright), so a "Completed Yesterday" entry can only land
+            // you on its bucket - everything else (overdue/today/tomorrow) resolves to the exact task
+            // node here and gets the tighter, precisely-centered focus instead.
+            const task = itemId ? bucket.tasks.find(t => String(t.id) === String(itemId)) : null;
+            if (task) {
+                activeSwipeTaskId = task.id;
+                focusCameraOnTask(task);
+                const dock = document.getElementById('bucket-task-swipe-dock');
+                if (dock) dock.classList.remove('hidden');
+                const wrapper = document.getElementById('swipe-dock-cards-wrapper');
+                const targetCard = wrapper ? wrapper.querySelector(`[data-swipe-task-id="${task.id}"]`) : null;
+                if (targetCard) targetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+            }
+
+            persistSpaceSelection();
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const digestBody = document.getElementById('daily-digest-body-wrapper');
+            if (digestBody) {
+                digestBody.addEventListener('click', (e) => {
+                    const li = e.target.closest('[data-nav-realm-id]');
+                    if (!li) return;
+                    navigateToDigestItem(
+                        li.getAttribute('data-nav-realm-id'),
+                        li.getAttribute('data-nav-bucket-id'),
+                        li.getAttribute('data-nav-item-id')
+                    );
+                });
+            }
+        });
 
 
         function toggleSpaceView() {
