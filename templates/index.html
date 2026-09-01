@@ -3045,6 +3045,13 @@
         let activeSelectedRealm = null;
         let activeSelectedBucket = null;
         let activeSwipeTaskId = null; // Tracks currently visible card in swipe dock
+        // Stacked Multiverse Timeline view (see openMultiverseTimeline/renderMultiverseStackedLanes)
+        // - a fully separate mode from the normal spaceRealms/activeSelectedRealm machinery above,
+        // so it can show every Universe's own timeline simultaneously without a single shared
+        // "currently focused bucket" concept getting in the way.
+        let isMultiverseStackedView = false;
+        let multiverseLanes = [];
+        let multiverseActiveLaneId = null;
         let initialPinchDistance = null;
         let frameCount = 0;
         let lastTouchTime = 0;
@@ -3325,6 +3332,8 @@
                 longPressRealmForDelete = null;
                 longPressTaskForDelete = null;
                 longPressBucketForDelete = null;
+                isMultiverseStackedView = false;
+                multiverseActiveLaneId = null;
             }
         }
 
@@ -3784,6 +3793,13 @@
             // that should linger in the universe view after leaving it.
             spaceRealms = spaceRealms.filter(r => r.id !== '__all_tasks_realm__');
 
+            // "Auto-Fit Universe" is the only persistent button visible while the stacked Multiverse
+            // Timeline view is showing (it has no activeSelectedRealm/Bucket of its own to reset), so
+            // it doubles as this view's exit - without clearing the flag here, the camera would
+            // recenter on the normal realm ring while renderSpaceFrame kept drawing the lanes on top.
+            isMultiverseStackedView = false;
+            multiverseActiveLaneId = null;
+
             activeSelectedRealm = null;
             activeSelectedBucket = null;
             activeSwipeTaskId = null;
@@ -3951,25 +3967,13 @@
             updateDailyDigestVisibility();
         }
 
-        // Every task across every Task-kind Universe, opened from the Multiverse picker. Unlike
-        // openAllTasksTimeline (which flattens the CURRENTLY LOADED universe's spaceRealms),
-        // this sources from multiverseTasksData - a server-built list that already spans every
-        // owned Task universe - since most of those tasks were never scraped into spaceRealms/
-        // the DOM at all. Applies the exact same recurring dedup/lookahead-window rules as the
-        // per-bucket build in initSpaceCanvas, then reuses the same synthetic realm/bucket +
-        // swipe-dock pattern as openAllTasksTimeline so rendering code stays completely shared.
-        function openMultiverseTimeline() {
-            closeMultiverseView();
-
-            if (!isSpaceViewActive) {
-                isSpaceViewActive = true;
-                document.getElementById('space-view-overlay').classList.remove('hidden');
-                document.getElementById('view-toggle-icon').innerText = '📅';
-                document.getElementById('view-toggle-label').innerText = 'Timeline View';
-                localStorage.setItem('active_dashboard_view', 'space');
-                initSpaceCanvas();
-            }
-
+        // Groups multiverseTasksData into one lane per Task-kind Universe, applying the exact same
+        // recurring dedup/lookahead-window/completed-exclusion rules used everywhere else in Space
+        // View. Unlike the old single-merged-hub approach, tasks from different Universes never
+        // interleave into one chronological list - each lane is independently sorted and laid out,
+        // which is what actually made the combined view read as "messy"/non-chronological (dates
+        // from unrelated Universes jumping around next to each other along one shared axis).
+        function buildMultiverseLanes() {
             const processedGroupIds = new Map();
             const RECURRING_LOOKAHEAD_MONTHS = 6;
             const RECURRING_MAX_VISIBLE = 30;
@@ -3978,7 +3982,8 @@
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
-            const allTasksFlat = [];
+            const byUniverse = new Map();
+
             multiverseTasksData.forEach(t => {
                 if (t.isCompleted) return;
 
@@ -3993,9 +3998,13 @@
                     processedGroupIds.set(seriesKey, seenCount + 1);
                 }
 
-                const dueDate = t.dueDate ? new Date(t.dueDate + 'T00:00:00') : null;
+                const key = String(t.universeId);
+                if (!byUniverse.has(key)) {
+                    byUniverse.set(key, { id: t.universeId, name: t.universeName || 'Universe', icon: t.universeIcon || '😈', tasks: [] });
+                }
 
-                allTasksFlat.push({
+                const dueDate = t.dueDate ? new Date(t.dueDate + 'T00:00:00') : null;
+                byUniverse.get(key).tasks.push({
                     id: t.id,
                     title: t.title,
                     dueDate: t.dueDate || '9999-12-31',
@@ -4019,76 +4028,287 @@
                 });
             });
 
+            const lanes = Array.from(byUniverse.values());
+            lanes.forEach(lane => lane.tasks.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)));
+            // Busiest-soonest lane first: whichever Universe's very next task is closest floats to
+            // the top of the stack, so the most time-sensitive lane is the first thing seen.
+            lanes.sort((a, b) => {
+                const aNext = a.tasks.length ? new Date(a.tasks[0].dueDate) : Infinity;
+                const bNext = b.tasks.length ? new Date(b.tasks[0].dueDate) : Infinity;
+                return aNext - bNext;
+            });
+
             const isMobile = window.innerWidth < 768;
+            const laneSpacing = isMobile ? 340 : 280;
+            const hubRadius = isMobile ? 90 : 70;
+            const stepSpacing = 420;
+            const startGap = 220;
 
-            const multiverseBucket = {
-                id: '__multiverse_tasks_bucket__',
-                name: 'Multiverse Timeline',
-                isAddButton: false,
-                tasks: allTasksFlat,
-                addTaskButton: null,
-                angle: 0,
-                orbitRadius: 0,
-                radius: isMobile ? 50 : 44,
-                maxReach: (isMobile ? 50 : 44) + 500,
-                x: 0, y: 0
-            };
+            lanes.forEach((lane, laneIdx) => {
+                lane.hubRadius = hubRadius;
+                lane.x = 0;
+                lane.y = laneIdx * laneSpacing;
+                lane.tasks.forEach((task, taskIdx) => {
+                    task.x = lane.x + hubRadius + startGap + (taskIdx * stepSpacing);
+                    task.y = lane.y;
+                });
+            });
 
-            const multiverseRealm = {
-                id: '__multiverse_tasks_realm__',
-                name: 'Every Universe',
-                icon: '🌌',
-                isAddButton: false,
-                isShared: false,
-                sharedByName: '',
-                radius: isMobile ? 169 : 109,
-                labelFontPx: isMobile ? 52 : 42,
-                orbitAngle: 0,
-                homeAngle: 0,
-                orbitRadius: 0,
-                floatSpeed: 1.4,
-                floatOffsetPhase: 0,
-                baseX: 0, baseY: 0,
-                x: 0, y: 0,
-                drawX: 0, drawY: 0,
-                targetX: 0, targetY: 0,
-                buckets: [multiverseBucket]
-            };
+            return lanes;
+        }
 
-            // Drop any leftover synthetic realm from a previous visit to either this or the
-            // single-universe "All Tasks" view before adding a fresh one.
-            spaceRealms = spaceRealms.filter(r => r.id !== '__multiverse_tasks_realm__' && r.id !== '__all_tasks_realm__');
-            spaceRealms.push(multiverseRealm);
+        // Every task across every Task-kind Universe, opened from the Multiverse picker. Builds one
+        // lane per Universe (see buildMultiverseLanes) and hands off to a dedicated render/click path
+        // (renderMultiverseStackedLanes / handleMultiverseStackedClick, gated by isMultiverseStackedView)
+        // rather than routing through the normal single-focused-bucket machinery every other Space
+        // View screen shares - that machinery only ever draws ONE bucket's linear timeline at a time,
+        // which is exactly what forced every Universe's tasks into one merged, hard-to-read chain
+        // before. Kept as a fully separate code path specifically so this new view can't destabilize
+        // the existing (already fragile) realm/bucket rendering used everywhere else.
+        function openMultiverseTimeline() {
+            closeMultiverseView();
 
+            if (!isSpaceViewActive) {
+                isSpaceViewActive = true;
+                document.getElementById('space-view-overlay').classList.remove('hidden');
+                document.getElementById('view-toggle-icon').innerText = '📅';
+                document.getElementById('view-toggle-label').innerText = 'Timeline View';
+                localStorage.setItem('active_dashboard_view', 'space');
+                initSpaceCanvas();
+            }
+
+            activeSelectedRealm = null;
+            activeSelectedBucket = null;
+            multiverseActiveLaneId = null;
             hideHudCard();
-            activeSelectedRealm = multiverseRealm;
-            activeSelectedBucket = multiverseBucket;
-            renderBucketTaskSwipeDock(multiverseBucket);
+            deselectBucketSwipeDock();
+            const digestHud = document.getElementById('daily-digest-hud');
+            if (digestHud) digestHud.classList.add('hidden');
 
-            const zoomVal = isMobile ? 0.24 : 0.413;
+            multiverseLanes = buildMultiverseLanes();
+            isMultiverseStackedView = true;
+
+            const isMobile = window.innerWidth < 768;
+            const laneCount = Math.max(multiverseLanes.length, 1);
+            const laneSpacing = isMobile ? 340 : 280;
+            const totalHeight = (laneCount - 1) * laneSpacing;
+            const zoomVal = isMobile ? 0.22 : 0.32;
+
             targetCameraZoom = zoomVal;
             targetCameraOffset = {
-                x: (window.innerWidth / 2) - (multiverseBucket.x * zoomVal),
-                y: (window.innerHeight / 2) - (multiverseBucket.y * zoomVal)
+                x: window.innerWidth * (isMobile ? 0.32 : 0.26),
+                y: (window.innerHeight / 2) - ((totalHeight / 2) * zoomVal)
             };
+        }
 
-            const screenClearance = Math.max(window.innerWidth, window.innerHeight) * 1.1;
-            const repelDist = screenClearance / zoomVal;
+        // Dedicated renderer for the stacked Multiverse Timeline view - one row per Universe, each
+        // with its own hub circle and its own horizontal chain of tasks extending to the right.
+        // Deliberately does NOT reuse the per-bucket rendering block below (that block only ever
+        // draws whichever ONE bucket is activeSelectedBucket); this instead draws every lane's chain
+        // simultaneously every frame. Called from renderSpaceFrame while isMultiverseStackedView is
+        // true, in place of (not in addition to) the normal realm/bucket render pipeline.
+        function renderMultiverseStackedLanes() {
+            multiverseLanes.forEach(lane => {
+                if (lane.tasks.length === 0) return;
+                const lastTask = lane.tasks[lane.tasks.length - 1];
 
-            spaceRealms.forEach(r => {
-                if (r.id === multiverseRealm.id) {
-                    r.targetX = multiverseRealm.baseX;
-                    r.targetY = multiverseRealm.baseY;
-                } else {
-                    const dx = r.baseX - multiverseRealm.baseX;
-                    const dy = r.baseY - multiverseRealm.baseY;
-                    const dist = Math.hypot(dx, dy) || 1;
-                    const angle = Math.atan2(dy, dx);
-                    r.targetX = multiverseRealm.baseX + Math.cos(angle) * (dist + repelDist);
-                    r.targetY = multiverseRealm.baseY + Math.sin(angle) * (dist + repelDist);
-                }
+                spaceCtx.save();
+                spaceCtx.beginPath();
+                spaceCtx.moveTo(lane.x + lane.hubRadius + 5, lane.y);
+                spaceCtx.lineTo(lastTask.x + 40, lane.y);
+                spaceCtx.strokeStyle = 'rgba(99, 102, 241, 0.5)';
+                spaceCtx.lineWidth = 2.5;
+                spaceCtx.shadowColor = '#818cf8';
+                spaceCtx.shadowBlur = 12;
+                spaceCtx.stroke();
+                spaceCtx.restore();
             });
-            updateDailyDigestVisibility();
+
+            multiverseLanes.forEach(lane => {
+                spaceCtx.save();
+                spaceCtx.beginPath();
+                spaceCtx.arc(lane.x, lane.y, lane.hubRadius, 0, Math.PI * 2);
+                spaceCtx.fillStyle = 'rgba(30, 41, 59, 0.95)';
+                spaceCtx.strokeStyle = '#6366f1';
+                spaceCtx.lineWidth = 3;
+                spaceCtx.shadowColor = '#818cf8';
+                spaceCtx.shadowBlur = 20;
+                spaceCtx.fill();
+                spaceCtx.stroke();
+
+                spaceCtx.shadowBlur = 0;
+                spaceCtx.textAlign = 'center';
+                spaceCtx.textBaseline = 'middle';
+                spaceCtx.font = `${Math.round(lane.hubRadius * 0.9)}px serif`;
+                spaceCtx.fillText(lane.icon, lane.x, lane.y);
+                spaceCtx.restore();
+
+                spaceCtx.save();
+                spaceCtx.textAlign = 'center';
+                spaceCtx.textBaseline = 'middle';
+                spaceCtx.font = 'bold 34px sans-serif';
+                const nameText = `${lane.name} (${lane.tasks.length})`;
+                const nameWidth = spaceCtx.measureText(nameText).width + 36;
+                const pillY = lane.y + lane.hubRadius + 16;
+                const pillHeight = 46;
+                spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+                spaceCtx.beginPath();
+                spaceCtx.roundRect(lane.x - nameWidth / 2, pillY, nameWidth, pillHeight, 23);
+                spaceCtx.fill();
+                spaceCtx.strokeStyle = '#6366f1';
+                spaceCtx.lineWidth = 1.5;
+                spaceCtx.stroke();
+                spaceCtx.fillStyle = '#ffffff';
+                spaceCtx.fillText(nameText, lane.x, pillY + pillHeight / 2);
+                spaceCtx.restore();
+
+                // Stashed so a tap on the name pill (not just the hub circle itself) also drills
+                // into that Universe - see handleMultiverseStackedClick.
+                lane._namePillRect = { x: lane.x - nameWidth / 2, y: pillY, w: nameWidth, h: pillHeight };
+            });
+
+            multiverseLanes.forEach(lane => {
+                lane.tasks.forEach(task => {
+                    const isActiveSwipeNode = activeSwipeTaskId && String(task.id) === String(activeSwipeTaskId);
+
+                    if (isActiveSwipeNode) {
+                        spaceCtx.save();
+                        const pulseHalo = 18 + Math.sin(frameCount * 4) * 6;
+                        spaceCtx.beginPath();
+                        spaceCtx.arc(task.x, task.y, task.radius + pulseHalo, 0, Math.PI * 2);
+                        spaceCtx.fillStyle = 'rgba(129, 140, 248, 0.25)';
+                        spaceCtx.fill();
+                        spaceCtx.beginPath();
+                        spaceCtx.arc(task.x, task.y, task.radius + 6, 0, Math.PI * 2);
+                        spaceCtx.strokeStyle = '#38bdf8';
+                        spaceCtx.lineWidth = 2.5;
+                        spaceCtx.shadowColor = '#818cf8';
+                        spaceCtx.shadowBlur = 20;
+                        spaceCtx.stroke();
+                        spaceCtx.restore();
+                    }
+
+                    spaceCtx.beginPath();
+                    spaceCtx.arc(task.x, task.y, isActiveSwipeNode ? task.radius + 4 : task.radius, 0, Math.PI * 2);
+                    if (task.isOverdue) {
+                        spaceCtx.fillStyle = '#f43f5e';
+                        spaceCtx.shadowColor = '#f43f5e';
+                        spaceCtx.shadowBlur = isActiveSwipeNode ? 24 : 12;
+                    } else if (task.isRecurring) {
+                        spaceCtx.fillStyle = '#f59e0b';
+                        spaceCtx.shadowColor = '#f59e0b';
+                        spaceCtx.shadowBlur = isActiveSwipeNode ? 22 : 10;
+                    } else {
+                        spaceCtx.fillStyle = '#818cf8';
+                        spaceCtx.shadowColor = '#818cf8';
+                        spaceCtx.shadowBlur = isActiveSwipeNode ? 20 : 8;
+                    }
+                    spaceCtx.fill();
+                    spaceCtx.shadowBlur = 0;
+
+                    spaceCtx.save();
+                    spaceCtx.textAlign = 'center';
+                    spaceCtx.textBaseline = 'middle';
+                    spaceCtx.font = isActiveSwipeNode ? 'bold 40px sans-serif' : '36px sans-serif';
+                    const dateLabel = getRelativeDateLabel(task.dueDate, task.dueDateFormatted);
+                    const isSoon = dateLabel === 'Today' || dateLabel === 'Tomorrow';
+                    spaceCtx.fillStyle = task.isOverdue ? '#fda4af' : (isSoon ? '#5eead4' : '#94a3b8');
+                    spaceCtx.shadowColor = task.isOverdue ? '#f43f5e' : (isSoon ? '#2dd4bf' : 'transparent');
+                    spaceCtx.shadowBlur = isSoon || task.isOverdue ? 10 : 0;
+                    spaceCtx.fillText(dateLabel, task.x, task.y - task.radius - 30);
+                    spaceCtx.restore();
+
+                    spaceCtx.save();
+                    spaceCtx.textAlign = 'center';
+                    spaceCtx.textBaseline = 'middle';
+                    spaceCtx.font = isActiveSwipeNode ? 'bold 44px sans-serif' : '40px sans-serif';
+                    const maxLabelWidth = 380;
+                    const lineHeight = isActiveSwipeNode ? 50 : 46;
+                    const lines = wrapTextToWidth(spaceCtx, task.title, maxLabelWidth, 6);
+                    const widestLine = Math.max(...lines.map(l => spaceCtx.measureText(l).width));
+                    const tWidth = widestLine + 24;
+                    const tPillHeight = (lines.length * lineHeight) + (isActiveSwipeNode ? 14 : 10);
+                    const tPillY = task.y + task.radius + (isActiveSwipeNode ? 12 : 8);
+
+                    // Stashed so tapping the label text does exactly what tapping the dot does - see
+                    // handleMultiverseStackedClick.
+                    task._labelRect = { x: task.x - tWidth / 2, y: tPillY, w: tWidth, h: tPillHeight };
+
+                    spaceCtx.fillStyle = isActiveSwipeNode ? 'rgba(30, 41, 59, 0.98)' : 'rgba(15, 23, 42, 0.9)';
+                    spaceCtx.beginPath();
+                    spaceCtx.roundRect(task.x - tWidth / 2, tPillY, tWidth, tPillHeight, 4);
+                    spaceCtx.fill();
+                    if (isActiveSwipeNode) {
+                        spaceCtx.strokeStyle = '#818cf8';
+                        spaceCtx.lineWidth = 1;
+                        spaceCtx.stroke();
+                    }
+                    spaceCtx.fillStyle = isActiveSwipeNode ? '#ffffff' : '#e2e8f0';
+                    const firstLineY = tPillY + (lineHeight / 2) + (isActiveSwipeNode ? 4 : 3);
+                    lines.forEach((line, lineIdx) => {
+                        spaceCtx.fillText(line, task.x, firstLineY + (lineIdx * lineHeight));
+                    });
+                    spaceCtx.restore();
+                });
+            });
+
+            if (longPressTaskForDelete) {
+                drawTaskDeleteIcon(longPressTaskForDelete);
+            }
+        }
+
+        // Click routing for the stacked Multiverse Timeline view - a hub (or its name pill) drills
+        // into that Universe's own normal view (full reload, same as any other Universe circle
+        // elsewhere in the app); a task dot/label opens or updates the swipe dock for its own lane
+        // only, never mixing cards from a different Universe's lane into the same dock.
+        function handleMultiverseStackedClick(worldX, worldY) {
+            for (const lane of multiverseLanes) {
+                const distToHub = Math.hypot(worldX - lane.x, worldY - lane.y);
+                const r = lane._namePillRect;
+                const hitPill = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
+                if (distToHub <= lane.hubRadius + 10 || hitPill) {
+                    window.location.href = '/?universe_id=' + lane.id;
+                    return;
+                }
+            }
+
+            let clickedTask = null;
+            let clickedLane = null;
+            for (const lane of multiverseLanes) {
+                for (const task of lane.tasks) {
+                    const dist = Math.hypot(worldX - task.x, worldY - task.y);
+                    const hitNode = dist <= task.radius + 18;
+                    const r = task._labelRect;
+                    const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
+                    if (hitNode || hitLabel) {
+                        clickedTask = task;
+                        clickedLane = lane;
+                        break;
+                    }
+                }
+                if (clickedTask) break;
+            }
+
+            if (!clickedTask) return;
+
+            if (String(activeSwipeTaskId) === String(clickedTask.id)) {
+                deselectBucketSwipeDock();
+                multiverseActiveLaneId = null;
+                return;
+            }
+
+            if (multiverseActiveLaneId !== clickedLane.id) {
+                multiverseActiveLaneId = clickedLane.id;
+                renderBucketTaskSwipeDock({ id: `__mv_lane_${clickedLane.id}__`, name: clickedLane.name, tasks: clickedLane.tasks });
+            }
+            activeSwipeTaskId = clickedTask.id;
+            focusCameraOnTask(clickedTask);
+
+            const dock = document.getElementById('bucket-task-swipe-dock');
+            if (dock) dock.classList.remove('hidden');
+            const wrapper = document.getElementById('swipe-dock-cards-wrapper');
+            const targetCard = wrapper ? wrapper.querySelector(`[data-swipe-task-id="${clickedTask.id}"]`) : null;
+            if (targetCard) targetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
         }
 
         function zoomSpace(factor) {
@@ -4183,6 +4403,13 @@
 
             spaceCtx.translate(cameraOffset.x, cameraOffset.y);
             spaceCtx.scale(cameraZoom, cameraZoom);
+
+            if (isMultiverseStackedView) {
+                renderMultiverseStackedLanes();
+                spaceCtx.restore();
+                requestAnimationFrame(renderSpaceFrame);
+                return;
+            }
 
             // Central Core 😈 - only drawn in the full-universe overview. Once you've drilled into a
             // specific realm, the core no longer has a meaningful place on screen (the camera is now
@@ -5134,7 +5361,14 @@
                     // the finger, holding arms task-deletion; only if no task matched do we fall back
                     // to checking for a bucket, then a realm underneath.
                     let pressedTask = null;
-                    if (activeSelectedRealm) {
+                    if (isMultiverseStackedView) {
+                        multiverseLanes.forEach(lane => {
+                            lane.tasks.forEach(task => {
+                                const dist = Math.hypot(worldX - task.x, worldY - task.y);
+                                if (dist <= task.radius + 18) pressedTask = task;
+                            });
+                        });
+                    } else if (activeSelectedRealm) {
                         activeSelectedRealm.buckets.forEach(bucket => {
                             if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
                             if (bucket.isAddButton) return;
@@ -5146,7 +5380,7 @@
                     }
 
                     let pressedBucket = null;
-                    if (!pressedTask && activeSelectedRealm) {
+                    if (!pressedTask && !isMultiverseStackedView && activeSelectedRealm) {
                         activeSelectedRealm.buckets.forEach(bucket => {
                             if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
                             if (bucket.isAddButton) return;
@@ -5156,7 +5390,7 @@
                     }
 
                     let pressedRealm = null;
-                    if (!pressedTask && !pressedBucket) {
+                    if (!pressedTask && !pressedBucket && !isMultiverseStackedView) {
                         spaceRealms.forEach(realm => {
                             if (realm.isAddButton) return;
                             const dist = Math.hypot(worldX - realm.x, worldY - realm.y);
@@ -5560,6 +5794,11 @@
                 } else if (distToEdit <= editIconPos.radius + 10) {
                     openEditRealmFromCanvas(realmForActions);
                 }
+                return;
+            }
+
+            if (isMultiverseStackedView) {
+                handleMultiverseStackedClick(worldX, worldY);
                 return;
             }
 
