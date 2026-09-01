@@ -3324,6 +3324,13 @@
                 }
 
                 persistAiChatState();
+
+                // A created/updated task otherwise wouldn't show up anywhere on the current page
+                // (Timeline list, Space View) until a real reload - refresh the underlying data in
+                // place instead, with no visible navigation.
+                if (touchedTask) {
+                    silentlyRefreshTaskData();
+                }
             } catch (e) {
                 thinkingBubble.remove();
                 renderAiChatBubble('assistant', 'Something went wrong - try again.', 'error');
@@ -3331,6 +3338,94 @@
                 aiChatSending = false;
             }
             return false;
+        }
+
+        // A task created/updated via chat wouldn't otherwise show up anywhere on the current page
+        // until a real reload - the Timeline list and Space View's realmsData/multiverseTasksData
+        // are only ever populated once, at initial page load. Rather than a real navigation (which
+        // flickers and loses camera/scroll position), load the exact same URL into a hidden iframe
+        // - a real page load, just an invisible one - then pull the freshly-rendered data straight
+        // out of its own live JS variables (no fragile regex-scraping of embedded JSON-in-<script>
+        // text) and splice it into the current page in place.
+        function silentlyRefreshTaskData() {
+            try {
+                const iframe = document.createElement('iframe');
+                iframe.setAttribute('aria-hidden', 'true');
+                iframe.style.cssText = 'position:absolute; width:0; height:0; border:0; opacity:0; pointer-events:none;';
+                iframe.src = window.location.href;
+
+                let settled = false;
+                const cleanup = () => {
+                    if (settled) return;
+                    settled = true;
+                    iframe.remove();
+                };
+
+                iframe.onload = () => {
+                    try {
+                        const win = iframe.contentWindow;
+                        const doc = win.document;
+
+                        // allUniversesData/multiverseTasksData are `const` - mutate in place rather
+                        // than reassigning. realmsData is `let`, so a plain reassignment is fine.
+                        if (Array.isArray(win.realmsData)) realmsData = win.realmsData;
+                        if (Array.isArray(win.allUniversesData)) {
+                            allUniversesData.length = 0;
+                            allUniversesData.push(...win.allUniversesData);
+                        }
+                        if (Array.isArray(win.multiverseTasksData)) {
+                            multiverseTasksData.length = 0;
+                            multiverseTasksData.push(...win.multiverseTasksData);
+                        }
+
+                        const freshList = doc.getElementById('timeline-list');
+                        const curList = document.getElementById('timeline-list');
+                        if (freshList && curList) {
+                            curList.innerHTML = freshList.innerHTML;
+                            if (typeof filterTimelineList === 'function') filterTimelineList();
+                        }
+
+                        // Space View reads spaceRealms (built once FROM realmsData inside
+                        // initSpaceCanvas), not realmsData directly - only rebuild it if that view
+                        // is actually open right now, and save/restore the user's exact camera
+                        // position + selection around the rebuild so nothing visibly jumps
+                        // (initSpaceCanvas's own restoreOrRecenterSpace() only restores by saved
+                        // realm/bucket id, not the precise pan/zoom the user actually had).
+                        if (isSpaceViewActive && spaceCanvas) {
+                            const savedZoom = targetCameraZoom;
+                            const savedOffset = { ...targetCameraOffset };
+                            const wasMultiverseStacked = isMultiverseStackedView;
+                            const savedRealmId = activeSelectedRealm ? activeSelectedRealm.id : null;
+                            const savedBucketId = activeSelectedBucket ? activeSelectedBucket.id : null;
+
+                            initSpaceCanvas();
+
+                            if (wasMultiverseStacked) {
+                                openMultiverseTimeline();
+                            } else if (savedRealmId) {
+                                const realm = spaceRealms.find(r => String(r.id) === String(savedRealmId));
+                                if (realm) {
+                                    activeSelectedRealm = realm;
+                                    if (savedBucketId) {
+                                        const bucket = realm.buckets.find(b => String(b.id) === String(savedBucketId));
+                                        if (bucket) {
+                                            activeSelectedBucket = bucket;
+                                            renderBucketTaskSwipeDock(bucket, { focusFirst: false });
+                                        }
+                                    }
+                                }
+                            }
+                            targetCameraZoom = savedZoom;
+                            targetCameraOffset = savedOffset;
+                        }
+                    } catch (e) {}
+                    cleanup();
+                };
+                iframe.onerror = cleanup;
+
+                document.body.appendChild(iframe);
+                setTimeout(cleanup, 8000); // safety net if the iframe never fires onload
+            } catch (e) {}
         }
 
         // Dashboard task-card version - reads the title/amount off the button's own data attributes,
@@ -3832,6 +3927,14 @@
 
         document.addEventListener('DOMContentLoaded', setupMultiverseLongPress);
 
+        // renderSpaceFrame() re-schedules itself every frame (see its own trailing
+        // requestAnimationFrame calls) - this guard only protects the ONE-TIME initial kickoff
+        // below, so a second initSpaceCanvas() call (see silentlyRefreshTaskData) rebuilds
+        // spaceRealms/re-runs setup without starting a second concurrent render loop, which would
+        // otherwise double the effective frame rate (camera easing, floating/pulsing animations
+        // all visibly speeding up).
+        let spaceRenderLoopRunning = false;
+
         function initSpaceCanvas() {
             spaceCanvas = document.getElementById('space-canvas');
             spaceCtx = spaceCanvas.getContext('2d');
@@ -4150,7 +4253,10 @@
             setupSpaceEvents();
             setupHudDraggable();
             restoreOrRecenterSpace();
-            requestAnimationFrame(renderSpaceFrame);
+            if (!spaceRenderLoopRunning) {
+                spaceRenderLoopRunning = true;
+                requestAnimationFrame(renderSpaceFrame);
+            }
         }
 
         // Creating a task or bucket submits a normal form and reloads the page. Without this, that
