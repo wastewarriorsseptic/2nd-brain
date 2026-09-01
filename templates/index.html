@@ -5550,30 +5550,13 @@
                     const worldX = (touch.clientX - cameraOffset.x) / cameraZoom;
                     const worldY = (touch.clientY - cameraOffset.y) / cameraZoom;
 
-                    // Tasks are checked first (smaller, more specific targets) - if a task is under
-                    // the finger, holding arms task-deletion; only if no task matched do we fall back
-                    // to checking for a bucket, then a realm underneath.
-                    let pressedTask = null;
-                    if (isMultiverseStackedView) {
-                        multiverseLanes.forEach(lane => {
-                            lane.tasks.forEach(task => {
-                                const dist = Math.hypot(worldX - task.x, worldY - task.y);
-                                if (dist <= task.radius + 18) pressedTask = task;
-                            });
-                        });
-                    } else if (activeSelectedRealm) {
-                        activeSelectedRealm.buckets.forEach(bucket => {
-                            if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
-                            if (bucket.isAddButton) return;
-                            bucket.tasks.forEach(task => {
-                                const dist = Math.hypot(worldX - task.x, worldY - task.y);
-                                if (dist <= task.radius + 18) pressedTask = task;
-                            });
-                        });
-                    }
-
+                    // Buckets/realms are checked FIRST and take priority over a nearby task - a task's
+                    // orbit can visually cross close to a DIFFERENT bucket's (or the realm's own) hub
+                    // (see the crossing orbit lines in Space View), and a bucket/realm circle should
+                    // never be "blocked" from a tap/hold by a task sitting near it. Only if neither a
+                    // bucket nor a realm is under the finger do we fall back to checking for a task.
                     let pressedBucket = null;
-                    if (!pressedTask && !isMultiverseStackedView && activeSelectedRealm) {
+                    if (!isMultiverseStackedView && activeSelectedRealm) {
                         activeSelectedRealm.buckets.forEach(bucket => {
                             if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
                             if (bucket.isAddButton) return;
@@ -5583,12 +5566,33 @@
                     }
 
                     let pressedRealm = null;
-                    if (!pressedTask && !pressedBucket && !isMultiverseStackedView) {
+                    if (!pressedBucket && !isMultiverseStackedView) {
                         spaceRealms.forEach(realm => {
                             if (realm.isAddButton) return;
                             const dist = Math.hypot(worldX - realm.x, worldY - realm.y);
                             if (dist <= realm.radius + 24) pressedRealm = realm;
                         });
+                    }
+
+                    let pressedTask = null;
+                    if (!pressedBucket && !pressedRealm) {
+                        if (isMultiverseStackedView) {
+                            multiverseLanes.forEach(lane => {
+                                lane.tasks.forEach(task => {
+                                    const dist = Math.hypot(worldX - task.x, worldY - task.y);
+                                    if (dist <= task.radius + 18) pressedTask = task;
+                                });
+                            });
+                        } else if (activeSelectedRealm) {
+                            activeSelectedRealm.buckets.forEach(bucket => {
+                                if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
+                                if (bucket.isAddButton) return;
+                                bucket.tasks.forEach(task => {
+                                    const dist = Math.hypot(worldX - task.x, worldY - task.y);
+                                    if (dist <= task.radius + 18) pressedTask = task;
+                                });
+                            });
+                        }
                     }
 
                     if (pressedTask) {
@@ -6054,35 +6058,6 @@
                 return;
             }
 
-            // Click task behavior inside bucket mode: tap selected node to unselect
-            if (clickedTask) {
-                if (activeSelectedBucket) {
-                    if (String(activeSwipeTaskId) === String(clickedTask.id)) {
-                        deselectBucketSwipeDock();
-                        focusAndRepelRealms(activeSelectedRealm);
-                    } else {
-                        activeSwipeTaskId = clickedTask.id;
-                        focusCameraOnTask(clickedTask);
-
-                        // The X button on this dock only hides it (deselectBucketSwipeDock), it doesn't
-                        // tear anything down - so re-showing it here is all that's needed to bring it
-                        // back for a newly tapped task, rather than leaving it hidden even though the
-                        // selection state underneath had already updated correctly.
-                        const dock = document.getElementById('bucket-task-swipe-dock');
-                        if (dock) dock.classList.remove('hidden');
-
-                        const wrapper = document.getElementById('swipe-dock-cards-wrapper');
-                        const targetCard = wrapper ? wrapper.querySelector(`[data-swipe-task-id="${clickedTask.id}"]`) : null;
-                        if (targetCard) {
-                            targetCard.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'center' });
-                        }
-                    }
-                } else {
-                    showHudCard(clickedTask);
-                }
-                return;
-            }
-
             if (activeSelectedRealm) {
                 activeSelectedRealm.buckets.forEach(bucket => {
                     // The synthetic "All Tasks" bucket sits at the same position as the devil core
@@ -6104,6 +6079,21 @@
                 });
             }
 
+            spaceRealms.forEach(realm => {
+                // Use drawX/drawY (the realm's actual rendered position, including its small floating
+                // wobble) rather than the raw x/y - while focused, those two can differ by a few pixels,
+                // which was enough to occasionally miss a tap on the realm's own hub circle when trying
+                // to tap it a second time to return to the full universe view.
+                const dist = Math.hypot(worldX - realm.drawX, worldY - realm.drawY);
+                if (dist <= realm.radius + 24) {
+                    clickedRealm = realm;
+                }
+            });
+
+            // Buckets and realms take priority over a task when their hit-areas overlap - a task's
+            // orbit can visually cross close to a DIFFERENT bucket's (or the realm's own) hub, and
+            // that bucket/realm circle should never be "blocked" from a tap by a task sitting near
+            // it. Only fall through to the task branch if neither a bucket nor a realm was also hit.
             if (clickedBucket) {
                 if (clickedBucket.isAddButton) {
                     const realmIdField = document.getElementById('add-bucket-realm-id');
@@ -6134,17 +6124,6 @@
                 return;
             }
 
-            spaceRealms.forEach(realm => {
-                // Use drawX/drawY (the realm's actual rendered position, including its small floating
-                // wobble) rather than the raw x/y - while focused, those two can differ by a few pixels,
-                // which was enough to occasionally miss a tap on the realm's own hub circle when trying
-                // to tap it a second time to return to the full universe view.
-                const dist = Math.hypot(worldX - realm.drawX, worldY - realm.drawY);
-                if (dist <= realm.radius + 24) {
-                    clickedRealm = realm;
-                }
-            });
-
             if (clickedRealm) {
                 if (clickedRealm.isAddButton) {
                     const modal = document.getElementById('add-realm-modal');
@@ -6161,9 +6140,39 @@
                     focusAndRepelRealms(clickedRealm);
                     persistSpaceSelection();
                 }
-            } else {
-                hideHudCard();
+                return;
             }
+
+            // Click task behavior inside bucket mode: tap selected node to unselect
+            if (clickedTask) {
+                if (activeSelectedBucket) {
+                    if (String(activeSwipeTaskId) === String(clickedTask.id)) {
+                        deselectBucketSwipeDock();
+                        focusAndRepelRealms(activeSelectedRealm);
+                    } else {
+                        activeSwipeTaskId = clickedTask.id;
+                        focusCameraOnTask(clickedTask);
+
+                        // The X button on this dock only hides it (deselectBucketSwipeDock), it doesn't
+                        // tear anything down - so re-showing it here is all that's needed to bring it
+                        // back for a newly tapped task, rather than leaving it hidden even though the
+                        // selection state underneath had already updated correctly.
+                        const dock = document.getElementById('bucket-task-swipe-dock');
+                        if (dock) dock.classList.remove('hidden');
+
+                        const wrapper = document.getElementById('swipe-dock-cards-wrapper');
+                        const targetCard = wrapper ? wrapper.querySelector(`[data-swipe-task-id="${clickedTask.id}"]`) : null;
+                        if (targetCard) {
+                            targetCard.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'center' });
+                        }
+                    }
+                } else {
+                    showHudCard(clickedTask);
+                }
+                return;
+            }
+
+            hideHudCard();
         }
 
         function focusCameraOnTask(task) {
