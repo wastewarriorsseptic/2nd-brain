@@ -765,19 +765,19 @@
             <p class="text-slate-400 text-sm mb-6 text-center">Choose a Universe to explore, or create a new one.</p>
             <div id="multiverse-grid" class="flex flex-wrap items-start justify-center gap-5">
                 {% for u in universes %}
-                <div class="relative flex flex-col items-center gap-2 w-28 group">
+                <div class="universe-card relative flex flex-col items-center gap-2 w-28 group" data-universe-id="{{ u.id }}">
                     <button type="button" onclick="openEditUniverse(this)"
                             data-id="{{ u.id }}" data-name="{{ u.name }}" data-icon="{{ u.icon }}" title="Edit Universe"
-                            class="absolute -top-1 -left-1 z-10 w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-indigo-400 hover:border-indigo-400/50 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition">✏️</button>
+                            class="universe-card-action hidden absolute -top-1 -left-1 z-10 w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-indigo-400 hover:border-indigo-400/50 text-xs flex items-center justify-center transition">✏️</button>
                     {% if universes|length > 1 %}
                     <form action="/universes/delete/" method="POST" onsubmit="return confirm('Delete the {{ u.name }} universe along with everything inside it - all its Realms, Buckets, and Tasks/People?');"
-                          class="absolute -top-1 -right-1 z-10">
+                          class="universe-card-action hidden absolute -top-1 -right-1 z-10">
                         <input type="hidden" name="universe_id" value="{{ u.id }}">
                         <button type="submit" title="Delete Universe"
-                                class="w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-red-400 hover:border-red-400/50 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition">🗑️</button>
+                                class="w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-red-400 hover:border-red-400/50 text-xs flex items-center justify-center transition">🗑️</button>
                     </form>
                     {% endif %}
-                    <a href="/?universe_id={{ u.id }}" class="flex flex-col items-center gap-2 w-full">
+                    <a href="/?universe_id={{ u.id }}" class="universe-card-link flex flex-col items-center gap-2 w-full">
                         <div class="w-20 h-20 rounded-full flex items-center justify-center text-3xl border-2 {% if active_universe and u.id == active_universe.id %}border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30{% else %}border-slate-700 bg-slate-900 group-hover:border-indigo-500/60{% endif %} transition">
                             {{ u.icon }}
                         </div>
@@ -3230,6 +3230,69 @@
             document.getElementById('edit-universe-picker').innerText = el.dataset.icon;
             document.getElementById('edit-universe-modal').classList.remove('hidden');
         }
+
+        // Multiverse cards: a plain tap/click on the circle navigates into that Universe (the
+        // <a> just works natively) - the Edit/Delete buttons only ever appear after a press-and-
+        // hold, mirroring the long-press-to-reveal pattern already used for realms/tasks in the
+        // Space View canvas. This avoids the old hover-reveal approach, which doesn't behave
+        // consistently on touch (a tap can register as "hover" on some mobile browsers, showing
+        // the buttons right when the user just wanted to go into the Universe).
+        let multiverseLongPressTimer = null;
+        let multiverseLongPressStartPos = null;
+        let multiverseLongPressedCard = null;
+
+        function hideAllMultiverseCardActions() {
+            document.querySelectorAll('.universe-card-action').forEach(el => el.classList.add('hidden'));
+        }
+
+        function setupMultiverseLongPress() {
+            const grid = document.getElementById('multiverse-grid');
+            if (!grid) return;
+
+            grid.querySelectorAll('.universe-card').forEach(card => {
+                const link = card.querySelector('.universe-card-link');
+                if (!link) return;
+
+                card.addEventListener('pointerdown', (e) => {
+                    if (e.pointerType === 'mouse' && e.button !== 0) return;
+                    multiverseLongPressStartPos = { x: e.clientX, y: e.clientY };
+                    clearTimeout(multiverseLongPressTimer);
+                    multiverseLongPressTimer = setTimeout(() => {
+                        hideAllMultiverseCardActions();
+                        card.querySelectorAll('.universe-card-action').forEach(el => el.classList.remove('hidden'));
+                        multiverseLongPressedCard = card;
+                    }, 500);
+                });
+
+                const cancelPress = () => clearTimeout(multiverseLongPressTimer);
+                card.addEventListener('pointerup', cancelPress);
+                card.addEventListener('pointerleave', cancelPress);
+                card.addEventListener('pointercancel', cancelPress);
+                card.addEventListener('pointermove', (e) => {
+                    if (!multiverseLongPressStartPos) return;
+                    const dist = Math.hypot(e.clientX - multiverseLongPressStartPos.x, e.clientY - multiverseLongPressStartPos.y);
+                    if (dist > 10) clearTimeout(multiverseLongPressTimer);
+                });
+
+                // The long-press that just revealed this card's buttons still ends in a native
+                // click on the <a> (pointerup -> click) - swallow only that one click so it
+                // doesn't also navigate away right as the buttons appear.
+                link.addEventListener('click', (e) => {
+                    if (multiverseLongPressedCard === card) {
+                        e.preventDefault();
+                        multiverseLongPressedCard = null;
+                    }
+                });
+            });
+
+            document.addEventListener('pointerdown', (e) => {
+                if (!e.target.closest('.universe-card')) {
+                    hideAllMultiverseCardActions();
+                }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', setupMultiverseLongPress);
 
         function initSpaceCanvas() {
             spaceCanvas = document.getElementById('space-canvas');
