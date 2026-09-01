@@ -3180,9 +3180,46 @@
             panel.classList.toggle('hidden');
             if (!panel.classList.contains('hidden')) {
                 document.getElementById('ai-chat-input').focus();
-            } else if (window.speechSynthesis) {
-                try { window.speechSynthesis.cancel(); } catch (e) {}
+                syncAiChatPanelToViewport();
+            } else {
+                // Drop any keyboard-open sizing from last time (see syncAiChatPanelToViewport) so
+                // the next open starts clean from the CSS classes' own layout, not a stale height/
+                // top from wherever the keyboard happened to leave things.
+                panel.style.top = '';
+                panel.style.height = '';
+                panel.style.bottom = '';
+                if (window.speechSynthesis) {
+                    try { window.speechSynthesis.cancel(); } catch (e) {}
+                }
             }
+        }
+
+        // iOS Safari's position:fixed doesn't reliably track the visual viewport once the on-screen
+        // keyboard opens - the whole page shifts to keep the focused input visible, which can drag a
+        // fixed element like this panel partway or entirely off-screen instead of just shrinking it
+        // (exactly what made the panel unusable on mobile: header scrolled out of view, huge dead
+        // space, input barely reachable). window.visualViewport reports the ACTUAL visible area
+        // above the keyboard (and above iOS's own Prev/Next/Done accessory bar) - anchor the panel
+        // to that directly instead of trusting CSS alone. Desktop keeps its compact floating-card
+        // layout (the md: classes) untouched; this only ever runs below that breakpoint.
+        function syncAiChatPanelToViewport() {
+            const panel = document.getElementById('ai-chat-panel');
+            if (!panel || panel.classList.contains('hidden')) return;
+            if (window.innerWidth >= 768 || !window.visualViewport) {
+                panel.style.top = '';
+                panel.style.height = '';
+                panel.style.bottom = '';
+                return;
+            }
+            const vv = window.visualViewport;
+            panel.style.top = `${vv.offsetTop + 10}px`;
+            panel.style.height = `${vv.height - 20}px`;
+            panel.style.bottom = 'auto';
+        }
+
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', syncAiChatPanelToViewport);
+            window.visualViewport.addEventListener('scroll', syncAiChatPanelToViewport);
         }
 
         // Text-to-speech for assistant replies - the counterpart to dictation below, same
