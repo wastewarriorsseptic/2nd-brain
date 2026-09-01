@@ -4690,9 +4690,12 @@
                 renderRealmNode(realm, drawX, drawY, true);
             });
 
-            // Hold-to-delete trash icon (drawn last so it always sits on top)
+            // Hold-to-delete trash icon (drawn last so it always sits on top). A hold also
+            // reveals an Edit icon on the opposite side, opening the same Edit Realm modal
+            // (with its Universe/Realm/Bucket move pickers) the sidebar's pencil button does.
             if (longPressRealmForDelete) {
                 drawDeleteIcon(longPressRealmForDelete);
+                drawRealmEditIcon(longPressRealmForDelete);
             }
             if (longPressBucketForDelete) {
                 drawBucketDeleteIcon(longPressBucketForDelete);
@@ -5087,6 +5090,53 @@
             spaceCtx.restore();
         }
 
+        function getRealmEditIconPos(realm) {
+            const offsetAngle = (-3 * Math.PI) / 4; // up-left diagonal - mirrors the delete icon's up-right spot
+            const dist = realm.radius * 1.05;
+            return {
+                x: realm.drawX + Math.cos(offsetAngle) * dist,
+                y: realm.drawY + Math.sin(offsetAngle) * dist,
+                radius: 48
+            };
+        }
+
+        function drawRealmEditIcon(realm) {
+            const pos = getRealmEditIconPos(realm);
+            const pulse = 1 + Math.sin(frameCount * 5) * 0.08;
+
+            spaceCtx.save();
+
+            spaceCtx.beginPath();
+            spaceCtx.arc(pos.x, pos.y, pos.radius * 1.35 * pulse, 0, Math.PI * 2);
+            spaceCtx.fillStyle = 'rgba(99, 102, 241, 0.25)';
+            spaceCtx.fill();
+
+            spaceCtx.beginPath();
+            spaceCtx.arc(pos.x, pos.y, pos.radius * pulse, 0, Math.PI * 2);
+            spaceCtx.fillStyle = 'rgba(79, 70, 229, 0.97)';
+            spaceCtx.strokeStyle = '#c7d2fe';
+            spaceCtx.lineWidth = 4;
+            spaceCtx.shadowColor = '#4f46e5';
+            spaceCtx.shadowBlur = 30;
+            spaceCtx.fill();
+            spaceCtx.stroke();
+
+            spaceCtx.shadowBlur = 0;
+            spaceCtx.textAlign = 'center';
+            spaceCtx.textBaseline = 'middle';
+            spaceCtx.font = `${Math.round(pos.radius * 0.72)}px serif`;
+            spaceCtx.fillText('✏️', pos.x - (pos.radius * 0.04), pos.y + pos.radius * 0.08);
+            spaceCtx.restore();
+        }
+
+        function openEditRealmFromCanvas(realm) {
+            const dummyBtn = document.createElement('button');
+            dummyBtn.setAttribute('data-id', realm.id);
+            dummyBtn.setAttribute('data-name', realm.name);
+            dummyBtn.setAttribute('data-icon', realm.icon || '🔮');
+            openEditRealm(dummyBtn);
+        }
+
         function confirmAndDeleteRealm(realmId, realmName) {
             if (!confirm(`Delete "${realmName}" along with all its Buckets and Tasks?`)) return;
 
@@ -5251,15 +5301,21 @@
                 return;
             }
 
-            // If the hold-to-delete trash icon is currently showing, this tap either hits it
-            // (delete) or lands elsewhere (dismiss) - either way it's consumed here.
+            // If the hold-to-delete trash icon (or its sibling Edit icon) is currently showing,
+            // this tap either hits one of them or lands elsewhere (dismiss) - either way it's
+            // consumed here.
             if (longPressRealmForDelete) {
-                const iconPos = getDeleteIconPos(longPressRealmForDelete);
-                const dist = Math.hypot(worldX - iconPos.x, worldY - iconPos.y);
-                if (dist <= iconPos.radius + 10) {
-                    confirmAndDeleteRealm(longPressRealmForDelete.id, longPressRealmForDelete.name);
-                }
+                const realmForActions = longPressRealmForDelete;
+                const deleteIconPos = getDeleteIconPos(realmForActions);
+                const editIconPos = getRealmEditIconPos(realmForActions);
+                const distToDelete = Math.hypot(worldX - deleteIconPos.x, worldY - deleteIconPos.y);
+                const distToEdit = Math.hypot(worldX - editIconPos.x, worldY - editIconPos.y);
                 longPressRealmForDelete = null;
+                if (distToDelete <= deleteIconPos.radius + 10) {
+                    confirmAndDeleteRealm(realmForActions.id, realmForActions.name);
+                } else if (distToEdit <= editIconPos.radius + 10) {
+                    openEditRealmFromCanvas(realmForActions);
+                }
                 return;
             }
 
