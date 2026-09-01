@@ -4042,7 +4042,10 @@
             const laneSpacing = isMobile ? 460 : 400;
             const hubRadius = isMobile ? 90 : 70;
             const stepSpacing = 420;
-            const startGap = 220;
+            // Gap between the hub's own edge and the nearest task on either side - kept distinct
+            // from stepSpacing (the gap BETWEEN two tasks) so the hub always reads as clearly set
+            // apart from its own timeline, not just another evenly-spaced node in the chain.
+            const startGap = 300;
 
             lanes.forEach((lane, laneIdx) => {
                 lane.hubRadius = hubRadius;
