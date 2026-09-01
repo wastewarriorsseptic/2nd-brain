@@ -3520,12 +3520,12 @@
                                     parentRealmId: realm.id,
                                     angle: bucketAngle,
                                     orbitRadius: bucketDist,
-                                    radius: isMobile ? 38 : 34,
+                                    radius: isMobile ? 50 : 44,
                                     // Matches the +150 buffer real buckets get below (not the old +45) -
                                     // "Add Bucket" renders as a big bold label pill, same as a real bucket's
                                     // name, so the camera needs the same clearance or this pill overflows
                                     // off-screen instead of the view zooming out enough to include it.
-                                    maxReach: (isMobile ? 38 : 34) + 150,
+                                    maxReach: (isMobile ? 50 : 44) + 150,
                                     tasks: []
                                 };
                             }
@@ -3657,7 +3657,7 @@
                             // actual room to push a crowded bucket/task label further out without the
                             // camera cropping it off-screen - labels can now legitimately use that space
                             // to guarantee full visibility instead of overlapping.
-                            const bucketMaxReach = (isMobile ? 38 : 34) + maxTaskOrbit + 150;
+                            const bucketMaxReach = (isMobile ? 50 : 44) + maxTaskOrbit + 150;
 
                             return {
                                 id: bucket.id,
@@ -3665,7 +3665,7 @@
                                 parentRealmId: realm.id,
                                 angle: bucketAngle,
                                 orbitRadius: bucketDist,
-                                radius: isMobile ? 38 : 34,
+                                radius: isMobile ? 50 : 44,
                                 maxReach: bucketMaxReach,
                                 tasks: filteredTasks,
                                 addTaskButton: addTaskButton
@@ -3838,8 +3838,8 @@
                 addTaskButton: null,
                 angle: 0,
                 orbitRadius: 0,
-                radius: isMobile ? 38 : 34,
-                maxReach: (isMobile ? 38 : 34) + 500,
+                radius: isMobile ? 50 : 44,
+                maxReach: (isMobile ? 50 : 44) + 500,
                 x: 0, y: 0
             };
 
@@ -5198,11 +5198,14 @@
 
         function getBucketDeleteIconPos(bucket) {
             const offsetAngle = -Math.PI / 4; // up-right diagonal off the bucket node
-            const dist = bucket.radius * 1.1;
+            // Buckets are much smaller than realms, so this pairs a smaller icon radius with a
+            // wider offset than the realm version uses - at the old 36px/1.1x the two icons'
+            // pulsing halos overlapped each other outright on a typical bucket circle.
+            const dist = bucket.radius * 1.25;
             return {
                 x: bucket.x + Math.cos(offsetAngle) * dist,
                 y: bucket.y + Math.sin(offsetAngle) * dist,
-                radius: 36
+                radius: 26
             };
         }
 
@@ -5237,11 +5240,11 @@
 
         function getBucketEditIconPos(bucket) {
             const offsetAngle = (-3 * Math.PI) / 4; // up-left diagonal - mirrors the delete icon's up-right spot
-            const dist = bucket.radius * 1.1;
+            const dist = bucket.radius * 1.25; // kept in sync with getBucketDeleteIconPos
             return {
                 x: bucket.x + Math.cos(offsetAngle) * dist,
                 y: bucket.y + Math.sin(offsetAngle) * dist,
-                radius: 36
+                radius: 26
             };
         }
 
