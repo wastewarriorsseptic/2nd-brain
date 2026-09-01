@@ -3662,6 +3662,7 @@
                             return {
                                 id: bucket.id,
                                 name: bucket.name,
+                                parentRealmId: realm.id,
                                 angle: bucketAngle,
                                 orbitRadius: bucketDist,
                                 radius: isMobile ? 38 : 34,
@@ -4699,6 +4700,7 @@
             }
             if (longPressBucketForDelete) {
                 drawBucketDeleteIcon(longPressBucketForDelete);
+                drawBucketEditIcon(longPressBucketForDelete);
             }
             if (longPressTaskForDelete) {
                 drawTaskDeleteIcon(longPressTaskForDelete);
@@ -5233,6 +5235,53 @@
             spaceCtx.restore();
         }
 
+        function getBucketEditIconPos(bucket) {
+            const offsetAngle = (-3 * Math.PI) / 4; // up-left diagonal - mirrors the delete icon's up-right spot
+            const dist = bucket.radius * 1.1;
+            return {
+                x: bucket.x + Math.cos(offsetAngle) * dist,
+                y: bucket.y + Math.sin(offsetAngle) * dist,
+                radius: 36
+            };
+        }
+
+        function drawBucketEditIcon(bucket) {
+            const pos = getBucketEditIconPos(bucket);
+            const pulse = 1 + Math.sin(frameCount * 5) * 0.08;
+
+            spaceCtx.save();
+
+            spaceCtx.beginPath();
+            spaceCtx.arc(pos.x, pos.y, pos.radius * 1.35 * pulse, 0, Math.PI * 2);
+            spaceCtx.fillStyle = 'rgba(99, 102, 241, 0.25)';
+            spaceCtx.fill();
+
+            spaceCtx.beginPath();
+            spaceCtx.arc(pos.x, pos.y, pos.radius * pulse, 0, Math.PI * 2);
+            spaceCtx.fillStyle = 'rgba(79, 70, 229, 0.97)';
+            spaceCtx.strokeStyle = '#c7d2fe';
+            spaceCtx.lineWidth = 3.5;
+            spaceCtx.shadowColor = '#4f46e5';
+            spaceCtx.shadowBlur = 26;
+            spaceCtx.fill();
+            spaceCtx.stroke();
+
+            spaceCtx.shadowBlur = 0;
+            spaceCtx.textAlign = 'center';
+            spaceCtx.textBaseline = 'middle';
+            spaceCtx.font = `${Math.round(pos.radius * 0.72)}px serif`;
+            spaceCtx.fillText('✏️', pos.x - (pos.radius * 0.04), pos.y + pos.radius * 0.08);
+            spaceCtx.restore();
+        }
+
+        function openEditBucketFromCanvas(bucket) {
+            const dummyBtn = document.createElement('button');
+            dummyBtn.setAttribute('data-id', bucket.id);
+            dummyBtn.setAttribute('data-name', bucket.name);
+            dummyBtn.setAttribute('data-realm-id', bucket.parentRealmId);
+            openEditBucket(dummyBtn);
+        }
+
         function confirmAndDeleteBucket(bucketId, bucketName) {
             if (!confirm(`Delete "${bucketName}" and all its Tasks?`)) return;
 
@@ -5290,14 +5339,19 @@
                 return;
             }
 
-            // Same pattern for a bucket's hold-to-delete trash icon.
+            // Same pattern for a bucket's hold-to-delete trash icon and its sibling Edit icon.
             if (longPressBucketForDelete) {
-                const iconPos = getBucketDeleteIconPos(longPressBucketForDelete);
-                const dist = Math.hypot(worldX - iconPos.x, worldY - iconPos.y);
-                if (dist <= iconPos.radius + 10) {
-                    confirmAndDeleteBucket(longPressBucketForDelete.id, longPressBucketForDelete.name);
-                }
+                const bucketForActions = longPressBucketForDelete;
+                const deleteIconPos = getBucketDeleteIconPos(bucketForActions);
+                const editIconPos = getBucketEditIconPos(bucketForActions);
+                const distToDelete = Math.hypot(worldX - deleteIconPos.x, worldY - deleteIconPos.y);
+                const distToEdit = Math.hypot(worldX - editIconPos.x, worldY - editIconPos.y);
                 longPressBucketForDelete = null;
+                if (distToDelete <= deleteIconPos.radius + 10) {
+                    confirmAndDeleteBucket(bucketForActions.id, bucketForActions.name);
+                } else if (distToEdit <= editIconPos.radius + 10) {
+                    openEditBucketFromCanvas(bucketForActions);
+                }
                 return;
             }
 
