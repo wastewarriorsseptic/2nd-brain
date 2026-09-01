@@ -190,6 +190,30 @@
         <input type="hidden" name="is_shoppable" id="recur-form-shoppable">
     </form>
 
+    {% if gemini_enabled %}
+    <!-- AI Task Assistant - a top-level sibling (not inside #space-view-overlay or
+         #multiverse-view-overlay) so it survives toggling between Timeline View and Space View,
+         same pattern as the toasts above. Offset to bottom-24 rather than bottom-4 specifically to
+         avoid stacking under/behind the reorder/recurring toasts above, which both sit at bottom-4. -->
+    <button id="ai-chat-launcher" onclick="toggleAiChatPanel()" title="Ask the AI assistant"
+            class="fixed bottom-24 right-4 z-[70] w-14 h-14 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border border-indigo-400/30 shadow-2xl flex items-center justify-center text-2xl transition">
+        🤖
+    </button>
+
+    <div id="ai-chat-panel" class="hidden fixed bottom-40 right-4 z-[70] w-11/12 max-w-sm h-[70vh] max-h-[560px] bg-slate-900/95 border border-indigo-500/40 rounded-2xl backdrop-blur-md shadow-2xl flex flex-col overflow-hidden">
+        <div class="flex items-center justify-between px-3.5 py-2.5 border-b border-slate-800 shrink-0">
+            <span class="text-xs font-extrabold text-indigo-300 uppercase tracking-wide">🤖 TaskMonster Assistant</span>
+            <button onclick="toggleAiChatPanel()" class="text-slate-400 hover:text-white text-xs font-bold px-1">✕</button>
+        </div>
+        <div id="ai-chat-messages" class="flex-1 overflow-y-auto p-3 space-y-2.5 text-sm"></div>
+        <form id="ai-chat-form" onsubmit="return handleAiChatSubmit(event)" class="p-2.5 border-t border-slate-800 flex gap-2 shrink-0">
+            <input id="ai-chat-input" type="text" placeholder="Add a task or ask a question…"
+                   class="flex-1 bg-slate-800 border border-slate-700 rounded-full px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" autocomplete="off">
+            <button type="submit" class="w-9 h-9 shrink-0 bg-indigo-600/90 hover:bg-indigo-500 rounded-full text-white text-sm transition">➤</button>
+        </form>
+    </div>
+    {% endif %}
+
     <aside class="app-sidebar w-72 md:w-72 lg:w-80 bg-slate-900 md:bg-slate-800 border-r-0 md:border-r border-slate-800/80 p-4 ms:p-6 flex flex-col justify-between shrink-0 transition-all">
         <div>
             <div class="py-1 mb-2 md:mb-3 flex items-center justify-center">
@@ -3065,6 +3089,91 @@
         function dismissRecurringSuggestion() {
             pendingRecurringSuggestion = null;
             document.getElementById('recurring-suggestion-toast').classList.add('hidden');
+        }
+
+        // AI Task Assistant - session-only conversation (cleared on reload, never persisted server
+        // side); a plain fetch()/JSON round trip to /ai/chat/, no page reload on task creation so
+        // this panel (and whatever view - Timeline or Space - the user is looking at) never resets.
+        let aiChatHistory = [];
+        let aiChatSending = false;
+
+        function toggleAiChatPanel() {
+            const panel = document.getElementById('ai-chat-panel');
+            if (!panel) return;
+            panel.classList.toggle('hidden');
+            if (!panel.classList.contains('hidden')) {
+                document.getElementById('ai-chat-input').focus();
+            }
+        }
+
+        function renderAiChatBubble(role, text, variant) {
+            const wrapper = document.getElementById('ai-chat-messages');
+            if (!wrapper) return null;
+
+            const bubble = document.createElement('div');
+            const isUser = role === 'user';
+            let bubbleClass = 'max-w-[85%] rounded-2xl px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap break-words ';
+            if (variant === 'task_created') {
+                bubbleClass += 'bg-emerald-950/60 border border-emerald-500/50 text-emerald-100';
+            } else if (variant === 'error') {
+                bubbleClass += 'bg-rose-950/40 border border-rose-500/40 text-rose-200';
+            } else if (isUser) {
+                bubbleClass += 'bg-indigo-600/90 text-white ml-auto';
+            } else {
+                bubbleClass += 'bg-slate-800 border border-slate-700 text-slate-200';
+            }
+            bubble.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
+            bubble.innerHTML = `<div class="${bubbleClass}"></div>`;
+            bubble.firstElementChild.innerText = text;
+
+            wrapper.appendChild(bubble);
+            wrapper.scrollTop = wrapper.scrollHeight;
+            return bubble;
+        }
+
+        async function handleAiChatSubmit(event) {
+            event.preventDefault();
+            if (aiChatSending) return false;
+
+            const input = document.getElementById('ai-chat-input');
+            const text = input.value.trim();
+            if (!text) return false;
+
+            input.value = '';
+            renderAiChatBubble('user', text);
+            const thinkingBubble = renderAiChatBubble('assistant', '…');
+            aiChatSending = true;
+
+            try {
+                const res = await fetch('/ai/chat/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ messages: aiChatHistory, message: text })
+                });
+                const data = await res.json();
+
+                thinkingBubble.remove();
+
+                if (!res.ok || !data.ok) {
+                    renderAiChatBubble('assistant', data.error || 'Something went wrong - try again.', 'error');
+                    return false;
+                }
+
+                aiChatHistory.push({ role: 'user', content: text });
+                aiChatHistory.push({ role: 'assistant', content: data.reply });
+
+                if (data.task_created) {
+                    renderAiChatBubble('assistant', data.reply, 'task_created');
+                } else {
+                    renderAiChatBubble('assistant', data.reply);
+                }
+            } catch (e) {
+                thinkingBubble.remove();
+                renderAiChatBubble('assistant', 'Something went wrong - try again.', 'error');
+            } finally {
+                aiChatSending = false;
+            }
+            return false;
         }
 
         // Dashboard task-card version - reads the title/amount off the button's own data attributes,

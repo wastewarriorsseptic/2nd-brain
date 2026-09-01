@@ -11,3 +11,4 @@ authlib
 itsdangerous
 httpx
 pyjwt[crypto]
+google-genai
