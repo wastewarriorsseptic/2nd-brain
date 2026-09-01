@@ -1733,7 +1733,7 @@
         // active one) - drives the "move to a different Universe/Realm/Bucket" pickers on the
         // Edit Task/Person/Realm/Bucket modals. Built server-side as plain data and passed
         // through `tojson` (safe inside a <script> block, unlike inside an HTML attribute).
-        const allUniversesData = {{ universes_tree|tojson }};
+        const allUniversesData = {{ (universes_tree|default([]))|tojson }};
 
         function universesOfKind(kind) {
             return allUniversesData.filter(u => u.kind === kind);

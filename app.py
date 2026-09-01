@@ -884,7 +884,12 @@ def dashboard(
                 context={
                     "user": None,
                     "today": today_date,
-                    "apple_signin_enabled": APPLE_SIGNIN_ENABLED
+                    "apple_signin_enabled": APPLE_SIGNIN_ENABLED,
+                    # The <script> block's `allUniversesData` is built via |tojson (not a plain
+                    # {% for %} loop like realmsData), so an actually-missing key here crashes
+                    # the whole page with a 500 for every logged-out request - this happened in
+                    # production. Belt-and-suspenders alongside the template's own `default([])`.
+                    "universes_tree": []
                 }
             )
 
