@@ -756,12 +756,19 @@ def find_or_create_user_and_log_in(request: Request, email: str, name: str):
             session.commit()
             session.refresh(user)
 
-            default_universe = get_or_create_default_task_universe(session, user.id)
-            shopping = Realm(name="Shopping", icon="🛒", sort_order=0, user_id=user.id, universe_id=default_universe.id)
-            home = Realm(name="Home", icon="🏡", sort_order=1, user_id=user.id, universe_id=default_universe.id)
-            work = Realm(name="Work", icon="💼", sort_order=2, user_id=user.id, universe_id=default_universe.id)
-            goals = Realm(name="Goals", icon="🏆", sort_order=3, user_id=user.id, universe_id=default_universe.id)
-            session.add_all([shopping, home, work, goals])
+            # Brand-new accounts start with a small set of separate Universes (not one Universe
+            # full of Realms) - Home/Bills/Shopping/Work as Task Universes, People as a Contact
+            # Universe, each ready to use immediately without a forced starter Realm/Bucket
+            # (the Add Task/Add Person modals already support creating a Realm/Bucket inline the
+            # first time you use one).
+            starter_universes = [
+                Universe(name="Home", icon="🏡", kind="task", sort_order=0, user_id=user.id),
+                Universe(name="Bills", icon="🧾", kind="task", sort_order=1, user_id=user.id),
+                Universe(name="People", icon="👥", kind="contact", sort_order=2, user_id=user.id),
+                Universe(name="Shopping", icon="🛒", kind="task", sort_order=3, user_id=user.id),
+                Universe(name="Work", icon="💼", kind="task", sort_order=4, user_id=user.id),
+            ]
+            session.add_all(starter_universes)
             session.commit()
 
         # Claim any pending invites for this email address
