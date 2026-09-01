@@ -3097,6 +3097,7 @@
         // side); a plain fetch()/JSON round trip to /ai/chat/, no page reload on task creation so
         // this panel (and whatever view - Timeline or Space - the user is looking at) never resets.
         let aiChatHistory = [];
+        let aiChatLastTaskRef = null; // {id, title} of the most recently created/updated task this session
         let aiChatSending = false;
 
         function toggleAiChatPanel() {
@@ -3234,7 +3235,7 @@
                 const res = await fetch('/ai/chat/', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ messages: aiChatHistory, message: text })
+                    body: JSON.stringify({ messages: aiChatHistory, message: text, last_task: aiChatLastTaskRef })
                 });
                 const data = await res.json();
 
@@ -3248,7 +3249,15 @@
                 aiChatHistory.push({ role: 'user', content: text });
                 aiChatHistory.push({ role: 'assistant', content: data.reply });
 
-                if (data.task_created) {
+                // Remembers whichever task was just created/updated so a later vague reference
+                // ("update the due date", "move it to next week") can be resolved without the
+                // model needing to re-look it up - see last_task in the request above.
+                const touchedTask = data.task_created || data.task_updated;
+                if (touchedTask) {
+                    aiChatLastTaskRef = { id: touchedTask.id, title: touchedTask.title };
+                }
+
+                if (data.task_created || data.task_updated) {
                     renderAiChatBubble('assistant', data.reply, 'task_created');
                 } else {
                     renderAiChatBubble('assistant', data.reply);
