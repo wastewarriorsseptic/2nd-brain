@@ -170,6 +170,10 @@ def safe_apply_migrations():
             conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS is_shoppable BOOLEAN DEFAULT FALSE;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT \'UTC\';'))
             conn.execute(text('ALTER TABLE realm ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
+            # "IF EXISTS" on the table guards the case where this runs before create_all() has
+            # ever created the person table (a brand-new DB) - ADD COLUMN IF NOT EXISTS alone
+            # only guards the column, not a missing table.
+            conn.execute(text('ALTER TABLE IF EXISTS person ADD COLUMN IF NOT EXISTS nickname VARCHAR;'))
     else:
         sqlite_file_name = "brain.db"
         if os.path.exists(sqlite_file_name):
@@ -203,6 +207,16 @@ def safe_apply_migrations():
             user_cols = [col[1] for col in cursor.fetchall()]
             if 'timezone' not in user_cols:
                 cursor.execute('ALTER TABLE users ADD COLUMN "timezone" VARCHAR DEFAULT "UTC";')
+
+            # Only ALTER the person table if create_all() has already created it in a prior run -
+            # on a brand-new DB it won't exist yet at this point, and create_all() (which runs
+            # right after this function) will create it with the nickname column already included.
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='person';")
+            if cursor.fetchone():
+                cursor.execute("PRAGMA table_info(person);")
+                person_cols = [col[1] for col in cursor.fetchall()]
+                if 'nickname' not in person_cols:
+                    cursor.execute('ALTER TABLE person ADD COLUMN "nickname" VARCHAR;')
 
             conn.commit()
             conn.close()
@@ -273,6 +287,7 @@ class Reminder(SQLModel, table=True):
 class Person(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
+    nickname: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
     notes: Optional[str] = None
@@ -1285,6 +1300,7 @@ def create_person(
     request: Request,
     name: str = Form(...),
     bucket_id: int = Form(...),
+    nickname: Optional[str] = Form(None),
     phone: Optional[str] = Form(None),
     email: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
@@ -1304,7 +1320,7 @@ def create_person(
             except ValueError:
                 parsed_birthday = None
         person = Person(
-            name=name, bucket_id=bucket_id, phone=phone or None, email=email or None,
+            name=name, bucket_id=bucket_id, nickname=nickname or None, phone=phone or None, email=email or None,
             notes=notes or None, birthday=parsed_birthday, company=company or None,
             role=role or None, tags=tags or None,
         )
@@ -1320,6 +1336,7 @@ def update_person(
     person_id: int = Form(...),
     name: str = Form(...),
     bucket_id: Optional[int] = Form(None),
+    nickname: Optional[str] = Form(None),
     phone: Optional[str] = Form(None),
     email: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
@@ -1345,6 +1362,7 @@ def update_person(
                 parsed_birthday = None
         person.name = name
         person.bucket_id = bucket_id or person.bucket_id
+        person.nickname = nickname or None
         person.phone = phone or None
         person.email = email or None
         person.notes = notes or None
