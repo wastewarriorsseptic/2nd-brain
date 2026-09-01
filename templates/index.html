@@ -220,7 +220,11 @@
     <div id="ai-chat-panel" class="hidden fixed inset-x-3 top-4 bottom-3 md:inset-x-auto md:top-auto md:bottom-40 md:right-4 md:w-11/12 md:max-w-sm md:h-[70vh] md:max-h-[560px] z-[70] bg-slate-900/95 border border-indigo-500/40 rounded-2xl backdrop-blur-md shadow-2xl flex flex-col overflow-hidden">
         <div class="flex items-center justify-between px-3.5 py-2.5 border-b border-slate-800 shrink-0">
             <span class="text-xs font-extrabold text-indigo-300 uppercase tracking-wide">🤖 TaskMonster Assistant</span>
-            <button onclick="toggleAiChatPanel()" class="text-slate-400 hover:text-white text-xs font-bold px-1">✕</button>
+            <div class="flex items-center gap-2">
+                <button type="button" id="ai-chat-audio-btn" onclick="toggleAiChatAudio()"
+                        class="hidden text-sm text-slate-400 hover:text-white px-1 transition">🔇</button>
+                <button onclick="toggleAiChatPanel()" class="text-slate-400 hover:text-white text-xs font-bold px-1">✕</button>
+            </div>
         </div>
         <div id="ai-chat-messages" class="flex-1 overflow-y-auto p-3 space-y-2.5 text-sm"></div>
         <form id="ai-chat-form" onsubmit="return handleAiChatSubmit(event)" class="p-2.5 border-t border-slate-800 flex gap-2 shrink-0">
@@ -3166,7 +3170,82 @@
             panel.classList.toggle('hidden');
             if (!panel.classList.contains('hidden')) {
                 document.getElementById('ai-chat-input').focus();
+            } else if (window.speechSynthesis) {
+                try { window.speechSynthesis.cancel(); } catch (e) {}
             }
+        }
+
+        // Text-to-speech for assistant replies - the counterpart to dictation below, same
+        // no-dependency browser API pattern (SpeechSynthesis instead of SpeechRecognition). Off by
+        // default the first time (a chat that starts talking unprompted would be a bad surprise);
+        // the on/off choice persists across reloads via localStorage, same as the rest of the
+        // chat's persisted state. The toggle button stays hidden until feature-detected below.
+        const AI_CHAT_AUDIO_STORAGE_KEY = 'ai_chat_audio_enabled_v1';
+        let aiChatAudioEnabled = false;
+        try {
+            aiChatAudioEnabled = localStorage.getItem(AI_CHAT_AUDIO_STORAGE_KEY) === 'true';
+        } catch (e) {}
+
+        function updateAiChatAudioButton() {
+            const btn = document.getElementById('ai-chat-audio-btn');
+            if (!btn) return;
+            btn.innerText = aiChatAudioEnabled ? '🔊' : '🔇';
+            btn.title = aiChatAudioEnabled ? 'Voice replies on - tap to mute' : 'Voice replies off - tap to unmute';
+            btn.classList.toggle('text-indigo-300', aiChatAudioEnabled);
+            btn.classList.toggle('text-slate-400', !aiChatAudioEnabled);
+        }
+
+        function toggleAiChatAudio() {
+            aiChatAudioEnabled = !aiChatAudioEnabled;
+            try { localStorage.setItem(AI_CHAT_AUDIO_STORAGE_KEY, aiChatAudioEnabled ? 'true' : 'false'); } catch (e) {}
+            if (!aiChatAudioEnabled && window.speechSynthesis) {
+                try { window.speechSynthesis.cancel(); } catch (e) {}
+            }
+            updateAiChatAudioButton();
+        }
+
+        // Replies are markdown (the model bolds task/bucket names, uses bullet lists, etc.) - read
+        // literally, "asterisk asterisk" and "pound" noise between every other word would make
+        // speech unlistenable. Strips formatting down to the words themselves before handing text
+        // to the speech engine; the ORIGINAL text is still what's shown in the chat bubble.
+        function sanitizeTextForSpeech(text) {
+            if (!text) return '';
+            return text
+                .replace(/```[\s\S]*?```/g, ' ')            // fenced code blocks
+                .replace(/`([^`]+)`/g, '$1')                // inline code
+                .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')    // [link text](url) -> link text
+                .replace(/^\s{0,3}#{1,6}\s+/gm, '')         // # headers
+                .replace(/\*\*([^*]+)\*\*/g, '$1')          // **bold**
+                .replace(/__([^_]+)__/g, '$1')              // __bold__
+                .replace(/\*([^*]+)\*/g, '$1')              // *italic*
+                .replace(/(?<!\w)_([^_]+)_(?!\w)/g, '$1')   // _italic_
+                .replace(/^\s*[-*+]\s+/gm, '')              // bullet list markers
+                .replace(/^\s*\d+[.)]\s+/gm, '')            // numbered list markers
+                .replace(/\p{Extended_Pictographic}/gu, '') // emoji (✅, 🎉, etc.)
+                .replace(/\n{2,}/g, '. ')                   // blank lines -> a natural pause
+                .replace(/\n/g, ' ')
+                .replace(/\s{2,}/g, ' ')
+                .trim();
+        }
+
+        // Only ever called for a LIVE reply just back from /ai/chat/ - restoreAiChatState()'s replay
+        // of past turns on page load never calls this, so reopening the panel doesn't re-read the
+        // whole conversation aloud.
+        function speakAiReply(text) {
+            const spoken = sanitizeTextForSpeech(text);
+            if (!aiChatAudioEnabled || !window.speechSynthesis || !spoken) return;
+            try {
+                window.speechSynthesis.cancel(); // don't overlap with a previous reply still talking
+                window.speechSynthesis.speak(new SpeechSynthesisUtterance(spoken));
+            } catch (e) {}
+        }
+
+        if (window.speechSynthesis) {
+            document.addEventListener('DOMContentLoaded', () => {
+                const btn = document.getElementById('ai-chat-audio-btn');
+                if (btn) btn.classList.remove('hidden');
+                updateAiChatAudioButton();
+            });
         }
 
         // Voice dictation for the chat input - the browser's own SpeechRecognition API, no server
@@ -3302,7 +3381,9 @@
                 thinkingBubble.remove();
 
                 if (!res.ok || !data.ok) {
-                    renderAiChatBubble('assistant', data.error || 'Something went wrong - try again.', 'error');
+                    const errorText = data.error || 'Something went wrong - try again.';
+                    renderAiChatBubble('assistant', errorText, 'error');
+                    speakAiReply(errorText);
                     return false;
                 }
 
@@ -3323,6 +3404,7 @@
                     renderAiChatBubble('assistant', data.reply);
                 }
 
+                speakAiReply(data.reply);
                 persistAiChatState();
 
                 // A created/updated task otherwise wouldn't show up anywhere on the current page
@@ -3334,6 +3416,7 @@
             } catch (e) {
                 thinkingBubble.remove();
                 renderAiChatBubble('assistant', 'Something went wrong - try again.', 'error');
+                speakAiReply('Something went wrong - try again.');
             } finally {
                 aiChatSending = false;
             }
