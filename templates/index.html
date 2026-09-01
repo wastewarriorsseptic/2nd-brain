@@ -4039,7 +4039,7 @@
             });
 
             const isMobile = window.innerWidth < 768;
-            const laneSpacing = isMobile ? 340 : 280;
+            const laneSpacing = isMobile ? 460 : 400;
             const hubRadius = isMobile ? 90 : 70;
             const stepSpacing = 420;
             const startGap = 220;
@@ -4048,10 +4048,28 @@
                 lane.hubRadius = hubRadius;
                 lane.x = 0;
                 lane.y = laneIdx * laneSpacing;
-                lane.tasks.forEach((task, taskIdx) => {
-                    task.x = lane.x + hubRadius + startGap + (taskIdx * stepSpacing);
+
+                // Overdue tasks extend LEFT of the hub, upcoming (today or later - isOverdue is a
+                // strict "< today" check, so a task due today lands here, never on the left) extend
+                // RIGHT - the hub itself is the "today" pivot, matching how a real calendar reads.
+                // lane.tasks is already sorted ascending by date from the lane-level sort above, so
+                // the overdue slice just needs reversing: the MOST RECENTLY overdue task (closest to
+                // today) sits closest to the hub, with older overdue tasks extending further left -
+                // reading left-to-right across the whole lane still moves forward through time.
+                const upcomingTasks = lane.tasks.filter(t => !t.isOverdue);
+                const overdueTasks = lane.tasks.filter(t => t.isOverdue).reverse();
+
+                overdueTasks.forEach((task, idx) => {
+                    task.x = lane.x - hubRadius - startGap - (idx * stepSpacing);
                     task.y = lane.y;
                 });
+                upcomingTasks.forEach((task, idx) => {
+                    task.x = lane.x + hubRadius + startGap + (idx * stepSpacing);
+                    task.y = lane.y;
+                });
+
+                lane.leftmostTaskX = overdueTasks.length ? overdueTasks[overdueTasks.length - 1].x : null;
+                lane.rightmostTaskX = upcomingTasks.length ? upcomingTasks[upcomingTasks.length - 1].x : null;
             });
 
             return lanes;
@@ -4090,13 +4108,15 @@
 
             const isMobile = window.innerWidth < 768;
             const laneCount = Math.max(multiverseLanes.length, 1);
-            const laneSpacing = isMobile ? 340 : 280;
+            const laneSpacing = isMobile ? 460 : 400;
             const totalHeight = (laneCount - 1) * laneSpacing;
             const zoomVal = isMobile ? 0.22 : 0.32;
 
             targetCameraZoom = zoomVal;
             targetCameraOffset = {
-                x: window.innerWidth * (isMobile ? 0.32 : 0.26),
+                // Centered rather than left-biased: overdue tasks now extend LEFT of each hub and
+                // upcoming ones RIGHT (see buildMultiverseLanes), so both directions need room.
+                x: window.innerWidth * (isMobile ? 0.44 : 0.42),
                 y: (window.innerHeight / 2) - ((totalHeight / 2) * zoomVal)
             };
         }
@@ -4110,18 +4130,35 @@
         function renderMultiverseStackedLanes() {
             multiverseLanes.forEach(lane => {
                 if (lane.tasks.length === 0) return;
-                const lastTask = lane.tasks[lane.tasks.length - 1];
 
-                spaceCtx.save();
-                spaceCtx.beginPath();
-                spaceCtx.moveTo(lane.x + lane.hubRadius + 5, lane.y);
-                spaceCtx.lineTo(lastTask.x + 40, lane.y);
-                spaceCtx.strokeStyle = 'rgba(99, 102, 241, 0.5)';
-                spaceCtx.lineWidth = 2.5;
-                spaceCtx.shadowColor = '#818cf8';
-                spaceCtx.shadowBlur = 12;
-                spaceCtx.stroke();
-                spaceCtx.restore();
+                // Two independent segments radiating from the hub - overdue tasks sit to its left,
+                // upcoming (today or later) to its right (see buildMultiverseLanes), so either side
+                // can be empty on its own.
+                if (lane.rightmostTaskX !== null) {
+                    spaceCtx.save();
+                    spaceCtx.beginPath();
+                    spaceCtx.moveTo(lane.x + lane.hubRadius + 5, lane.y);
+                    spaceCtx.lineTo(lane.rightmostTaskX + 40, lane.y);
+                    spaceCtx.strokeStyle = 'rgba(99, 102, 241, 0.5)';
+                    spaceCtx.lineWidth = 2.5;
+                    spaceCtx.shadowColor = '#818cf8';
+                    spaceCtx.shadowBlur = 12;
+                    spaceCtx.stroke();
+                    spaceCtx.restore();
+                }
+
+                if (lane.leftmostTaskX !== null) {
+                    spaceCtx.save();
+                    spaceCtx.beginPath();
+                    spaceCtx.moveTo(lane.x - lane.hubRadius - 5, lane.y);
+                    spaceCtx.lineTo(lane.leftmostTaskX - 40, lane.y);
+                    spaceCtx.strokeStyle = 'rgba(244, 63, 94, 0.5)';
+                    spaceCtx.lineWidth = 2.5;
+                    spaceCtx.shadowColor = '#f43f5e';
+                    spaceCtx.shadowBlur = 12;
+                    spaceCtx.stroke();
+                    spaceCtx.restore();
+                }
             });
 
             multiverseLanes.forEach(lane => {
