@@ -115,9 +115,12 @@
             }
         }
 
-        /* Gentle idle bob for the AI chat launcher, echoing the same soft floating drift Realm
-           circles have in Space View (a slow sine-wave offset, not a bounce/spring) - purely
-           decorative so it's a plain CSS animation rather than wiring into the canvas physics. */
+        /* Gentle idle bob, echoing the same soft floating drift Realm circles have in Space View (a
+           slow sine-wave offset, not a bounce/spring) - purely decorative so it's a plain CSS
+           animation rather than wiring into the canvas physics. Shared by the AI chat launcher and
+           the Universe cards on the Multiverse picker (see .universe-card-float below) - each
+           Universe card gets its own --float-delay (set inline per-card) so they don't all bob in
+           perfect unison, matching how Space View staggers each realm's own floatOffsetPhase. */
         @keyframes ai-chat-launcher-float {
             0%, 100% { transform: translateY(0); }
             50% { transform: translateY(-6px); }
@@ -126,6 +129,13 @@
             animation: ai-chat-launcher-float 3.2s ease-in-out infinite;
         }
         #ai-chat-launcher:hover {
+            animation-play-state: paused;
+        }
+        .universe-card-float {
+            animation: ai-chat-launcher-float 3.2s ease-in-out infinite;
+            animation-delay: var(--float-delay, 0s);
+        }
+        .universe-card-float:hover {
             animation-play-state: paused;
         }
     </style>
@@ -829,7 +839,7 @@
             </div>
             <div id="multiverse-grid" class="flex flex-wrap items-start justify-center gap-5">
                 {% for u in universes %}
-                <div class="universe-card relative flex flex-col items-center gap-2 w-28 group" data-universe-id="{{ u.id }}">
+                <div class="universe-card universe-card-float relative flex flex-col items-center gap-2 w-28 group" data-universe-id="{{ u.id }}" style="--float-delay: -{{ (loop.index0 * 0.53) % 3.2 }}s;">
                     <button type="button" onclick="openEditUniverse(this)"
                             data-id="{{ u.id }}" data-name="{{ u.name }}" data-icon="{{ u.icon }}" title="Edit Universe"
                             class="universe-card-action hidden absolute -top-1 -left-1 z-10 w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-indigo-400 hover:border-indigo-400/50 text-xs flex items-center justify-center transition">✏️</button>
