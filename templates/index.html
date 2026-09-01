@@ -114,6 +114,20 @@
                 padding-top: max(1rem, env(safe-area-inset-top)) !important;
             }
         }
+
+        /* Gentle idle bob for the AI chat launcher, echoing the same soft floating drift Realm
+           circles have in Space View (a slow sine-wave offset, not a bounce/spring) - purely
+           decorative so it's a plain CSS animation rather than wiring into the canvas physics. */
+        @keyframes ai-chat-launcher-float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-6px); }
+        }
+        #ai-chat-launcher {
+            animation: ai-chat-launcher-float 3.2s ease-in-out infinite;
+        }
+        #ai-chat-launcher:hover {
+            animation-play-state: paused;
+        }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex">
@@ -200,7 +214,10 @@
         🤖
     </button>
 
-    <div id="ai-chat-panel" class="hidden fixed bottom-40 right-4 z-[70] w-11/12 max-w-sm h-[70vh] max-h-[560px] bg-slate-900/95 border border-indigo-500/40 rounded-2xl backdrop-blur-md shadow-2xl flex flex-col overflow-hidden">
+    <!-- Mobile: near-fullscreen (small margin on every side) so the message list has real room
+         and the input row stays clear of the keyboard. Desktop (md:): the original compact
+         floating card, anchored above the launcher button. -->
+    <div id="ai-chat-panel" class="hidden fixed inset-x-3 top-4 bottom-3 md:inset-x-auto md:top-auto md:bottom-40 md:right-4 md:w-11/12 md:max-w-sm md:h-[70vh] md:max-h-[560px] z-[70] bg-slate-900/95 border border-indigo-500/40 rounded-2xl backdrop-blur-md shadow-2xl flex flex-col overflow-hidden">
         <div class="flex items-center justify-between px-3.5 py-2.5 border-b border-slate-800 shrink-0">
             <span class="text-xs font-extrabold text-indigo-300 uppercase tracking-wide">🤖 TaskMonster Assistant</span>
             <button onclick="toggleAiChatPanel()" class="text-slate-400 hover:text-white text-xs font-bold px-1">✕</button>
@@ -3093,11 +3110,54 @@
             document.getElementById('recurring-suggestion-toast').classList.add('hidden');
         }
 
-        // AI Task Assistant - session-only conversation (cleared on reload, never persisted server
-        // side); a plain fetch()/JSON round trip to /ai/chat/, no page reload on task creation so
-        // this panel (and whatever view - Timeline or Space - the user is looking at) never resets.
+        // AI Task Assistant - never persisted server side, a plain fetch()/JSON round trip to
+        // /ai/chat/, no page reload on task creation so this panel (and whatever view - Timeline
+        // or Space - the user is looking at) never resets. The conversation itself IS persisted
+        // client-side via localStorage (see persistAiChatState/restoreAiChatState below), so
+        // closing the panel or reloading the page picks the same conversation back up instead of
+        // starting over each time.
         let aiChatHistory = [];
-        let aiChatLastTaskRef = null; // {id, title} of the most recently created/updated task this session
+        let aiChatLastTaskRef = null; // {id, title} of the most recently created/updated task
+
+        const AI_CHAT_STORAGE_KEY = 'ai_chat_history_v1';
+        const AI_CHAT_LAST_TASK_STORAGE_KEY = 'ai_chat_last_task_v1';
+        const AI_CHAT_MAX_STORED_MESSAGES = 40; // ~20 turns, matching the server's own history cap
+
+        function persistAiChatState() {
+            try {
+                if (aiChatHistory.length > AI_CHAT_MAX_STORED_MESSAGES) {
+                    aiChatHistory = aiChatHistory.slice(-AI_CHAT_MAX_STORED_MESSAGES);
+                }
+                localStorage.setItem(AI_CHAT_STORAGE_KEY, JSON.stringify(aiChatHistory));
+                if (aiChatLastTaskRef) {
+                    localStorage.setItem(AI_CHAT_LAST_TASK_STORAGE_KEY, JSON.stringify(aiChatLastTaskRef));
+                } else {
+                    localStorage.removeItem(AI_CHAT_LAST_TASK_STORAGE_KEY);
+                }
+            } catch (e) {}
+        }
+
+        // Replays the saved conversation into the panel on page load - restored bubbles render in
+        // the plain style (the emerald "task created/updated" highlight isn't re-derived, since
+        // only {role, content} is stored, not which variant a past reply used - a cosmetic
+        // simplification; the text itself is unchanged).
+        function restoreAiChatState() {
+            try {
+                const savedHistory = localStorage.getItem(AI_CHAT_STORAGE_KEY);
+                if (savedHistory) {
+                    aiChatHistory = JSON.parse(savedHistory) || [];
+                    aiChatHistory.forEach(turn => {
+                        renderAiChatBubble(turn.role === 'assistant' ? 'assistant' : 'user', turn.content || '');
+                    });
+                }
+                const savedLastTask = localStorage.getItem(AI_CHAT_LAST_TASK_STORAGE_KEY);
+                if (savedLastTask) {
+                    aiChatLastTaskRef = JSON.parse(savedLastTask);
+                }
+            } catch (e) {}
+        }
+        document.addEventListener('DOMContentLoaded', restoreAiChatState);
+
         let aiChatSending = false;
 
         function toggleAiChatPanel() {
@@ -3262,6 +3322,8 @@
                 } else {
                     renderAiChatBubble('assistant', data.reply);
                 }
+
+                persistAiChatState();
             } catch (e) {
                 thinkingBubble.remove();
                 renderAiChatBubble('assistant', 'Something went wrong - try again.', 'error');
