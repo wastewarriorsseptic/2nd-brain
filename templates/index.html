@@ -660,7 +660,7 @@
         <!-- Streamlined Top Floating Space Bar -->
         <div class="relative z-10 pt-10 md:pt-4 px-3 md:px-6 flex flex-col gap-2 pointer-events-none">
             <div class="flex items-center justify-between w-full">
-                <button onclick="openMultiverseView()"
+                <button onclick="openAllTasksTimeline()" title="Show every task in this Universe as one timeline"
                         class="bg-slate-900/90 border border-slate-800 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto hover:border-indigo-500/60 transition">
                     <span class="text-base">{{ active_universe.icon if active_universe else '😈' }}</span>
                     <h2 class="text-xs font-bold text-white tracking-wide">{{ active_universe.name if active_universe else 'TaskMonster Universe' }}</h2>
@@ -773,7 +773,7 @@
         </div>
 
         <div class="max-w-3xl mx-auto px-6 py-10">
-            <p class="text-slate-400 text-sm mb-6 text-center">Choose a Universe to explore, or create a new one.</p>
+            <p class="text-slate-400 text-sm mb-6 text-center">Your brain, on AI.</p>
             <div id="multiverse-grid" class="flex flex-wrap items-start justify-center gap-5">
                 {% for u in universes %}
                 <div class="universe-card relative flex flex-col items-center gap-2 w-28 group" data-universe-id="{{ u.id }}">
