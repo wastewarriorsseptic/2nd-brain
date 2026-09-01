@@ -3753,7 +3753,7 @@
                 badge.classList.add('hidden');
             }
 
-            function renderSection(titleHtml, items, emptyMsg, isOverdueSection) {
+            function renderSection(titleHtml, items, emptyMsg, isOverdueSection, isCompletedSection) {
                 let inner;
                 if (items.length === 0) {
                     inner = `<p class="text-slate-500 text-[11px] italic">${emptyMsg}</p>`;
@@ -3765,23 +3765,58 @@
                         const overdueTag = isOverdueSection
                             ? `<span class="text-rose-400 font-bold text-[10px] ml-1">(${it.daysLate}d late)</span>`
                             : '';
-                        // Tapping a task jumps straight to it in Space View (see navigateToDigestItem,
-                        // wired up via event delegation on the body wrapper below) - realmId is the one
-                        // thing we always need; bucketId/itemId may be missing for an orphaned task, in
-                        // which case navigateToDigestItem just falls back to opening the realm.
-                        return `<li class="text-slate-200 leading-snug cursor-pointer hover:text-white transition" data-nav-realm-id="${escapeHtml(it.realmId)}" data-nav-bucket-id="${escapeHtml(it.bucketId)}" data-nav-item-id="${escapeHtml(it.itemId)}"><span class="font-semibold hover:underline">${escapeHtml(it.title)}</span>${overdueTag}${locationTag}</li>`;
+                        // Checkbox completes the task in place (AJAX, no reload, camera untouched -
+                        // see handleDigestCompleteToggle) instead of the plain bullet this list used to
+                        // have. Already-completed rows (Completed Yesterday) get a static checked mark
+                        // instead - re-checking something already done doesn't mean anything.
+                        const checkboxHtml = isCompletedSection
+                            ? `<span class="w-4 h-4 rounded border border-emerald-500 bg-emerald-500 text-slate-950 flex items-center justify-center text-[10px] leading-none shrink-0 mt-0.5">✓</span>`
+                            : (it.itemId
+                                ? `<button type="button" onclick="handleDigestCompleteToggle(event, this, '${escapeHtml(it.itemId)}')" title="Mark Complete" class="w-4 h-4 rounded border border-slate-600 hover:border-emerald-400 text-transparent hover:text-emerald-400/50 flex items-center justify-center text-[10px] leading-none shrink-0 mt-0.5 transition">✓</button>`
+                                : `<span class="w-4 h-4 shrink-0 mt-0.5"></span>`);
+                        // Tapping the task text (not the checkbox) jumps straight to it in Space View
+                        // (see navigateToDigestItem, wired up via event delegation on the body wrapper
+                        // below) - realmId is the one thing we always need; bucketId/itemId may be
+                        // missing for an orphaned task, in which case navigateToDigestItem just falls
+                        // back to opening the realm.
+                        return `<li class="flex items-start gap-1.5 text-slate-200 leading-snug" data-nav-realm-id="${escapeHtml(it.realmId)}" data-nav-bucket-id="${escapeHtml(it.bucketId)}" data-nav-item-id="${escapeHtml(it.itemId)}">${checkboxHtml}<span class="cursor-pointer hover:text-white transition flex-1"><span class="font-semibold hover:underline">${escapeHtml(it.title)}</span>${overdueTag}${locationTag}</span></li>`;
                     }).join('');
-                    inner = `<ul class="space-y-1 list-disc list-inside">${rows}</ul>`;
+                    inner = `<ul class="space-y-1">${rows}</ul>`;
                 }
                 return `<div><h4 class="text-[11px] font-extrabold tracking-wide mb-1">${titleHtml}</h4>${inner}</div>`;
             }
 
             body.innerHTML = [
-                renderSection('⚠️ Overdue', data.overdue, 'No overdue tasks!', true),
-                renderSection('📅 Due Today', data.dueToday, 'Nothing due today.', false),
-                renderSection('🔜 Due Tomorrow', data.dueTomorrow, 'Nothing scheduled for tomorrow.', false),
-                renderSection('✅ Completed Yesterday', data.completedYesterday, 'Nothing completed yesterday.', false)
+                renderSection('⚠️ Overdue', data.overdue, 'No overdue tasks!', true, false),
+                renderSection('📅 Due Today', data.dueToday, 'Nothing due today.', false, false),
+                renderSection('🔜 Due Tomorrow', data.dueTomorrow, 'Nothing scheduled for tomorrow.', false, false),
+                renderSection('✅ Completed Yesterday', data.completedYesterday, 'Nothing completed yesterday.', false, true)
             ].join('<div class="border-t border-slate-800/80"></div>');
+        }
+
+        // Marks a task complete directly from the Daily Digest, without leaving Space View or
+        // reloading the page - reuses the exact same AJAX toggle-complete endpoint every other
+        // in-place completion flow already uses (see submitToggleCompleteAjax). Patches the
+        // underlying .timeline-card-wrapper's own data-completed attribute - the actual source
+        // computeDailyDigestData() reads from - rather than hand-patching just this one row, so a
+        // full renderDailyDigest() naturally recomputes everything correctly (counts, empty-state
+        // messages, which section each remaining task belongs in) in one call. Never touches the
+        // camera - nothing here calls focusAndRepelRealms/recenterSpace - so it stays exactly where
+        // it was, which only matters in the sense that there's nothing here that WOULD move it.
+        async function handleDigestCompleteToggle(event, btnElement, itemId) {
+            event.stopPropagation(); // don't also trigger navigateToDigestItem via the row's own click
+            fireCompleteConfetti(btnElement);
+
+            const result = await submitToggleCompleteAjax(itemId);
+            if (!result) return; // AJAX failed - leave the digest as-is, no backing <form> to fall back to
+
+            const wrapper = document.querySelector(`.timeline-card-wrapper[data-item-id="${itemId}"]`);
+            if (wrapper) wrapper.setAttribute('data-completed', 'true');
+
+            removeTaskFromSpaceData(itemId);
+            applyToggleCompleteResult(result);
+
+            renderDailyDigest();
         }
 
         function toggleDailyDigestExpanded() {
