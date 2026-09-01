@@ -188,11 +188,18 @@
             </div>
 
             {% if user %}
-            <!-- + New Task Button below logo -->
-            <button onclick="openGlobalAddTaskModal()" 
+            <!-- + New Task/Person Button below logo -->
+            {% if is_contact_universe %}
+            <button onclick="openGlobalAddPersonModal()"
+                    class="w-full mb-3 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs md:text-sm rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all">
+                <span>➕ New Person</span>
+            </button>
+            {% else %}
+            <button onclick="openGlobalAddTaskModal()"
                     class="w-full mb-3 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs md:text-sm rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all">
                 <span>➕ New Task</span>
             </button>
+            {% endif %}
 
             <div class="bg-slate-800/90 border border-slate-700/50 rounded-2xl p-3 mb-2 md:mb-4 shadow-xl transition-all backdrop-blur-md">
                 
@@ -290,8 +297,13 @@
 
                                     <div class="grid grid-cols-3 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 md:w-0 md:overflow-hidden group-hover:opacity-100 group-hover:md:w-16 transition-all w-16 text-center items-center">
                                         {% if selected_bucket_id == bucket.id %}
-                                        <button onclick="event.stopPropagation(); document.getElementById('add-item-modal').classList.remove('hidden')" 
+                                        {% if is_contact_universe %}
+                                        <button onclick="event.stopPropagation(); openGlobalAddPersonModal()"
+                                                title="Add Person to {{ bucket.name }}" class="w-5 text-center text-xs font-bold text-white hover:text-indigo-200">➕</button>
+                                        {% else %}
+                                        <button onclick="event.stopPropagation(); document.getElementById('add-item-modal').classList.remove('hidden')"
                                                 title="Add Task to {{ bucket.name }}" class="w-5 text-center text-xs font-bold text-white hover:text-indigo-200">➕</button>
+                                        {% endif %}
                                         {% else %}
                                         <div class="w-5"></div>
                                         {% endif %}
@@ -331,42 +343,125 @@
                 {% if user %}
                     
                     <!-- View Mode Toggle Bar (Timeline vs. Space View) -->
-                    <div class="flex items-center justify-between w-full max-w-xl mx-auto mb-4 px-2">
-                        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Dashboard View</span>
-                        <button onclick="toggleSpaceView()" 
-                                class="px-3.5 py-1.5 bg-indigo-600/90 hover:bg-indigo-500 text-white font-bold text-xs rounded-full shadow-md shadow-indigo-600/20 transition flex items-center gap-1.5 border border-indigo-400/30">
+                    <div class="flex items-center justify-between w-full max-w-xl mx-auto mb-4 px-2 gap-2">
+                        <button onclick="openMultiverseView()"
+                                class="min-w-0 shrink px-2.5 py-1.5 bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white font-bold text-xs rounded-full shadow-md transition flex items-center gap-1.5">
+                            <span>{{ active_universe.icon if active_universe else '😈' }}</span>
+                            <span class="truncate max-w-[120px]">{{ active_universe.name if active_universe else 'TaskMonster Universe' }}</span>
+                            <span class="text-slate-500">🌀</span>
+                        </button>
+                        <button onclick="toggleSpaceView()"
+                                class="shrink-0 px-3.5 py-1.5 bg-indigo-600/90 hover:bg-indigo-500 text-white font-bold text-xs rounded-full shadow-md shadow-indigo-600/20 transition flex items-center gap-1.5 border border-indigo-400/30">
                             <span id="view-toggle-icon">🌌</span> <span id="view-toggle-label">Space View</span>
                         </button>
                     </div>
 
-                    <!-- 4-Segment Responsive Filter Pill -->
+                    <!-- 4-Segment Responsive Filter Pill (Task universes only - filtering by
+                         due-date/recurring/overdue/completed has no meaning for a contact list) -->
+                    {% if not is_contact_universe %}
                     <div id="filter-pill-bar" class="w-full max-w-xl mx-auto mb-6 md:mb-8 p-1 bg-slate-800/90 border border-slate-700/80 rounded-full flex items-center shadow-inner select-none gap-0.5 sm:gap-1">
-                        <button id="pill-btn-active" onclick="setTimelineFilter('active')" 
+                        <button id="pill-btn-active" onclick="setTimelineFilter('active')"
                                 class="flex-1 px-1 sm:px-3 py-1.5 text-[10px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1 bg-indigo-600 text-white shadow-md min-w-0">
                             <span>⚡ Active</span>
                             <span id="active-count-badge" class="hidden sm:inline-block bg-indigo-500/30 text-indigo-100 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full border border-indigo-400/30 shrink-0">0</span>
                         </button>
 
-                        <button id="pill-btn-recurring" onclick="setTimelineFilter('recurring')" 
+                        <button id="pill-btn-recurring" onclick="setTimelineFilter('recurring')"
                                 class="flex-1 px-1 sm:px-3 py-1.5 text-[10px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1 text-slate-400 hover:text-slate-200 min-w-0">
                             <span>🔄 <span class="hidden sm:inline">Recurring</span><span class="inline sm:hidden">Repeat</span></span>
                             <span id="recurring-count-badge" class="hidden sm:inline-block bg-amber-500/30 text-amber-200 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full border border-amber-400/30 shrink-0">0</span>
                         </button>
 
-                        <button id="pill-btn-overdue" onclick="setTimelineFilter('overdue')" 
+                        <button id="pill-btn-overdue" onclick="setTimelineFilter('overdue')"
                                 class="flex-1 px-1 sm:px-3 py-1.5 text-[10px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1 text-slate-400 hover:text-slate-200 min-w-0">
                             <span>⚠️ Overdue</span>
                             <span id="overdue-count-badge" class="hidden sm:inline-block bg-rose-500/30 text-rose-200 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full border border-rose-400/30 shrink-0">0</span>
                         </button>
 
-                        <button id="pill-btn-completed" onclick="setTimelineFilter('completed')" 
+                        <button id="pill-btn-completed" onclick="setTimelineFilter('completed')"
                                 class="flex-1 px-1 sm:px-3 py-1.5 text-[10px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1 text-slate-400 hover:text-slate-200 min-w-0">
                             <span>✅ <span class="hidden sm:inline">Completed</span><span class="inline sm:hidden">Done</span></span>
                             <span id="completed-count-badge" class="hidden sm:inline-block bg-slate-700 text-slate-300 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full shrink-0">0</span>
                         </button>
                     </div>
+                    {% endif %}
 
-                    {% if items %}
+                    {% if is_contact_universe %}
+                    <div id="people-list" class="max-w-2xl mx-auto space-y-3">
+                        {% for person in people %}
+                        <div class="person-card-wrapper border border-slate-700/80 bg-slate-800/90 rounded-2xl p-4 md:p-5 shadow-xl flex items-start justify-between gap-4"
+                             data-person-id="{{ person.id }}"
+                             data-name="{{ person.name }}"
+                             data-phone="{{ person.phone or '' }}"
+                             data-email="{{ person.email or '' }}"
+                             data-notes="{{ person.notes or '' }}"
+                             data-birthday="{{ person.birthday.strftime('%Y-%m-%d') if person.birthday else '' }}"
+                             data-birthday-formatted="{{ person.birthday.strftime('%b %d') if person.birthday else '' }}"
+                             data-company="{{ person.company or '' }}"
+                             data-role="{{ person.role or '' }}"
+                             data-tags="{{ person.tags or '' }}"
+                             data-realm-id="{{ person.bucket.realm.id if person.bucket and person.bucket.realm else '' }}"
+                             data-bucket-id="{{ person.bucket_id }}">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex flex-wrap items-center gap-1.5 mb-1.5">
+                                    <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[11px] font-semibold px-2 py-0.5 rounded-full truncate max-w-full">
+                                        {{ person.bucket.realm.icon or '👥' }} {{ person.bucket.realm.name if person.bucket and person.bucket.realm else 'General' }} / ⭐️ {{ person.bucket.name if person.bucket else '' }}
+                                    </span>
+                                    {% if person.company or person.role %}
+                                    <span class="bg-slate-700/80 text-slate-300 border border-slate-600/50 text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                                        💼 {{ person.role }}{% if person.role and person.company %} at {% endif %}{{ person.company }}
+                                    </span>
+                                    {% endif %}
+                                    {% if person.birthday %}
+                                    <span class="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                                        🎂 {{ person.birthday.strftime('%b %d') }}
+                                    </span>
+                                    {% endif %}
+                                </div>
+                                <h3 class="text-lg md:text-xl font-semibold text-white break-words">{{ person.name }}</h3>
+                                <p class="text-slate-400 text-xs md:text-sm mt-1 space-x-3">
+                                    {% if person.phone %}<span>📞 {{ person.phone }}</span>{% endif %}
+                                    {% if person.email %}<span>✉️ {{ person.email }}</span>{% endif %}
+                                </p>
+                                {% if person.tags %}
+                                <p class="text-indigo-300 text-xs mt-1">🏷️ {{ person.tags }}</p>
+                                {% endif %}
+                                {% if person.notes %}
+                                <p class="text-slate-400 text-xs md:text-sm mt-1 break-words">{{ person.notes }}</p>
+                                {% endif %}
+                            </div>
+                            <div class="flex items-center gap-1 shrink-0">
+                                <button onclick="openEditPerson(this)"
+                                        data-id="{{ person.id }}"
+                                        data-name="{{ person.name }}"
+                                        data-phone="{{ person.phone or '' }}"
+                                        data-email="{{ person.email or '' }}"
+                                        data-notes="{{ person.notes or '' }}"
+                                        data-birthday="{{ person.birthday.strftime('%Y-%m-%d') if person.birthday else '' }}"
+                                        data-company="{{ person.company or '' }}"
+                                        data-role="{{ person.role or '' }}"
+                                        data-tags="{{ person.tags or '' }}"
+                                        data-bucket-id="{{ person.bucket_id }}"
+                                        title="Edit Person"
+                                        class="text-slate-500 hover:text-indigo-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-700/50">
+                                    ✏️
+                                </button>
+                                <form action="/people/delete/" method="POST" onsubmit="return confirm('Delete {{ person.name }}?');" class="inline">
+                                    <input type="hidden" name="person_id" value="{{ person.id }}">
+                                    <button type="submit" title="Delete Person" class="text-slate-500 hover:text-red-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-700/50">🗑️</button>
+                                </form>
+                            </div>
+                        </div>
+                        {% endfor %}
+
+                        {% if not people %}
+                        <div class="text-center py-12 md:py-16 bg-slate-800/50 border border-slate-700/50 rounded-2xl px-4">
+                            <p class="text-slate-400 text-base md:text-lg font-medium">No people yet</p>
+                            <p class="text-slate-500 text-xs md:text-sm mt-1">Select a Realm to create Buckets, or select a Bucket to add People.</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% elif items %}
                     <div id="timeline-list" class="timeline-container relative border-l-2 border-indigo-500/30 ml-3 md:ml-8 pl-4 md:pl-6 space-y-6 md:space-y-8">
                         {% for item in items %}
                         {% set days_out = (item.due_date.date() - today).days %}
@@ -549,12 +644,14 @@
         <!-- Streamlined Top Floating Space Bar -->
         <div class="relative z-10 pt-10 md:pt-4 px-3 md:px-6 flex flex-col gap-2 pointer-events-none">
             <div class="flex items-center justify-between w-full">
-                <div class="bg-slate-900/90 border border-slate-800 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto">
-                    <span class="text-base">😈</span>
-                    <h2 class="text-xs font-bold text-white tracking-wide">TaskMonster Universe</h2>
-                </div>
+                <button onclick="openMultiverseView()"
+                        class="bg-slate-900/90 border border-slate-800 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto hover:border-indigo-500/60 transition">
+                    <span class="text-base">{{ active_universe.icon if active_universe else '😈' }}</span>
+                    <h2 class="text-xs font-bold text-white tracking-wide">{{ active_universe.name if active_universe else 'TaskMonster Universe' }}</h2>
+                    <span class="text-slate-500 text-[10px]">🌀 Multiverse</span>
+                </button>
 
-                <button onclick="toggleSpaceView()" 
+                <button onclick="toggleSpaceView()"
                         class="pointer-events-auto px-3.5 py-1.5 bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-indigo-400/30">
                     ✖ Close View
                 </button>
@@ -643,11 +740,64 @@
         </div>
     </div>
 
+    <!-- FULLSCREEN MULTIVERSE VIEW OVERLAY - a lightweight, separate screen listing this user's
+         Universes. Deliberately NOT another zoom level of the Space View canvas above (that
+         camera/physics world is complex enough already) - clicking a universe here does a plain
+         full-page navigation to /?universe_id=<id>, same pattern as existing realm/bucket links. -->
+    <div id="multiverse-view-overlay" class="hidden fixed inset-0 bg-slate-950 z-40 overflow-y-auto">
+        <div class="relative z-10 pt-10 md:pt-6 px-4 flex items-center justify-between">
+            <div class="bg-slate-900/90 border border-slate-800 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2">
+                <span class="text-base">🌀</span>
+                <h2 class="text-xs font-bold text-white tracking-wide">Multiverse</h2>
+            </div>
+            <button onclick="closeMultiverseView()"
+                    class="px-3.5 py-1.5 bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-indigo-400/30">
+                ✖ Close
+            </button>
+        </div>
+
+        <div class="max-w-3xl mx-auto px-6 py-10">
+            <p class="text-slate-400 text-sm mb-6 text-center">Choose a Universe to explore, or create a new one.</p>
+            <div id="multiverse-grid" class="flex flex-wrap items-start justify-center gap-5">
+                {% for u in universes %}
+                <div class="relative flex flex-col items-center gap-2 w-28 group">
+                    {% if universes|length > 1 %}
+                    <form action="/universes/delete/" method="POST" onsubmit="return confirm('Delete the {{ u.name }} universe along with everything inside it - all its Realms, Buckets, and Tasks/People?');"
+                          class="absolute -top-1 -right-1 z-10">
+                        <input type="hidden" name="universe_id" value="{{ u.id }}">
+                        <button type="submit" title="Delete Universe"
+                                class="w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-red-400 hover:border-red-400/50 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition">🗑️</button>
+                    </form>
+                    {% endif %}
+                    <a href="/?universe_id={{ u.id }}" class="flex flex-col items-center gap-2 w-full">
+                        <div class="w-20 h-20 rounded-full flex items-center justify-center text-3xl border-2 {% if active_universe and u.id == active_universe.id %}border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30{% else %}border-slate-700 bg-slate-900 group-hover:border-indigo-500/60{% endif %} transition">
+                            {{ u.icon }}
+                        </div>
+                        <span class="text-xs font-bold text-white text-center truncate max-w-full">{{ u.name }}</span>
+                        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full {% if u.kind == 'contact' %}bg-emerald-500/15 text-emerald-300 border border-emerald-500/30{% else %}bg-indigo-500/15 text-indigo-300 border border-indigo-500/30{% endif %}">
+                            {% if u.kind == 'contact' %}👥 Contacts{% else %}😈 Tasks{% endif %}
+                        </span>
+                    </a>
+                </div>
+                {% endfor %}
+
+                <button type="button" onclick="document.getElementById('add-universe-modal').classList.remove('hidden')"
+                        class="flex flex-col items-center gap-2 w-28 group">
+                    <div class="w-20 h-20 rounded-full flex items-center justify-center text-3xl border-2 border-dashed border-slate-700 bg-slate-900 text-slate-500 group-hover:border-indigo-500/60 group-hover:text-indigo-400 transition">
+                        ➕
+                    </div>
+                    <span class="text-xs font-bold text-slate-400 group-hover:text-white text-center">Add Universe</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modals Sections (Add Realm, Edit Realm, Share Realm, Add Bucket, Edit Bucket, Add Task, Edit Task, Recurrence, Delete Task) -->
     <div id="add-realm-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
         <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
             <h3 class="text-xl font-bold mb-4">Create New Realm</h3>
             <form action="/realms/" method="POST" class="space-y-4">
+                <input type="hidden" name="universe_id" value="{{ active_universe.id if active_universe else '' }}">
                 <div class="flex items-center gap-3">
                     <div class="shrink-0 relative">
                         <label class="block text-xs font-medium text-slate-400 mb-1">Emoji</label>
@@ -739,6 +889,70 @@
                             class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Cancel</button>
                     <button type="submit" 
                             class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="add-universe-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 class="text-xl font-bold mb-4">Create New Universe</h3>
+            <form action="/universes/" method="POST" class="space-y-4">
+                <input type="hidden" name="kind" id="add-universe-kind" value="task">
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-2">Universe Type</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button type="button" id="add-universe-kind-task" onclick="selectUniverseKind('task')"
+                                class="p-3 rounded-xl border-2 border-indigo-500 bg-indigo-500/10 text-center transition">
+                            <div class="text-2xl mb-1">😈</div>
+                            <div class="text-xs font-bold text-white">Task Universe</div>
+                        </button>
+                        <button type="button" id="add-universe-kind-contact" onclick="selectUniverseKind('contact')"
+                                class="p-3 rounded-xl border-2 border-slate-700 bg-slate-900 text-center transition">
+                            <div class="text-2xl mb-1">👥</div>
+                            <div class="text-xs font-bold text-slate-300">Contact Universe</div>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="shrink-0 relative">
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Emoji</label>
+                        <input type="hidden" name="icon" id="add-universe-icon" value="😈">
+                        <button type="button" id="add-universe-picker" onclick="toggleEmojiGrid('add-universe')" class="w-12 h-10 bg-slate-900 border border-slate-700 rounded-xl flex items-center justify-center text-xl text-slate-200 cursor-pointer select-none">😈</button>
+                        <div id="add-universe-grid" class="hidden absolute top-14 left-0 w-48 max-h-48 bg-slate-900 border border-slate-700 rounded-xl p-2 grid grid-cols-4 gap-1 overflow-y-auto z-50 shadow-2xl">
+                            <div onclick="selectEmoji('add-universe', '🔮')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🔮</div>
+                            <div onclick="selectEmoji('add-universe', '⚡')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">⚡</div>
+                            <div onclick="selectEmoji('add-universe', '🎯')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎯</div>
+                            <div onclick="selectEmoji('add-universe', '💼')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💼</div>
+                            <div onclick="selectEmoji('add-universe', '🏠')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🏠</div>
+                            <div onclick="selectEmoji('add-universe', '👥')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">👥</div>
+                            <div onclick="selectEmoji('add-universe', '❤️')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">❤️</div>
+                            <div onclick="selectEmoji('add-universe', '🎂')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎂</div>
+                            <div onclick="selectEmoji('add-universe', '🏆')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🏆</div>
+                            <div onclick="selectEmoji('add-universe', '🚀')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🚀</div>
+                            <div onclick="selectEmoji('add-universe', '🌱')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🌱</div>
+                            <div onclick="selectEmoji('add-universe', '🎁')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎁</div>
+                            <div onclick="selectEmoji('add-universe', '🧠')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🧠</div>
+                            <div onclick="selectEmoji('add-universe', '💡')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💡</div>
+                            <div onclick="selectEmoji('add-universe', '🌟')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🌟</div>
+                            <div onclick="selectEmoji('add-universe', '🎨')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🎨</div>
+                            <div onclick="selectEmoji('add-universe', '📚')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">📚</div>
+                            <div onclick="selectEmoji('add-universe', '💻')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">💻</div>
+                            <div onclick="selectEmoji('add-universe', '🌲')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">🌲</div>
+                            <div onclick="selectEmoji('add-universe', '😈')" class="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-800 rounded cursor-pointer select-none">😈</div>
+                        </div>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Universe Name</label>
+                        <input type="text" name="name" id="add-universe-name" required
+                               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200">
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="document.getElementById('add-universe-modal').classList.add('hidden')"
+                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Cancel</button>
+                    <button type="submit"
+                            class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold">Create Universe</button>
                 </div>
             </form>
         </div>
@@ -1064,6 +1278,153 @@
         </div>
     </div>
 
+    <!-- Add Person Modal (Contact Universes) -->
+    <div id="add-person-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 md:p-6 w-full max-w-sm sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h3 class="text-lg md:text-xl font-bold text-white mb-4 pb-3 border-b border-slate-700/60">Add Person</h3>
+            <form action="/people/" method="POST" class="space-y-3.5">
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Realm / Bucket</label>
+                    <select name="bucket_id" id="person-modal-bucket-select" required class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                        {% for r in realms %}
+                            {% for b in r.buckets %}
+                            <option value="{{ b.id }}" {% if b.id == selected_bucket_id %}selected{% endif %}>{{ r.icon or '👥' }} {{ r.name }} / ⭐️ {{ b.name }}</option>
+                            {% endfor %}
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Name</label>
+                    <input type="text" name="name" required placeholder="e.g. Jane Doe"
+                           class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Phone</label>
+                        <input type="tel" name="phone" placeholder="555-1234"
+                               class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Email</label>
+                        <input type="email" name="email" placeholder="jane@example.com"
+                               class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Company</label>
+                        <input type="text" name="company" placeholder="Acme Inc."
+                               class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Role</label>
+                        <input type="text" name="role" placeholder="Designer"
+                               class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                    </div>
+                </div>
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Birthday (Optional)</label>
+                    <input type="date" name="birthday" onclick="this.showPicker()"
+                           class="w-full min-w-0 h-[38px] min-h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border appearance-none text-left leading-normal cursor-pointer">
+                </div>
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Tags</label>
+                    <input type="text" name="tags" placeholder="friend, client, family"
+                           class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                </div>
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Notes</label>
+                    <textarea name="notes" rows="2" placeholder="Add optional details..."
+                              class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border"></textarea>
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="document.getElementById('add-person-modal').classList.add('hidden')"
+                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium transition">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition shadow-lg shadow-indigo-600/20">
+                        Save Person
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Person Modal (Contact Universes) -->
+    <div id="edit-person-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 md:p-6 w-full max-w-sm sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h3 class="text-lg md:text-xl font-bold text-white mb-4 pb-3 border-b border-slate-700/60">Edit Person</h3>
+            <form action="/people/update/" method="POST" class="space-y-3.5">
+                <input type="hidden" name="person_id" id="edit-person-id">
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Realm / Bucket</label>
+                    <select name="bucket_id" id="edit-person-bucket-select" required class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                        {% for r in realms %}
+                            {% for b in r.buckets %}
+                            <option value="{{ b.id }}">{{ r.icon or '👥' }} {{ r.name }} / ⭐️ {{ b.name }}</option>
+                            {% endfor %}
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Name</label>
+                    <input type="text" name="name" id="edit-person-name" required
+                           class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Phone</label>
+                        <input type="tel" name="phone" id="edit-person-phone"
+                               class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Email</label>
+                        <input type="email" name="email" id="edit-person-email"
+                               class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Company</label>
+                        <input type="text" name="company" id="edit-person-company"
+                               class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Role</label>
+                        <input type="text" name="role" id="edit-person-role"
+                               class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                    </div>
+                </div>
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Birthday (Optional)</label>
+                    <input type="date" name="birthday" id="edit-person-birthday" onclick="this.showPicker()"
+                           class="w-full min-w-0 h-[38px] min-h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border appearance-none text-left leading-normal cursor-pointer">
+                </div>
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Tags</label>
+                    <input type="text" name="tags" id="edit-person-tags"
+                           class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                </div>
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Notes</label>
+                    <textarea name="notes" id="edit-person-notes" rows="2"
+                              class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border"></textarea>
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="document.getElementById('edit-person-modal').classList.add('hidden')"
+                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium transition">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition shadow-lg shadow-indigo-600/20">
+                        Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Edit Task Modal -->
     <div id="edit-item-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
         <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 md:p-6 w-full max-w-sm sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -1254,6 +1615,8 @@
     </div>
 
     <script>
+        const isContactUniverse = {{ 'true' if is_contact_universe else 'false' }};
+
         let realmsData = [
             {% for r in realms %}
             {
@@ -1289,6 +1652,28 @@
             }
 
             document.getElementById('add-item-modal').classList.remove('hidden');
+        }
+
+        function openGlobalAddPersonModal() {
+            const bucketSelect = document.getElementById('person-modal-bucket-select');
+            if (bucketSelect && currentSelectedBucketId) {
+                bucketSelect.value = currentSelectedBucketId;
+            }
+            document.getElementById('add-person-modal').classList.remove('hidden');
+        }
+
+        function openEditPerson(el) {
+            document.getElementById('edit-person-id').value = el.dataset.id;
+            document.getElementById('edit-person-name').value = el.dataset.name;
+            document.getElementById('edit-person-phone').value = el.dataset.phone;
+            document.getElementById('edit-person-email').value = el.dataset.email;
+            document.getElementById('edit-person-notes').value = el.dataset.notes;
+            document.getElementById('edit-person-birthday').value = el.dataset.birthday;
+            document.getElementById('edit-person-company').value = el.dataset.company;
+            document.getElementById('edit-person-role').value = el.dataset.role;
+            document.getElementById('edit-person-tags').value = el.dataset.tags;
+            document.getElementById('edit-person-bucket-select').value = el.dataset.bucketId;
+            document.getElementById('edit-person-modal').classList.remove('hidden');
         }
 
         function onModalRealmChange() {
@@ -1537,6 +1922,26 @@
             document.getElementById(prefix + '-icon').value = emoji;
             document.getElementById(prefix + '-picker').innerText = emoji;
             document.getElementById(prefix + '-grid').classList.add('hidden');
+        }
+
+        function selectUniverseKind(kind) {
+            document.getElementById('add-universe-kind').value = kind;
+            const taskBtn = document.getElementById('add-universe-kind-task');
+            const contactBtn = document.getElementById('add-universe-kind-contact');
+            const active = 'border-indigo-500 bg-indigo-500/10';
+            const inactive = 'border-slate-700 bg-slate-900';
+            taskBtn.className = taskBtn.className.replace(active, '').replace(inactive, '').trim() + ' ' + (kind === 'task' ? active : inactive);
+            contactBtn.className = contactBtn.className.replace(active, '').replace(inactive, '').trim() + ' ' + (kind === 'contact' ? active : inactive);
+            taskBtn.querySelector('.text-xs').className = 'text-xs font-bold ' + (kind === 'task' ? 'text-white' : 'text-slate-300');
+            contactBtn.querySelector('.text-xs').className = 'text-xs font-bold ' + (kind === 'contact' ? 'text-white' : 'text-slate-300');
+            // Only auto-swap the icon while it's still one of the two type defaults - don't
+            // clobber a custom emoji the user already picked from the grid.
+            const iconInput = document.getElementById('add-universe-icon');
+            if (iconInput.value === '😈' || iconInput.value === '👥') {
+                const newIcon = kind === 'task' ? '😈' : '👥';
+                iconInput.value = newIcon;
+                document.getElementById('add-universe-picker').innerText = newIcon;
+            }
         }
 
         let currentSelectedRealmId = {% if selected_realm_id %}{{ selected_realm_id }}{% else %}null{% endif %};
@@ -2670,6 +3075,14 @@
             }
         }
 
+        function openMultiverseView() {
+            document.getElementById('multiverse-view-overlay').classList.remove('hidden');
+        }
+
+        function closeMultiverseView() {
+            document.getElementById('multiverse-view-overlay').classList.add('hidden');
+        }
+
         function initSpaceCanvas() {
             spaceCanvas = document.getElementById('space-canvas');
             spaceCtx = spaceCanvas.getContext('2d');
@@ -2811,10 +3224,48 @@
                                 };
                             }
 
-                            const bucketCardElements = Array.from(document.querySelectorAll(`.timeline-card-wrapper[data-bucket-id="${bucket.id}"]`));
+                            // In a Contact Universe a bucket's "tasks" are actually People - built from
+                            // .person-card-wrapper elements instead of .timeline-card-wrapper, but shaped
+                            // into the same task-like object (isPerson: true, no due date) so every render/
+                            // click/label function downstream can treat them identically to a real task.
+                            const bucketCardElements = isContactUniverse
+                                ? Array.from(document.querySelectorAll(`.person-card-wrapper[data-bucket-id="${bucket.id}"]`))
+                                : Array.from(document.querySelectorAll(`.timeline-card-wrapper[data-bucket-id="${bucket.id}"]`));
                             const filteredTasks = [];
 
                             bucketCardElements.forEach((el) => {
+                                if (isContactUniverse) {
+                                    filteredTasks.push({
+                                        id: el.getAttribute('data-person-id'),
+                                        title: el.getAttribute('data-name') || '',
+                                        dueDate: null,
+                                        dueTime: '',
+                                        dueDateFormatted: '',
+                                        amount: '',
+                                        isShoppable: false,
+                                        description: el.getAttribute('data-notes') || '',
+                                        recurrenceType: 'none',
+                                        bucketId: bucket.id,
+                                        realmId: realm.id,
+                                        realmName: realm.name,
+                                        bucketName: bucket.name,
+                                        isOverdue: false,
+                                        isRecurring: false,
+                                        isPerson: true,
+                                        personPhone: el.getAttribute('data-phone') || '',
+                                        personEmail: el.getAttribute('data-email') || '',
+                                        personCompany: el.getAttribute('data-company') || '',
+                                        personRole: el.getAttribute('data-role') || '',
+                                        personTags: el.getAttribute('data-tags') || '',
+                                        personBirthday: el.getAttribute('data-birthday') || '',
+                                        personBirthdayFormatted: el.getAttribute('data-birthday-formatted') || '',
+                                        domElement: el,
+                                        radius: 18,
+                                        floatOffset: Math.random() * Math.PI * 2
+                                    });
+                                    return;
+                                }
+
                                 const isCompleted = el.getAttribute('data-completed') === 'true';
                                 const recurringFlag = el.getAttribute('data-recurring') === 'true';
 
@@ -2851,7 +3302,11 @@
                                 });
                             });
 
-                            filteredTasks.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+                            if (isContactUniverse) {
+                                filteredTasks.sort((a, b) => a.title.localeCompare(b.title));
+                            } else {
+                                filteredTasks.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+                            }
 
                             // Tasks form tight concentric rings directly around THEIR OWN bucket (like
                             // moons around a moon) instead of spiraling outward - keeps each bucket's
@@ -3069,7 +3524,7 @@
             // unchanged, rather than building a second parallel rendering path for this one view.
             const allTasksBucket = {
                 id: '__all_tasks_bucket__',
-                name: 'All Tasks',
+                name: isContactUniverse ? 'All People' : 'All Tasks',
                 isAddButton: false,
                 tasks: allTasksFlat,
                 addTaskButton: null,
@@ -3082,8 +3537,8 @@
 
             const allTasksRealm = {
                 id: '__all_tasks_realm__',
-                name: 'Every Task',
-                icon: '😈',
+                name: isContactUniverse ? 'Every Person' : 'Every Task',
+                icon: isContactUniverse ? '👥' : '😈',
                 isAddButton: false,
                 isShared: false,
                 sharedByName: '',
@@ -3530,7 +3985,9 @@
                         // this also lets us put "Today / Tomorrow / [date]" labels above the chain that
                         // are guaranteed to make sense, rather than assigning positions in whatever raw
                         // order the tasks happen to come back in.
-                        const linearSortedTasks = [...bucket.tasks].sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+                        const linearSortedTasks = isContactUniverse
+                            ? [...bucket.tasks].sort((a, b) => a.title.localeCompare(b.title))
+                            : [...bucket.tasks].sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
                         linearSortedTasks.forEach((task, tIdx) => {
                             task.x = startLinearX + (tIdx * stepSpacing);
                             task.y = bucket.y;
@@ -3681,8 +4138,21 @@
 
                         // Date row above the chain, "Today / Tomorrow / [date]" - only makes sense in
                         // the linear view where tasks are laid out left-to-right in date order (see the
-                        // sort applied when positioning them above).
-                        if (isSelectedBucket) {
+                        // sort applied when positioning them above). For a Person node there's no due
+                        // date, so this row shows a birthday badge instead (or nothing at all).
+                        if (isSelectedBucket && task.isPerson) {
+                            if (task.personBirthdayFormatted) {
+                                spaceCtx.save();
+                                spaceCtx.textAlign = 'center';
+                                spaceCtx.textBaseline = 'middle';
+                                spaceCtx.font = isActiveSwipeNode ? 'bold 46px sans-serif' : '42px sans-serif';
+                                spaceCtx.fillStyle = '#fbbf24';
+                                spaceCtx.shadowColor = '#f59e0b';
+                                spaceCtx.shadowBlur = 10;
+                                spaceCtx.fillText(`🎂 ${task.personBirthdayFormatted}`, task.x, task.y - task.radius - 34);
+                                spaceCtx.restore();
+                            }
+                        } else if (isSelectedBucket) {
                             spaceCtx.save();
                             spaceCtx.textAlign = 'center';
                             spaceCtx.textBaseline = 'middle';
@@ -4424,6 +4894,24 @@
             form.submit();
         }
 
+        function deletePersonDirect(personId, personName) {
+            if (!confirm(`Delete ${personName}?`)) return;
+
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/people/delete/';
+            form.style.display = 'none';
+
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'person_id';
+            input.value = personId;
+            form.appendChild(input);
+
+            document.body.appendChild(form);
+            form.submit();
+        }
+
         function detectClickNode(clientX, clientY) {
             const worldX = (clientX - cameraOffset.x) / cameraZoom;
             const worldY = (clientY - cameraOffset.y) / cameraZoom;
@@ -4435,7 +4923,11 @@
                 const iconPos = getTaskDeleteIconPos(longPressTaskForDelete);
                 const dist = Math.hypot(worldX - iconPos.x, worldY - iconPos.y);
                 if (dist <= iconPos.radius + 10) {
-                    openDeleteModal(longPressTaskForDelete.id, !!longPressTaskForDelete.isRecurring);
+                    if (longPressTaskForDelete.isPerson) {
+                        deletePersonDirect(longPressTaskForDelete.id, longPressTaskForDelete.title);
+                    } else {
+                        openDeleteModal(longPressTaskForDelete.id, !!longPressTaskForDelete.isRecurring);
+                    }
                 }
                 longPressTaskForDelete = null;
                 return;
@@ -4515,7 +5007,11 @@
             if (clickedAddTaskButton) {
                 currentSelectedRealmId = clickedAddTaskButton.realmId;
                 currentSelectedBucketId = clickedAddTaskButton.bucketId;
-                openGlobalAddTaskModal();
+                if (isContactUniverse) {
+                    openGlobalAddPersonModal();
+                } else {
+                    openGlobalAddTaskModal();
+                }
                 return;
             }
 
@@ -4655,16 +5151,22 @@
 
             if (!dock || !wrapper) return;
 
-            const sortedTasks = [...bucket.tasks].sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+            const sortedTasks = isContactUniverse
+                ? [...bucket.tasks].sort((a, b) => a.title.localeCompare(b.title))
+                : [...bucket.tasks].sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
 
-            title.innerText = `⭐️ ${bucket.name} (${sortedTasks.length} Tasks)`;
+            title.innerText = isContactUniverse
+                ? `⭐️ ${bucket.name} (${sortedTasks.length} People)`
+                : `⭐️ ${bucket.name} (${sortedTasks.length} Tasks)`;
             wrapper.innerHTML = '';
 
             if (sortedTasks.length === 0) {
                 activeSwipeTaskId = null;
-                wrapper.innerHTML = '<span class="text-xs text-slate-400 py-2 px-3 block text-center w-full">No active tasks in this bucket</span>';
+                wrapper.innerHTML = isContactUniverse
+                    ? '<span class="text-xs text-slate-400 py-2 px-3 block text-center w-full">No people in this bucket</span>'
+                    : '<span class="text-xs text-slate-400 py-2 px-3 block text-center w-full">No active tasks in this bucket</span>';
             } else {
-                // Default to the first chronological task on bucket load
+                // Default to the first sorted task/person on bucket load
                 activeSwipeTaskId = sortedTasks[0].id;
                 focusCameraOnTask(sortedTasks[0]);
 
@@ -4672,45 +5174,70 @@
                     const card = document.createElement('div');
                     card.setAttribute('data-swipe-task-id', task.id);
                     card.className = "w-full shrink-0 snap-center bg-slate-800/95 border border-slate-700/90 hover:border-indigo-500/80 p-3 rounded-xl transition-all shadow-lg space-y-2 select-none cursor-pointer";
-                    
-                    let badgeClass = "bg-indigo-500/20 text-indigo-300 border-indigo-500/30";
-                    let badgeText = `⚡ Task ${index + 1} of ${sortedTasks.length}`;
-                    if (task.isOverdue) {
-                        badgeClass = "bg-rose-500/20 text-rose-300 border-rose-500/30";
-                        badgeText = `⚠️ Overdue (${index + 1}/${sortedTasks.length})`;
-                    } else if (task.isRecurring) {
-                        badgeClass = "bg-amber-500/20 text-amber-300 border-amber-500/30";
-                        badgeText = `🔄 Repeat (${index + 1}/${sortedTasks.length})`;
-                    }
 
-                    const amountText = task.amount ? `<span class="text-emerald-400 font-bold text-xs">$${parseFloat(task.amount).toFixed(2)}</span>` : '';
-                    const descText = task.description ? `<p class="text-slate-400 text-xs line-clamp-2 leading-relaxed mt-1">${task.description}</p>` : '';
-                    const shopBtnHtml = task.isShoppable
-                        ? `<button onclick="event.stopPropagation(); openAmazonSearch(${JSON.stringify(task.title).replace(/"/g, '&quot;')}, ${JSON.stringify(task.amount).replace(/"/g, '&quot;')})" title="Shop on Amazon" class="text-slate-400 hover:text-amber-400 text-xs">🛒</button>`
-                        : '';
+                    if (task.isPerson) {
+                        const contactLine = [task.personPhone, task.personEmail].filter(Boolean).join(' · ');
+                        const roleLine = [task.personRole, task.personCompany].filter(Boolean).join(' at ');
+                        const notesText = task.description ? `<p class="text-slate-400 text-xs line-clamp-2 leading-relaxed mt-1">${task.description}</p>` : '';
 
-                    card.innerHTML = `
-                        <div class="flex items-center justify-between gap-2 border-b border-slate-700/50 pb-1.5">
-                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border ${badgeClass}">${badgeText}</span>
-                            <div class="flex items-center gap-2">
-                                ${amountText}
-                                <form action="/items/toggle-complete/" method="POST" class="inline" onclick="event.stopPropagation()" onsubmit="triggerTaskConfetti(event, this)">
-                                    <input type="hidden" name="item_id" value="${task.id}">
-                                    <button type="submit" title="Mark Complete" class="w-5 h-5 rounded border border-slate-600 hover:border-emerald-400 text-slate-400 hover:text-emerald-400 flex items-center justify-center text-xs transition">✓</button>
-                                </form>
-                                ${shopBtnHtml}
-                                <button onclick="event.stopPropagation(); openEditItemFromTask(${JSON.stringify(task).replace(/"/g, '&quot;')})" title="Edit Task" class="text-slate-400 hover:text-indigo-400 text-xs">✏️</button>
+                        card.innerHTML = `
+                            <div class="flex items-center justify-between gap-2 border-b border-slate-700/50 pb-1.5">
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-indigo-500/20 text-indigo-300 border-indigo-500/30">👥 Person ${index + 1} of ${sortedTasks.length}</span>
+                                <div class="flex items-center gap-2">
+                                    <button onclick="event.stopPropagation(); deletePersonDirect('${task.id}', ${JSON.stringify(task.title)})" title="Delete Person" class="text-slate-400 hover:text-red-400 text-xs">🗑️</button>
+                                    <button onclick="event.stopPropagation(); openEditPersonFromTask(${JSON.stringify(task).replace(/"/g, '&quot;')})" title="Edit Person" class="text-slate-400 hover:text-indigo-400 text-xs">✏️</button>
+                                </div>
                             </div>
-                        </div>
-                        <div>
-                            <h4 class="text-sm font-bold text-white break-words leading-snug">${task.title}</h4>
-                            ${descText}
-                        </div>
-                        <div class="flex items-center justify-between pt-1 border-t border-slate-700/40 text-[11px] text-indigo-300 font-mono">
-                            <span>📅 ${task.dueDateFormatted}</span>
-                            <span class="text-indigo-400 font-sans font-semibold text-[10px]">Tap to Focus 🎯</span>
-                        </div>
-                    `;
+                            <div>
+                                <h4 class="text-sm font-bold text-white break-words leading-snug">${task.title}</h4>
+                                ${roleLine ? `<p class="text-slate-400 text-xs mt-0.5">💼 ${roleLine}</p>` : ''}
+                                ${notesText}
+                            </div>
+                            <div class="flex items-center justify-between pt-1 border-t border-slate-700/40 text-[11px] text-indigo-300 font-mono">
+                                <span>${contactLine || '&nbsp;'}</span>
+                                <span class="text-indigo-400 font-sans font-semibold text-[10px]">Tap to Focus 🎯</span>
+                            </div>
+                        `;
+                    } else {
+                        let badgeClass = "bg-indigo-500/20 text-indigo-300 border-indigo-500/30";
+                        let badgeText = `⚡ Task ${index + 1} of ${sortedTasks.length}`;
+                        if (task.isOverdue) {
+                            badgeClass = "bg-rose-500/20 text-rose-300 border-rose-500/30";
+                            badgeText = `⚠️ Overdue (${index + 1}/${sortedTasks.length})`;
+                        } else if (task.isRecurring) {
+                            badgeClass = "bg-amber-500/20 text-amber-300 border-amber-500/30";
+                            badgeText = `🔄 Repeat (${index + 1}/${sortedTasks.length})`;
+                        }
+
+                        const amountText = task.amount ? `<span class="text-emerald-400 font-bold text-xs">$${parseFloat(task.amount).toFixed(2)}</span>` : '';
+                        const descText = task.description ? `<p class="text-slate-400 text-xs line-clamp-2 leading-relaxed mt-1">${task.description}</p>` : '';
+                        const shopBtnHtml = task.isShoppable
+                            ? `<button onclick="event.stopPropagation(); openAmazonSearch(${JSON.stringify(task.title).replace(/"/g, '&quot;')}, ${JSON.stringify(task.amount).replace(/"/g, '&quot;')})" title="Shop on Amazon" class="text-slate-400 hover:text-amber-400 text-xs">🛒</button>`
+                            : '';
+
+                        card.innerHTML = `
+                            <div class="flex items-center justify-between gap-2 border-b border-slate-700/50 pb-1.5">
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border ${badgeClass}">${badgeText}</span>
+                                <div class="flex items-center gap-2">
+                                    ${amountText}
+                                    <form action="/items/toggle-complete/" method="POST" class="inline" onclick="event.stopPropagation()" onsubmit="triggerTaskConfetti(event, this)">
+                                        <input type="hidden" name="item_id" value="${task.id}">
+                                        <button type="submit" title="Mark Complete" class="w-5 h-5 rounded border border-slate-600 hover:border-emerald-400 text-slate-400 hover:text-emerald-400 flex items-center justify-center text-xs transition">✓</button>
+                                    </form>
+                                    ${shopBtnHtml}
+                                    <button onclick="event.stopPropagation(); openEditItemFromTask(${JSON.stringify(task).replace(/"/g, '&quot;')})" title="Edit Task" class="text-slate-400 hover:text-indigo-400 text-xs">✏️</button>
+                                </div>
+                            </div>
+                            <div>
+                                <h4 class="text-sm font-bold text-white break-words leading-snug">${task.title}</h4>
+                                ${descText}
+                            </div>
+                            <div class="flex items-center justify-between pt-1 border-t border-slate-700/40 text-[11px] text-indigo-300 font-mono">
+                                <span>📅 ${task.dueDateFormatted}</span>
+                                <span class="text-indigo-400 font-sans font-semibold text-[10px]">Tap to Focus 🎯</span>
+                            </div>
+                        `;
+                    }
 
                     card.onclick = () => {
                         hideHudCard();
@@ -4742,6 +5269,22 @@
             dummyBtn.setAttribute('data-realm-id', task.realmId);
 
             openEditItem(dummyBtn);
+        }
+
+        function openEditPersonFromTask(task) {
+            const dummyBtn = document.createElement('button');
+            dummyBtn.setAttribute('data-id', task.id);
+            dummyBtn.setAttribute('data-name', task.title);
+            dummyBtn.setAttribute('data-phone', task.personPhone || '');
+            dummyBtn.setAttribute('data-email', task.personEmail || '');
+            dummyBtn.setAttribute('data-notes', task.description || '');
+            dummyBtn.setAttribute('data-birthday', task.personBirthday || '');
+            dummyBtn.setAttribute('data-company', task.personCompany || '');
+            dummyBtn.setAttribute('data-role', task.personRole || '');
+            dummyBtn.setAttribute('data-tags', task.personTags || '');
+            dummyBtn.setAttribute('data-bucket-id', task.bucketId);
+
+            openEditPerson(dummyBtn);
         }
 
         function setupSwipeDockObserver(container, tasks) {
@@ -4859,13 +5402,26 @@
             const title = document.getElementById('hud-task-title');
             const date = document.getElementById('hud-task-date');
             const idInput = document.getElementById('hud-task-id-input');
+            const completeForm = document.getElementById('hud-complete-form');
+            const shopBtn = document.getElementById('hud-shop-btn');
 
             badgeCategory.innerText = `${task.realmName} / ⭐️ ${task.bucketName}`;
             title.innerText = task.title;
-            date.innerText = `📅 ${task.dueDateFormatted}`;
             idInput.value = task.id;
 
-            const shopBtn = document.getElementById('hud-shop-btn');
+            if (task.isPerson) {
+                const contactLine = [task.personPhone, task.personEmail].filter(Boolean).join(' · ');
+                date.innerText = contactLine || (task.personBirthdayFormatted ? `🎂 ${task.personBirthdayFormatted}` : '');
+                if (completeForm) completeForm.classList.add('hidden');
+                if (shopBtn) shopBtn.classList.add('hidden');
+                badgeStatus.innerText = '👥 Person';
+                badgeStatus.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30';
+                card.classList.remove('hidden');
+                return;
+            }
+
+            if (completeForm) completeForm.classList.remove('hidden');
+            date.innerText = `📅 ${task.dueDateFormatted}`;
             if (shopBtn) shopBtn.classList.toggle('hidden', !task.isShoppable);
 
             if (task.isOverdue) {
@@ -4884,6 +5440,11 @@
 
         function triggerHudEdit() {
             if (!activeSelectedTask) return;
+
+            if (activeSelectedTask.isPerson) {
+                openEditPersonFromTask(activeSelectedTask);
+                return;
+            }
 
             const dummyBtn = document.createElement('button');
             dummyBtn.setAttribute('data-id', activeSelectedTask.id);

@@ -169,6 +169,7 @@ def safe_apply_migrations():
             conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;'))
             conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS is_shoppable BOOLEAN DEFAULT FALSE;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT \'UTC\';'))
+            conn.execute(text('ALTER TABLE realm ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
     else:
         sqlite_file_name = "brain.db"
         if os.path.exists(sqlite_file_name):
@@ -181,6 +182,8 @@ def safe_apply_migrations():
                 cursor.execute('ALTER TABLE realm ADD COLUMN "sort_order" INTEGER DEFAULT 0;')
             if 'user_id' not in realm_cols:
                 cursor.execute('ALTER TABLE realm ADD COLUMN "user_id" INTEGER;')
+            if 'universe_id' not in realm_cols:
+                cursor.execute('ALTER TABLE realm ADD COLUMN "universe_id" INTEGER;')
 
             cursor.execute("PRAGMA table_info(bucket);")
             bucket_cols = [col[1] for col in cursor.fetchall()]
@@ -212,6 +215,17 @@ class User(SQLModel, table=True):
     name: str = "User"
     timezone: str = Field(default="UTC")
     realms: List["Realm"] = Relationship(back_populates="user")
+    universes: List["Universe"] = Relationship(back_populates="user")
+
+class Universe(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True)
+    icon: str = "😈"
+    kind: str = Field(default="task")  # "task" | "contact" — immutable after creation
+    sort_order: int = Field(default=0)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id")
+    user: Optional[User] = Relationship(back_populates="universes")
+    realms: List["Realm"] = Relationship(back_populates="universe")
 
 class Realm(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -219,7 +233,9 @@ class Realm(SQLModel, table=True):
     icon: str = "🔮"
     sort_order: int = Field(default=0)
     user_id: Optional[int] = Field(default=None, foreign_key="users.id")
+    universe_id: Optional[int] = Field(default=None, foreign_key="universe.id")
     user: Optional[User] = Relationship(back_populates="realms")
+    universe: Optional[Universe] = Relationship(back_populates="realms")
     buckets: List["Bucket"] = Relationship(back_populates="realm")
 
 class Bucket(SQLModel, table=True):
@@ -230,6 +246,7 @@ class Bucket(SQLModel, table=True):
     realm_id: int = Field(foreign_key="realm.id")
     realm: Optional[Realm] = Relationship(back_populates="buckets")
     items: List["Item"] = Relationship(back_populates="bucket")
+    people: List["Person"] = Relationship(back_populates="bucket")
 
 class Item(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -252,6 +269,19 @@ class Reminder(SQLModel, table=True):
     email_sent: bool = False
     item_id: int = Field(foreign_key="item.id")
     item: Optional[Item] = Relationship(back_populates="reminders")
+
+class Person(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+    birthday: Optional[datetime] = None
+    company: Optional[str] = None
+    role: Optional[str] = None
+    tags: Optional[str] = None
+    bucket_id: int = Field(foreign_key="bucket.id")
+    bucket: Optional[Bucket] = Relationship(back_populates="people")
 
 class RealmShare(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -492,6 +522,23 @@ def user_can_access_item(session: Session, user: Optional[User], item_id: Option
         return False
     return user_can_access_bucket(session, user, item.bucket_id)
 
+def user_owns_universe(session: Session, user: Optional[User], universe_id: Optional[int]) -> bool:
+    """True only if this user owns the universe. Universes aren't shareable, so this is
+    equivalent to "can access" - there's no collaborator concept for them."""
+    if not user or not universe_id:
+        return False
+    universe = session.get(Universe, universe_id)
+    return bool(universe and universe.user_id == user.id)
+
+def user_can_access_person(session: Session, user: Optional[User], person_id: Optional[int]) -> bool:
+    """True if this user has access (owner or collaborator) to the realm a person lives in."""
+    if not user or not person_id:
+        return False
+    person = session.get(Person, person_id)
+    if not person:
+        return False
+    return user_can_access_bucket(session, user, person.bucket_id)
+
 # --- Reorder Pattern Detection ---
 # A few common filler words that show up in shopping-task titles ("get more", "buy", "order"...) but
 # don't actually identify the product - stripped out before comparing two titles, so "Get more K-cups"
@@ -611,11 +658,54 @@ def find_recurring_suggestion(session: Session, new_item: "Item") -> Optional[di
         "new_item_id": new_item.id,
     }
 
+DEFAULT_TASK_UNIVERSE_NAME = "TaskMonster Universe"
+DEFAULT_TASK_UNIVERSE_ICON = "😈"
+
+def get_or_create_default_task_universe(session: Session, user_id: int) -> "Universe":
+    """Every user always has exactly one 'task' Universe to fall back to. Named/iconed to match
+    the space-view title that used to be hardcoded, so existing single-universe users see no
+    visible change once that title becomes data-driven."""
+    universe = session.exec(
+        select(Universe).where(Universe.user_id == user_id, Universe.kind == "task")
+    ).first()
+    if not universe:
+        universe = Universe(
+            name=DEFAULT_TASK_UNIVERSE_NAME,
+            icon=DEFAULT_TASK_UNIVERSE_ICON,
+            kind="task",
+            sort_order=0,
+            user_id=user_id,
+        )
+        session.add(universe)
+        session.commit()
+        session.refresh(universe)
+    return universe
+
+def backfill_default_universes():
+    """One-time-per-user migration: wraps any pre-existing Realms (created before Universe
+    existed) in an auto-created default Task Universe. Idempotent - safe to run on every
+    process start."""
+    with Session(engine) as session:
+        orphan_user_ids = session.exec(
+            select(Realm.user_id)
+            .where(Realm.universe_id == None, Realm.user_id != None)  # noqa: E711
+            .distinct()
+        ).all()
+        for user_id in orphan_user_ids:
+            default_universe = get_or_create_default_task_universe(session, user_id)
+            orphan_realms = session.exec(
+                select(Realm).where(Realm.user_id == user_id, Realm.universe_id == None)  # noqa: E711
+            ).all()
+            for realm in orphan_realms:
+                realm.universe_id = default_universe.id
+            session.commit()
+
 @app.on_event("startup")
 def on_startup():
     run_automated_backup()
     safe_apply_migrations()
     SQLModel.metadata.create_all(engine)
+    backfill_default_universes()
 
 def find_or_create_user_and_log_in(request: Request, email: str, name: str):
     """Shared by every sign-in provider (Google, Apple, ...) - looks up or creates the User by email,
@@ -632,10 +722,11 @@ def find_or_create_user_and_log_in(request: Request, email: str, name: str):
             session.commit()
             session.refresh(user)
 
-            shopping = Realm(name="Shopping", icon="🛒", sort_order=0, user_id=user.id)
-            home = Realm(name="Home", icon="🏡", sort_order=1, user_id=user.id)
-            work = Realm(name="Work", icon="💼", sort_order=2, user_id=user.id)
-            goals = Realm(name="Goals", icon="🏆", sort_order=3, user_id=user.id)
+            default_universe = get_or_create_default_task_universe(session, user.id)
+            shopping = Realm(name="Shopping", icon="🛒", sort_order=0, user_id=user.id, universe_id=default_universe.id)
+            home = Realm(name="Home", icon="🏡", sort_order=1, user_id=user.id, universe_id=default_universe.id)
+            work = Realm(name="Work", icon="💼", sort_order=2, user_id=user.id, universe_id=default_universe.id)
+            goals = Realm(name="Goals", icon="🏆", sort_order=3, user_id=user.id, universe_id=default_universe.id)
             session.add_all([shopping, home, work, goals])
             session.commit()
 
@@ -741,7 +832,12 @@ def logout(request: Request):
 
 # --- Dashboard Route ---
 @app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optional[int] = None):
+def dashboard(
+    request: Request,
+    realm_id: Optional[int] = None,
+    bucket_id: Optional[int] = None,
+    universe_id: Optional[int] = None,
+):
     with Session(engine) as session:
         user = get_current_user(request, session)
         user_tz = user.timezone if (user and user.timezone) else request.session.get('user_timezone', 'UTC')
@@ -749,8 +845,8 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
 
         if not user:
             return templates.TemplateResponse(
-                request=request, 
-                name="index.html", 
+                request=request,
+                name="index.html",
                 context={
                     "user": None,
                     "today": today_date,
@@ -758,7 +854,42 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
                 }
             )
 
-        owned_realms = session.exec(select(Realm).where(Realm.user_id == user.id)).all()
+        universes = session.exec(
+            select(Universe).where(Universe.user_id == user.id).order_by(Universe.sort_order)
+        ).all()
+
+        # Active-universe resolution: a realm/bucket link always wins (a realm belongs to
+        # exactly one universe, so there's no ambiguity), otherwise fall back to an explicit
+        # ?universe_id=, otherwise default to the user's task universe.
+        active_universe = None
+        if realm_id:
+            r = session.get(Realm, realm_id)
+            if r and r.universe_id:
+                active_universe = session.get(Universe, r.universe_id)
+        elif bucket_id:
+            b = session.get(Bucket, bucket_id)
+            if b:
+                r = session.get(Realm, b.realm_id)
+                if r and r.universe_id:
+                    active_universe = session.get(Universe, r.universe_id)
+        if not active_universe and universe_id:
+            if user_owns_universe(session, user, universe_id):
+                active_universe = session.get(Universe, universe_id)
+        if not active_universe:
+            active_universe = next((u for u in universes if u.kind == "task"), None) or (universes[0] if universes else None)
+            if not active_universe:
+                active_universe = get_or_create_default_task_universe(session, user.id)
+                universes = [active_universe]
+
+        active_universe_id = active_universe.id if active_universe else None
+        is_contact_universe = bool(active_universe and active_universe.kind == "contact")
+
+        owned_realms = session.exec(
+            select(Realm).where(Realm.user_id == user.id, Realm.universe_id == active_universe_id)
+        ).all()
+        # Shared realms are intentionally NOT filtered by universe: a shared realm's
+        # universe_id points at the *owner's* Universe row, which has no meaning relative to
+        # this viewer's own universes. Filtering here would make shared realms disappear.
         shared_realm_ids = session.exec(select(RealmShare.realm_id).where(RealmShare.user_id == user.id)).all()
         shared_realms = session.exec(select(Realm).where(Realm.id.in_(shared_realm_ids))).all() if shared_realm_ids else []
 
@@ -785,8 +916,14 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
         for realm in realms:
             realm.buckets.sort(key=lambda b: b.sort_order)
 
-        query = select(Item).join(Bucket).where(Bucket.realm_id.in_(all_realm_ids)) if all_realm_ids else select(Item).where(False)
-        items = session.exec(query.order_by(Item.due_date.asc())).all() if all_realm_ids else []
+        if is_contact_universe:
+            people_query = select(Person).join(Bucket).where(Bucket.realm_id.in_(all_realm_ids)) if all_realm_ids else select(Person).where(False)
+            people = session.exec(people_query).all() if all_realm_ids else []
+            items = []
+        else:
+            query = select(Item).join(Bucket).where(Bucket.realm_id.in_(all_realm_ids)) if all_realm_ids else select(Item).where(False)
+            items = session.exec(query.order_by(Item.due_date.asc())).all() if all_realm_ids else []
+            people = []
 
         return templates.TemplateResponse(
             request=request,
@@ -796,6 +933,10 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
                 "realms": realms,
                 "buckets": buckets,
                 "items": items,
+                "people": people,
+                "universes": universes,
+                "active_universe": active_universe,
+                "is_contact_universe": is_contact_universe,
                 "selected_realm_id": realm_id,
                 "selected_bucket_id": bucket_id,
                 "collaborators_map": collaborators_map,
@@ -804,16 +945,100 @@ def dashboard(request: Request, realm_id: Optional[int] = None, bucket_id: Optio
             }
         )
 
-# --- Realm & Bucket Endpoints ---
-@app.post("/realms/")
-def create_realm(request: Request, name: str = Form(...), icon: str = Form("🔮")):
+# --- Universe Endpoints ---
+@app.post("/universes/")
+def create_universe(request: Request, name: str = Form(...), icon: str = Form("😈"), kind: str = Form("task")):
+    if kind not in ("task", "contact"):
+        kind = "task"
     with Session(engine) as session:
         user = get_current_user(request, session)
         if user:
-            max_order = len(session.exec(select(Realm).where(Realm.user_id == user.id)).all())
-            session.add(Realm(name=name, icon=icon, sort_order=max_order, user_id=user.id))
+            max_order = len(session.exec(select(Universe).where(Universe.user_id == user.id)).all())
+            universe = Universe(name=name, icon=icon, kind=kind, sort_order=max_order, user_id=user.id)
+            session.add(universe)
             session.commit()
+            session.refresh(universe)
+            return RedirectResponse(url=f"/?universe_id={universe.id}", status_code=303)
     return RedirectResponse(url="/", status_code=303)
+
+@app.post("/universes/update/")
+def update_universe(request: Request, universe_id: int = Form(...), name: str = Form(...), icon: str = Form("😈")):
+    # kind is intentionally not accepted here - a universe's type is immutable after creation.
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user_owns_universe(session, user, universe_id):
+            return RedirectResponse(url="/", status_code=303)
+        universe = session.get(Universe, universe_id)
+        if universe:
+            universe.name = name
+            universe.icon = icon
+            session.add(universe)
+            session.commit()
+    return RedirectResponse(url=f"/?universe_id={universe_id}", status_code=303)
+
+@app.post("/universes/reorder/")
+def reorder_universes(request: Request, order: List[int] = Body(...)):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return JSONResponse({"status": "unauthorized"}, status_code=401)
+        for idx, universe_id in enumerate(order):
+            if not user_owns_universe(session, user, universe_id):
+                continue
+            universe = session.get(Universe, universe_id)
+            if universe:
+                universe.sort_order = idx
+                session.add(universe)
+        session.commit()
+    return JSONResponse({"status": "ok"})
+
+@app.post("/universes/delete/")
+def delete_universe(request: Request, universe_id: int = Form(...)):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user_owns_universe(session, user, universe_id):
+            return RedirectResponse(url="/", status_code=303)
+
+        remaining = session.exec(select(Universe).where(Universe.user_id == user.id)).all()
+        if len(remaining) <= 1:
+            # Refuse to delete a user's last remaining universe - dashboard() has nothing
+            # sensible to fall back to otherwise.
+            return RedirectResponse(url=f"/?universe_id={universe_id}", status_code=303)
+
+        universe = session.get(Universe, universe_id)
+        if universe:
+            for realm in universe.realms:
+                for bucket in realm.buckets:
+                    for item in bucket.items:
+                        for reminder in item.reminders:
+                            session.delete(reminder)
+                        session.delete(item)
+                    for person in bucket.people:
+                        session.delete(person)
+                    session.delete(bucket)
+                for share in session.exec(select(RealmShare).where(RealmShare.realm_id == realm.id)).all():
+                    session.delete(share)
+                for invite in session.exec(select(PendingInvite).where(PendingInvite.realm_id == realm.id)).all():
+                    session.delete(invite)
+                session.delete(realm)
+            session.delete(universe)
+            session.commit()
+
+    fallback = next((u for u in remaining if u.id != universe_id), None)
+    return RedirectResponse(url=f"/?universe_id={fallback.id}" if fallback else "/", status_code=303)
+
+# --- Realm & Bucket Endpoints ---
+@app.post("/realms/")
+def create_realm(request: Request, name: str = Form(...), icon: str = Form("🔮"), universe_id: int = Form(...)):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if user and user_owns_universe(session, user, universe_id):
+            max_order = len(session.exec(
+                select(Realm).where(Realm.user_id == user.id, Realm.universe_id == universe_id)
+            ).all())
+            session.add(Realm(name=name, icon=icon, sort_order=max_order, user_id=user.id, universe_id=universe_id))
+            session.commit()
+    return RedirectResponse(url=f"/?universe_id={universe_id}", status_code=303)
 
 @app.post("/realms/update/")
 def update_realm(request: Request, realm_id: int = Form(...), name: str = Form(...), icon: str = Form("🔮")):
@@ -858,7 +1083,13 @@ def delete_realm(request: Request, realm_id: int = Form(...)):
                     for reminder in item.reminders:
                         session.delete(reminder)
                     session.delete(item)
+                for person in bucket.people:
+                    session.delete(person)
                 session.delete(bucket)
+            for share in session.exec(select(RealmShare).where(RealmShare.realm_id == realm.id)).all():
+                session.delete(share)
+            for invite in session.exec(select(PendingInvite).where(PendingInvite.realm_id == realm.id)).all():
+                session.delete(invite)
             session.delete(realm)
             session.commit()
     return RedirectResponse(url="/", status_code=303)
@@ -1041,9 +1272,105 @@ def delete_bucket(request: Request, bucket_id: int = Form(...)):
                 for reminder in item.reminders:
                     session.delete(reminder)
                 session.delete(item)
+            for person in bucket.people:
+                session.delete(person)
             session.delete(bucket)
             session.commit()
             return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
+    return RedirectResponse(url="/", status_code=303)
+
+# --- Person Endpoints ---
+@app.post("/people/")
+def create_person(
+    request: Request,
+    name: str = Form(...),
+    bucket_id: int = Form(...),
+    phone: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
+    birthday: Optional[str] = Form(None),
+    company: Optional[str] = Form(None),
+    role: Optional[str] = Form(None),
+    tags: Optional[str] = Form(None),
+):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user_can_access_bucket(session, user, bucket_id):
+            return RedirectResponse(url="/", status_code=303)
+        parsed_birthday = None
+        if birthday:
+            try:
+                parsed_birthday = datetime.fromisoformat(birthday)
+            except ValueError:
+                parsed_birthday = None
+        person = Person(
+            name=name, bucket_id=bucket_id, phone=phone or None, email=email or None,
+            notes=notes or None, birthday=parsed_birthday, company=company or None,
+            role=role or None, tags=tags or None,
+        )
+        session.add(person)
+        session.commit()
+        bucket = session.get(Bucket, bucket_id)
+        realm_id = bucket.realm_id if bucket else None
+    return RedirectResponse(url=f"/?realm_id={realm_id}" if realm_id else "/", status_code=303)
+
+@app.post("/people/update/")
+def update_person(
+    request: Request,
+    person_id: int = Form(...),
+    name: str = Form(...),
+    bucket_id: Optional[int] = Form(None),
+    phone: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
+    birthday: Optional[str] = Form(None),
+    company: Optional[str] = Form(None),
+    role: Optional[str] = Form(None),
+    tags: Optional[str] = Form(None),
+):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user_can_access_person(session, user, person_id):
+            return RedirectResponse(url="/", status_code=303)
+        person = session.get(Person, person_id)
+        if not person:
+            return RedirectResponse(url="/", status_code=303)
+        if bucket_id and not user_can_access_bucket(session, user, bucket_id):
+            return RedirectResponse(url="/", status_code=303)
+        parsed_birthday = None
+        if birthday:
+            try:
+                parsed_birthday = datetime.fromisoformat(birthday)
+            except ValueError:
+                parsed_birthday = None
+        person.name = name
+        person.bucket_id = bucket_id or person.bucket_id
+        person.phone = phone or None
+        person.email = email or None
+        person.notes = notes or None
+        person.birthday = parsed_birthday
+        person.company = company or None
+        person.role = role or None
+        person.tags = tags or None
+        session.add(person)
+        session.commit()
+        bucket = session.get(Bucket, person.bucket_id)
+        realm_id = bucket.realm_id if bucket else None
+    return RedirectResponse(url=f"/?realm_id={realm_id}" if realm_id else "/", status_code=303)
+
+@app.post("/people/delete/")
+def delete_person(request: Request, person_id: int = Form(...)):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user_can_access_person(session, user, person_id):
+            return RedirectResponse(url="/", status_code=303)
+        person = session.get(Person, person_id)
+        if person:
+            bucket = session.get(Bucket, person.bucket_id)
+            realm_id = bucket.realm_id if bucket else None
+            session.delete(person)
+            session.commit()
+            return RedirectResponse(url=f"/?realm_id={realm_id}" if realm_id else "/", status_code=303)
     return RedirectResponse(url="/", status_code=303)
 
 # --- Item Endpoints ---
