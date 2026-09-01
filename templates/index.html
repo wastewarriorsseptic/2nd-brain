@@ -209,6 +209,8 @@
         <form id="ai-chat-form" onsubmit="return handleAiChatSubmit(event)" class="p-2.5 border-t border-slate-800 flex gap-2 shrink-0">
             <input id="ai-chat-input" type="text" placeholder="Add a task or ask a question…"
                    class="flex-1 bg-slate-800 border border-slate-700 rounded-full px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" autocomplete="off">
+            <button type="button" id="ai-chat-mic-btn" onclick="toggleAiChatDictation()" title="Dictate"
+                    class="hidden w-9 h-9 shrink-0 bg-slate-800 border border-slate-700 hover:border-indigo-500 rounded-full text-slate-300 text-sm transition">🎤</button>
             <button type="submit" class="w-9 h-9 shrink-0 bg-indigo-600/90 hover:bg-indigo-500 rounded-full text-white text-sm transition">➤</button>
         </form>
     </div>
@@ -3106,6 +3108,84 @@
             }
         }
 
+        // Voice dictation for the chat input - the browser's own SpeechRecognition API, no server
+        // round trip and no new dependency. Not every browser supports this (Firefox doesn't), so
+        // the mic button stays hidden by default and is only revealed once feature-detected below.
+        const AiSpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let aiChatRecognition = null;
+        let aiChatListening = false;
+        let aiChatDictationBaseText = '';
+
+        if (AiSpeechRecognition) {
+            document.addEventListener('DOMContentLoaded', () => {
+                const micBtn = document.getElementById('ai-chat-mic-btn');
+                if (micBtn) micBtn.classList.remove('hidden');
+            });
+
+            aiChatRecognition = new AiSpeechRecognition();
+            aiChatRecognition.continuous = true;
+            aiChatRecognition.interimResults = true;
+            aiChatRecognition.lang = navigator.language || 'en-US';
+
+            aiChatRecognition.onresult = (event) => {
+                const input = document.getElementById('ai-chat-input');
+                let finalText = '';
+                let interimText = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalText += transcript;
+                    } else {
+                        interimText += transcript;
+                    }
+                }
+                if (finalText) {
+                    aiChatDictationBaseText = (aiChatDictationBaseText + ' ' + finalText).trim();
+                }
+                input.value = (aiChatDictationBaseText + ' ' + interimText).trim();
+            };
+
+            aiChatRecognition.onerror = () => {
+                setAiChatListening(false);
+            };
+
+            aiChatRecognition.onend = () => {
+                setAiChatListening(false);
+            };
+        }
+
+        function setAiChatListening(listening) {
+            aiChatListening = listening;
+            const micBtn = document.getElementById('ai-chat-mic-btn');
+            if (!micBtn) return;
+            if (listening) {
+                micBtn.classList.add('bg-rose-600', 'border-rose-500', 'animate-pulse', 'text-white');
+                micBtn.classList.remove('bg-slate-800', 'border-slate-700', 'text-slate-300');
+            } else {
+                micBtn.classList.remove('bg-rose-600', 'border-rose-500', 'animate-pulse', 'text-white');
+                micBtn.classList.add('bg-slate-800', 'border-slate-700', 'text-slate-300');
+            }
+        }
+
+        function toggleAiChatDictation() {
+            if (!aiChatRecognition) return;
+
+            if (aiChatListening) {
+                aiChatRecognition.stop();
+                setAiChatListening(false);
+                return;
+            }
+
+            aiChatDictationBaseText = document.getElementById('ai-chat-input').value.trim();
+            try {
+                aiChatRecognition.start();
+                setAiChatListening(true);
+            } catch (e) {
+                // start() throws if a recognition session is already active (e.g. a rapid
+                // double-tap) - nothing to recover, just leave the button in its current state.
+            }
+        }
+
         function renderAiChatBubble(role, text, variant) {
             const wrapper = document.getElementById('ai-chat-messages');
             if (!wrapper) return null;
@@ -3134,6 +3214,12 @@
         async function handleAiChatSubmit(event) {
             event.preventDefault();
             if (aiChatSending) return false;
+
+            if (aiChatListening && aiChatRecognition) {
+                aiChatRecognition.stop();
+                setAiChatListening(false);
+            }
+            aiChatDictationBaseText = '';
 
             const input = document.getElementById('ai-chat-input');
             const text = input.value.trim();
