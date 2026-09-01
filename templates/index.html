@@ -3437,7 +3437,7 @@
                 if (dock) dock.classList.remove('hidden');
                 const wrapper = document.getElementById('swipe-dock-cards-wrapper');
                 const targetCard = wrapper ? wrapper.querySelector(`[data-swipe-task-id="${task.id}"]`) : null;
-                if (targetCard) targetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                if (targetCard) targetCard.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'center' });
             }
 
             persistSpaceSelection();
@@ -4489,7 +4489,10 @@
 
             if (multiverseActiveLaneId !== clickedLane.id) {
                 multiverseActiveLaneId = clickedLane.id;
-                renderBucketTaskSwipeDock({ id: `__mv_lane_${clickedLane.id}__`, name: clickedLane.name, tasks: clickedLane.tasks });
+                // focusFirst:false - the lines right below already set activeSwipeTaskId/camera to the
+                // actually-clicked task, so letting this default to the lane's first (earliest) task
+                // first would just be a wasted, instantly-overwritten camera target.
+                renderBucketTaskSwipeDock({ id: `__mv_lane_${clickedLane.id}__`, name: clickedLane.name, tasks: clickedLane.tasks }, { focusFirst: false });
             }
             activeSwipeTaskId = clickedTask.id;
             focusCameraOnTask(clickedTask);
@@ -4498,7 +4501,7 @@
             if (dock) dock.classList.remove('hidden');
             const wrapper = document.getElementById('swipe-dock-cards-wrapper');
             const targetCard = wrapper ? wrapper.querySelector(`[data-swipe-task-id="${clickedTask.id}"]`) : null;
-            if (targetCard) targetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+            if (targetCard) targetCard.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'center' });
         }
 
         function zoomSpace(factor) {
@@ -6071,7 +6074,7 @@
                         const wrapper = document.getElementById('swipe-dock-cards-wrapper');
                         const targetCard = wrapper ? wrapper.querySelector(`[data-swipe-task-id="${clickedTask.id}"]`) : null;
                         if (targetCard) {
-                            targetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                            targetCard.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'center' });
                         }
                     }
                 } else {
@@ -6340,6 +6343,15 @@
             openEditPerson(dummyBtn);
         }
 
+        // Camera re-focuses on whichever card is actually front-and-center as the user swipes through
+        // the dock by hand - this is what makes manual swiping feel connected to the canvas. IMPORTANT:
+        // every OTHER place that jumps straight to a specific card (a click on a task node, "All Tasks"/
+        // Multiverse Timeline lane clicks, the Daily Digest) must scroll there with `behavior: 'instant'`,
+        // never 'smooth' - a smooth animated scroll crosses every card in between at speed, and each one
+        // briefly satisfies this observer's 0.6 threshold, so the camera would rapidly re-target through
+        // every intermediate task before landing - jarring/dizzying, especially across a long dock (a
+        // busy Multiverse Timeline lane can have 100+ cards). Instant scrolls skip straight to the final
+        // card without ever triggering the observer for anything in between.
         function setupSwipeDockObserver(container, tasks) {
             const observer = new IntersectionObserver((entries) => {
                 entries.forEach(entry => {
