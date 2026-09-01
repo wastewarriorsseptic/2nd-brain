@@ -3396,7 +3396,25 @@
             resizeSpaceCanvas();
             window.addEventListener('resize', resizeSpaceCanvas);
 
-            const processedGroupIds = new Set();
+            // Tracks how many occurrences of each recurring series (keyed by bucket + title)
+            // have already been added to the canvas - a count, not just a seen/unseen flag, so
+            // more than just the very next occurrence can be shown. See RECURRING_MAX_VISIBLE
+            // below for why this isn't unlimited.
+            const processedGroupIds = new Map();
+            // Every future occurrence of a recurring task already exists as its own real Item
+            // row (create_item/update_item pre-generate up to 6-12+ months ahead) and is already
+            // in the DOM - the Timeline list view shows them all (paginated behind "Load More
+            // Months"), but Space View used to collapse a whole series down to just its next due
+            // date. Now it shows a handful of UPCOMING occurrences instead, so completing
+            // today's doesn't make the series vanish from Space View until its next due date -
+            // capped both by a look-ahead window AND a max count, since a daily/weekly series
+            // can have dozens of individual rows and showing all of them would flood the canvas
+            // (a daily task alone can have ~180 rows pre-generated).
+            const RECURRING_LOOKAHEAD_MONTHS = 2;
+            const RECURRING_MAX_VISIBLE = 3;
+            const recurringHorizonDate = new Date();
+            recurringHorizonDate.setMonth(recurringHorizonDate.getMonth() + RECURRING_LOOKAHEAD_MONTHS);
+
             // A virtual "+" node rides along on the same ring as real realms, participating in the
             // same spacing/physics, so it never overlaps anything and always has its own slot.
             const addRealmButtonData = { id: '__add_realm__', name: 'Add Realm', icon: '➕', isAddButton: true, buckets: [] };
@@ -3581,8 +3599,17 @@
                                 if (recurringFlag) {
                                     const title = el.getAttribute('data-title') || '';
                                     const seriesKey = `${bucket.id}-${title}`;
-                                    if (processedGroupIds.has(seriesKey)) return;
-                                    processedGroupIds.add(seriesKey);
+                                    const seenCount = processedGroupIds.get(seriesKey) || 0;
+                                    if (seenCount >= RECURRING_MAX_VISIBLE) return;
+
+                                    const dueDateStr = el.getAttribute('data-due-date') || '';
+                                    const dueDate = dueDateStr ? new Date(dueDateStr + 'T00:00:00') : null;
+                                    // If the date fails to parse, don't let that silently hide a
+                                    // task - only apply the horizon cutoff when we actually have
+                                    // a valid date to compare.
+                                    if (dueDate && dueDate > recurringHorizonDate) return;
+
+                                    processedGroupIds.set(seriesKey, seenCount + 1);
                                 }
 
                                 const isOverdue = el.querySelector('.bg-rose-500') !== null;
