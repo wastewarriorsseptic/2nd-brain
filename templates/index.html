@@ -660,7 +660,7 @@
         <!-- Streamlined Top Floating Space Bar -->
         <div class="relative z-10 pt-10 md:pt-4 px-3 md:px-6 flex flex-col gap-2 pointer-events-none">
             <div class="flex items-center justify-between w-full">
-                <button onclick="openAllTasksTimeline()" title="Show every task in this Universe as one timeline"
+                <button onclick="openMultiverseView()"
                         class="bg-slate-900/90 border border-slate-800 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto hover:border-indigo-500/60 transition">
                     <span class="text-base">{{ active_universe.icon if active_universe else '😈' }}</span>
                     <h2 class="text-xs font-bold text-white tracking-wide">{{ active_universe.name if active_universe else 'TaskMonster Universe' }}</h2>
