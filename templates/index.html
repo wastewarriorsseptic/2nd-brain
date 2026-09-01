@@ -3405,13 +3405,15 @@
             // row (create_item/update_item pre-generate up to 6-12+ months ahead) and is already
             // in the DOM - the Timeline list view shows them all (paginated behind "Load More
             // Months"), but Space View used to collapse a whole series down to just its next due
-            // date. Now it shows a handful of UPCOMING occurrences instead, so completing
-            // today's doesn't make the series vanish from Space View until its next due date -
-            // capped both by a look-ahead window AND a max count, since a daily/weekly series
-            // can have dozens of individual rows and showing all of them would flood the canvas
-            // (a daily task alone can have ~180 rows pre-generated).
-            const RECURRING_LOOKAHEAD_MONTHS = 2;
-            const RECURRING_MAX_VISIBLE = 3;
+            // date. Now it shows every UPCOMING occurrence within a genuinely months-out window,
+            // so completing today's doesn't make the series vanish from Space View until its
+            // next due date. RECURRING_MAX_VISIBLE is a safety ceiling, not the everyday limit -
+            // monthly/yearly series never come close to it (the window is what bounds them), and
+            // even a weekly series comfortably fits under it within the 6-month window. It only
+            // actually kicks in for a daily-ish series (interval of a few days or less), where
+            // showing the full 6 months would mean dozens-to-180+ individual nodes.
+            const RECURRING_LOOKAHEAD_MONTHS = 6;
+            const RECURRING_MAX_VISIBLE = 30;
             const recurringHorizonDate = new Date();
             recurringHorizonDate.setMonth(recurringHorizonDate.getMonth() + RECURRING_LOOKAHEAD_MONTHS);
 
