@@ -491,6 +491,49 @@ def add_months(sourcedate: datetime, months: int) -> datetime:
     day = min(sourcedate.day, monthrange(year, month)[1])
     return datetime(year, month, day, sourcedate.hour, sourcedate.minute, sourcedate.second)
 
+def compute_future_recurrence_dates(base_due_date, recurrence_type, interval_val, weekdays, month_days, months, hour, minute):
+    """Future occurrence dates for update_item's series generation - starting the day/period
+    AFTER base_due_date, since base_due_date is the item being edited, not a new row. Shared by
+    both regenerating an existing series after an edit and generating occurrences the first time
+    a one-off Task is converted into a recurring one."""
+    target_dates = []
+    selected_weekdays = [int(x) for x in weekdays.split(",") if x.strip()] if weekdays else [(base_due_date.weekday() + 1) % 7]
+    selected_month_days = [int(x) for x in month_days.split(",") if x.strip()] if month_days else [base_due_date.day]
+    selected_months = [int(x) for x in months.split(",") if x.strip()] if months else [base_due_date.month]
+
+    if recurrence_type == "daily":
+        curr = base_due_date + timedelta(days=interval_val)
+        max_date = base_due_date + timedelta(days=180)
+        while curr <= max_date:
+            target_dates.append(curr)
+            curr += timedelta(days=interval_val)
+    elif recurrence_type == "weekly":
+        curr = base_due_date + timedelta(days=1)
+        max_date = base_due_date + timedelta(days=365)
+        while curr <= max_date:
+            wday = (curr.weekday() + 1) % 7
+            if wday in selected_weekdays:
+                target_dates.append(curr)
+            curr += timedelta(days=1)
+            if wday == 6 and interval_val > 1:
+                curr += timedelta(weeks=interval_val - 1)
+    elif recurrence_type == "monthly":
+        for i in range(interval_val, 12, interval_val):
+            m_date = add_months(base_due_date, i)
+            max_day_in_month = monthrange(m_date.year, m_date.month)[1]
+            for mday in selected_month_days:
+                actual_day = min(mday, max_day_in_month)
+                target_dates.append(datetime(m_date.year, m_date.month, actual_day, hour, minute, 0))
+    elif recurrence_type == "yearly":
+        for i in range(interval_val, 5, interval_val):
+            target_year = base_due_date.year + i
+            for m in selected_months:
+                max_day = monthrange(target_year, m)[1]
+                actual_day = min(base_due_date.day, max_day)
+                target_dates.append(datetime(target_year, m, actual_day, hour, minute, 0))
+
+    return sorted(set(target_dates))
+
 def get_current_user(request: Request, session: Session) -> Optional[User]:
     user_id = request.session.get('user_id')
     if not user_id:
@@ -1844,6 +1887,8 @@ def update_item(
 
         target_bucket_id = bucket_id if bucket_id else item.bucket_id
 
+        interval_val = max(1, interval if interval is not None else 1)
+
         if update_series and item.recurring_group_id:
             series_items = session.exec(
                 select(Item).where(Item.recurring_group_id == item.recurring_group_id)
@@ -1869,47 +1914,11 @@ def update_item(
 
             # 3. Regenerate future instances using the interval parameter
             if recurrence_type != "none":
-                target_dates = []
-                base_due_date = new_due_date
-                interval_val = max(1, interval if interval is not None else 1)
-
-                selected_weekdays = [int(x) for x in weekdays.split(",") if x.strip()] if weekdays else [(base_due_date.weekday() + 1) % 7]
-                selected_month_days = [int(x) for x in month_days.split(",") if x.strip()] if month_days else [base_due_date.day]
-                selected_months = [int(x) for x in months.split(",") if x.strip()] if months else [base_due_date.month]
-
-                if recurrence_type == "daily":
-                    curr = base_due_date + timedelta(days=interval_val)
-                    max_date = base_due_date + timedelta(days=180)
-                    while curr <= max_date:
-                        target_dates.append(curr)
-                        curr += timedelta(days=interval_val)
-                elif recurrence_type == "weekly":
-                    curr = base_due_date + timedelta(days=1)
-                    max_date = base_due_date + timedelta(days=365)
-                    while curr <= max_date:
-                        wday = (curr.weekday() + 1) % 7
-                        if wday in selected_weekdays:
-                            target_dates.append(curr)
-                        curr += timedelta(days=1)
-                        if wday == 6 and interval_val > 1:
-                            curr += timedelta(weeks=interval_val - 1)
-                elif recurrence_type == "monthly":
-                    for i in range(interval_val, 12, interval_val):
-                        m_date = add_months(base_due_date, i)
-                        max_day_in_month = monthrange(m_date.year, m_date.month)[1]
-                        for mday in selected_month_days:
-                            actual_day = min(mday, max_day_in_month)
-                            target_dates.append(datetime(m_date.year, m_date.month, actual_day, hour, minute, 0))
-                elif recurrence_type == "yearly":
-                    for i in range(interval_val, 5, interval_val):
-                        target_year = base_due_date.year + i
-                        for m in selected_months:
-                            max_day = monthrange(target_year, m)[1]
-                            actual_day = min(base_due_date.day, max_day)
-                            target_dates.append(datetime(target_year, m, actual_day, hour, minute, 0))
-
-                for target_due_date in sorted(list(set(target_dates))):
-                    new_series_item = Item(
+                target_dates = compute_future_recurrence_dates(
+                    new_due_date, recurrence_type, interval_val, weekdays, month_days, months, hour, minute
+                )
+                for target_due_date in target_dates:
+                    session.add(Item(
                         title=title,
                         bucket_id=target_bucket_id,
                         due_date=target_due_date,
@@ -1918,8 +1927,39 @@ def update_item(
                         description=description,
                         recurring_group_id=item.recurring_group_id,
                         recurrence_type=recurrence_type
-                    )
-                    session.add(new_series_item)
+                    ))
+        elif recurrence_type != "none" and not item.recurring_group_id:
+            # Converting a one-off Task into a recurring one for the first time (e.g. setting
+            # Repeat to "Weekly" on a plain task and saving, without also checking "Apply edits
+            # to all recurring instances" - which doesn't even apply yet, since there's no series
+            # until now). Without this branch, the item just gets tagged as recurring and a fresh
+            # recurring_group_id, but no future occurrences ever get created - it shows a
+            # "Repeat" badge while silently staying a series of one forever.
+            item.title = title
+            item.due_date = new_due_date
+            item.amount = amount
+            item.is_shoppable = is_shoppable_flag
+            item.description = description
+            item.bucket_id = target_bucket_id
+            item.recurrence_type = recurrence_type
+            item.recurring_group_id = str(uuid.uuid4())
+            session.add(item)
+            session.commit()
+
+            target_dates = compute_future_recurrence_dates(
+                new_due_date, recurrence_type, interval_val, weekdays, month_days, months, hour, minute
+            )
+            for target_due_date in target_dates:
+                session.add(Item(
+                    title=title,
+                    bucket_id=target_bucket_id,
+                    due_date=target_due_date,
+                    amount=amount,
+                    is_shoppable=is_shoppable_flag,
+                    description=description,
+                    recurring_group_id=item.recurring_group_id,
+                    recurrence_type=recurrence_type
+                ))
         else:
             item.title = title
             item.due_date = new_due_date
@@ -1928,10 +1968,8 @@ def update_item(
             item.description = description
             item.bucket_id = target_bucket_id
             item.recurrence_type = recurrence_type
-            if recurrence_type != "none" and not item.recurring_group_id:
-                item.recurring_group_id = str(uuid.uuid4())
             session.add(item)
-            
+
         session.commit()
         session.refresh(item)
         print(f"[SHOP DEBUG] after update_item commit+refresh, item.id={item.id} is_shoppable={item.is_shoppable!r}", flush=True)
