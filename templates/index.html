@@ -442,6 +442,7 @@
                                         data-role="{{ person.role or '' }}"
                                         data-tags="{{ person.tags or '' }}"
                                         data-bucket-id="{{ person.bucket_id }}"
+                                        data-realm-id="{{ person.bucket.realm.id if person.bucket and person.bucket.realm else '' }}"
                                         title="Edit Person"
                                         class="text-slate-500 hover:text-indigo-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-700/50">
                                     ✏️
@@ -1283,15 +1284,20 @@
         <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 md:p-6 w-full max-w-sm sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
             <h3 class="text-lg md:text-xl font-bold text-white mb-4 pb-3 border-b border-slate-700/60">Add Person</h3>
             <form action="/people/" method="POST" class="space-y-3.5">
-                <div class="w-full">
-                    <label class="block text-xs font-semibold text-slate-400 mb-1">Realm / Bucket</label>
-                    <select name="bucket_id" id="person-modal-bucket-select" required class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
-                        {% for r in realms %}
-                            {% for b in r.buckets %}
-                            <option value="{{ b.id }}" {% if b.id == selected_bucket_id %}selected{% endif %}>{{ r.icon or '👥' }} {{ r.name }} / ⭐️ {{ b.name }}</option>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Realm</label>
+                        <select id="person-modal-realm-select" onchange="onPersonModalRealmChange()" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                            {% for r in realms %}
+                            <option value="{{ r.id }}" {% if r.id == selected_realm_id %}selected{% endif %}>{{ r.icon or '👥' }} {{ r.name }}</option>
                             {% endfor %}
-                        {% endfor %}
-                    </select>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Bucket</label>
+                        <select name="bucket_id" id="person-modal-bucket-select" required class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                        </select>
+                    </div>
                 </div>
                 <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Name</label>
@@ -1357,15 +1363,20 @@
             <h3 class="text-lg md:text-xl font-bold text-white mb-4 pb-3 border-b border-slate-700/60">Edit Person</h3>
             <form action="/people/update/" method="POST" class="space-y-3.5">
                 <input type="hidden" name="person_id" id="edit-person-id">
-                <div class="w-full">
-                    <label class="block text-xs font-semibold text-slate-400 mb-1">Realm / Bucket</label>
-                    <select name="bucket_id" id="edit-person-bucket-select" required class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
-                        {% for r in realms %}
-                            {% for b in r.buckets %}
-                            <option value="{{ b.id }}">{{ r.icon or '👥' }} {{ r.name }} / ⭐️ {{ b.name }}</option>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Realm</label>
+                        <select id="edit-person-realm-select" onchange="onEditPersonModalRealmChange()" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                            {% for r in realms %}
+                            <option value="{{ r.id }}">{{ r.icon or '👥' }} {{ r.name }}</option>
                             {% endfor %}
-                        {% endfor %}
-                    </select>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Bucket</label>
+                        <select name="bucket_id" id="edit-person-bucket-select" required class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                        </select>
+                    </div>
                 </div>
                 <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Name</label>
@@ -1654,12 +1665,64 @@
             document.getElementById('add-item-modal').classList.remove('hidden');
         }
 
-        function openGlobalAddPersonModal() {
+        function onPersonModalRealmChange() {
+            const realmSelect = document.getElementById('person-modal-realm-select');
             const bucketSelect = document.getElementById('person-modal-bucket-select');
-            if (bucketSelect && currentSelectedBucketId) {
-                bucketSelect.value = currentSelectedBucketId;
+            const selectedRealmId = parseInt(realmSelect.value);
+            const realm = realmsData.find(r => r.id === selectedRealmId);
+
+            bucketSelect.innerHTML = '';
+            if (realm && realm.buckets.length > 0) {
+                realm.buckets.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = b.id;
+                    opt.textContent = `⭐️ ${b.name}`;
+                    if (currentSelectedBucketId && b.id === currentSelectedBucketId) {
+                        opt.selected = true;
+                    }
+                    bucketSelect.appendChild(opt);
+                });
+            } else {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = '(No buckets in realm)';
+                bucketSelect.appendChild(opt);
+            }
+        }
+
+        function openGlobalAddPersonModal() {
+            const realmSelect = document.getElementById('person-modal-realm-select');
+            if (realmSelect && realmsData.length > 0) {
+                if (currentSelectedRealmId) {
+                    realmSelect.value = currentSelectedRealmId;
+                } else {
+                    realmSelect.selectedIndex = 0;
+                }
+                onPersonModalRealmChange();
             }
             document.getElementById('add-person-modal').classList.remove('hidden');
+        }
+
+        function onEditPersonModalRealmChange() {
+            const realmSelect = document.getElementById('edit-person-realm-select');
+            const bucketSelect = document.getElementById('edit-person-bucket-select');
+            const selectedRealmId = parseInt(realmSelect.value);
+            const realm = realmsData.find(r => r.id === selectedRealmId);
+
+            bucketSelect.innerHTML = '';
+            if (realm && realm.buckets.length > 0) {
+                realm.buckets.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = b.id;
+                    opt.textContent = `⭐️ ${b.name}`;
+                    bucketSelect.appendChild(opt);
+                });
+            } else {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = '(No buckets in realm)';
+                bucketSelect.appendChild(opt);
+            }
         }
 
         function openEditPerson(el) {
@@ -1672,6 +1735,12 @@
             document.getElementById('edit-person-company').value = el.dataset.company;
             document.getElementById('edit-person-role').value = el.dataset.role;
             document.getElementById('edit-person-tags').value = el.dataset.tags;
+
+            const realmSelect = document.getElementById('edit-person-realm-select');
+            if (realmSelect && el.dataset.realmId) {
+                realmSelect.value = el.dataset.realmId;
+                onEditPersonModalRealmChange();
+            }
             document.getElementById('edit-person-bucket-select').value = el.dataset.bucketId;
             document.getElementById('edit-person-modal').classList.remove('hidden');
         }
@@ -5283,6 +5352,7 @@
             dummyBtn.setAttribute('data-role', task.personRole || '');
             dummyBtn.setAttribute('data-tags', task.personTags || '');
             dummyBtn.setAttribute('data-bucket-id', task.bucketId);
+            dummyBtn.setAttribute('data-realm-id', task.realmId);
 
             openEditPerson(dummyBtn);
         }
