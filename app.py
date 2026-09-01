@@ -545,6 +545,25 @@ def user_owns_universe(session: Session, user: Optional[User], universe_id: Opti
     universe = session.get(Universe, universe_id)
     return bool(universe and universe.user_id == user.id)
 
+def get_realm_universe_kind(session: Session, realm_id: Optional[int]) -> Optional[str]:
+    """The kind ("task"/"contact") of the Universe a Realm belongs to, or None if unknown.
+    Used to keep a moved Realm/Bucket/Item/Person inside a same-kind Universe."""
+    if not realm_id:
+        return None
+    realm = session.get(Realm, realm_id)
+    if not realm or not realm.universe_id:
+        return None
+    universe = session.get(Universe, realm.universe_id)
+    return universe.kind if universe else None
+
+def get_bucket_universe_kind(session: Session, bucket_id: Optional[int]) -> Optional[str]:
+    if not bucket_id:
+        return None
+    bucket = session.get(Bucket, bucket_id)
+    if not bucket:
+        return None
+    return get_realm_universe_kind(session, bucket.realm_id)
+
 def user_can_access_person(session: Session, user: Optional[User], person_id: Optional[int]) -> bool:
     """True if this user has access (owner or collaborator) to the realm a person lives in."""
     if not user or not person_id:
@@ -940,6 +959,26 @@ def dashboard(
             items = session.exec(query.order_by(Item.due_date.asc())).all() if all_realm_ids else []
             people = []
 
+        # Full tree of every Universe/Realm/Bucket the user OWNS (not shared-with-them realms -
+        # moving something is an ownership-level action), used client-side to drive the "move to
+        # a different Universe/Realm/Bucket" pickers on Edit Task/Person/Realm/Bucket. Built here
+        # as plain dicts (not passed through Jinja's manual string interpolation) so it can go
+        # through the `tojson` filter safely - see the Edit Universe onclick bug this avoided.
+        owned_realms_all = session.exec(select(Realm).where(Realm.user_id == user.id)).all()
+        universes_tree = []
+        for u in universes:
+            u_realms = []
+            for r in owned_realms_all:
+                if r.universe_id != u.id:
+                    continue
+                u_realms.append({
+                    "id": r.id,
+                    "name": r.name,
+                    "icon": r.icon or "🔮",
+                    "buckets": [{"id": b.id, "name": b.name} for b in sorted(r.buckets, key=lambda b: b.sort_order)],
+                })
+            universes_tree.append({"id": u.id, "name": u.name, "icon": u.icon, "kind": u.kind, "realms": u_realms})
+
         return templates.TemplateResponse(
             request=request,
             name="index.html",
@@ -950,6 +989,7 @@ def dashboard(
                 "items": items,
                 "people": people,
                 "universes": universes,
+                "universes_tree": universes_tree,
                 "active_universe": active_universe,
                 "is_contact_universe": is_contact_universe,
                 "selected_realm_id": realm_id,
@@ -1056,7 +1096,7 @@ def create_realm(request: Request, name: str = Form(...), icon: str = Form("🔮
     return RedirectResponse(url=f"/?universe_id={universe_id}", status_code=303)
 
 @app.post("/realms/update/")
-def update_realm(request: Request, realm_id: int = Form(...), name: str = Form(...), icon: str = Form("🔮")):
+def update_realm(request: Request, realm_id: int = Form(...), name: str = Form(...), icon: str = Form("🔮"), universe_id: Optional[int] = Form(None)):
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user_owns_realm(session, user, realm_id):
@@ -1065,6 +1105,14 @@ def update_realm(request: Request, realm_id: int = Form(...), name: str = Form(.
         if realm:
             realm.name = name
             realm.icon = icon
+            # Moving a Realm to a different Universe is only ever allowed between Universes of
+            # the SAME kind - its Buckets already hold either Items or People, and mixing that
+            # with the other kind would break the invariant every other query relies on.
+            if universe_id and universe_id != realm.universe_id and user_owns_universe(session, user, universe_id):
+                current_kind = get_realm_universe_kind(session, realm.id)
+                target_universe = session.get(Universe, universe_id)
+                if target_universe and current_kind and target_universe.kind == current_kind:
+                    realm.universe_id = universe_id
             session.add(realm)
             session.commit()
     return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
@@ -1245,7 +1293,7 @@ def create_bucket(
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/buckets/update/")
-def update_bucket(request: Request, bucket_id: int = Form(...), name: str = Form(...), icon: str = Form("📌")):
+def update_bucket(request: Request, bucket_id: int = Form(...), name: str = Form(...), icon: str = Form("📌"), realm_id: Optional[int] = Form(None)):
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user_can_access_bucket(session, user, bucket_id):
@@ -1254,6 +1302,13 @@ def update_bucket(request: Request, bucket_id: int = Form(...), name: str = Form
         if bucket:
             bucket.name = name
             bucket.icon = icon
+            # Moving a Bucket to a different Realm is only ever allowed between Realms in the
+            # SAME-kind Universe (its Items/People would be invalid in the other kind's Realm).
+            if realm_id and realm_id != bucket.realm_id and user_can_access_realm(session, user, realm_id):
+                current_kind = get_realm_universe_kind(session, bucket.realm_id)
+                target_kind = get_realm_universe_kind(session, realm_id)
+                if current_kind and target_kind and current_kind == target_kind:
+                    bucket.realm_id = realm_id
             session.add(bucket)
             session.commit()
     return RedirectResponse(url=f"/?bucket_id={bucket_id}", status_code=303)
@@ -1352,8 +1407,11 @@ def update_person(
         person = session.get(Person, person_id)
         if not person:
             return RedirectResponse(url="/", status_code=303)
-        if bucket_id and not user_can_access_bucket(session, user, bucket_id):
-            return RedirectResponse(url="/", status_code=303)
+        if bucket_id:
+            if not user_can_access_bucket(session, user, bucket_id):
+                return RedirectResponse(url="/", status_code=303)
+            if get_bucket_universe_kind(session, bucket_id) != "contact":
+                return RedirectResponse(url="/", status_code=303)
         parsed_birthday = None
         if birthday:
             try:
@@ -1759,9 +1817,14 @@ def update_item(
         if not user_can_access_item(session, user, item_id):
             return RedirectResponse(url=redirect_url, status_code=303)
         # If this edit also relocates the task to a different bucket, make sure the user has
-        # access to that destination too - not just the bucket the task started in.
-        if bucket_id and not user_can_access_bucket(session, user, bucket_id):
-            return RedirectResponse(url=redirect_url, status_code=303)
+        # access to that destination too - not just the bucket the task started in - and that
+        # the destination is still inside a Task-kind Universe (a Task can never land in a
+        # Contact Universe's bucket, even via a crafted request).
+        if bucket_id:
+            if not user_can_access_bucket(session, user, bucket_id):
+                return RedirectResponse(url=redirect_url, status_code=303)
+            if get_bucket_universe_kind(session, bucket_id) != "task":
+                return RedirectResponse(url=redirect_url, status_code=303)
 
         item = session.get(Item, item_id)
         if not item:

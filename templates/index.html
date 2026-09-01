@@ -318,7 +318,7 @@
                                         {% else %}
                                         <div class="w-5"></div>
                                         {% endif %}
-                                        <button data-id="{{ bucket.id }}" data-name="{{ bucket.name }}" onclick="openEditBucket(this)" title="Edit Bucket" class="w-5 text-center text-xs hover:text-indigo-300">✏️</button>
+                                        <button data-id="{{ bucket.id }}" data-name="{{ bucket.name }}" data-realm-id="{{ realm.id }}" onclick="openEditBucket(this)" title="Edit Bucket" class="w-5 text-center text-xs hover:text-indigo-300">✏️</button>
                                         <form action="/buckets/delete/" method="POST" onsubmit="return confirm('Delete this Bucket and all its Tasks?');" class="inline w-5 text-center">
                                             <input type="hidden" name="bucket_id" value="{{ bucket.id }}">
                                             <button type="submit" title="Delete Bucket" class="w-full text-xs hover:text-red-400">🗑️</button>
@@ -1113,14 +1113,19 @@
                     </div>
                     <div class="flex-1 min-w-0">
                         <label class="block text-xs font-medium text-slate-400 mb-1">Realm Name</label>
-                        <input type="text" name="name" id="edit-realm-name" required 
+                        <input type="text" name="name" id="edit-realm-name" required
                                class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200">
                     </div>
                 </div>
+                <div class="w-full">
+                    <label class="block text-xs font-medium text-slate-400 mb-1">Universe</label>
+                    <select name="universe_id" id="edit-realm-universe-select" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                    </select>
+                </div>
                 <div class="flex justify-end gap-3 pt-2">
-                    <button type="button" onclick="document.getElementById('edit-realm-modal').classList.add('hidden')" 
+                    <button type="button" onclick="document.getElementById('edit-realm-modal').classList.add('hidden')"
                             class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Cancel</button>
-                    <button type="submit" 
+                    <button type="submit"
                             class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold">Save Changes</button>
                 </div>
             </form>
@@ -1185,13 +1190,23 @@
                 <input type="hidden" name="icon" value="⭐️">
                 <div>
                     <label class="block text-xs font-medium text-slate-400 mb-1">Bucket Name</label>
-                    <input type="text" name="name" id="edit-bucket-name" required 
+                    <input type="text" name="name" id="edit-bucket-name" required
                            class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200">
                 </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-1">Universe</label>
+                    <select id="edit-bucket-universe-select" onchange="onEditBucketUniverseChange()" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-1">Realm</label>
+                    <select name="realm_id" id="edit-bucket-realm-select" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                    </select>
+                </div>
                 <div class="flex justify-end gap-3 pt-2">
-                    <button type="button" onclick="document.getElementById('edit-bucket-modal').classList.add('hidden')" 
+                    <button type="button" onclick="document.getElementById('edit-bucket-modal').classList.add('hidden')"
                             class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium">Cancel</button>
-                    <button type="submit" 
+                    <button type="submit"
                             class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold">Save Changes</button>
                 </div>
             </form>
@@ -1437,13 +1452,15 @@
             <h3 class="text-lg md:text-xl font-bold text-white mb-4 pb-3 border-b border-slate-700/60">Edit Person</h3>
             <form action="/people/update/" method="POST" class="space-y-3.5">
                 <input type="hidden" name="person_id" id="edit-person-id">
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Universe</label>
+                    <select id="edit-person-universe-select" onchange="onEditPersonUniverseChange()" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                    </select>
+                </div>
                 <div class="grid grid-cols-2 gap-2">
                     <div>
                         <label class="block text-xs font-semibold text-slate-400 mb-1">Realm</label>
-                        <select id="edit-person-realm-select" onchange="onEditPersonModalRealmChange()" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
-                            {% for r in realms %}
-                            <option value="{{ r.id }}">{{ r.icon or '👥' }} {{ r.name }}</option>
-                            {% endfor %}
+                        <select id="edit-person-realm-select" onchange="onEditPersonRealmChange()" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
                         </select>
                     </div>
                     <div>
@@ -1526,15 +1543,17 @@
 
             <form action="/items/update/" method="POST" class="space-y-3.5">
                 <input type="hidden" name="item_id" id="edit-item-id">
-                
-                <!-- Realm and Bucket Dynamic Pickers for Editing Task Location -->
+
+                <!-- Universe, Realm and Bucket Dynamic Pickers for Editing/Moving a Task -->
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Universe</label>
+                    <select id="edit-task-universe-select" onchange="onEditTaskUniverseChange()" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                    </select>
+                </div>
                 <div class="grid grid-cols-2 gap-2">
                     <div>
                         <label class="block text-xs font-semibold text-slate-400 mb-1">Realm</label>
-                        <select id="edit-task-realm-select" onchange="onEditModalRealmChange()" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
-                            {% for r in realms %}
-                            <option value="{{ r.id }}">{{ r.icon or '🔮' }} {{ r.name }}</option>
-                            {% endfor %}
+                        <select id="edit-task-realm-select" onchange="onEditTaskRealmChange()" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
                         </select>
                     </div>
                     <div>
@@ -1708,6 +1727,17 @@
 
     <script>
         const isContactUniverse = {{ 'true' if is_contact_universe else 'false' }};
+        const activeUniverseId = {{ active_universe.id if active_universe else 'null' }};
+
+        // Full tree of the user's OWNED Universes/Realms/Buckets (every kind, not just the
+        // active one) - drives the "move to a different Universe/Realm/Bucket" pickers on the
+        // Edit Task/Person/Realm/Bucket modals. Built server-side as plain data and passed
+        // through `tojson` (safe inside a <script> block, unlike inside an HTML attribute).
+        const allUniversesData = {{ universes_tree|tojson }};
+
+        function universesOfKind(kind) {
+            return allUniversesData.filter(u => u.kind === kind);
+        }
 
         let realmsData = [
             {% for r in realms %}
@@ -1784,26 +1814,19 @@
             document.getElementById('add-person-modal').classList.remove('hidden');
         }
 
-        function onEditPersonModalRealmChange() {
-            const realmSelect = document.getElementById('edit-person-realm-select');
-            const bucketSelect = document.getElementById('edit-person-bucket-select');
-            const selectedRealmId = parseInt(realmSelect.value);
-            const realm = realmsData.find(r => r.id === selectedRealmId);
+        // Edit Person's Universe -> Realm -> Bucket cascade (move a Person to any of the user's
+        // OTHER Contact-kind Universes, not just realms/buckets within the current one).
+        function onEditPersonUniverseChange() {
+            const universe = findUniverseInTree(document.getElementById('edit-person-universe-select').value);
+            populateSelectFromList(document.getElementById('edit-person-realm-select'), universe ? universe.realms : [], 'icon', '(No realms in this Universe)');
+            onEditPersonRealmChange();
+        }
 
-            bucketSelect.innerHTML = '';
-            if (realm && realm.buckets.length > 0) {
-                realm.buckets.forEach(b => {
-                    const opt = document.createElement('option');
-                    opt.value = b.id;
-                    opt.textContent = `⭐️ ${b.name}`;
-                    bucketSelect.appendChild(opt);
-                });
-            } else {
-                const opt = document.createElement('option');
-                opt.value = '';
-                opt.textContent = '(No buckets in realm)';
-                bucketSelect.appendChild(opt);
-            }
+        function onEditPersonRealmChange() {
+            const universe = findUniverseInTree(document.getElementById('edit-person-universe-select').value);
+            const realmSelect = document.getElementById('edit-person-realm-select');
+            const realm = universe ? universe.realms.find(r => String(r.id) === String(realmSelect.value)) : null;
+            populateSelectFromList(document.getElementById('edit-person-bucket-select'), realm ? realm.buckets : [], null, '(No buckets in realm)');
         }
 
         function openEditPerson(el) {
@@ -1818,10 +1841,20 @@
             document.getElementById('edit-person-role').value = el.dataset.role;
             document.getElementById('edit-person-tags').value = el.dataset.tags;
 
+            // Every Person lives in the currently active (Contact-kind) Universe, so that's
+            // always the correct starting point - the user picks a different one from here
+            // only if they want to move this Person.
+            const universeSelect = document.getElementById('edit-person-universe-select');
+            if (universeSelect) {
+                populateSelectFromList(universeSelect, universesOfKind('contact'), 'icon', '(No Contact Universes)');
+                universeSelect.value = activeUniverseId;
+                onEditPersonUniverseChange();
+            }
+
             const realmSelect = document.getElementById('edit-person-realm-select');
             if (realmSelect && el.dataset.realmId) {
                 realmSelect.value = el.dataset.realmId;
-                onEditPersonModalRealmChange();
+                onEditPersonRealmChange();
             }
             document.getElementById('edit-person-bucket-select').value = el.dataset.bucketId;
             document.getElementById('edit-person-modal').classList.remove('hidden');
@@ -1886,26 +1919,40 @@
             }
         }
 
-        function onEditModalRealmChange() {
-            const realmSelect = document.getElementById('edit-task-realm-select');
-            const bucketSelect = document.getElementById('edit-task-bucket-select');
-            const selectedRealmId = parseInt(realmSelect.value);
-            const realm = realmsData.find(r => r.id === selectedRealmId);
+        function findUniverseInTree(universeId) {
+            return allUniversesData.find(u => String(u.id) === String(universeId));
+        }
 
-            bucketSelect.innerHTML = '';
-            if (realm && realm.buckets.length > 0) {
-                realm.buckets.forEach(b => {
+        function populateSelectFromList(selectEl, list, iconField, emptyLabel) {
+            selectEl.innerHTML = '';
+            if (list && list.length > 0) {
+                list.forEach(item => {
                     const opt = document.createElement('option');
-                    opt.value = b.id;
-                    opt.textContent = `⭐️ ${b.name}`;
-                    bucketSelect.appendChild(opt);
+                    opt.value = item.id;
+                    opt.textContent = iconField ? `${item[iconField]} ${item.name}` : `⭐️ ${item.name}`;
+                    selectEl.appendChild(opt);
                 });
             } else {
                 const opt = document.createElement('option');
                 opt.value = '';
-                opt.textContent = '(No buckets in realm)';
-                bucketSelect.appendChild(opt);
+                opt.textContent = emptyLabel;
+                selectEl.appendChild(opt);
             }
+        }
+
+        // Edit Task's Universe -> Realm -> Bucket cascade (move a Task to any of the user's
+        // OTHER Task-kind Universes, not just realms/buckets within the current one).
+        function onEditTaskUniverseChange() {
+            const universe = findUniverseInTree(document.getElementById('edit-task-universe-select').value);
+            populateSelectFromList(document.getElementById('edit-task-realm-select'), universe ? universe.realms : [], 'icon', '(No realms in this Universe)');
+            onEditTaskRealmChange();
+        }
+
+        function onEditTaskRealmChange() {
+            const universe = findUniverseInTree(document.getElementById('edit-task-universe-select').value);
+            const realmSelect = document.getElementById('edit-task-realm-select');
+            const realm = universe ? universe.realms.find(r => String(r.id) === String(realmSelect.value)) : null;
+            populateSelectFromList(document.getElementById('edit-task-bucket-select'), realm ? realm.buckets : [], null, '(No buckets in realm)');
         }
 
         async function submitInlineRealm() {
@@ -2680,12 +2727,40 @@
             const icon = element.getAttribute('data-icon') || '🔮';
             document.getElementById('edit-realm-icon').value = icon;
             document.getElementById('edit-realm-picker').innerText = icon;
+
+            // Every Realm shown in the sidebar belongs to the currently active Universe, so
+            // that's always the correct starting point - only same-kind Universes are offered,
+            // since this Realm's Buckets already hold either Items or People.
+            const universeSelect = document.getElementById('edit-realm-universe-select');
+            if (universeSelect) {
+                populateSelectFromList(universeSelect, universesOfKind(isContactUniverse ? 'contact' : 'task'), 'icon', '(No other Universes of this type)');
+                universeSelect.value = activeUniverseId;
+            }
             document.getElementById('edit-realm-modal').classList.remove('hidden');
+        }
+
+        // Edit Bucket's Universe -> Realm cascade (move a Bucket to any Realm in any of the
+        // user's OTHER same-kind Universes, not just realms within the current one).
+        function onEditBucketUniverseChange() {
+            const universe = findUniverseInTree(document.getElementById('edit-bucket-universe-select').value);
+            populateSelectFromList(document.getElementById('edit-bucket-realm-select'), universe ? universe.realms : [], 'icon', '(No realms in this Universe)');
         }
 
         function openEditBucket(element) {
             document.getElementById('edit-bucket-id').value = element.getAttribute('data-id');
             document.getElementById('edit-bucket-name').value = element.getAttribute('data-name');
+
+            const universeSelect = document.getElementById('edit-bucket-universe-select');
+            if (universeSelect) {
+                populateSelectFromList(universeSelect, universesOfKind(isContactUniverse ? 'contact' : 'task'), 'icon', '(No other Universes of this type)');
+                universeSelect.value = activeUniverseId;
+                onEditBucketUniverseChange();
+            }
+            const realmSelect = document.getElementById('edit-bucket-realm-select');
+            const realmId = element.getAttribute('data-realm-id');
+            if (realmSelect && realmId) {
+                realmSelect.value = realmId;
+            }
             document.getElementById('edit-bucket-modal').classList.remove('hidden');
         }
 
@@ -2867,11 +2942,20 @@
             document.getElementById('edit-item-shoppable').checked = isShoppable;
             document.getElementById('edit-item-description').value = description;
 
-            // Set Realm & Bucket dropdown selections
+            // Set Universe, Realm & Bucket dropdown selections. Every Task lives in the
+            // currently active (Task-kind) Universe, so that's always the correct starting
+            // point - the user picks a different one from here only if they want to move it.
+            const universeSelect = document.getElementById('edit-task-universe-select');
+            if (universeSelect) {
+                populateSelectFromList(universeSelect, universesOfKind('task'), 'icon', '(No Task Universes)');
+                universeSelect.value = activeUniverseId;
+                onEditTaskUniverseChange();
+            }
+
             const realmSelect = document.getElementById('edit-task-realm-select');
             if (realmSelect && realmId) {
                 realmSelect.value = realmId;
-                onEditModalRealmChange();
+                onEditTaskRealmChange();
             }
 
             const bucketSelect = document.getElementById('edit-task-bucket-select');
