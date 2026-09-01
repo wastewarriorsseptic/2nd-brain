@@ -1754,15 +1754,23 @@ def delete_item(request: Request, item_id: int = Form(...), delete_series: bool 
 def toggle_item_complete(request: Request, item_id: int = Form(...)):
     referer = request.headers.get("referer")
     redirect_url = referer if referer else "/"
+    # Space View calls this via fetch() instead of a real form submit, specifically so completing
+    # a task never triggers a full page reload there - that reload was the whole reason the camera
+    # (and whichever bucket/lane/HUD card was open) reset every single time. Timeline View still
+    # posts as a normal form and gets the original redirect-based response, unchanged.
+    wants_json = request.headers.get("x-requested-with") == "fetch"
 
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user_can_access_item(session, user, item_id):
+            if wants_json:
+                return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
             return RedirectResponse(url=redirect_url, status_code=303)
         item = session.get(Item, item_id)
         if item:
             was_completed = item.is_completed
             item.is_completed = not was_completed
+            updated_items = []
 
             if not was_completed:
                 now_dt = datetime.now()
@@ -1817,6 +1825,11 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
                                 f_item.due_date = new_due
                                 session.add(f_item)
 
+                        updated_items = [
+                            {"id": f.id, "due_date": f.due_date.strftime("%Y-%m-%d"), "due_date_formatted": f.due_date.strftime("%b %d, %Y")}
+                            for f in future_items
+                        ]
+
             else:
                 item.completed_at = None
 
@@ -1862,6 +1875,15 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
                 session.refresh(item)
                 reorder_suggestion = find_reorder_suggestion(session, item)
 
+            if wants_json:
+                return JSONResponse({
+                    "ok": True,
+                    "item_id": item.id,
+                    "is_completed": item.is_completed,
+                    "reorder_suggestion": reorder_suggestion,
+                    "updated_items": updated_items,
+                })
+
             if reorder_suggestion:
                 sep = "&" if "?" in redirect_url else "?"
                 redirect_url = (
@@ -1874,6 +1896,8 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
                 )
 
             return RedirectResponse(url=redirect_url, status_code=303)
+        if wants_json:
+            return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
     return RedirectResponse(url=redirect_url, status_code=303)
 
 @app.post("/items/update/")

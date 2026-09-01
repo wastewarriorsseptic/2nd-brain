@@ -721,7 +721,7 @@
                 </div>
 
                 <div class="flex items-start gap-3">
-                    <form id="hud-complete-form" action="/items/toggle-complete/" method="POST" class="inline shrink-0 mt-0.5" onsubmit="triggerTaskConfetti(event, this)">
+                    <form id="hud-complete-form" action="/items/toggle-complete/" method="POST" class="inline shrink-0 mt-0.5" onsubmit="return handleHudCompleteToggle(event, this)">
                         <input type="hidden" name="item_id" id="hud-task-id-input" value="">
                         <button type="submit" id="hud-checkbox-btn"
                                 title="Mark Complete"
@@ -2123,6 +2123,141 @@
             }
         }
 
+        function fireCompleteConfetti(formElement) {
+            const rect = formElement.getBoundingClientRect();
+            confetti({
+                particleCount: 65,
+                spread: 80,
+                origin: { x: (rect.left + rect.width / 2) / window.innerWidth, y: (rect.top + rect.height / 2) / window.innerHeight },
+                colors: ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#3b82f6'],
+                disableForReducedMotion: true
+            });
+        }
+
+        // Space View's own complete flow: a real fetch() instead of a form submit, specifically so
+        // completing a task never triggers a full page reload while in Space View - a reload there
+        // always meant losing whatever camera position/bucket/lane/HUD state you were looking at,
+        // no matter where in Space View you were. Every task shown anywhere in Space View is already
+        // known not to be completed (completed ones are filtered out at data-build time everywhere),
+        // so this never needs to handle the "un-complete" direction - only ever marks complete.
+        async function submitToggleCompleteAjax(itemId) {
+            try {
+                const res = await fetch('/items/toggle-complete/', {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'fetch', 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ item_id: itemId })
+                });
+                if (!res.ok) return null;
+                const data = await res.json();
+                return data && data.ok ? data : null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        // Applies the side effects of a completion that aren't "remove this one task" - a completed
+        // recurring task can reschedule its still-upcoming siblings (see toggle_item_complete in
+        // app.py), and a completed shoppable task can surface a reorder suggestion. Scans both
+        // in-memory Space View data sources (spaceRealms for the normal per-bucket/All Tasks view,
+        // multiverseLanes for the Multiverse Timeline) since either could hold the affected tasks.
+        function applyToggleCompleteResult(result) {
+            if (result.updated_items && result.updated_items.length) {
+                const byId = new Map(result.updated_items.map(u => [String(u.id), u]));
+                const patchTask = (task) => {
+                    const update = byId.get(String(task.id));
+                    if (update) {
+                        task.dueDate = update.due_date;
+                        task.dueDateFormatted = update.due_date_formatted;
+                    }
+                };
+                spaceRealms.forEach(realm => (realm.buckets || []).forEach(bucket => (bucket.tasks || []).forEach(patchTask)));
+                multiverseLanes.forEach(lane => (lane.tasks || []).forEach(patchTask));
+            }
+            if (result.reorder_suggestion) {
+                showReorderSuggestion(result.reorder_suggestion);
+            }
+        }
+
+        // Removes a just-completed task from BOTH in-memory Space View data sources, so the canvas
+        // dots and any open swipe dock lose it immediately - without touching camera position, since
+        // neither caller below re-centers anything. The SAME task can legitimately live in both
+        // spaceRealms (if it belongs to the currently loaded Universe) AND multiverseLanes (built
+        // separately from multiverseTasksData) at once, so both are always checked and cleaned up -
+        // otherwise whichever one wasn't touched would go stale and could even flip the task back to
+        // incomplete if later re-toggled from there. Only reports back whichever match corresponds to
+        // the view actually on screen (isMultiverseStackedView), so the caller re-renders the right
+        // dock instead of one that isn't even visible.
+        function removeTaskFromSpaceData(itemId) {
+            let bucketMatch = null;
+            let laneMatch = null;
+
+            for (const realm of spaceRealms) {
+                for (const bucket of (realm.buckets || [])) {
+                    const idx = (bucket.tasks || []).findIndex(t => String(t.id) === String(itemId));
+                    if (idx !== -1) {
+                        bucket.tasks.splice(idx, 1);
+                        bucketMatch = bucket;
+                    }
+                }
+            }
+            for (const lane of multiverseLanes) {
+                const idx = (lane.tasks || []).findIndex(t => String(t.id) === String(itemId));
+                if (idx !== -1) {
+                    lane.tasks.splice(idx, 1);
+                    laneMatch = lane;
+                }
+            }
+
+            if (isMultiverseStackedView) {
+                return laneMatch ? { lane: laneMatch } : (bucketMatch ? { bucket: bucketMatch } : null);
+            }
+            return bucketMatch ? { bucket: bucketMatch } : (laneMatch ? { lane: laneMatch } : null);
+        }
+
+        // Handler for the swipe-dock card's own complete button (per-bucket view, "All Tasks", and
+        // the Multiverse Timeline all share this one dock - see renderBucketTaskSwipeDock). Rebuilds
+        // just that dock's cards from the now-shorter task list, passing focusFirst:false so the
+        // camera stays exactly where it already was instead of jumping to whatever task is now first.
+        async function handleSpaceCompleteToggle(event, formElement, itemId) {
+            event.preventDefault();
+            fireCompleteConfetti(formElement);
+
+            const result = await submitToggleCompleteAjax(itemId);
+            if (!result) {
+                formElement.submit();
+                return;
+            }
+
+            const removed = removeTaskFromSpaceData(itemId);
+            applyToggleCompleteResult(result);
+
+            if (removed && removed.bucket) {
+                renderBucketTaskSwipeDock(removed.bucket, { focusFirst: false });
+            } else if (removed && removed.lane) {
+                renderBucketTaskSwipeDock({ id: `__mv_lane_${removed.lane.id}__`, name: removed.lane.name, tasks: removed.lane.tasks }, { focusFirst: false });
+            }
+        }
+
+        // Handler for the standalone HUD card's complete button (a task tapped in the full-universe
+        // overview, before drilling into any bucket - see showHudCard). No dock to rebuild here, just
+        // remove the task from the underlying data and close the card; the camera was never tied to
+        // this task's position in the first place, so there's nothing to preserve beyond not reloading.
+        async function handleHudCompleteToggle(event, formElement) {
+            event.preventDefault();
+            fireCompleteConfetti(formElement);
+
+            const itemId = document.getElementById('hud-task-id-input').value;
+            const result = await submitToggleCompleteAjax(itemId);
+            if (!result) {
+                formElement.submit();
+                return;
+            }
+
+            removeTaskFromSpaceData(itemId);
+            applyToggleCompleteResult(result);
+            hideHudCard();
+        }
+
         function toggleEmojiGrid(prefix) {
             const grid = document.getElementById(prefix + '-grid');
             if (grid) grid.classList.toggle('hidden');
@@ -2792,10 +2927,34 @@
             window.open(url, '_blank', 'noopener,noreferrer');
         }
 
-        // Reorder pattern suggestion - see find_reorder_suggestion() in app.py. That function only ever
-        // runs server-side right after a shoppable task is completed, and passes its result back as
-        // query params on the redirect - this just checks for those params once, on page load.
+        // Reorder pattern suggestion - see find_reorder_suggestion() in app.py. That function runs
+        // server-side right after a shoppable task is completed. A normal full-page-reload completion
+        // (Timeline View) passes its result back as query params on the redirect, checked once on page
+        // load below; an in-place AJAX completion (Space View - see submitToggleCompleteAjax) gets the
+        // same dict directly in the fetch response instead. Both funnel into showReorderSuggestion so
+        // there's exactly one place that populates/shows the toast.
         let pendingReorderSuggestion = null;
+
+        function showReorderSuggestion(suggestion) {
+            if (!suggestion || !suggestion.title || suggestion.avg_days == null || !suggestion.bucket_id) return;
+
+            pendingReorderSuggestion = {
+                title: suggestion.title,
+                days: parseInt(suggestion.avg_days, 10),
+                bucketId: suggestion.bucket_id,
+                amount: suggestion.amount || '',
+                count: parseInt(suggestion.match_count || '2', 10)
+            };
+
+            document.getElementById('reorder-toast-title').innerText = `"${pendingReorderSuggestion.title}"`;
+            document.getElementById('reorder-toast-days').innerText = pendingReorderSuggestion.days;
+            document.getElementById('reorder-toast-confidence').innerText =
+                pendingReorderSuggestion.count >= 3
+                    ? `Based on your last ${pendingReorderSuggestion.count} reorders`
+                    : `Early estimate - just one prior reorder so far`;
+
+            document.getElementById('reorder-suggestion-toast').classList.remove('hidden');
+        }
 
         function checkForReorderSuggestion() {
             const params = new URLSearchParams(window.location.search);
@@ -2805,22 +2964,13 @@
 
             if (!title || !days || !bucketId) return;
 
-            pendingReorderSuggestion = {
+            showReorderSuggestion({
                 title: title,
-                days: parseInt(days, 10),
-                bucketId: bucketId,
+                avg_days: days,
+                bucket_id: bucketId,
                 amount: params.get('reorder_amount') || '',
-                count: parseInt(params.get('reorder_count') || '2', 10)
-            };
-
-            document.getElementById('reorder-toast-title').innerText = `"${title}"`;
-            document.getElementById('reorder-toast-days').innerText = pendingReorderSuggestion.days;
-            document.getElementById('reorder-toast-confidence').innerText =
-                pendingReorderSuggestion.count >= 3
-                    ? `Based on your last ${pendingReorderSuggestion.count} reorders`
-                    : `Early estimate - just one prior reorder so far`;
-
-            document.getElementById('reorder-suggestion-toast').classList.remove('hidden');
+                match_count: params.get('reorder_count') || '2'
+            });
 
             // Strip the reorder_* params from the URL so refreshing or sharing the link doesn't
             // re-show the same suggestion - the query string did its job carrying the data over from
@@ -6028,7 +6178,12 @@
         }
 
         // CHRONOLOGICALLY SORTED SINGLE-CARD SWIPE DOCK WITH ACTIVE NODE SYNC
-        function renderBucketTaskSwipeDock(bucket) {
+        function renderBucketTaskSwipeDock(bucket, options = {}) {
+            // focusFirst defaults to true (existing behavior everywhere: opening/switching to a
+            // bucket/lane snaps the camera to its first task) - passed false specifically after an
+            // in-place task completion (see handleSpaceCompleteToggle), so re-rendering the dock with
+            // one less card never moves the camera on its own.
+            const focusFirst = options.focusFirst !== false;
             hideHudCard();
 
             const dock = document.getElementById('bucket-task-swipe-dock');
@@ -6052,9 +6207,15 @@
                     ? '<span class="text-xs text-slate-400 py-2 px-3 block text-center w-full">No people in this bucket</span>'
                     : '<span class="text-xs text-slate-400 py-2 px-3 block text-center w-full">No active tasks in this bucket</span>';
             } else {
-                // Default to the first sorted task/person on bucket load
-                activeSwipeTaskId = sortedTasks[0].id;
-                focusCameraOnTask(sortedTasks[0]);
+                if (focusFirst) {
+                    // Default to the first sorted task/person on bucket load
+                    activeSwipeTaskId = sortedTasks[0].id;
+                    focusCameraOnTask(sortedTasks[0]);
+                } else if (!sortedTasks.some(t => String(t.id) === String(activeSwipeTaskId))) {
+                    // The previously-focused card is gone (just completed) - stop highlighting a card
+                    // that no longer exists, but leave the camera exactly where it already was.
+                    activeSwipeTaskId = null;
+                }
 
                 sortedTasks.forEach((task, index) => {
                     const card = document.createElement('div');
@@ -6109,7 +6270,7 @@
                                 <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border ${badgeClass}">${badgeText}</span>
                                 <div class="flex items-center gap-2">
                                     ${amountText}
-                                    <form action="/items/toggle-complete/" method="POST" class="inline" onclick="event.stopPropagation()" onsubmit="triggerTaskConfetti(event, this)">
+                                    <form action="/items/toggle-complete/" method="POST" class="inline" onclick="event.stopPropagation()" onsubmit="return handleSpaceCompleteToggle(event, this, '${task.id}')">
                                         <input type="hidden" name="item_id" value="${task.id}">
                                         <button type="submit" title="Mark Complete" class="w-5 h-5 rounded border border-slate-600 hover:border-emerald-400 text-slate-400 hover:text-emerald-400 flex items-center justify-center text-xs transition">✓</button>
                                     </form>
