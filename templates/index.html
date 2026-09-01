@@ -66,6 +66,17 @@
             -webkit-tap-highlight-color: transparent;
         }
 
+        /* Same fix, same reason - iOS Safari's native long-press-on-link context menu ("Open",
+           "Copy Link", ...) was firing over our own press-and-hold Edit/Delete reveal on
+           Multiverse cards. */
+        .universe-card-link {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
         /* Hide scrollbars for smooth Quick-Warp & Task Dock sliding */
         .no-scrollbar::-webkit-scrollbar {
             display: none;
