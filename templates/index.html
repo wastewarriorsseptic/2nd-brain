@@ -773,7 +773,13 @@
         </div>
 
         <div class="max-w-3xl mx-auto px-6 py-10">
-            <p class="text-slate-400 text-sm mb-6 text-center">Your brain, on AI.</p>
+            <p class="text-slate-400 text-sm mb-4 text-center">Your brain, on AI.</p>
+            <div class="flex justify-center mb-8">
+                <button type="button" onclick="openMultiverseTimeline()"
+                        class="px-4 py-2 bg-slate-900 hover:bg-indigo-600/20 text-indigo-300 text-xs font-bold rounded-full shadow-lg transition border border-indigo-500/40 flex items-center gap-2">
+                    <span class="text-base">🌌</span> Multiverse Timeline
+                </button>
+            </div>
             <div id="multiverse-grid" class="flex flex-wrap items-start justify-center gap-5">
                 {% for u in universes %}
                 <div class="universe-card relative flex flex-col items-center gap-2 w-28 group" data-universe-id="{{ u.id }}">
@@ -1734,6 +1740,12 @@
         // Edit Task/Person/Realm/Bucket modals. Built server-side as plain data and passed
         // through `tojson` (safe inside a <script> block, unlike inside an HTML attribute).
         const allUniversesData = {{ (universes_tree|default([]))|tojson }};
+
+        // Every task across every Task-kind Universe the user owns, for the Multiverse Timeline
+        // view opened from the Multiverse picker. Shaped like the per-bucket task nodes built in
+        // initSpaceCanvas (see filteredTasks there) plus universeName/universeIcon, so it can
+        // reuse the exact same recurring dedup/lookahead + click/HUD/swipe-dock code unchanged.
+        const multiverseTasksData = {{ (multiverse_tasks|default([]))|tojson }};
 
         function universesOfKind(kind) {
             return allUniversesData.filter(u => u.kind === kind);
@@ -2933,6 +2945,12 @@
             const recurrenceType = element.getAttribute('data-recurrence-type') || 'none';
             const bucketId = element.getAttribute('data-bucket-id') || '';
             const realmId = element.getAttribute('data-realm-id') || '';
+            // Defaults to the active Universe (true for every normal per-bucket task), but the
+            // Multiverse Timeline opens tasks from Universes that aren't the active one - without
+            // this, the Universe select below would reset to the active Universe and silently
+            // repopulate Realm/Bucket from the WRONG Universe's tree, leaving realmId/bucketId
+            // unmatched in their selects.
+            const universeId = element.getAttribute('data-universe-id') || activeUniverseId;
 
             document.getElementById('edit-item-id').value = id;
             document.getElementById('edit-item-title').value = title;
@@ -2948,7 +2966,7 @@
             const universeSelect = document.getElementById('edit-task-universe-select');
             if (universeSelect) {
                 populateSelectFromList(universeSelect, universesOfKind('task'), 'icon', '(No Task Universes)');
-                universeSelect.value = activeUniverseId;
+                universeSelect.value = universeId;
                 onEditTaskUniverseChange();
             }
 
@@ -3928,6 +3946,146 @@
                     const angle = Math.atan2(dy, dx);
                     r.targetX = allTasksRealm.baseX + Math.cos(angle) * (dist + repelDist);
                     r.targetY = allTasksRealm.baseY + Math.sin(angle) * (dist + repelDist);
+                }
+            });
+            updateDailyDigestVisibility();
+        }
+
+        // Every task across every Task-kind Universe, opened from the Multiverse picker. Unlike
+        // openAllTasksTimeline (which flattens the CURRENTLY LOADED universe's spaceRealms),
+        // this sources from multiverseTasksData - a server-built list that already spans every
+        // owned Task universe - since most of those tasks were never scraped into spaceRealms/
+        // the DOM at all. Applies the exact same recurring dedup/lookahead-window rules as the
+        // per-bucket build in initSpaceCanvas, then reuses the same synthetic realm/bucket +
+        // swipe-dock pattern as openAllTasksTimeline so rendering code stays completely shared.
+        function openMultiverseTimeline() {
+            closeMultiverseView();
+
+            if (!isSpaceViewActive) {
+                isSpaceViewActive = true;
+                document.getElementById('space-view-overlay').classList.remove('hidden');
+                document.getElementById('view-toggle-icon').innerText = '📅';
+                document.getElementById('view-toggle-label').innerText = 'Timeline View';
+                localStorage.setItem('active_dashboard_view', 'space');
+                initSpaceCanvas();
+            }
+
+            const processedGroupIds = new Map();
+            const RECURRING_LOOKAHEAD_MONTHS = 6;
+            const RECURRING_MAX_VISIBLE = 30;
+            const recurringHorizonDate = new Date();
+            recurringHorizonDate.setMonth(recurringHorizonDate.getMonth() + RECURRING_LOOKAHEAD_MONTHS);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const allTasksFlat = [];
+            multiverseTasksData.forEach(t => {
+                if (t.isCompleted) return;
+
+                if (t.isRecurring) {
+                    const seriesKey = `${t.bucketId}-${t.title}`;
+                    const seenCount = processedGroupIds.get(seriesKey) || 0;
+                    if (seenCount >= RECURRING_MAX_VISIBLE) return;
+
+                    const seriesDueDate = t.dueDate ? new Date(t.dueDate + 'T00:00:00') : null;
+                    if (seriesDueDate && seriesDueDate > recurringHorizonDate) return;
+
+                    processedGroupIds.set(seriesKey, seenCount + 1);
+                }
+
+                const dueDate = t.dueDate ? new Date(t.dueDate + 'T00:00:00') : null;
+
+                allTasksFlat.push({
+                    id: t.id,
+                    title: t.title,
+                    dueDate: t.dueDate || '9999-12-31',
+                    dueTime: t.dueTime || '',
+                    dueDateFormatted: t.dueDateFormatted || '',
+                    amount: t.amount || '',
+                    isShoppable: !!t.isShoppable,
+                    description: t.description || '',
+                    recurrenceType: t.recurrenceType || 'none',
+                    bucketId: t.bucketId,
+                    realmId: t.realmId,
+                    realmName: t.realmName,
+                    bucketName: t.bucketName,
+                    universeId: t.universeId,
+                    universeName: t.universeName || '',
+                    universeIcon: t.universeIcon || '',
+                    isOverdue: !!(dueDate && dueDate < today),
+                    isRecurring: !!t.isRecurring,
+                    radius: 18,
+                    floatOffset: Math.random() * Math.PI * 2
+                });
+            });
+
+            const isMobile = window.innerWidth < 768;
+
+            const multiverseBucket = {
+                id: '__multiverse_tasks_bucket__',
+                name: 'Multiverse Timeline',
+                isAddButton: false,
+                tasks: allTasksFlat,
+                addTaskButton: null,
+                angle: 0,
+                orbitRadius: 0,
+                radius: isMobile ? 50 : 44,
+                maxReach: (isMobile ? 50 : 44) + 500,
+                x: 0, y: 0
+            };
+
+            const multiverseRealm = {
+                id: '__multiverse_tasks_realm__',
+                name: 'Every Universe',
+                icon: '🌌',
+                isAddButton: false,
+                isShared: false,
+                sharedByName: '',
+                radius: isMobile ? 169 : 109,
+                labelFontPx: isMobile ? 52 : 42,
+                orbitAngle: 0,
+                homeAngle: 0,
+                orbitRadius: 0,
+                floatSpeed: 1.4,
+                floatOffsetPhase: 0,
+                baseX: 0, baseY: 0,
+                x: 0, y: 0,
+                drawX: 0, drawY: 0,
+                targetX: 0, targetY: 0,
+                buckets: [multiverseBucket]
+            };
+
+            // Drop any leftover synthetic realm from a previous visit to either this or the
+            // single-universe "All Tasks" view before adding a fresh one.
+            spaceRealms = spaceRealms.filter(r => r.id !== '__multiverse_tasks_realm__' && r.id !== '__all_tasks_realm__');
+            spaceRealms.push(multiverseRealm);
+
+            hideHudCard();
+            activeSelectedRealm = multiverseRealm;
+            activeSelectedBucket = multiverseBucket;
+            renderBucketTaskSwipeDock(multiverseBucket);
+
+            const zoomVal = isMobile ? 0.24 : 0.413;
+            targetCameraZoom = zoomVal;
+            targetCameraOffset = {
+                x: (window.innerWidth / 2) - (multiverseBucket.x * zoomVal),
+                y: (window.innerHeight / 2) - (multiverseBucket.y * zoomVal)
+            };
+
+            const screenClearance = Math.max(window.innerWidth, window.innerHeight) * 1.1;
+            const repelDist = screenClearance / zoomVal;
+
+            spaceRealms.forEach(r => {
+                if (r.id === multiverseRealm.id) {
+                    r.targetX = multiverseRealm.baseX;
+                    r.targetY = multiverseRealm.baseY;
+                } else {
+                    const dx = r.baseX - multiverseRealm.baseX;
+                    const dy = r.baseY - multiverseRealm.baseY;
+                    const dist = Math.hypot(dx, dy) || 1;
+                    const angle = Math.atan2(dy, dx);
+                    r.targetX = multiverseRealm.baseX + Math.cos(angle) * (dist + repelDist);
+                    r.targetY = multiverseRealm.baseY + Math.sin(angle) * (dist + repelDist);
                 }
             });
             updateDailyDigestVisibility();
@@ -5719,6 +5877,7 @@
             dummyBtn.setAttribute('data-recurrence-type', task.recurrenceType);
             dummyBtn.setAttribute('data-bucket-id', task.bucketId);
             dummyBtn.setAttribute('data-realm-id', task.realmId);
+            if (task.universeId) dummyBtn.setAttribute('data-universe-id', task.universeId);
 
             openEditItem(dummyBtn);
         }

@@ -939,7 +939,8 @@ def dashboard(
                     # {% for %} loop like realmsData), so an actually-missing key here crashes
                     # the whole page with a 500 for every logged-out request - this happened in
                     # production. Belt-and-suspenders alongside the template's own `default([])`.
-                    "universes_tree": []
+                    "universes_tree": [],
+                    "multiverse_tasks": []
                 }
             )
 
@@ -1034,6 +1035,49 @@ def dashboard(
                 })
             universes_tree.append({"id": u.id, "name": u.name, "icon": u.icon, "kind": u.kind, "realms": u_realms})
 
+        # Every Task across every Task-kind Universe the user owns (not just the active one),
+        # for the Multiverse view's "Multiverse Timeline" button. Shaped with the same field
+        # names the Space View canvas's own task-node objects already use (dueDate, isShoppable,
+        # recurrenceType, ...), so the client can filter/dedupe/cap it with the exact same
+        # recurring-lookahead logic a single bucket's timeline already uses, then feed the result
+        # straight into the existing linear-timeline/HUD/swipe-dock rendering unchanged.
+        multiverse_tasks = []
+        task_universe_ids = {u.id for u in universes if u.kind == "task"}
+        if task_universe_ids:
+            mv_realm_ids = [r.id for r in owned_realms_all if r.universe_id in task_universe_ids]
+            if mv_realm_ids:
+                mv_buckets = session.exec(select(Bucket).where(Bucket.realm_id.in_(mv_realm_ids))).all()
+                bucket_by_id = {b.id: b for b in mv_buckets}
+                realm_by_id = {r.id: r for r in owned_realms_all}
+                universe_by_id = {u.id: u for u in universes}
+                mv_items = session.exec(
+                    select(Item).join(Bucket).where(Bucket.realm_id.in_(mv_realm_ids))
+                ).all()
+                for it in mv_items:
+                    b = bucket_by_id.get(it.bucket_id)
+                    r = realm_by_id.get(b.realm_id) if b else None
+                    u2 = universe_by_id.get(r.universe_id) if r else None
+                    multiverse_tasks.append({
+                        "id": it.id,
+                        "title": it.title,
+                        "dueDate": it.due_date.strftime("%Y-%m-%d"),
+                        "dueTime": it.due_date.strftime("%H:%M") if it.due_date.strftime("%H:%M") != "09:00" else "",
+                        "dueDateFormatted": it.due_date.strftime("%b %d, %Y"),
+                        "amount": it.amount if it.amount is not None else "",
+                        "isShoppable": bool(it.is_shoppable),
+                        "isCompleted": bool(it.is_completed),
+                        "description": it.description or "",
+                        "recurrenceType": it.recurrence_type or "none",
+                        "isRecurring": bool((it.recurrence_type and it.recurrence_type != "none") or it.recurring_group_id),
+                        "bucketId": it.bucket_id,
+                        "realmId": b.realm_id if b else None,
+                        "realmName": r.name if r else "",
+                        "bucketName": b.name if b else "",
+                        "universeId": u2.id if u2 else None,
+                        "universeName": u2.name if u2 else "",
+                        "universeIcon": u2.icon if u2 else "",
+                    })
+
         return templates.TemplateResponse(
             request=request,
             name="index.html",
@@ -1045,6 +1089,7 @@ def dashboard(
                 "people": people,
                 "universes": universes,
                 "universes_tree": universes_tree,
+                "multiverse_tasks": multiverse_tasks,
                 "active_universe": active_universe,
                 "is_contact_universe": is_contact_universe,
                 "selected_realm_id": realm_id,
