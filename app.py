@@ -2428,6 +2428,57 @@ def ai_chat_history(request: Request):
         messages, last_task = _ai_chat_load_history(session, user)
         return JSONResponse({"ok": True, "messages": messages, "last_task": last_task})
 
+@app.post("/ai/chat/migrate-local/")
+def ai_chat_migrate_local(request: Request, payload: dict = Body(...)):
+    """One-time recovery path for conversations that predate server-side persistence: before
+    AiChatMessage existed, the chat lived only in that one browser's own localStorage, invisible
+    from any other device - exactly what a user reported after chatting on mobile and finding
+    nothing on desktop. The client calls this once per browser, opportunistically, whenever it
+    still finds the old localStorage keys present, handing over whatever's left there so it gets
+    folded into the user's now-durable, cross-device history instead of being silently stranded.
+    Assigns migrated messages an artificial created_at strictly BEFORE the user's earliest existing
+    real message (preserving their own relative order) so they sort as history, not as if they just
+    happened - otherwise they'd appear to jump ahead of/interleave oddly with anything already
+    saved server-side by the time this migration actually runs."""
+    if not GEMINI_ENABLED:
+        return JSONResponse({"ok": False}, status_code=503)
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return JSONResponse({"ok": False}, status_code=401)
+
+        raw_messages = payload.get("messages")
+        if not isinstance(raw_messages, list):
+            return JSONResponse({"ok": False, "error": "Expected a messages list."}, status_code=400)
+
+        valid = []
+        for m in raw_messages[-80:]:  # sane upper bound - roughly 2x the normal history cap
+            if not isinstance(m, dict):
+                continue
+            role = m.get("role")
+            content = (m.get("content") or "").strip()
+            if role not in ("user", "assistant") or not content:
+                continue
+            valid.append((role, content[:8000]))
+
+        if not valid:
+            return JSONResponse({"ok": True, "saved": 0})
+
+        earliest = session.exec(
+            select(AiChatMessage)
+            .where(AiChatMessage.user_id == user.id)
+            .order_by(AiChatMessage.created_at.asc(), AiChatMessage.id.asc())
+        ).first()
+        anchor = earliest.created_at if earliest else datetime.utcnow()
+
+        total = len(valid)
+        for i, (role, content) in enumerate(valid):
+            ts = anchor - timedelta(seconds=(total - i))
+            session.add(AiChatMessage(user_id=user.id, role=role, content=content, created_at=ts))
+        session.commit()
+
+        return JSONResponse({"ok": True, "saved": len(valid)})
+
 @app.post("/ai/chat/")
 def ai_chat(request: Request, payload: dict = Body(...)):
     if not GEMINI_ENABLED:

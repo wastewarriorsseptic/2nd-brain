@@ -3160,7 +3160,43 @@
                 });
             } catch (e) {}
         }
-        document.addEventListener('DOMContentLoaded', restoreAiChatState);
+
+        // One-time recovery, per browser: before server-side persistence existed, the conversation
+        // lived only in THIS browser's own localStorage under the old key below - invisible from any
+        // other device, which is exactly what got reported (chatted on mobile, saw nothing on
+        // desktop). Hands over whatever's still sitting there to the server so it gets folded into
+        // the durable, cross-device history instead of being permanently stranded - then clears the
+        // old keys unconditionally (success or failure) so this only ever runs once per browser.
+        // Runs before restoreAiChatState() so a freshly-migrated turn shows up immediately, not just
+        // on the following load.
+        async function migrateLegacyLocalChatHistory() {
+            let raw = null;
+            try {
+                raw = localStorage.getItem('ai_chat_history_v1');
+            } catch (e) {}
+            if (!raw) return;
+            try {
+                const messages = JSON.parse(raw);
+                if (Array.isArray(messages) && messages.length) {
+                    await fetch('/ai/chat/migrate-local/', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ messages })
+                    });
+                }
+            } catch (e) {
+            } finally {
+                try {
+                    localStorage.removeItem('ai_chat_history_v1');
+                    localStorage.removeItem('ai_chat_last_task_v1');
+                } catch (e) {}
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await migrateLegacyLocalChatHistory();
+            restoreAiChatState();
+        });
 
         let aiChatSending = false;
 
