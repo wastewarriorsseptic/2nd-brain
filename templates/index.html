@@ -3769,7 +3769,7 @@
                 aiChatHistory.push({ role: 'user', content: text });
                 aiChatHistory.push({ role: 'assistant', content: data.reply });
 
-                const touchedTask = data.task_created || data.task_updated;
+                const touchedTask = data.task_created || data.task_updated || data.navigate;
 
                 if (touchedTask) {
                     renderAiChatBubble('assistant', data.reply, 'task_created');
@@ -3779,10 +3779,16 @@
 
                 speakAiReply(data.reply);
 
-                // A created/updated task otherwise wouldn't show up anywhere on the current page
-                // (Timeline list, Space View) until a real reload - refresh the underlying data in
-                // place instead, with no visible navigation.
-                if (touchedTask) {
+                if (data.navigate) {
+                    // A real navigation (not the silent iframe refresh below) - it's the only way
+                    // to move the Space View camera to a task that may live in a different
+                    // Universe than the one currently open. Give the confirmation bubble a beat
+                    // to be read before the page leaves.
+                    navigateToTaskFromChat(data.navigate);
+                } else if (touchedTask) {
+                    // A created/updated task otherwise wouldn't show up anywhere on the current
+                    // page (Timeline list, Space View) until a real reload - refresh the
+                    // underlying data in place instead, with no visible navigation.
                     silentlyRefreshTaskData();
                 }
             } catch (e) {
@@ -3793,6 +3799,21 @@
                 aiChatSending = false;
             }
             return false;
+        }
+
+        // A chat "take me to task X" is a real navigation, not the silent in-place refresh below -
+        // unlike a created/updated task, moving the Space View camera can mean loading a different
+        // Universe entirely (a task's bucket doesn't have to live in whichever Universe happens to
+        // be open right now), which the hidden-iframe technique has no way to switch into. Passing
+        // both realm_id and bucket_id makes the freshly-loaded page's selected_realm_id/
+        // selected_bucket_id (and so its Space View camera target, via the goto_item pickup below)
+        // resolve to exactly this task regardless of which Universe it's in. A short delay lets the
+        // confirmation bubble actually be read before the page leaves.
+        function navigateToTaskFromChat(nav) {
+            if (!nav || !nav.bucket_id || !nav.realm_id || !nav.id) return;
+            setTimeout(() => {
+                window.location.href = '/?realm_id=' + nav.realm_id + '&bucket_id=' + nav.bucket_id + '&goto_item=' + nav.id;
+            }, 700);
         }
 
         // A task created/updated via chat wouldn't otherwise show up anywhere on the current page
@@ -4307,6 +4328,32 @@
                     );
                 });
             }
+        });
+
+        // Picks up a ?goto_item= left by navigateToTaskFromChat() (see handleAiChatSubmit) after
+        // its real page navigation lands. Runs after the "restore persistent Space View state"
+        // listener above (registered earlier in the file, so it fires first) - isSpaceViewActive
+        // already reflects localStorage by the time this runs, so it only forces Space View on if
+        // the user genuinely wasn't already in it. realm_id/bucket_id in the URL already resolved
+        // this exact task's Universe server-side (see dashboard()'s active-universe resolution),
+        // so currentSelectedRealmId/currentSelectedBucketId are guaranteed to be its own.
+        document.addEventListener('DOMContentLoaded', () => {
+            const gotoItemId = new URLSearchParams(window.location.search).get('goto_item');
+            if (!gotoItemId) return;
+
+            if (!isSpaceViewActive) {
+                toggleSpaceView();
+                document.documentElement.classList.remove('preload-space-view');
+            }
+            if (currentSelectedRealmId && currentSelectedBucketId) {
+                navigateToDigestItem(currentSelectedRealmId, currentSelectedBucketId, gotoItemId);
+            }
+
+            // Strip goto_item (keeping realm_id/bucket_id) so a manual refresh of this URL doesn't
+            // re-trigger the same camera jump every time.
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete('goto_item');
+            history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
         });
 
 

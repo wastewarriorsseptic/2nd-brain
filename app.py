@@ -2158,16 +2158,16 @@ def cancel_pending_invite(request: Request, invite_id: int = Form(...), realm_id
     return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
 
 # --- AI Chat Assistant (Gemini) ---
-# Task-focused v1: the assistant can only create tasks and answer questions about existing ones -
-# no contacts, no calling/emailing anyone. See build_task_universe_context() for what grounding
-# data it's given, and _ai_execute_create_task/_ai_execute_list_tasks for the only two things it
-# can actually do, both re-validated server-side against the requesting user's own session no
-# matter what the model itself returns.
+# Task-focused v1: the assistant can create/update/find/navigate-to tasks and answer questions
+# about existing ones - no contacts, no calling/emailing anyone. See build_task_universe_context()
+# for what grounding data it's given, and the _ai_execute_* functions below for everything it can
+# actually do, each re-validated server-side against the requesting user's own session no matter
+# what the model itself returns.
 
 AI_CHAT_SYSTEM_PROMPT = """You are TaskMonster's task assistant. You can create tasks, update \
-existing tasks, and answer questions about the current user's existing tasks, via the three \
-tools you have. You cannot call, email, or message anyone, and you have no tools for that - if \
-asked, say that's not supported yet.
+existing tasks, bring the user's screen to a specific task, and answer questions about the \
+current user's existing tasks, via the four tools you have. You cannot call, email, or message \
+anyone, and you have no tools for that - if asked, say that's not supported yet.
 
 Only call create_task if you are HIGHLY CONFIDENT there is exactly one clearly-correct bucket for \
 the task, chosen from the bucket ids listed in the context below. Never invent a bucket_id that \
@@ -2176,12 +2176,20 @@ call create_task - instead reply with plain text asking a short clarifying quest
 the specific plausible bucket options, and wait for the user's next message. When genuinely \
 unsure, always ask rather than guess.
 
-To update_task, you need the task's task_id. If the user is clearly referring to the task named \
-in "last_referenced_task" below (e.g. "that task", "it", "update the due date", with no other \
-task named), use its id. Otherwise, if you don't already have the id from earlier in this \
-conversation, call list_tasks first to find it by matching the title the user described, then \
-call update_task in your next turn. Never invent a task_id. Only change the fields the user \
+To update_task or navigate_to_task, you need the task's task_id. If the user is clearly referring \
+to the task named in "last_referenced_task" below (e.g. "that task", "it", "update the due date", \
+"take me back to it", with no other task named), use its id. Otherwise, if you don't already have \
+the id from earlier in this conversation, call list_tasks first to find it by matching the title \
+the user described. Never invent a task_id. For update_task, only change the fields the user \
 actually asked to change - leave every other field as-is by omitting it from the call.
+
+When the user asks to be taken to, shown, or brought to a task ("go to my dentist task", "show me \
+the fountain reminder"), first make sure exactly ONE task in list_tasks' results plausibly matches \
+what they described. If two or more tasks are a plausible match (e.g. the same title recurring on \
+several dates, or several similarly-named tasks), you MUST NOT call navigate_to_task - instead ask \
+a short clarifying question that lists the specific candidates, each with its due date and bucket \
+name so the user can tell them apart, and wait for their reply. Only call navigate_to_task once \
+you're confident about a single task - never guess which one when more than one is plausible.
 
 Resolve relative dates ("tomorrow", "next Friday") against the "today"/"timezone" given in the \
 context. Always output due_date as YYYY-MM-DD.
@@ -2196,6 +2204,7 @@ into, and the most recently created/updated task in this conversation if any):
 _ai_create_task_decl = None
 _ai_update_task_decl = None
 _ai_list_tasks_decl = None
+_ai_navigate_task_decl = None
 _ai_tools = None
 if GEMINI_ENABLED:
     _ai_create_task_decl = genai_types.FunctionDeclaration(
@@ -2228,7 +2237,7 @@ if GEMINI_ENABLED:
     )
     _ai_list_tasks_decl = genai_types.FunctionDeclaration(
         name="list_tasks",
-        description="List the current user's tasks, optionally filtered. Results include each task's id, needed to later update_task it.",
+        description="List the current user's tasks, optionally filtered. Results include each task's id, needed to later update_task or navigate_to_task it.",
         parameters={
             "type": "OBJECT",
             "properties": {
@@ -2237,7 +2246,18 @@ if GEMINI_ENABLED:
             },
         },
     )
-    _ai_tools = [genai_types.Tool(function_declarations=[_ai_create_task_decl, _ai_update_task_decl, _ai_list_tasks_decl])]
+    _ai_navigate_task_decl = genai_types.FunctionDeclaration(
+        name="navigate_to_task",
+        description="Move the user's screen to a specific task they already have, so they can see or edit it in the app. Only call this once you're confident which single task the user means - see the disambiguation rule in your instructions.",
+        parameters={
+            "type": "OBJECT",
+            "properties": {
+                "task_id": {"type": "INTEGER", "description": "The id of the task to navigate to - from list_tasks results or last_referenced_task in context."},
+            },
+            "required": ["task_id"],
+        },
+    )
+    _ai_tools = [genai_types.Tool(function_declarations=[_ai_create_task_decl, _ai_update_task_decl, _ai_list_tasks_decl, _ai_navigate_task_decl])]
 
 # Simple in-memory per-user rate limit - resets on process restart and doesn't span multiple
 # dynos, which is fine for this single small Render service; not meant to be bulletproof, just a
@@ -2417,6 +2437,34 @@ def _ai_execute_list_tasks(session: Session, user: "User", args: dict) -> list:
     out.sort(key=lambda t: t["due_date"])
     return out[:40]
 
+def _ai_execute_navigate_to_task(session: Session, user: "User", args: dict) -> dict:
+    """Returns {"error": str} on any validation failure, or the navigation-target dict the client
+    uses to move the camera to this task. Read-only - it can't change any data - but task_id is
+    still untrusted model output, so it's re-checked via the same user_can_access_item check
+    update_task uses rather than trusted outright. Includes both bucket_id and realm_id: the
+    client passes both through as ?realm_id=&bucket_id= so the freshly-loaded page's
+    selected_realm_id/selected_bucket_id (and therefore its Space View camera target) resolve to
+    exactly this task's bucket, even if it lives in a Universe other than the one currently open."""
+    task_id = args.get("task_id")
+    if not user_can_access_item(session, user, task_id):
+        return {"error": "That task doesn't exist or isn't yours."}
+
+    item = session.get(Item, task_id)
+    bucket = session.get(Bucket, item.bucket_id)
+    realm = session.get(Realm, bucket.realm_id) if bucket else None
+    universe = session.get(Universe, realm.universe_id) if realm and realm.universe_id else None
+
+    return {
+        "id": item.id,
+        "title": item.title,
+        "bucket_id": item.bucket_id,
+        "realm_id": bucket.realm_id if bucket else None,
+        "bucket_name": bucket.name if bucket else "",
+        "realm_name": realm.name if realm else "",
+        "universe_name": universe.name if universe else "",
+        "universe_icon": universe.icon if universe else "😈",
+    }
+
 AI_CHAT_MAX_TOOL_CALLS = 3  # bounds a single turn's cost even if the model tries to chain calls
 
 @app.get("/ai/chat/history/")
@@ -2528,20 +2576,26 @@ def ai_chat(request: Request, payload: dict = Body(...)):
 
         task_created = None
         task_updated = None
+        task_navigated = None
 
         def _finish(reply_text: str) -> JSONResponse:
             # Saves this turn (the user's message + the assistant's reply) so it's there the next
             # time this user loads the chat, from any device. touched_task's id/title get attached
             # to the ASSISTANT row only - that's what _ai_chat_load_history scans for when deriving
-            # last_referenced_task for a future turn.
-            touched_task = task_updated or task_created
+            # last_referenced_task for a future turn. A navigate counts as "touching" a task too -
+            # e.g. "take me to the fountain task" then "push it back a day" should resolve "it"
+            # against the task just navigated to, same as a create/update would.
+            touched_task = task_updated or task_created or task_navigated
             _ai_chat_save_message(session, user, "user", message)
             _ai_chat_save_message(
                 session, user, "assistant", reply_text,
                 task_id=(touched_task["id"] if touched_task else None),
                 task_title=(touched_task["title"] if touched_task else None),
             )
-            return JSONResponse({"ok": True, "reply": reply_text, "task_created": task_created, "task_updated": task_updated})
+            return JSONResponse({
+                "ok": True, "reply": reply_text,
+                "task_created": task_created, "task_updated": task_updated, "navigate": task_navigated,
+            })
 
         try:
             for _ in range(AI_CHAT_MAX_TOOL_CALLS):
@@ -2580,6 +2634,13 @@ def ai_chat(request: Request, payload: dict = Body(...)):
                     tasks = _ai_execute_list_tasks(session, user, args)
                     contents.append(genai_types.Content(role="user", parts=[genai_types.Part(
                         function_response=genai_types.FunctionResponse(name=name, response={"tasks": tasks})
+                    )]))
+                elif name == "navigate_to_task":
+                    result = _ai_execute_navigate_to_task(session, user, args)
+                    if "error" not in result:
+                        task_navigated = result
+                    contents.append(genai_types.Content(role="user", parts=[genai_types.Part(
+                        function_response=genai_types.FunctionResponse(name=name, response=result)
                     )]))
                 else:
                     # Unknown tool name - bail safely rather than looping on something we can't handle.
