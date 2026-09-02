@@ -244,7 +244,7 @@
                 <button onclick="toggleAiChatPanel()" class="text-slate-400 hover:text-white text-xs font-bold px-1">✕</button>
             </div>
         </div>
-        <div id="ai-chat-messages" class="flex-1 overflow-y-auto p-3 space-y-2.5 text-sm"></div>
+        <div id="ai-chat-messages" class="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-2.5 text-sm"></div>
         <form id="ai-chat-form" onsubmit="return handleAiChatSubmit(event)" class="p-2.5 border-t border-slate-800 flex gap-2 shrink-0">
             <input id="ai-chat-input" type="text" placeholder="Add a task or ask a question…"
                    class="flex-1 bg-slate-800 border border-slate-700 rounded-full px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" autocomplete="off">
@@ -413,7 +413,7 @@
         {% endif %}
     </aside>
 
-    <main class="flex-1 p-3 md:p-8 overflow-y-auto flex flex-col justify-between">
+    <main class="flex-1 p-3 md:p-8 overflow-y-auto overscroll-contain flex flex-col justify-between">
         <div>
             <div class="max-w-4xl mx-auto pt-2 sm:pt-4">
                 {% if user %}
@@ -748,7 +748,7 @@
                     <span id="daily-digest-count-badge" class="hidden bg-indigo-500/30 text-indigo-200 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full border border-indigo-400/30">0</span>
                     <span id="daily-digest-chevron" class="text-[10px]">▾</span>
                 </div>
-                <div id="daily-digest-body-wrapper" class="hidden pointer-events-auto mt-2 w-11/12 max-w-sm max-h-[55vh] overflow-y-auto bg-slate-900/95 border border-indigo-500/40 rounded-2xl backdrop-blur-md shadow-2xl p-3.5 space-y-3 text-xs">
+                <div id="daily-digest-body-wrapper" class="hidden pointer-events-auto mt-2 w-11/12 max-w-sm max-h-[55vh] overflow-y-auto overscroll-contain bg-slate-900/95 border border-indigo-500/40 rounded-2xl backdrop-blur-md shadow-2xl p-3.5 space-y-3 text-xs">
                     <!-- Populated dynamically by renderDailyDigest() -->
                 </div>
             </div>
@@ -3546,6 +3546,23 @@
             window.visualViewport.addEventListener('resize', syncAiChatPanelToViewport);
             window.visualViewport.addEventListener('scroll', syncAiChatPanelToViewport);
         }
+
+        // The chat panel floats over the still-scrollable page (unlike every other modal here,
+        // which is a full-viewport backdrop that structurally can't be scrolled past) - it's a
+        // small fixed card with the Timeline/task list still scrollable all around it. A scroll
+        // gesture (trackpad, mouse wheel, or touch) that starts anywhere over the panel must be
+        // fully owned by it, never partly reach the page behind - reported directly as "scroll the
+        // background, then it's hard or impossible to scroll back in the open text window."
+        // Stopping propagation at the panel's own boundary guarantees that isolation regardless of
+        // browser-specific scroll-chaining/momentum quirks, on top of overscroll-contain (set on
+        // #ai-chat-messages above) which stops the message list's OWN scroll from bleeding out once
+        // it hits its top/bottom edge.
+        document.addEventListener('DOMContentLoaded', () => {
+            const aiChatPanelEl = document.getElementById('ai-chat-panel');
+            if (!aiChatPanelEl) return;
+            aiChatPanelEl.addEventListener('wheel', (e) => e.stopPropagation());
+            aiChatPanelEl.addEventListener('touchmove', (e) => e.stopPropagation(), { passive: true });
+        });
 
         // Text-to-speech for assistant replies - the counterpart to dictation below, same
         // no-dependency browser API pattern (SpeechSynthesis instead of SpeechRecognition). Off by
