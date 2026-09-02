@@ -5146,9 +5146,36 @@
             return formattedFallback || due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         }
 
+        // Thin wrapper around the real render logic (renderSpaceFrameInner) purely so a single bad
+        // frame can never permanently kill the animation loop. renderSpaceFrameInner does hundreds
+        // of lines of canvas math/DOM queries every frame - if ANY of it ever throws (a transient
+        // NaN before some async state settles, a device-specific text-measurement edge case, etc.),
+        // an uncaught exception here would mean the self-perpetuating requestAnimationFrame chain
+        // simply never calls itself again - the canvas freezes on whatever was last drawn (often
+        // nothing at all, if the very first frame throws before drawing anything) and never
+        // recovers without a full page reload. This is very likely what's behind reports of Space
+        // View "sometimes" going black on some devices and not others - not that it's fundamentally
+        // broken there, but that ONE frame hit some device-specific edge case and the whole loop
+        // quietly died. try/catch here means the worst case is a single skipped frame; the loop
+        // always keeps ticking and gets another chance next frame regardless.
         function renderSpaceFrame() {
-            if (!isSpaceViewActive) return;
+            if (!isSpaceViewActive) {
+                // The chain genuinely stops here (Space View was closed) - clear the guard so the
+                // NEXT initSpaceCanvas() call (reopening Space View) knows no loop is running and
+                // correctly starts a fresh one, instead of believing this dead one is still ticking
+                // and silently never scheduling anything again (a black canvas on next open).
+                spaceRenderLoopRunning = false;
+                return;
+            }
+            try {
+                renderSpaceFrameInner();
+            } catch (e) {
+                console.error('renderSpaceFrame error (recovering next frame):', e);
+            }
+            requestAnimationFrame(renderSpaceFrame);
+        }
 
+        function renderSpaceFrameInner() {
             frameCount += 0.02;
 
             cameraZoom += (targetCameraZoom - cameraZoom) * 0.1;
@@ -5166,7 +5193,6 @@
             if (isMultiverseStackedView) {
                 renderMultiverseStackedLanes();
                 spaceCtx.restore();
-                requestAnimationFrame(renderSpaceFrame);
                 return;
             }
 
@@ -5880,7 +5906,6 @@
             }
 
             spaceCtx.restore();
-            requestAnimationFrame(renderSpaceFrame);
         }
 
         // Computes the realm's own name-pill rect using the exact same sizing math renderRealmNode
