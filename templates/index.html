@@ -3718,7 +3718,10 @@
             }
         }
 
-        function renderAiChatBubble(role, text, variant) {
+        // navTarget (optional): the task_created/task_updated result dict (id/bucket_id/realm_id) -
+        // when given, appends a tappable "Go to this task" link so the user doesn't have to send a
+        // follow-up "take me to it" message just to see what the assistant did.
+        function renderAiChatBubble(role, text, variant, navTarget) {
             const wrapper = document.getElementById('ai-chat-messages');
             if (!wrapper) return null;
 
@@ -3737,6 +3740,15 @@
             bubble.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
             bubble.innerHTML = `<div class="${bubbleClass}"></div>`;
             bubble.firstElementChild.innerText = text;
+
+            if (navTarget && navTarget.bucket_id && navTarget.realm_id && navTarget.id) {
+                const link = document.createElement('button');
+                link.type = 'button';
+                link.className = 'mt-2 block text-left text-emerald-300 hover:text-emerald-100 underline underline-offset-2 font-bold';
+                link.textContent = '🎯 Go to this task';
+                link.onclick = () => goToAiChatTask(navTarget);
+                bubble.firstElementChild.appendChild(link);
+            }
 
             wrapper.appendChild(bubble);
             wrapper.scrollTop = wrapper.scrollHeight;
@@ -3804,7 +3816,11 @@
                 const touchedTask = data.task_created || data.task_updated || data.navigate;
 
                 if (touchedTask) {
-                    renderAiChatBubble('assistant', data.reply, 'task_created');
+                    // A navigate response is already about to redirect the page itself (below) -
+                    // a tappable link in the bubble would be redundant there, so it's only attached
+                    // for a plain create/update (no navigation already in flight this turn).
+                    const linkTarget = data.navigate ? null : (data.task_created || data.task_updated);
+                    renderAiChatBubble('assistant', data.reply, 'task_created', linkTarget);
                 } else {
                     renderAiChatBubble('assistant', data.reply);
                 }
@@ -3841,11 +3857,24 @@
         // selected_bucket_id (and so its Space View camera target, via the goto_item pickup below)
         // resolve to exactly this task regardless of which Universe it's in. A short delay lets the
         // confirmation bubble actually be read before the page leaves.
+        function aiChatTaskUrl(nav) {
+            return '/?realm_id=' + nav.realm_id + '&bucket_id=' + nav.bucket_id + '&goto_item=' + nav.id;
+        }
+
         function navigateToTaskFromChat(nav) {
             if (!nav || !nav.bucket_id || !nav.realm_id || !nav.id) return;
             setTimeout(() => {
-                window.location.href = '/?realm_id=' + nav.realm_id + '&bucket_id=' + nav.bucket_id + '&goto_item=' + nav.id;
+                window.location.href = aiChatTaskUrl(nav);
             }, 700);
+        }
+
+        // The "🎯 Go to this task" link rendered on a create/update confirmation bubble (see
+        // renderAiChatBubble) - unlike navigateToTaskFromChat's 700ms delay (which exists to let an
+        // AUTOMATIC redirect's confirmation text be read first), this is a direct response to the
+        // user already having tapped something, so it navigates immediately.
+        function goToAiChatTask(nav) {
+            if (!nav || !nav.bucket_id || !nav.realm_id || !nav.id) return;
+            window.location.href = aiChatTaskUrl(nav);
         }
 
         // A task created/updated via chat wouldn't otherwise show up anywhere on the current page

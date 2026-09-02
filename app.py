@@ -2351,6 +2351,8 @@ def _ai_execute_create_task(session: Session, user: "User", args: dict) -> dict:
     return {
         "id": new_item.id,
         "title": new_item.title,
+        "bucket_id": new_item.bucket_id,
+        "realm_id": bucket.realm_id if bucket else None,
         "bucket_name": bucket.name if bucket else "",
         "realm_name": realm.name if realm else "",
         "universe_icon": universe.icon if universe else "😈",
@@ -2392,6 +2394,8 @@ def _ai_execute_update_task(session: Session, user: "User", args: dict) -> dict:
     return {
         "id": item.id,
         "title": item.title,
+        "bucket_id": item.bucket_id,
+        "realm_id": bucket.realm_id if bucket else None,
         "bucket_name": bucket.name if bucket else "",
         "realm_name": realm.name if realm else "",
         "universe_icon": universe.icon if universe else "😈",
