@@ -3510,12 +3510,13 @@
         // (exactly what made the panel unusable on mobile: header scrolled out of view, input barely
         // reachable). window.visualViewport reports the ACTUAL visible area above the keyboard (and
         // above iOS's own Prev/Next/Done accessory bar) - anchor the panel to that directly instead
-        // of trusting CSS alone. Deliberately shrunk to a compact ~25% of the full device height
-        // WHILE the keyboard is up (smaller than the panel's own h-[55vh] baseline below) rather than
-        // expanding to fill whatever's left above the keyboard, so the app underneath and the input/
-        // send button stay comfortably reachable either way - the moment the keyboard closes, the
-        // panel returns to its full resting height. Desktop keeps its own compact floating-card
-        // layout (the md: classes) untouched; this only ever runs below that breakpoint.
+        // of trusting CSS alone. Fills nearly all of that visible area (a small KEYBOARD_TOP_MARGIN
+        // left uncovered at the very top, so there's still a sliver of the app/status bar visible and
+        // it reads as an overlay rather than a full takeover) - a user asked directly for more room
+        // while the keyboard is up after an earlier, more conservative ~25%-of-full-device-height
+        // version felt cramped. The moment the keyboard closes, the panel returns to its own h-[55vh]
+        // resting height below. Desktop keeps its own compact floating-card layout (the md: classes)
+        // untouched; this only ever runs below that breakpoint.
         function syncAiChatPanelToViewport() {
             const panel = document.getElementById('ai-chat-panel');
             if (!panel || panel.classList.contains('hidden')) return;
@@ -3536,9 +3537,11 @@
                 panel.style.bottom = '';
                 return;
             }
-            const panelHeight = window.innerHeight * 0.25;
+            const KEYBOARD_TOP_MARGIN = 28;
+            const KEYBOARD_BOTTOM_GAP = 10;
+            const panelHeight = vv.height - KEYBOARD_TOP_MARGIN - KEYBOARD_BOTTOM_GAP;
             panel.style.height = `${panelHeight}px`;
-            panel.style.top = `${vv.offsetTop + vv.height - panelHeight - 10}px`;
+            panel.style.top = `${vv.offsetTop + KEYBOARD_TOP_MARGIN}px`;
             panel.style.bottom = 'auto';
         }
 
