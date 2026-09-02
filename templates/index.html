@@ -227,7 +227,13 @@
     <!-- Mobile: near-fullscreen (small margin on every side) so the message list has real room
          and the input row stays clear of the keyboard. Desktop (md:): the original compact
          floating card, anchored above the launcher button. -->
-    <div id="ai-chat-panel" class="hidden fixed inset-x-3 top-4 bottom-3 md:inset-x-auto md:top-auto md:bottom-40 md:right-4 md:w-11/12 md:max-w-sm md:h-[70vh] md:max-h-[560px] z-[70] bg-slate-900/95 border border-indigo-500/40 rounded-2xl backdrop-blur-md shadow-2xl flex flex-col overflow-hidden">
+    <!-- Mobile: a compact strip - about a quarter of the screen's height, bottom-anchored above
+         the launcher - rather than the near-fullscreen layout this used to have, so the app
+         underneath stays visible/usable while the panel is open. syncAiChatPanelToViewport() keeps
+         it at roughly that same ~25% height (of the full device height, not the keyboard-shrunk
+         visible one) and slides it to sit just above the keyboard once one is up. Desktop (md:)
+         keeps its own compact floating-card layout, untouched. -->
+    <div id="ai-chat-panel" class="hidden fixed inset-x-3 bottom-24 h-[25vh] md:inset-x-auto md:top-auto md:bottom-40 md:right-4 md:w-11/12 md:max-w-sm md:h-[70vh] md:max-h-[560px] z-[70] bg-slate-900/95 border border-indigo-500/40 rounded-2xl backdrop-blur-md shadow-2xl flex flex-col overflow-hidden">
         <div class="flex items-center justify-between px-3.5 py-2.5 border-b border-slate-800 shrink-0">
             <span class="text-xs font-extrabold text-indigo-300 uppercase tracking-wide">🤖 TaskMonster Assistant</span>
             <div class="flex items-center gap-2">
@@ -3197,11 +3203,13 @@
         // iOS Safari's position:fixed doesn't reliably track the visual viewport once the on-screen
         // keyboard opens - the whole page shifts to keep the focused input visible, which can drag a
         // fixed element like this panel partway or entirely off-screen instead of just shrinking it
-        // (exactly what made the panel unusable on mobile: header scrolled out of view, huge dead
-        // space, input barely reachable). window.visualViewport reports the ACTUAL visible area
-        // above the keyboard (and above iOS's own Prev/Next/Done accessory bar) - anchor the panel
-        // to that directly instead of trusting CSS alone. Desktop keeps its compact floating-card
-        // layout (the md: classes) untouched; this only ever runs below that breakpoint.
+        // (exactly what made the panel unusable on mobile: header scrolled out of view, input barely
+        // reachable). window.visualViewport reports the ACTUAL visible area above the keyboard (and
+        // above iOS's own Prev/Next/Done accessory bar) - anchor the panel to that directly instead
+        // of trusting CSS alone. Kept deliberately compact (~25% of the full device height, matching
+        // the CSS class's own h-[25vh] baseline) rather than expanding to fill whatever's left above
+        // the keyboard, so the app underneath stays visible either way. Desktop keeps its own compact
+        // floating-card layout (the md: classes) untouched; this only ever runs below that breakpoint.
         function syncAiChatPanelToViewport() {
             const panel = document.getElementById('ai-chat-panel');
             if (!panel || panel.classList.contains('hidden')) return;
@@ -3212,8 +3220,19 @@
                 return;
             }
             const vv = window.visualViewport;
-            panel.style.top = `${vv.offsetTop + 10}px`;
-            panel.style.height = `${vv.height - 20}px`;
+            const keyboardLikelyOpen = vv.height < window.innerHeight - 80;
+            if (!keyboardLikelyOpen) {
+                // Nothing covering the screen - the CSS class's own bottom-24/h-[25vh] already
+                // positions this correctly, so defer to it rather than fighting it with a stale
+                // inline value left over from the last time the keyboard was up.
+                panel.style.top = '';
+                panel.style.height = '';
+                panel.style.bottom = '';
+                return;
+            }
+            const panelHeight = window.innerHeight * 0.25;
+            panel.style.height = `${panelHeight}px`;
+            panel.style.top = `${vv.offsetTop + vv.height - panelHeight - 10}px`;
             panel.style.bottom = 'auto';
         }
 
