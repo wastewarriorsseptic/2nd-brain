@@ -220,7 +220,9 @@
          same pattern as the toasts above. Offset to bottom-24 rather than bottom-4 specifically to
          avoid stacking under/behind the reorder/recurring toasts above, which both sit at bottom-4. -->
     <div id="ai-chat-launcher-wrapper" class="fixed bottom-24 right-4 z-[70] flex items-center gap-2">
-        <span id="ai-chat-launcher-hint" class="bg-slate-900/95 border border-indigo-500/40 text-indigo-200 text-[11px] font-semibold px-3 py-1.5 rounded-full shadow-lg whitespace-nowrap">Ask me to help</span>
+        <button type="button" id="ai-chat-launcher-hint" onclick="toggleAiChatPanel()"
+                style="animation: ai-chat-launcher-float 3.2s ease-in-out infinite; animation-delay: -0.6s;"
+                class="bg-slate-900/95 border border-indigo-500/40 text-indigo-200 text-[11px] font-semibold px-3 py-1.5 rounded-full shadow-lg whitespace-nowrap hover:border-indigo-400/70 hover:text-white transition">Ask me to help</button>
         <button id="ai-chat-launcher" onclick="toggleAiChatPanel()" title="Ask the AI assistant"
                 class="w-14 h-14 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border border-indigo-400/30 shadow-2xl flex items-center justify-center text-2xl transition">
             🤖
@@ -3130,50 +3132,32 @@
             document.getElementById('recurring-suggestion-toast').classList.add('hidden');
         }
 
-        // AI Task Assistant - never persisted server side, a plain fetch()/JSON round trip to
-        // /ai/chat/, no page reload on task creation so this panel (and whatever view - Timeline
-        // or Space - the user is looking at) never resets. The conversation itself IS persisted
-        // client-side via localStorage (see persistAiChatState/restoreAiChatState below), so
-        // closing the panel or reloading the page picks the same conversation back up instead of
-        // starting over each time.
+        // AI Task Assistant - a plain fetch()/JSON round trip to /ai/chat/, no page reload on task
+        // creation so this panel (and whatever view - Timeline or Space - the user is looking at)
+        // never resets. The conversation is persisted server-side, tied to the account (see
+        // AiChatMessage/_ai_chat_save_message/_ai_chat_load_history in app.py) - the same history
+        // follows the user to any device/browser they log into, unlike the earlier localStorage-only
+        // version which never left the device it was created on. aiChatHistory is purely a client-
+        // side rendering cache seeded from GET /ai/chat/history/ on load and appended to locally
+        // after each send for immediate display - it's never sent back to the server (the backend
+        // loads the user's own saved history itself for every turn) and nothing here writes to
+        // localStorage anymore.
         let aiChatHistory = [];
-        let aiChatLastTaskRef = null; // {id, title} of the most recently created/updated task
 
-        const AI_CHAT_STORAGE_KEY = 'ai_chat_history_v1';
-        const AI_CHAT_LAST_TASK_STORAGE_KEY = 'ai_chat_last_task_v1';
-        const AI_CHAT_MAX_STORED_MESSAGES = 40; // ~20 turns, matching the server's own history cap
-
-        function persistAiChatState() {
+        // Replays the user's saved conversation into the panel on page load - restored bubbles
+        // render in the plain style (the emerald "task created/updated" highlight isn't re-derived,
+        // since the history endpoint only returns {role, content}, not which variant a past reply
+        // used - a cosmetic simplification; the text itself is unchanged).
+        async function restoreAiChatState() {
             try {
-                if (aiChatHistory.length > AI_CHAT_MAX_STORED_MESSAGES) {
-                    aiChatHistory = aiChatHistory.slice(-AI_CHAT_MAX_STORED_MESSAGES);
-                }
-                localStorage.setItem(AI_CHAT_STORAGE_KEY, JSON.stringify(aiChatHistory));
-                if (aiChatLastTaskRef) {
-                    localStorage.setItem(AI_CHAT_LAST_TASK_STORAGE_KEY, JSON.stringify(aiChatLastTaskRef));
-                } else {
-                    localStorage.removeItem(AI_CHAT_LAST_TASK_STORAGE_KEY);
-                }
-            } catch (e) {}
-        }
-
-        // Replays the saved conversation into the panel on page load - restored bubbles render in
-        // the plain style (the emerald "task created/updated" highlight isn't re-derived, since
-        // only {role, content} is stored, not which variant a past reply used - a cosmetic
-        // simplification; the text itself is unchanged).
-        function restoreAiChatState() {
-            try {
-                const savedHistory = localStorage.getItem(AI_CHAT_STORAGE_KEY);
-                if (savedHistory) {
-                    aiChatHistory = JSON.parse(savedHistory) || [];
-                    aiChatHistory.forEach(turn => {
-                        renderAiChatBubble(turn.role === 'assistant' ? 'assistant' : 'user', turn.content || '');
-                    });
-                }
-                const savedLastTask = localStorage.getItem(AI_CHAT_LAST_TASK_STORAGE_KEY);
-                if (savedLastTask) {
-                    aiChatLastTaskRef = JSON.parse(savedLastTask);
-                }
+                const res = await fetch('/ai/chat/history/');
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!data.ok || !Array.isArray(data.messages)) return;
+                aiChatHistory = data.messages;
+                aiChatHistory.forEach(turn => {
+                    renderAiChatBubble(turn.role === 'assistant' ? 'assistant' : 'user', turn.content || '');
+                });
             } catch (e) {}
         }
         document.addEventListener('DOMContentLoaded', restoreAiChatState);
@@ -3427,6 +3411,22 @@
             return bubble;
         }
 
+        // "Thinking" placeholder while awaiting a reply - a small floating/bobbing 😈 instead of a
+        // static "…", reusing the same gentle translateY-bob keyframe the launcher/Universe cards
+        // already have, just on a shorter cycle so it reads as "actively working" rather than idle.
+        function renderAiChatThinkingBubble() {
+            const wrapper = document.getElementById('ai-chat-messages');
+            if (!wrapper) return null;
+
+            const bubble = document.createElement('div');
+            bubble.className = 'flex justify-start';
+            bubble.innerHTML = `<div class="max-w-[85%] rounded-2xl px-3 py-2 bg-slate-800 border border-slate-700 flex items-center"><span class="text-lg inline-block" style="animation: ai-chat-launcher-float 1.3s ease-in-out infinite;">😈</span></div>`;
+
+            wrapper.appendChild(bubble);
+            wrapper.scrollTop = wrapper.scrollHeight;
+            return bubble;
+        }
+
         async function handleAiChatSubmit(event) {
             event.preventDefault();
             if (aiChatSending) return false;
@@ -3443,14 +3443,14 @@
 
             input.value = '';
             renderAiChatBubble('user', text);
-            const thinkingBubble = renderAiChatBubble('assistant', '…');
+            const thinkingBubble = renderAiChatThinkingBubble();
             aiChatSending = true;
 
             try {
                 const res = await fetch('/ai/chat/', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ messages: aiChatHistory, message: text, last_task: aiChatLastTaskRef })
+                    body: JSON.stringify({ message: text })
                 });
                 const data = await res.json();
 
@@ -3463,25 +3463,21 @@
                     return false;
                 }
 
+                // The server already persisted this exact turn (see _finish() in ai_chat()) -
+                // pushing here just keeps the in-memory rendering cache in sync for this page load,
+                // it isn't what makes the history durable.
                 aiChatHistory.push({ role: 'user', content: text });
                 aiChatHistory.push({ role: 'assistant', content: data.reply });
 
-                // Remembers whichever task was just created/updated so a later vague reference
-                // ("update the due date", "move it to next week") can be resolved without the
-                // model needing to re-look it up - see last_task in the request above.
                 const touchedTask = data.task_created || data.task_updated;
-                if (touchedTask) {
-                    aiChatLastTaskRef = { id: touchedTask.id, title: touchedTask.title };
-                }
 
-                if (data.task_created || data.task_updated) {
+                if (touchedTask) {
                     renderAiChatBubble('assistant', data.reply, 'task_created');
                 } else {
                     renderAiChatBubble('assistant', data.reply);
                 }
 
                 speakAiReply(data.reply);
-                persistAiChatState();
 
                 // A created/updated task otherwise wouldn't show up anywhere on the current page
                 // (Timeline list, Space View) until a real reload - refresh the underlying data in

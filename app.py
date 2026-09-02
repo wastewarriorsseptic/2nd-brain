@@ -319,6 +319,20 @@ class PendingInvite(SQLModel, table=True):
     realm_id: int = Field(foreign_key="realm.id")
     email: str = Field(index=True)
 
+class AiChatMessage(SQLModel, table=True):
+    """One turn of the AI chat assistant's conversation with a user, persisted server-side (not
+    just localStorage) so the same history follows the user across devices/browsers. task_id/
+    task_title are only ever set on an assistant reply that created or updated a task that turn -
+    used to derive "last_referenced_task" for a later vague reference ("update the due date")
+    without the client needing to track/send its own hint."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    role: str  # "user" | "assistant"
+    content: str
+    task_id: Optional[int] = Field(default=None)
+    task_title: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
 # --- FastAPI & Middleware Setup ---
 app = FastAPI()
 app.add_middleware(
@@ -2233,6 +2247,35 @@ def _ai_chat_rate_limited(user_id: int) -> bool:
     _ai_chat_request_log[user_id] = recent
     return len(recent) > AI_CHAT_RATE_LIMIT
 
+def _ai_chat_save_message(session: Session, user: "User", role: str, content: str, task_id: Optional[int] = None, task_title: Optional[str] = None):
+    session.add(AiChatMessage(user_id=user.id, role=role, content=content, task_id=task_id, task_title=task_title))
+    session.commit()
+
+def _ai_chat_load_history(session: Session, user: "User", max_turns: int = AI_CHAT_MAX_HISTORY_TURNS):
+    """Returns (messages, last_task) for the requesting user's own conversation only - always
+    scoped by user.id from the session, never by anything a client could supply. messages is
+    chronological (oldest first), capped to the most recent max_turns*2 rows (a "turn" being one
+    user message + one assistant reply). last_task is derived from the most recent message (of
+    either role) that has a task_id/task_title set - i.e. the last task this conversation actually
+    created or updated - or None if nothing has been touched yet."""
+    rows = session.exec(
+        select(AiChatMessage)
+        .where(AiChatMessage.user_id == user.id)
+        .order_by(AiChatMessage.created_at.desc(), AiChatMessage.id.desc())
+        .limit(max_turns * 2)
+    ).all()
+    rows.reverse()
+
+    messages = [{"role": r.role, "content": r.content} for r in rows]
+
+    last_task = None
+    for r in reversed(rows):
+        if r.task_id and r.task_title:
+            last_task = {"id": r.task_id, "title": r.task_title}
+            break
+
+    return messages, last_task
+
 def _ai_execute_create_task(session: Session, user: "User", args: dict) -> dict:
     """Returns {"error": str} on any validation failure, or the created-task confirmation dict.
     bucket_id is NEVER trusted just because the model returned it - it's re-checked against the
@@ -2370,6 +2413,21 @@ def _ai_execute_list_tasks(session: Session, user: "User", args: dict) -> list:
 
 AI_CHAT_MAX_TOOL_CALLS = 3  # bounds a single turn's cost even if the model tries to chain calls
 
+@app.get("/ai/chat/history/")
+def ai_chat_history(request: Request):
+    """The client calls this once on page load (not on every /ai/chat/ turn) to seed its display
+    with the user's own saved conversation - the same history now follows them to any device/
+    browser they log into, instead of the old localStorage-only version that never left the
+    device it was created on."""
+    if not GEMINI_ENABLED:
+        return JSONResponse({"ok": False, "error": "AI chat isn't available."}, status_code=503)
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+        messages, last_task = _ai_chat_load_history(session, user)
+        return JSONResponse({"ok": True, "messages": messages, "last_task": last_task})
+
 @app.post("/ai/chat/")
 def ai_chat(request: Request, payload: dict = Body(...)):
     if not GEMINI_ENABLED:
@@ -2386,22 +2444,19 @@ def ai_chat(request: Request, payload: dict = Body(...)):
         message = (payload.get("message") or "").strip()
         if not message:
             return JSONResponse({"ok": False, "error": "Empty message."}, status_code=400)
-        history = payload.get("messages") or []
-        history = history[-AI_CHAT_MAX_HISTORY_TURNS:]
+
+        # History and "last touched task" both now come from the DB (this user's own saved
+        # conversation), not from anything the client sends - the client used to track and send
+        # both itself, which meant a stale/wrong client-side value could feed the model a bad
+        # hint. The DB is the single source of truth for both, and update_task/create_task still
+        # re-validate every id against the DB regardless, so this is a correctness/consistency
+        # improvement, not a new trust boundary.
+        history, last_task = _ai_chat_load_history(session, user)
 
         today_date = get_user_today_date(user.timezone or "UTC")
         context = build_task_universe_context(session, user, today_date)
-
-        # Client-tracked hint only - never trusted for the actual write. Lets the model resolve
-        # "that task"/"it" without a fresh list_tasks lookup, but update_task always re-validates
-        # ownership from the DB regardless of what id this hint (or the model) suggests, so a
-        # bogus/stale hint can only ever fail closed, never write to the wrong task.
-        last_task = payload.get("last_task")
-        if isinstance(last_task, dict) and last_task.get("id") and last_task.get("title"):
-            try:
-                context["last_referenced_task"] = {"id": int(last_task["id"]), "title": str(last_task["title"])[:200]}
-            except (TypeError, ValueError):
-                pass
+        if last_task:
+            context["last_referenced_task"] = last_task
 
         system_instruction = AI_CHAT_SYSTEM_PROMPT.format(context_json=_json.dumps(context))
         config = genai_types.GenerateContentConfig(system_instruction=system_instruction, tools=_ai_tools)
@@ -2417,6 +2472,20 @@ def ai_chat(request: Request, payload: dict = Body(...)):
         task_created = None
         task_updated = None
 
+        def _finish(reply_text: str) -> JSONResponse:
+            # Saves this turn (the user's message + the assistant's reply) so it's there the next
+            # time this user loads the chat, from any device. touched_task's id/title get attached
+            # to the ASSISTANT row only - that's what _ai_chat_load_history scans for when deriving
+            # last_referenced_task for a future turn.
+            touched_task = task_updated or task_created
+            _ai_chat_save_message(session, user, "user", message)
+            _ai_chat_save_message(
+                session, user, "assistant", reply_text,
+                task_id=(touched_task["id"] if touched_task else None),
+                task_title=(touched_task["title"] if touched_task else None),
+            )
+            return JSONResponse({"ok": True, "reply": reply_text, "task_created": task_created, "task_updated": task_updated})
+
         try:
             for _ in range(AI_CHAT_MAX_TOOL_CALLS):
                 response = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=config)
@@ -2430,7 +2499,7 @@ def ai_chat(request: Request, payload: dict = Body(...)):
                         reply_text = part.text
 
                 if not function_call:
-                    return JSONResponse({"ok": True, "reply": reply_text or "I'm not sure how to help with that.", "task_created": task_created, "task_updated": task_updated})
+                    return _finish(reply_text or "I'm not sure how to help with that.")
 
                 contents.append(candidate.content)
                 name = function_call.name
@@ -2457,11 +2526,11 @@ def ai_chat(request: Request, payload: dict = Body(...)):
                     )]))
                 else:
                     # Unknown tool name - bail safely rather than looping on something we can't handle.
-                    return JSONResponse({"ok": True, "reply": "I'm not sure how to help with that.", "task_created": task_created, "task_updated": task_updated})
+                    return _finish("I'm not sure how to help with that.")
 
             # Loop exhausted without the model ever settling on plain text - still report any
             # writes that did succeed rather than silently dropping them.
-            return JSONResponse({"ok": True, "reply": "Done.", "task_created": task_created, "task_updated": task_updated})
+            return _finish("Done.")
         except Exception as e:
             print(f"AI chat error: {e}", flush=True)
             return JSONResponse({"ok": False, "error": "The assistant is temporarily unavailable."}, status_code=502)
