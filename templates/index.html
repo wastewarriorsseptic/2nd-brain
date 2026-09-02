@@ -235,7 +235,7 @@
          it at roughly that same ~25% height (of the full device height, not the keyboard-shrunk
          visible one) and slides it to sit just above the keyboard once one is up. Desktop (md:)
          keeps its own compact floating-card layout, untouched. -->
-    <div id="ai-chat-panel" class="hidden fixed inset-x-3 bottom-24 h-[25vh] md:inset-x-auto md:top-auto md:bottom-40 md:right-4 md:w-11/12 md:max-w-sm md:h-[70vh] md:max-h-[560px] z-[70] bg-slate-900/95 border border-indigo-500/40 rounded-2xl backdrop-blur-md shadow-2xl flex flex-col overflow-hidden">
+    <div id="ai-chat-panel" class="hidden fixed inset-x-3 bottom-24 h-[55vh] md:inset-x-auto md:top-auto md:bottom-40 md:right-4 md:w-11/12 md:max-w-md md:h-[80vh] md:max-h-[720px] z-[70] bg-slate-900/95 border border-indigo-500/40 rounded-2xl backdrop-blur-md shadow-2xl flex flex-col overflow-hidden">
         <div class="flex items-center justify-between px-3.5 py-2.5 border-b border-slate-800 shrink-0">
             <span class="text-xs font-extrabold text-indigo-300 uppercase tracking-wide">🤖 TaskMonster Assistant</span>
             <div class="flex items-center gap-2">
@@ -3480,6 +3480,16 @@
                     document.getElementById('ai-chat-input').focus();
                 }
                 syncAiChatPanelToViewport();
+                // Bubbles are rendered into #ai-chat-messages while the panel is still hidden
+                // (restoreAiChatState() runs on page load, long before anyone has opened it) - a
+                // hidden element has no layout box, so scrollTop/scrollHeight at render time are
+                // unreliable (often just 0), and that scroll position doesn't get revisited later.
+                // That's exactly what caused "sometimes I open it and have to scroll down myself":
+                // whatever scrollTop happened to stick from render time, correct or not, is what
+                // greeted the user. Forcing it to the bottom every time the panel is actually shown
+                // - when scrollHeight is real - guarantees the latest message is always in view.
+                const messagesWrapper = document.getElementById('ai-chat-messages');
+                if (messagesWrapper) messagesWrapper.scrollTop = messagesWrapper.scrollHeight;
             } else {
                 if (hint) hint.classList.remove('hidden');
                 // Drop any keyboard-open sizing from last time (see syncAiChatPanelToViewport) so
@@ -3500,10 +3510,12 @@
         // (exactly what made the panel unusable on mobile: header scrolled out of view, input barely
         // reachable). window.visualViewport reports the ACTUAL visible area above the keyboard (and
         // above iOS's own Prev/Next/Done accessory bar) - anchor the panel to that directly instead
-        // of trusting CSS alone. Kept deliberately compact (~25% of the full device height, matching
-        // the CSS class's own h-[25vh] baseline) rather than expanding to fill whatever's left above
-        // the keyboard, so the app underneath stays visible either way. Desktop keeps its own compact
-        // floating-card layout (the md: classes) untouched; this only ever runs below that breakpoint.
+        // of trusting CSS alone. Deliberately shrunk to a compact ~25% of the full device height
+        // WHILE the keyboard is up (smaller than the panel's own h-[55vh] baseline below) rather than
+        // expanding to fill whatever's left above the keyboard, so the app underneath and the input/
+        // send button stay comfortably reachable either way - the moment the keyboard closes, the
+        // panel returns to its full resting height. Desktop keeps its own compact floating-card
+        // layout (the md: classes) untouched; this only ever runs below that breakpoint.
         function syncAiChatPanelToViewport() {
             const panel = document.getElementById('ai-chat-panel');
             if (!panel || panel.classList.contains('hidden')) return;
@@ -3516,7 +3528,7 @@
             const vv = window.visualViewport;
             const keyboardLikelyOpen = vv.height < window.innerHeight - 80;
             if (!keyboardLikelyOpen) {
-                // Nothing covering the screen - the CSS class's own bottom-24/h-[25vh] already
+                // Nothing covering the screen - the CSS class's own bottom-24/h-[55vh] already
                 // positions this correctly, so defer to it rather than fighting it with a stale
                 // inline value left over from the last time the keyboard was up.
                 panel.style.top = '';
