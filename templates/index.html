@@ -4732,7 +4732,16 @@
 
             const byUniverse = new Map();
 
-            multiverseTasksData.forEach(t => {
+            // Sorted here (not trusted from the server as-is) since RECURRING_MAX_VISIBLE below caps
+            // each series to the first N occurrences ENCOUNTERED during this forward pass - if the
+            // input weren't chronological, that cap would keep whatever arbitrary N rows happened to
+            // come first instead of the soonest N, which is what actually matters to a user (a daily
+            // series showing one date, a multi-week gap, then a run of consecutive days was exactly
+            // that bug, caused by the backend query missing its own ORDER BY - fixed there too, but
+            // this sort makes the client correct regardless of what order data arrives in).
+            const sortedMultiverseTasksData = [...multiverseTasksData].sort((a, b) => (a.dueDate || '9999-12-31').localeCompare(b.dueDate || '9999-12-31'));
+
+            sortedMultiverseTasksData.forEach(t => {
                 if (t.isCompleted) return;
 
                 if (t.isRecurring) {

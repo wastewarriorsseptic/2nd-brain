@@ -1109,8 +1109,14 @@ def dashboard(
                 bucket_by_id = {b.id: b for b in mv_buckets}
                 realm_by_id = {r.id: r for r in owned_realms_all}
                 universe_by_id = {u.id: u for u in universes}
+                # Ordered by due_date - the Multiverse Timeline caps each recurring series to its
+                # first 30 occurrences ENCOUNTERED (see RECURRING_MAX_VISIBLE client-side), so an
+                # unordered result here meant that cap kept whatever arbitrary 30 rows the DB
+                # happened to return first (roughly insertion order) instead of the soonest 30 -
+                # visibly wrong for a daily-ish series, e.g. showing one date, a several-week gap,
+                # then a run of consecutive days.
                 mv_items = session.exec(
-                    select(Item).join(Bucket).where(Bucket.realm_id.in_(mv_realm_ids))
+                    select(Item).join(Bucket).where(Bucket.realm_id.in_(mv_realm_ids)).order_by(Item.due_date)
                 ).all()
                 for it in mv_items:
                     b = bucket_by_id.get(it.bucket_id)
