@@ -219,14 +219,14 @@
          #multiverse-view-overlay) so it survives toggling between Timeline View and Space View,
          same pattern as the toasts above. Offset to bottom-24 rather than bottom-4 specifically to
          avoid stacking under/behind the reorder/recurring toasts above, which both sit at bottom-4. -->
-    <button id="ai-chat-launcher" onclick="toggleAiChatPanel()" title="Ask the AI assistant"
-            class="fixed bottom-24 right-4 z-[70] w-14 h-14 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border border-indigo-400/30 shadow-2xl flex items-center justify-center text-2xl transition">
-        🤖
-    </button>
+    <div id="ai-chat-launcher-wrapper" class="fixed bottom-24 right-4 z-[70] flex items-center gap-2">
+        <span id="ai-chat-launcher-hint" class="bg-slate-900/95 border border-indigo-500/40 text-indigo-200 text-[11px] font-semibold px-3 py-1.5 rounded-full shadow-lg whitespace-nowrap">Ask me to help</span>
+        <button id="ai-chat-launcher" onclick="toggleAiChatPanel()" title="Ask the AI assistant"
+                class="w-14 h-14 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border border-indigo-400/30 shadow-2xl flex items-center justify-center text-2xl transition">
+            🤖
+        </button>
+    </div>
 
-    <!-- Mobile: near-fullscreen (small margin on every side) so the message list has real room
-         and the input row stays clear of the keyboard. Desktop (md:): the original compact
-         floating card, anchored above the launcher button. -->
     <!-- Mobile: a compact strip - about a quarter of the screen's height, bottom-anchored above
          the launcher - rather than the near-fullscreen layout this used to have, so the app
          underneath stays visible/usable while the panel is open. syncAiChatPanelToViewport() keeps
@@ -3184,10 +3184,20 @@
             const panel = document.getElementById('ai-chat-panel');
             if (!panel) return;
             panel.classList.toggle('hidden');
+            const hint = document.getElementById('ai-chat-launcher-hint');
             if (!panel.classList.contains('hidden')) {
-                document.getElementById('ai-chat-input').focus();
+                if (hint) hint.classList.add('hidden');
+                // Auto-focusing the input immediately pops the iOS keyboard, which eats a big
+                // chunk of an already-small mobile panel - and plenty of opens are to tap the mic
+                // for voice dictation instead of typing, where the keyboard was never wanted at
+                // all. Desktop has no on-screen keyboard to fight, so it keeps the convenience of
+                // landing in the input ready to type.
+                if (window.innerWidth >= 768) {
+                    document.getElementById('ai-chat-input').focus();
+                }
                 syncAiChatPanelToViewport();
             } else {
+                if (hint) hint.classList.remove('hidden');
                 // Drop any keyboard-open sizing from last time (see syncAiChatPanelToViewport) so
                 // the next open starts clean from the CSS classes' own layout, not a stale height/
                 // top from wherever the keyboard happened to leave things.
