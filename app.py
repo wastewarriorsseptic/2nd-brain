@@ -2183,6 +2183,12 @@ the id from earlier in this conversation, call list_tasks first to find it by ma
 the user described. Never invent a task_id. For update_task, only change the fields the user \
 actually asked to change - leave every other field as-is by omitting it from the call.
 
+To change the same thing (e.g. a due date) on MULTIPLE tasks at once, call update_task once PER \
+task_id, all within the same response - do not describe the change in your reply unless you \
+actually called update_task for every single one of them. Each call is executed and reported back \
+to you individually, so your final reply to the user must be based on what those results actually \
+said happened, not on what you intended to do.
+
 When the user asks to be taken to, shown, or brought to a task ("go to my dentist task", "show me \
 the fountain reminder"), first make sure exactly ONE task in list_tasks' results plausibly matches \
 what they described. If two or more tasks are a plausible match (e.g. the same title recurring on \
@@ -2465,7 +2471,8 @@ def _ai_execute_navigate_to_task(session: Session, user: "User", args: dict) -> 
         "universe_icon": universe.icon if universe else "😈",
     }
 
-AI_CHAT_MAX_TOOL_CALLS = 3  # bounds a single turn's cost even if the model tries to chain calls
+AI_CHAT_MAX_TOOL_CALLS = 3  # bounds how many response round-trips a single user message can cause
+AI_CHAT_MAX_CALLS_PER_TURN = 40  # bounds a single response's parallel function calls (e.g. a bulk reschedule), matching list_tasks' own result cap
 
 @app.get("/ai/chat/history/")
 def ai_chat_history(request: Request):
@@ -2601,50 +2608,62 @@ def ai_chat(request: Request, payload: dict = Body(...)):
             for _ in range(AI_CHAT_MAX_TOOL_CALLS):
                 response = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=config)
                 candidate = response.candidates[0]
-                function_call = None
-                reply_text = None
-                for part in candidate.content.parts:
-                    if getattr(part, "function_call", None):
-                        function_call = part.function_call
-                    elif getattr(part, "text", None):
-                        reply_text = part.text
+                # Gemini can return MULTIPLE function_call parts in a single response (parallel
+                # function calling) - e.g. asked to reschedule 17 overdue tasks, the model calls
+                # update_task 17 times in one turn rather than one at a time across 17 separate
+                # turns. This used to keep only the LAST function_call part and silently drop the
+                # rest, executing one write while the model's own text reply (drafted from its
+                # original intent, not from what actually ran) confidently confirmed all 17 - a
+                # real bug a user hit ("it said that it did it but it didnt"). Every function_call
+                # part must be executed and answered with its own function_response, or the next
+                # turn's conversation history is left with function_calls that never got a
+                # matching response.
+                function_calls = [part.function_call for part in candidate.content.parts if getattr(part, "function_call", None)]
+                reply_text = next((part.text for part in candidate.content.parts if getattr(part, "text", None)), None)
 
-                if not function_call:
+                if not function_calls:
                     return _finish(reply_text or "I'm not sure how to help with that.")
 
                 contents.append(candidate.content)
-                name = function_call.name
-                args = dict(function_call.args)
 
-                if name == "create_task":
-                    result = _ai_execute_create_task(session, user, args)
-                    if "error" not in result:
-                        task_created = result
-                    contents.append(genai_types.Content(role="user", parts=[genai_types.Part(
+                response_parts = []
+                for function_call in function_calls[:AI_CHAT_MAX_CALLS_PER_TURN]:
+                    name = function_call.name
+                    args = dict(function_call.args)
+
+                    if name == "create_task":
+                        result = _ai_execute_create_task(session, user, args)
+                        if "error" not in result:
+                            task_created = result
+                    elif name == "update_task":
+                        result = _ai_execute_update_task(session, user, args)
+                        if "error" not in result:
+                            task_updated = result
+                    elif name == "list_tasks":
+                        result = {"tasks": _ai_execute_list_tasks(session, user, args)}
+                    elif name == "navigate_to_task":
+                        result = _ai_execute_navigate_to_task(session, user, args)
+                        if "error" not in result:
+                            task_navigated = result
+                    else:
+                        # Unknown tool name - answer it with an error rather than executing
+                        # nothing and staying silent, so the model doesn't assume it worked.
+                        result = {"error": f"Unknown tool: {name}"}
+
+                    response_parts.append(genai_types.Part(
                         function_response=genai_types.FunctionResponse(name=name, response=result)
-                    )]))
-                elif name == "update_task":
-                    result = _ai_execute_update_task(session, user, args)
-                    if "error" not in result:
-                        task_updated = result
-                    contents.append(genai_types.Content(role="user", parts=[genai_types.Part(
-                        function_response=genai_types.FunctionResponse(name=name, response=result)
-                    )]))
-                elif name == "list_tasks":
-                    tasks = _ai_execute_list_tasks(session, user, args)
-                    contents.append(genai_types.Content(role="user", parts=[genai_types.Part(
-                        function_response=genai_types.FunctionResponse(name=name, response={"tasks": tasks})
-                    )]))
-                elif name == "navigate_to_task":
-                    result = _ai_execute_navigate_to_task(session, user, args)
-                    if "error" not in result:
-                        task_navigated = result
-                    contents.append(genai_types.Content(role="user", parts=[genai_types.Part(
-                        function_response=genai_types.FunctionResponse(name=name, response=result)
-                    )]))
-                else:
-                    # Unknown tool name - bail safely rather than looping on something we can't handle.
-                    return _finish("I'm not sure how to help with that.")
+                    ))
+
+                # A turn requesting more than the per-turn cap still gets an explicit error
+                # response for every call beyond it, so the model reports what didn't happen
+                # instead of assuming everything it asked for went through.
+                for function_call in function_calls[AI_CHAT_MAX_CALLS_PER_TURN:]:
+                    response_parts.append(genai_types.Part(function_response=genai_types.FunctionResponse(
+                        name=function_call.name,
+                        response={"error": "Too many actions requested in one turn - ask for fewer at a time."},
+                    )))
+
+                contents.append(genai_types.Content(role="user", parts=response_parts))
 
             # Loop exhausted without the model ever settling on plain text - still report any
             # writes that did succeed rather than silently dropping them.
