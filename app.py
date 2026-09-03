@@ -346,6 +346,24 @@ class AiChatMessage(SQLModel, table=True):
     task_title: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
+class AiChatUsageLog(SQLModel, table=True):
+    """One row per actual Gemini API call (not per user-sent message - a single chat turn can make
+    several round-trips via the tool-calling loop in ai_chat(), and each one is billed separately).
+    Exists purely so real per-message/per-user cost can be computed later from actual token counts
+    instead of estimating from token-per-request math - added directly in response to "give me cost
+    per message" with nothing but a Google AI Studio billing screenshot to go on. thoughts_tokens is
+    tracked separately from output_tokens because it's easy to miss: for a 2.5-series "thinking"
+    model, thinking tokens are billed as output tokens but aren't part of the visible reply, and can
+    outweigh it by a wide margin even for a trivial response."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    model: str
+    prompt_tokens: int = 0
+    output_tokens: int = 0
+    thoughts_tokens: int = 0
+    total_tokens: int = 0
+
 # --- FastAPI & Middleware Setup ---
 app = FastAPI()
 app.add_middleware(
@@ -2567,6 +2585,26 @@ def _ai_chat_save_message(session: Session, user: "User", role: str, content: st
     session.add(AiChatMessage(user_id=user.id, role=role, content=content, task_id=task_id, task_title=task_title))
     session.commit()
 
+def _ai_chat_log_usage(session: Session, user: "User", response) -> None:
+    """Logs one Gemini API call's real token usage (see AiChatUsageLog). Never allowed to break the
+    actual chat turn - a change in the SDK's response shape should degrade to "no log row" for that
+    call, not a 502 for the user, so any failure here is caught and printed, not raised."""
+    try:
+        usage = getattr(response, "usage_metadata", None)
+        if not usage:
+            return
+        session.add(AiChatUsageLog(
+            user_id=user.id,
+            model=GEMINI_MODEL,
+            prompt_tokens=usage.prompt_token_count or 0,
+            output_tokens=usage.candidates_token_count or 0,
+            thoughts_tokens=usage.thoughts_token_count or 0,
+            total_tokens=usage.total_token_count or 0,
+        ))
+        session.commit()
+    except Exception as e:
+        print(f"AI chat usage logging failed (non-fatal): {e}", flush=True)
+
 def _ai_chat_load_history(session: Session, user: "User", max_turns: int = AI_CHAT_MAX_HISTORY_TURNS):
     """Returns (messages, last_task) for the requesting user's own conversation only - always
     scoped by user.id from the session, never by anything a client could supply. messages is
@@ -2962,6 +3000,7 @@ def ai_chat(request: Request, payload: dict = Body(...)):
         try:
             for _ in range(AI_CHAT_MAX_TOOL_CALLS):
                 response = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=config)
+                _ai_chat_log_usage(session, user, response)
                 candidate = response.candidates[0]
                 # Gemini can return MULTIPLE function_call parts in a single response (parallel
                 # function calling) - e.g. asked to reschedule 17 overdue tasks, the model calls
