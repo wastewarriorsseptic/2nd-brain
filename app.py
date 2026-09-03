@@ -3089,6 +3089,12 @@ def ai_chat(request: Request, payload: dict = Body(...)):
         if not message:
             return JSONResponse({"ok": False, "error": "Empty message."}, status_code=400)
 
+        # Set when this message came from the chat launcher's "+" quick-task badge rather than the
+        # plain launcher tap - lets someone go straight to a bare "Buy milk tomorrow" without first
+        # spelling out "add a task" for it, since that intent is already unambiguous from which
+        # button they tapped.
+        quick_task_intent = payload.get("intent") == "create_task"
+
         # History and "last touched task" both now come from the DB (this user's own saved
         # conversation), not from anything the client sends - the client used to track and send
         # both itself, which meant a stale/wrong client-side value could feed the model a bad
@@ -3103,6 +3109,15 @@ def ai_chat(request: Request, payload: dict = Body(...)):
             context["last_referenced_task"] = last_task
 
         system_instruction = AI_CHAT_SYSTEM_PROMPT.format(context_json=_json.dumps(context))
+        if quick_task_intent:
+            system_instruction += (
+                "\n\nThe user just tapped a dedicated \"+ New Task\" shortcut before typing this "
+                "message, so treat it as a request to create a task rather than asking what they "
+                "want to do - extract the title (and due date if mentioned, otherwise your normal "
+                "default) and proceed with your usual create_task rules, including still asking a "
+                "clarifying question if the bucket is genuinely ambiguous. Only skip create_task if "
+                "the message is clearly not task-related at all."
+            )
         config = genai_types.GenerateContentConfig(system_instruction=system_instruction, tools=_ai_tools)
 
         contents = []

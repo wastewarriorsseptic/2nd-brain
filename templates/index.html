@@ -223,10 +223,21 @@
         <button type="button" id="ai-chat-launcher-hint" onclick="toggleAiChatPanel()"
                 style="animation: ai-chat-launcher-float 3.2s ease-in-out infinite; animation-delay: -0.6s;"
                 class="bg-slate-900/95 border border-indigo-500/40 text-indigo-200 text-[11px] font-semibold px-3 py-1.5 rounded-full shadow-lg whitespace-nowrap hover:border-indigo-400/70 hover:text-white transition">I'm your ai!</button>
-        <button id="ai-chat-launcher" onclick="toggleAiChatPanel()" title="Ask the AI assistant"
-                class="w-14 h-14 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border border-indigo-400/30 shadow-2xl flex items-center justify-center text-2xl transition">
-            😈
-        </button>
+        <div class="relative">
+            <button id="ai-chat-launcher" onclick="toggleAiChatPanel()" title="Ask the AI assistant"
+                    class="w-14 h-14 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border border-indigo-400/30 shadow-2xl flex items-center justify-center text-2xl transition">
+                😈
+            </button>
+            <!-- Quick-entry shortcut so the chat can be used for task creation without first
+                 having to explain that's what this message is for - opens straight to a
+                 task-primed input (see openAiChatQuickTask) instead of a blank "ask me anything"
+                 box, and flags the next message sent so the backend skips straight to treating a
+                 bare "Buy milk tomorrow" as a create request instead of asking what's meant. -->
+            <button type="button" id="ai-chat-quick-task-btn" onclick="openAiChatQuickTask(event)" title="Add a new task"
+                    class="absolute -top-1 -left-1 w-6 h-6 rounded-full bg-emerald-500 hover:bg-emerald-400 border-2 border-slate-950 text-white text-sm font-extrabold flex items-center justify-center shadow-lg transition">
+                +
+            </button>
+        </div>
     </div>
 
     <!-- Mobile: a compact strip - about a quarter of the screen's height, bottom-anchored above
@@ -3656,6 +3667,33 @@
         });
 
         let aiChatSending = false;
+        // Set by openAiChatQuickTask() (the "+" badge on the chat launcher) and consumed by the
+        // very next handleAiChatSubmit - tells the server this message is a task-creation request
+        // even if it's just a bare "Buy milk tomorrow" with no "add a task" framing, so it can
+        // skip straight to extracting title/due date instead of asking what's meant.
+        let aiChatQuickTaskPending = false;
+        const AI_CHAT_DEFAULT_PLACEHOLDER = 'Add a task or ask a question…';
+
+        // The chat launcher's "+" badge - lets someone jump straight into creating a task without
+        // first explaining that's what the message is for, since the chat is also used to
+        // navigate, search, and ask questions. Opens the panel (if not already open), swaps the
+        // input's placeholder to a task-shaped example, and focuses/keyboards-up immediately even
+        // on mobile - unlike the plain launcher tap, tapping this specific button is an
+        // unambiguous "I'm about to type a task" signal, so there's no reason to hold the
+        // keyboard back the way toggleAiChatPanel() normally does there.
+        function openAiChatQuickTask(event) {
+            if (event) event.stopPropagation();
+            const panel = document.getElementById('ai-chat-panel');
+            if (panel && panel.classList.contains('hidden')) {
+                toggleAiChatPanel();
+            }
+            aiChatQuickTaskPending = true;
+            const input = document.getElementById('ai-chat-input');
+            if (input) {
+                input.placeholder = 'e.g. Buy milk tomorrow';
+                input.focus();
+            }
+        }
 
         // The floating chat launcher/hint pill sits at a fixed bottom-right position so it's always
         // reachable - but Add Task/Edit Task are tall, scrollable modals whose own Cancel/Save
@@ -3752,6 +3790,11 @@
                 if (window.speechSynthesis) {
                     try { window.speechSynthesis.cancel(); } catch (e) {}
                 }
+                // Closing without sending (e.g. tapped the "+" badge, changed their mind) shouldn't
+                // leave the next, unrelated message silently tagged as a task-creation request.
+                aiChatQuickTaskPending = false;
+                const input = document.getElementById('ai-chat-input');
+                if (input) input.placeholder = AI_CHAT_DEFAULT_PLACEHOLDER;
             }
         }
 
@@ -4084,6 +4127,10 @@
             const text = input.value.trim();
             if (!text) return false;
 
+            const quickTaskIntent = aiChatQuickTaskPending;
+            aiChatQuickTaskPending = false;
+            input.placeholder = AI_CHAT_DEFAULT_PLACEHOLDER;
+
             input.value = '';
             autoGrowAiChatInput();
             renderAiChatBubble('user', text);
@@ -4091,10 +4138,12 @@
             aiChatSending = true;
 
             try {
+                const requestBody = { message: text };
+                if (quickTaskIntent) requestBody.intent = 'create_task';
                 const res = await fetch('/ai/chat/', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: text })
+                    body: JSON.stringify(requestBody)
                 });
                 const data = await res.json();
 
