@@ -816,7 +816,7 @@
             <div class="bg-slate-900/90 border border-slate-800 p-1.5 rounded-2xl backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto">
                 <button onclick="zoomSpace(1.2)" class="w-8 h-8 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm rounded-xl flex items-center justify-center transition">＋</button>
                 <button onclick="zoomSpace(0.8)" class="w-8 h-8 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm rounded-xl flex items-center justify-center transition">－</button>
-                <button onclick="recenterSpace()" class="px-3 h-8 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-bold text-xs rounded-xl flex items-center justify-center transition">🎯 Auto-Fit Universe</button>
+                <button onclick="openMultiverseTimeline()" class="px-3 h-8 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-bold text-xs rounded-xl flex items-center justify-center transition">🌌 Multiverse Timeline</button>
             </div>
         </div>
     </div>
@@ -5022,10 +5022,13 @@
             // that should linger in the universe view after leaving it.
             spaceRealms = spaceRealms.filter(r => r.id !== '__all_tasks_realm__');
 
-            // "Auto-Fit Universe" is the only persistent button visible while the stacked Multiverse
-            // Timeline view is showing (it has no activeSelectedRealm/Bucket of its own to reset), so
-            // it doubles as this view's exit - without clearing the flag here, the camera would
-            // recenter on the normal realm ring while renderSpaceFrame kept drawing the lanes on top.
+            // Always clear the stacked Multiverse Timeline flag here regardless of why
+            // recenterSpace() was called (tapping an already-selected realm again, or the initial-
+            // load fallback below) - without it, the camera would recenter on the normal realm ring
+            // while renderSpaceFrame kept drawing the lanes on top. The bottom HUD's own dedicated
+            // button used to double as this view's exit before it was replaced with a direct
+            // Multiverse Timeline shortcut - "Close View" (toggleSpaceView) is now the way out of
+            // the stacked lanes view.
             isMultiverseStackedView = false;
             multiverseActiveLaneId = null;
 
@@ -5070,8 +5073,8 @@
             const boundingWidth = (maxX - minX) + (paddingX * 2);
             const boundingHeight = (maxY - minY) + (paddingY * 2);
 
-            // The "TaskMonster Universe" / "Close View" pills up top and the "+ / - / Auto-Fit" row at
-            // the bottom are fixed overlays sitting ON TOP of the canvas - they don't shrink the canvas
+            // The "TaskMonster Universe" / "Close View" pills up top and the "+ / - / Multiverse
+            // Timeline" row at the bottom are fixed overlays sitting ON TOP of the canvas - they don't shrink the canvas
             // itself, so fitting/centering against the raw window height lets the ring hide behind them
             // (bottom realms clipped by the zoom controls) or look vertically off-center. Fit and center
             // against the space actually left BETWEEN those two bars instead.
