@@ -4660,13 +4660,15 @@
             // Months"), but Space View used to collapse a whole series down to just its next due
             // date. Now it shows every UPCOMING occurrence within a genuinely months-out window,
             // so completing today's doesn't make the series vanish from Space View until its
-            // next due date. RECURRING_MAX_VISIBLE is a safety ceiling, not the everyday limit -
-            // monthly/yearly series never come close to it (the window is what bounds them), and
-            // even a weekly series comfortably fits under it within the 6-month window. It only
-            // actually kicks in for a daily-ish series (interval of a few days or less), where
-            // showing the full 6 months would mean dozens-to-180+ individual nodes.
+            // next due date. RECURRING_MAX_VISIBLE bounds how many of those occurrences actually
+            // become their own canvas node per bucket - lowered from an earlier 30 after a bucket
+            // with a daily-ish series got laggy and visually overwhelming (reported directly: "a
+            // lot of recurring tasks... laggy and looks messy"). Monthly/yearly series never come
+            // close to this; a weekly series can now exceed it within the 6-month window (it's a
+            // deliberate cap on visible clutter, not just a safety ceiling anymore) - the excess
+            // stays fully intact in the Timeline list and the DOM, it's just not also drawn here.
             const RECURRING_LOOKAHEAD_MONTHS = 6;
-            const RECURRING_MAX_VISIBLE = 30;
+            const RECURRING_MAX_VISIBLE = 15;
             const recurringHorizonDate = new Date();
             recurringHorizonDate.setMonth(recurringHorizonDate.getMonth() + RECURRING_LOOKAHEAD_MONTHS);
 
@@ -4897,44 +4899,48 @@
                                 filteredTasks.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
                             }
 
-                            // Tasks form tight concentric rings directly around THEIR OWN bucket (like
-                            // moons around a moon) instead of spiraling outward - keeps each bucket's
-                            // tasks visually grouped and unambiguous about which bucket they belong to.
-                            const tasksPerRing = 6;
-                            const baseTaskOrbit = (isMobile ? 120 : 108);
-                            const taskRingGap = 78;
+                            // Tasks pack into a tight "blob" cluster directly around THEIR OWN bucket
+                            // using a golden-angle spiral (the same packing phyllotaxis - sunflower
+                            // seed heads, pinecones - uses) rather than fixed-size concentric rings.
+                            // The old ring layout put tasksPerRing (6) tasks evenly around each ring,
+                            // which sounds orderly but meant slot 1, 7, 13, 19... always landed at the
+                            // SAME angle as each other (each ring restarts its own 0..2π spread) -
+                            // visually straight spokes radiating out from the bucket instead of an
+                            // even cluster, which is exactly the "messy, spread out" look reported.
+                            // The golden angle (~137.5°, an irrational fraction of a full turn) never
+                            // realigns two slots no matter how many tasks there are, so the result is
+                            // always an organic, gap-free blob - and radius growing with sqrt(slot)
+                            // keeps that blob compact (most tasks stay close in; only the excess
+                            // reaches further out) instead of spreading linearly outward forever.
+                            const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+                            const blobMinOrbit = (isMobile ? 120 : 108);
+                            const blobSpacing = 24;
 
-                            // Slot 0 of the innermost ring is always reserved for the "+" add-task
-                            // button, so it's always close to the bucket - never pushed out to an outer
-                            // ring no matter how many real tasks pile up.
-                            const totalOrbitSlots = filteredTasks.length + 1;
+                            // Slot 0 is always reserved for the "+" add-task button, kept at a fixed
+                            // position just inside the blob (not part of the spiral) so it's always
+                            // easy to find regardless of how many tasks pile up.
                             filteredTasks.forEach((task, tIdx) => {
                                 const slot = tIdx + 1;
-                                const ringIndex = Math.floor(slot / tasksPerRing);
-                                const posInRing = slot % tasksPerRing;
-                                const slotsBeforeThisRing = ringIndex * tasksPerRing;
-                                const countInThisRing = Math.min(tasksPerRing, totalOrbitSlots - slotsBeforeThisRing);
-                                task.angle = (posInRing / countInThisRing) * Math.PI * 2;
-                                task.orbitRadius = baseTaskOrbit + (ringIndex * taskRingGap);
+                                task.angle = slot * goldenAngle;
+                                task.orbitRadius = blobMinOrbit + blobSpacing * Math.sqrt(slot);
                             });
 
-                            const addTaskCountInRing0 = Math.min(tasksPerRing, totalOrbitSlots);
                             const addTaskButton = {
                                 id: `__add_task__${bucket.id}`,
                                 isAddButton: true,
                                 bucketId: bucket.id,
                                 realmId: realm.id,
                                 angle: 0,
-                                orbitRadius: baseTaskOrbit,
+                                orbitRadius: blobMinOrbit,
                                 radius: isMobile ? 22 : 19
                             };
 
-                            // How far this bucket's own cluster (itself + its outermost task ring + label)
+                            // How far this bucket's own cluster (itself + its outermost task + label)
                             // reaches from its own center - lets the camera frame every bucket fully,
-                            // however many tasks or buckets a realm has. The add-task button always
-                            // occupies at least the innermost ring, so it's always counted here too.
-                            const ringCount = Math.max(1, Math.ceil(totalOrbitSlots / tasksPerRing));
-                            const maxTaskOrbit = baseTaskOrbit + ((ringCount - 1) * taskRingGap);
+                            // however many tasks a bucket has. sqrt-scaling keeps this compact even at
+                            // RECURRING_MAX_VISIBLE (the worst case for a daily-ish recurring series),
+                            // unlike the old ring layout whose reach grew linearly with task count.
+                            const maxTaskOrbit = blobMinOrbit + blobSpacing * Math.sqrt(Math.max(1, filteredTasks.length));
                             // The +150 buffer (up from a flat 60) gives the label collision solver
                             // actual room to push a crowded bucket/task label further out without the
                             // camera cropping it off-screen - labels can now legitimately use that space
