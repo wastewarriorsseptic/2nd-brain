@@ -2491,11 +2491,11 @@ if GEMINI_ENABLED:
     )
     _ai_list_tasks_decl = genai_types.FunctionDeclaration(
         name="list_tasks",
-        description="List the current user's tasks, optionally filtered. Results include each task's id, needed to later update_task or navigate_to_task it.",
+        description="List the current user's tasks, optionally filtered. Results include each task's id, needed to later update_task or navigate_to_task it. To check whether a task exists anywhere among the user's incomplete tasks, one call with status \"all\" is enough - it already includes both overdue AND upcoming tasks, so calling \"overdue\" or \"upcoming\" afterward on top of \"all\" is redundant. \"completed\" is the only status \"all\" does NOT include - call that separately only if the user is asking about something they may have already finished.",
         parameters={
             "type": "OBJECT",
             "properties": {
-                "status": {"type": "STRING", "enum": ["overdue", "upcoming", "all", "completed"]},
+                "status": {"type": "STRING", "enum": ["overdue", "upcoming", "all", "completed"], "description": "\"all\" = every incomplete task (overdue + upcoming combined) - the usual first/only call needed. \"completed\" is separate and not included in \"all\"."},
                 "due_within_days": {"type": "INTEGER", "description": "e.g. 7 for 'this week'"},
             },
         },
@@ -2723,7 +2723,13 @@ def _ai_execute_navigate_to_task(session: Session, user: "User", args: dict) -> 
         "universe_icon": universe.icon if universe else "😈",
     }
 
-AI_CHAT_MAX_TOOL_CALLS = 3  # bounds how many response round-trips a single user message can cause
+AI_CHAT_MAX_TOOL_CALLS = 6  # bounds how many response round-trips a single user message can cause - raised
+# from 3 after a real report: a plain read-only question ("do I have an Amex bill in my tasks?")
+# reliably burned all 3 round-trips just checking list_tasks with different status filters (all,
+# completed, overdue) before ever getting a turn to reply in plain text, so the loop fell through
+# to the generic "Done." fallback below - actively misleading for a question that never did
+# anything. 6 gives enough headroom for a few exploratory list_tasks calls plus a real action in
+# the same turn without meaningfully raising cost/latency risk (still a small, per-message cap).
 AI_CHAT_MAX_CALLS_PER_TURN = 40  # bounds a single response's parallel function calls (e.g. a bulk reschedule), matching list_tasks' own result cap
 
 @app.get("/ai/chat/history/")
@@ -2917,9 +2923,19 @@ def ai_chat(request: Request, payload: dict = Body(...)):
 
                 contents.append(genai_types.Content(role="user", parts=response_parts))
 
-            # Loop exhausted without the model ever settling on plain text - still report any
-            # writes that did succeed rather than silently dropping them.
-            return _finish("Done.")
+            # Loop exhausted without the model ever settling on plain text. Used to always report
+            # "Done." here regardless of what actually happened - actively misleading for a plain
+            # read-only question (e.g. "do I have an Amex bill in my tasks?") that never touched
+            # anything but still burned through every round-trip investigating, and "Done." implies
+            # an action succeeded when none did. Now: report the one thing that DID happen if the
+            # loop did manage a create/update/navigate before running out of turns, or an honest
+            # "couldn't finish" otherwise - never claim a completion that didn't happen.
+            touched_task = task_updated or task_created or task_navigated
+            if touched_task:
+                exhausted_reply = f"I've handled \"{touched_task['title']}\", but ran out of steps before I could fully respond - let me know if you need anything else on it."
+            else:
+                exhausted_reply = "I wasn't able to fully work that out in one go - could you try asking again, maybe a bit more specifically?"
+            return _finish(exhausted_reply)
         except Exception as e:
             print(f"AI chat error: {e}", flush=True)
             return JSONResponse({"ok": False, "error": "The assistant is temporarily unavailable."}, status_code=502)
