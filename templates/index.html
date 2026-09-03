@@ -1606,7 +1606,7 @@
 
     <!-- Add Task Modal -->
     <div id="add-item-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 md:p-6 w-full max-w-sm sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 md:p-6 w-full max-w-sm sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto overscroll-contain">
             <div class="flex items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-700/60">
                 <h3 class="text-lg md:text-xl font-bold text-white shrink-0">Add Task</h3>
                 <div id="modal-destination-badge" class="min-w-0">
@@ -1754,7 +1754,7 @@
 
     <!-- Add Person Modal (Contact Universes) -->
     <div id="add-person-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 md:p-6 w-full max-w-sm sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 md:p-6 w-full max-w-sm sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto overscroll-contain">
             <h3 class="text-lg md:text-xl font-bold text-white mb-4 pb-3 border-b border-slate-700/60">Add Person</h3>
             <form action="/people/" method="POST" class="space-y-3.5">
                 <div class="grid grid-cols-2 gap-2">
@@ -1839,7 +1839,7 @@
 
     <!-- Edit Person Modal (Contact Universes) -->
     <div id="edit-person-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 md:p-6 w-full max-w-sm sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 md:p-6 w-full max-w-sm sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto overscroll-contain">
             <h3 class="text-lg md:text-xl font-bold text-white mb-4 pb-3 border-b border-slate-700/60">Edit Person</h3>
             <form action="/people/update/" method="POST" class="space-y-3.5">
                 <input type="hidden" name="person_id" id="edit-person-id">
@@ -1927,7 +1927,7 @@
 
     <!-- Edit Task Modal -->
     <div id="edit-item-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 md:p-6 w-full max-w-sm sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 md:p-6 w-full max-w-sm sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto overscroll-contain">
             <div class="flex items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-700/60">
                 <h3 class="text-lg md:text-xl font-bold text-white shrink-0">Edit Task</h3>
             </div>
@@ -2043,7 +2043,7 @@
     </div>
 
     <div id="custom-repeat-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 w-full max-w-sm shadow-2xl text-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 w-full max-w-sm shadow-2xl text-slate-200 space-y-4 max-h-[90vh] overflow-y-auto overscroll-contain">
             <div class="flex items-center justify-between pb-2 border-b border-slate-700">
                 <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Recurrence</span>
                 <select id="modal-freq-select" onchange="toggleFrequencyView()" class="bg-slate-900 text-white text-sm border border-slate-600 rounded-lg px-2.5 py-1">
@@ -3595,6 +3595,32 @@
         });
 
         let aiChatSending = false;
+
+        // The floating chat launcher/hint pill sits at a fixed bottom-right position so it's always
+        // reachable - but Add Task/Edit Task are tall, scrollable modals whose own Cancel/Save
+        // buttons and Description field land in that exact corner (reported directly, with a
+        // screenshot showing the launcher sitting right on top of Save Changes). Hide the launcher
+        // for as long as either of those modals is open, regardless of which of their several
+        // onclick handlers opened/closed it (add-item-modal and edit-item-modal are toggled from
+        // multiple places - a MutationObserver on each modal's own class attribute catches all of
+        // them in one place instead of having to update every call site individually).
+        document.addEventListener('DOMContentLoaded', () => {
+            const launcherWrapper = document.getElementById('ai-chat-launcher-wrapper');
+            const bigTaskModals = ['add-item-modal', 'edit-item-modal']
+                .map(id => document.getElementById(id))
+                .filter(Boolean);
+            if (!launcherWrapper || !bigTaskModals.length) return;
+
+            const updateLauncherVisibility = () => {
+                const anyOpen = bigTaskModals.some(m => !m.classList.contains('hidden'));
+                launcherWrapper.classList.toggle('hidden', anyOpen);
+            };
+
+            bigTaskModals.forEach(modal => {
+                new MutationObserver(updateLauncherVisibility).observe(modal, { attributes: true, attributeFilter: ['class'] });
+            });
+            updateLauncherVisibility();
+        });
 
         function toggleAiChatPanel() {
             const panel = document.getElementById('ai-chat-panel');
