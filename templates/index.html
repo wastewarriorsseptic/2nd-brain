@@ -2624,6 +2624,24 @@
             return bucketMatch ? { bucket: bucketMatch } : (laneMatch ? { lane: laneMatch } : null);
         }
 
+        // A minimal, self-creating toast for when an in-place Space View action fails - reused by
+        // every completion handler below instead of each silently doing nothing (or worse, falling
+        // back to a real page reload - see the comment on the old formElement.submit() fallback
+        // this replaced). Doesn't touch the camera or any task data; purely informational.
+        function showSpaceActionError(message) {
+            let toast = document.getElementById('space-action-error-toast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = 'space-action-error-toast';
+                toast.className = 'hidden fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-80 z-[65] bg-rose-950/90 border border-rose-500/50 text-rose-200 text-xs font-semibold rounded-2xl px-4 py-3 shadow-2xl';
+                document.body.appendChild(toast);
+            }
+            toast.textContent = message;
+            toast.classList.remove('hidden');
+            clearTimeout(toast._hideTimer);
+            toast._hideTimer = setTimeout(() => toast.classList.add('hidden'), 3500);
+        }
+
         // Handler for the swipe-dock card's own complete button (per-bucket view, "All Tasks", and
         // the Multiverse Timeline all share this one dock - see renderBucketTaskSwipeDock). Rebuilds
         // just that dock's cards from the now-shorter task list, passing focusFirst:false so the
@@ -2634,7 +2652,14 @@
 
             const result = await submitToggleCompleteAjax(itemId);
             if (!result) {
-                formElement.submit();
+                // Used to fall back to formElement.submit() here - a REAL page reload, redirected
+                // by the server to whatever the Referer header resolved to. Reported directly: this
+                // silently discarded all client-side Space View / Multiverse Timeline navigation
+                // (neither is ever reflected in the URL), dumping the user onto their default
+                // Universe - "it took me to the Home (first universe) and a Realm within it" from
+                // wherever they actually were. A failed completion should never move the camera;
+                // tell the user it didn't go through and leave everything exactly as it was instead.
+                showSpaceActionError("Couldn't complete that task - check your connection and try again.");
                 return;
             }
 
@@ -2659,7 +2684,8 @@
             const itemId = document.getElementById('hud-task-id-input').value;
             const result = await submitToggleCompleteAjax(itemId);
             if (!result) {
-                formElement.submit();
+                // Same reasoning as handleSpaceCompleteToggle above - no page-reload fallback.
+                showSpaceActionError("Couldn't complete that task - check your connection and try again.");
                 return;
             }
 
@@ -4650,7 +4676,12 @@
             fireCompleteConfetti(btnElement);
 
             const result = await submitToggleCompleteAjax(itemId);
-            if (!result) return; // AJAX failed - leave the digest as-is, no backing <form> to fall back to
+            if (!result) {
+                // Leave the digest as-is, no backing <form> to fall back to (and no page-reload
+                // fallback wanted here either - see showSpaceActionError's own comment).
+                showSpaceActionError("Couldn't complete that task - check your connection and try again.");
+                return;
+            }
 
             const wrapper = document.querySelector(`.timeline-card-wrapper[data-item-id="${itemId}"]`);
             if (wrapper) wrapper.setAttribute('data-completed', 'true');
@@ -4670,7 +4701,10 @@
             fireCompleteConfetti(btnElement);
 
             const result = await submitToggleCompleteAjax(itemId);
-            if (!result) return;
+            if (!result) {
+                showSpaceActionError("Couldn't complete that task - check your connection and try again.");
+                return;
+            }
 
             const task = multiverseTasksData.find(t => String(t.id) === String(itemId));
             if (task) {
