@@ -222,10 +222,10 @@
     <div id="ai-chat-launcher-wrapper" class="fixed bottom-24 right-4 z-[70] flex items-center gap-2">
         <button type="button" id="ai-chat-launcher-hint" onclick="toggleAiChatPanel()"
                 style="animation: ai-chat-launcher-float 3.2s ease-in-out infinite; animation-delay: -0.6s;"
-                class="bg-slate-900/95 border border-indigo-500/40 text-indigo-200 text-[11px] font-semibold px-3 py-1.5 rounded-full shadow-lg whitespace-nowrap hover:border-indigo-400/70 hover:text-white transition">Ask me to help</button>
+                class="bg-slate-900/95 border border-indigo-500/40 text-indigo-200 text-[11px] font-semibold px-3 py-1.5 rounded-full shadow-lg whitespace-nowrap hover:border-indigo-400/70 hover:text-white transition">I'm your ai!</button>
         <button id="ai-chat-launcher" onclick="toggleAiChatPanel()" title="Ask the AI assistant"
                 class="w-14 h-14 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border border-indigo-400/30 shadow-2xl flex items-center justify-center text-2xl transition">
-            🤖
+            😈
         </button>
     </div>
 
@@ -3866,6 +3866,15 @@
         let aiChatRecognition = null;
         let aiChatListening = false;
         let aiChatDictationBaseText = '';
+        // stop() on a live recognition session is async - the engine can still deliver one more
+        // "final" onresult for whatever it had already buffered AFTER stop() is called (and after
+        // handleAiChatSubmit has already cleared the box for the message that's now being sent).
+        // Without this guard that late result silently repopulated the just-cleared input with the
+        // tail end of what was just dictated - reported as "keeps the same text from the prior chat,
+        // I had to continue typing/talking from there." Only set true when we're discarding a
+        // session (submit); a manual mic-tap-to-stop leaves it false so the trailing words a user is
+        // still mid-sentence on when they stop are correctly kept for review before sending.
+        let aiChatDictationSuppressed = false;
 
         // The input used to be a single-line <input>, which silently scrolled long text out of
         // view horizontally once it filled the visible width - reported directly: "text begins to
@@ -3904,6 +3913,7 @@
             aiChatRecognition.lang = navigator.language || 'en-US';
 
             aiChatRecognition.onresult = (event) => {
+                if (aiChatDictationSuppressed) return;
                 const input = document.getElementById('ai-chat-input');
                 let finalText = '';
                 let interimText = '';
@@ -3954,6 +3964,7 @@
             }
 
             aiChatDictationBaseText = document.getElementById('ai-chat-input').value.trim();
+            aiChatDictationSuppressed = false;
             try {
                 aiChatRecognition.start();
                 setAiChatListening(true);
@@ -4021,6 +4032,7 @@
             if (aiChatSending) return false;
 
             if (aiChatListening && aiChatRecognition) {
+                aiChatDictationSuppressed = true;
                 aiChatRecognition.stop();
                 setAiChatListening(false);
             }
@@ -4060,6 +4072,7 @@
                 aiChatHistory.push({ role: 'assistant', content: data.reply });
 
                 const touchedTask = data.task_created || data.task_updated || data.navigate;
+                const touchedPlace = data.navigate_place || data.place_created;
 
                 if (touchedTask) {
                     // A navigate response is already about to redirect the page itself (below) -
@@ -4067,7 +4080,7 @@
                     // for a plain create/update (no navigation already in flight this turn).
                     const linkTarget = data.navigate ? null : (data.task_created || data.task_updated);
                     renderAiChatBubble('assistant', data.reply, 'task_created', linkTarget);
-                } else if (data.navigate_place) {
+                } else if (touchedPlace) {
                     renderAiChatBubble('assistant', data.reply, 'task_created');
                 } else {
                     renderAiChatBubble('assistant', data.reply);
@@ -4083,10 +4096,13 @@
                     navigateToTaskFromChat(data.navigate);
                 } else if (data.navigate_place) {
                     navigateToPlaceFromChat(data.navigate_place);
-                } else if (touchedTask) {
-                    // A created/updated task otherwise wouldn't show up anywhere on the current
-                    // page (Timeline list, Space View) until a real reload - refresh the
-                    // underlying data in place instead, with no visible navigation.
+                } else if (touchedTask || data.place_created) {
+                    // A created/updated task, or a newly-created Universe/Realm/Bucket, otherwise
+                    // wouldn't show up anywhere on the current page (sidebar, Timeline list, Space
+                    // View, the Multiverse picker) until a real reload - refresh the underlying
+                    // data in place instead, with no visible navigation. Skipped when navigate_place
+                    // is also set (e.g. "create X and take me there") since that real navigation
+                    // already loads everything fresh.
                     silentlyRefreshTaskData();
                 }
             } catch (e) {
