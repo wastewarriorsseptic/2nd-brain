@@ -3586,6 +3586,13 @@
         // loads the user's own saved history itself for every turn) and nothing here writes to
         // localStorage anymore.
         let aiChatHistory = [];
+        const aiChatLoggedIn = {{ 'true' if user else 'false' }};
+        // Same copy the server sends back for an actual logged-out message (see the
+        // "login_required" branch of /ai/chat/) - kept here too so the panel can greet with it
+        // immediately on open, with no round trip, instead of waiting for a real question.
+        const AI_CHAT_LOGGED_OUT_GREETING = "I'd love to start bossing your tasks around, but I only "
+            + "take orders from signed-in humans - I can't create or find tasks without knowing whose "
+            + "they are! Sign in above and I'm all yours. 😈";
 
         // Replays the user's saved conversation into the panel on page load - restored bubbles
         // render in the plain style (the emerald "task created/updated" highlight isn't re-derived,
@@ -3683,6 +3690,23 @@
             }
         });
 
+        // A logged-out visitor opening the panel for the first time otherwise saw an empty box
+        // until they typed something and got the login-prompt reply - this front-loads that same
+        // reply as a proactive greeting instead, with a brief "thinking" beat first so it doesn't
+        // just snap into place. Only fires once: on every later open the messages list already has
+        // this bubble (or a real one, if they've since signed in and started chatting for real) in
+        // it, so the empty-list check below naturally skips it.
+        function maybeGreetLoggedOutVisitor() {
+            if (aiChatLoggedIn) return;
+            const wrapper = document.getElementById('ai-chat-messages');
+            if (!wrapper || wrapper.children.length > 0) return;
+            const thinkingBubble = renderAiChatThinkingBubble();
+            setTimeout(() => {
+                thinkingBubble.remove();
+                renderAiChatBubble('assistant', AI_CHAT_LOGGED_OUT_GREETING, 'login_required');
+            }, 900);
+        }
+
         function toggleAiChatPanel() {
             const panel = document.getElementById('ai-chat-panel');
             if (!panel) return;
@@ -3709,6 +3733,7 @@
                 // - when scrollHeight is real - guarantees the latest message is always in view.
                 const messagesWrapper = document.getElementById('ai-chat-messages');
                 if (messagesWrapper) messagesWrapper.scrollTop = messagesWrapper.scrollHeight;
+                maybeGreetLoggedOutVisitor();
             } else {
                 if (hint) hint.classList.remove('hidden');
                 // Drop any keyboard-open sizing from last time (see syncAiChatPanelToViewport) so
