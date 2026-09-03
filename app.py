@@ -3074,7 +3074,13 @@ def ai_chat(request: Request, payload: dict = Body(...)):
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user:
-            return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+            return JSONResponse({
+                "ok": False,
+                "code": "login_required",
+                "error": "I'd love to start bossing your tasks around, but I only take orders from "
+                         "signed-in humans - I can't create or find tasks without knowing whose they "
+                         "are! Sign in above and I'm all yours. 😈",
+            }, status_code=401)
 
         if _ai_chat_rate_limited(user.id):
             return JSONResponse({"ok": False, "error": "Too many requests - try again in a bit."}, status_code=429)

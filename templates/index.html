@@ -3988,6 +3988,8 @@
                 bubbleClass += 'bg-emerald-950/60 border border-emerald-500/50 text-emerald-100';
             } else if (variant === 'error') {
                 bubbleClass += 'bg-rose-950/40 border border-rose-500/40 text-rose-200';
+            } else if (variant === 'login_required') {
+                bubbleClass += 'bg-indigo-950/50 border border-indigo-500/50 text-indigo-100';
             } else if (isUser) {
                 bubbleClass += 'bg-indigo-600/90 text-white ml-auto';
             } else {
@@ -4003,6 +4005,14 @@
                 link.className = 'mt-2 block text-left text-emerald-300 hover:text-emerald-100 underline underline-offset-2 font-bold';
                 link.textContent = '🎯 Go to this task';
                 link.onclick = () => goToAiChatTask(navTarget);
+                bubble.firstElementChild.appendChild(link);
+            }
+
+            if (variant === 'login_required') {
+                const link = document.createElement('a');
+                link.href = '/login';
+                link.className = 'mt-2 block text-left text-indigo-300 hover:text-white underline underline-offset-2 font-bold';
+                link.textContent = '🔑 Sign in with Google';
                 bubble.firstElementChild.appendChild(link);
             }
 
@@ -4060,7 +4070,8 @@
 
                 if (!res.ok || !data.ok) {
                     const errorText = data.error || 'Something went wrong - try again.';
-                    renderAiChatBubble('assistant', errorText, 'error');
+                    const errorVariant = data.code === 'login_required' ? 'login_required' : 'error';
+                    renderAiChatBubble('assistant', errorText, errorVariant);
                     speakAiReply(errorText);
                     return false;
                 }
