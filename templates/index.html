@@ -4041,6 +4041,8 @@
                     // for a plain create/update (no navigation already in flight this turn).
                     const linkTarget = data.navigate ? null : (data.task_created || data.task_updated);
                     renderAiChatBubble('assistant', data.reply, 'task_created', linkTarget);
+                } else if (data.navigate_place) {
+                    renderAiChatBubble('assistant', data.reply, 'task_created');
                 } else {
                     renderAiChatBubble('assistant', data.reply);
                 }
@@ -4053,6 +4055,8 @@
                     // Universe than the one currently open. Give the confirmation bubble a beat
                     // to be read before the page leaves.
                     navigateToTaskFromChat(data.navigate);
+                } else if (data.navigate_place) {
+                    navigateToPlaceFromChat(data.navigate_place);
                 } else if (touchedTask) {
                     // A created/updated task otherwise wouldn't show up anywhere on the current
                     // page (Timeline list, Space View) until a real reload - refresh the
@@ -4085,6 +4089,31 @@
             if (!nav || !nav.bucket_id || !nav.realm_id || !nav.id) return;
             setTimeout(() => {
                 window.location.href = aiChatTaskUrl(nav);
+            }, 700);
+        }
+
+        // "Take me to the Shopping realm/Groceries bucket/Bills universe" - same real-navigation
+        // approach as navigateToTaskFromChat and for the same reason (a Realm/Bucket doesn't have
+        // to live in whichever Universe is currently open), just without a specific task to focus
+        // on. chat_nav=1 tells the goto_item pickup listener below to force Space View on and
+        // focus the camera even though there's no goto_item this time - a realm/bucket destination
+        // is still a place worth actually seeing, not just a sidebar highlight change. A universe-
+        // only destination has no single node to zoom to - loading it is the whole action, so it
+        // still gets chat_nav=1 (to land in Space View) but nothing more.
+        function navigateToPlaceFromChat(place) {
+            if (!place || !place.kind || !place.id) return;
+            let url;
+            if (place.kind === 'universe') {
+                url = '/?universe_id=' + place.id + '&chat_nav=1';
+            } else if (place.kind === 'realm') {
+                url = '/?realm_id=' + place.id + '&chat_nav=1';
+            } else if (place.kind === 'bucket') {
+                url = '/?bucket_id=' + place.id + '&chat_nav=1';
+            } else {
+                return;
+            }
+            setTimeout(() => {
+                window.location.href = url;
             }, 700);
         }
 
@@ -4799,29 +4828,37 @@
             }
         });
 
-        // Picks up a ?goto_item= left by navigateToTaskFromChat() (see handleAiChatSubmit) after
-        // its real page navigation lands. Runs after the "restore persistent Space View state"
-        // listener above (registered earlier in the file, so it fires first) - isSpaceViewActive
-        // already reflects localStorage by the time this runs, so it only forces Space View on if
-        // the user genuinely wasn't already in it. realm_id/bucket_id in the URL already resolved
-        // this exact task's Universe server-side (see dashboard()'s active-universe resolution),
-        // so currentSelectedRealmId/currentSelectedBucketId are guaranteed to be its own.
+        // Picks up a ?goto_item= (navigateToTaskFromChat) or ?chat_nav=1 (navigateToPlaceFromChat -
+        // a Universe/Realm/Bucket destination with no specific task) left behind after the real
+        // page navigation those trigger lands. Runs after the "restore persistent Space View
+        // state" listener above (registered earlier in the file, so it fires first) -
+        // isSpaceViewActive already reflects localStorage by the time this runs, so it only forces
+        // Space View on if the user genuinely wasn't already in it. realm_id/bucket_id/universe_id
+        // in the URL already resolved the right Universe server-side (see dashboard()'s active-
+        // universe resolution), so currentSelectedRealmId/currentSelectedBucketId are guaranteed to
+        // be correct for whatever was navigated to. navigateToDigestItem already tolerates a
+        // missing bucketId/itemId (a realm-only destination just focuses the realm's hub); a
+        // universe-only destination has no realm at all, so this only forces Space View on and
+        // leaves it at that Universe's own default ring view.
         document.addEventListener('DOMContentLoaded', () => {
-            const gotoItemId = new URLSearchParams(window.location.search).get('goto_item');
-            if (!gotoItemId) return;
+            const params = new URLSearchParams(window.location.search);
+            const gotoItemId = params.get('goto_item');
+            const chatNav = params.get('chat_nav');
+            if (!gotoItemId && !chatNav) return;
 
             if (!isSpaceViewActive) {
                 toggleSpaceView();
                 document.documentElement.classList.remove('preload-space-view');
             }
-            if (currentSelectedRealmId && currentSelectedBucketId) {
+            if (currentSelectedRealmId) {
                 navigateToDigestItem(currentSelectedRealmId, currentSelectedBucketId, gotoItemId);
             }
 
-            // Strip goto_item (keeping realm_id/bucket_id) so a manual refresh of this URL doesn't
-            // re-trigger the same camera jump every time.
+            // Strip goto_item/chat_nav (keeping realm_id/bucket_id/universe_id) so a manual
+            // refresh of this URL doesn't re-trigger the same camera jump every time.
             const cleanUrl = new URL(window.location.href);
             cleanUrl.searchParams.delete('goto_item');
+            cleanUrl.searchParams.delete('chat_nav');
             history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
         });
 

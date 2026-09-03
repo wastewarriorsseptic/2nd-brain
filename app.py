@@ -824,7 +824,10 @@ def build_task_universe_context(session: Session, user: "User", today_date) -> d
     realms are deliberately excluded - a chat-created task should only ever land somewhere the
     requesting user actually owns, never a collaborator's shared space, and never a Person-shaped
     contact bucket). Rebuilt fresh on every /ai/chat/ call rather than cached, since bucket names
-    can change between turns."""
+    can change between turns. Universe/Realm ids are included alongside Bucket's (not just for
+    create_task's sake) so navigate_to_place can target any of the three - originally only Bucket
+    carried an id here, which meant the model had nothing to pass for "take me to the X realm/
+    universe" and had to refuse outright."""
     universes = session.exec(
         select(Universe).where(Universe.user_id == user.id, Universe.kind == "task").order_by(Universe.sort_order)
     ).all()
@@ -842,8 +845,8 @@ def build_task_universe_context(session: Session, user: "User", today_date) -> d
                 {"id": b.id, "name": b.name}
                 for b in sorted(r.buckets, key=lambda b: b.sort_order)
             ]
-            realms_out.append({"name": r.name, "buckets": buckets_out})
-        universe_out.append({"name": u.name, "realms": realms_out})
+            realms_out.append({"id": r.id, "name": r.name, "buckets": buckets_out})
+        universe_out.append({"id": u.id, "name": u.name, "realms": realms_out})
 
     return {
         "today": today_date.strftime("%Y-%m-%d"),
@@ -2422,9 +2425,10 @@ def cancel_pending_universe_invite(request: Request, invite_id: int = Form(...),
 # what the model itself returns.
 
 AI_CHAT_SYSTEM_PROMPT = """You are TaskMonster's task assistant. You can create tasks, update \
-existing tasks, bring the user's screen to a specific task, and answer questions about the \
-current user's existing tasks, via the four tools you have. You cannot call, email, or message \
-anyone, and you have no tools for that - if asked, say that's not supported yet.
+existing tasks, bring the user's screen to a specific task (or a specific Universe/Realm/Bucket), \
+and answer questions about the current user's existing tasks, via the five tools you have. You \
+cannot call, email, or message anyone, and you have no tools for that - if asked, say that's not \
+supported yet.
 
 Only call create_task if you are HIGHLY CONFIDENT there is exactly one clearly-correct bucket for \
 the task, chosen from the bucket ids listed in the context below. Never invent a bucket_id that \
@@ -2454,6 +2458,15 @@ a short clarifying question that lists the specific candidates, each with its du
 name so the user can tell them apart, and wait for their reply. Only call navigate_to_task once \
 you're confident about a single task - never guess which one when more than one is plausible.
 
+When the user asks to be taken to, shown, or brought to a Universe, Realm, or Bucket by name \
+("take me to the Shopping realm", "go to the Groceries bucket", "show me the Bills universe") - \
+NOT a task, that's navigate_to_task above - use navigate_to_place with the matching id from the \
+universe tree in context below. The same name can exist more than once (e.g. two different \
+realms could each have their own "Groceries" bucket) - if more than one entry in the tree \
+plausibly matches what the user described, you MUST NOT call navigate_to_place, ask a short \
+clarifying question naming the candidates (e.g. by which realm/universe each one is under) \
+instead. Never invent an id - it must come from the tree below.
+
 Resolve relative dates ("tomorrow", "next Friday") against the "today"/"timezone" given in the \
 context. Always output due_date as YYYY-MM-DD.
 
@@ -2468,6 +2481,7 @@ _ai_create_task_decl = None
 _ai_update_task_decl = None
 _ai_list_tasks_decl = None
 _ai_navigate_task_decl = None
+_ai_navigate_place_decl = None
 _ai_tools = None
 if GEMINI_ENABLED:
     _ai_create_task_decl = genai_types.FunctionDeclaration(
@@ -2521,7 +2535,19 @@ if GEMINI_ENABLED:
             "required": ["task_id"],
         },
     )
-    _ai_tools = [genai_types.Tool(function_declarations=[_ai_create_task_decl, _ai_update_task_decl, _ai_list_tasks_decl, _ai_navigate_task_decl])]
+    _ai_navigate_place_decl = genai_types.FunctionDeclaration(
+        name="navigate_to_place",
+        description="Move the user's screen to a specific Universe, Realm, or Bucket - not a task, use navigate_to_task for that. The id must come from the universe tree given in context (never invented). Only call this once you're confident which single place the user means - the same names can repeat across different universes/realms (e.g. two different realms could each have a \"Groceries\" bucket), so if more than one candidate in the context tree plausibly matches, ask which one instead of guessing.",
+        parameters={
+            "type": "OBJECT",
+            "properties": {
+                "kind": {"type": "STRING", "enum": ["universe", "realm", "bucket"]},
+                "id": {"type": "INTEGER", "description": "The id of the universe/realm/bucket, from the universe tree given in context."},
+            },
+            "required": ["kind", "id"],
+        },
+    )
+    _ai_tools = [genai_types.Tool(function_declarations=[_ai_create_task_decl, _ai_update_task_decl, _ai_list_tasks_decl, _ai_navigate_task_decl, _ai_navigate_place_decl])]
 
 # Simple in-memory per-user rate limit - resets on process restart and doesn't span multiple
 # dynos, which is fine for this single small Render service; not meant to be bulletproof, just a
@@ -2743,6 +2769,55 @@ def _ai_execute_navigate_to_task(session: Session, user: "User", args: dict) -> 
         "universe_icon": universe.icon if universe else "😈",
     }
 
+def _ai_execute_navigate_to_place(session: Session, user: "User", args: dict) -> dict:
+    """Returns {"error": str} on any validation failure, or the navigation-target dict the client
+    uses to switch Universe/Realm/Bucket and (for realm/bucket) focus the Space View camera there.
+    kind/id are untrusted model output like every other tool here - re-checked against the
+    requesting user's own access rather than trusted outright. Universes have no collaborator
+    concept in this app (see user_owns_universe's own docstring), so that one is owner-only;
+    realm/bucket use the same owner-or-collaborator check navigate_to_task already uses for items,
+    for the same reason - navigating is read-only, it can't change anything."""
+    kind = args.get("kind")
+    place_id = args.get("id")
+
+    if kind == "universe":
+        if not user_owns_universe(session, user, place_id):
+            return {"error": "That universe doesn't exist or isn't yours."}
+        universe = session.get(Universe, place_id)
+        return {"kind": "universe", "id": universe.id, "name": universe.name, "icon": universe.icon or "😈"}
+
+    elif kind == "realm":
+        if not user_can_access_realm(session, user, place_id):
+            return {"error": "That realm doesn't exist or isn't accessible to you."}
+        realm = session.get(Realm, place_id)
+        universe = session.get(Universe, realm.universe_id) if realm.universe_id else None
+        return {
+            "kind": "realm",
+            "id": realm.id,
+            "name": realm.name,
+            "icon": realm.icon or "🔮",
+            "universe_name": universe.name if universe else "",
+            "universe_icon": universe.icon if universe else "😈",
+        }
+
+    elif kind == "bucket":
+        if not user_can_access_bucket(session, user, place_id):
+            return {"error": "That bucket doesn't exist or isn't accessible to you."}
+        bucket = session.get(Bucket, place_id)
+        realm = session.get(Realm, bucket.realm_id) if bucket else None
+        universe = session.get(Universe, realm.universe_id) if realm and realm.universe_id else None
+        return {
+            "kind": "bucket",
+            "id": bucket.id,
+            "name": bucket.name,
+            "realm_id": bucket.realm_id,
+            "realm_name": realm.name if realm else "",
+            "universe_name": universe.name if universe else "",
+            "universe_icon": universe.icon if universe else "😈",
+        }
+
+    return {"error": "Unknown place kind."}
+
 AI_CHAT_MAX_TOOL_CALLS = 6  # bounds how many response round-trips a single user message can cause - raised
 # from 3 after a real report: a plain read-only question ("do I have an Amex bill in my tasks?")
 # reliably burned all 3 round-trips just checking list_tasks with different status filters (all,
@@ -2862,6 +2937,7 @@ def ai_chat(request: Request, payload: dict = Body(...)):
         task_created = None
         task_updated = None
         task_navigated = None
+        place_navigated = None
 
         def _finish(reply_text: str) -> JSONResponse:
             # Saves this turn (the user's message + the assistant's reply) so it's there the next
@@ -2880,6 +2956,7 @@ def ai_chat(request: Request, payload: dict = Body(...)):
             return JSONResponse({
                 "ok": True, "reply": reply_text,
                 "task_created": task_created, "task_updated": task_updated, "navigate": task_navigated,
+                "navigate_place": place_navigated,
             })
 
         try:
@@ -2923,6 +3000,10 @@ def ai_chat(request: Request, payload: dict = Body(...)):
                         result = _ai_execute_navigate_to_task(session, user, args)
                         if "error" not in result:
                             task_navigated = result
+                    elif name == "navigate_to_place":
+                        result = _ai_execute_navigate_to_place(session, user, args)
+                        if "error" not in result:
+                            place_navigated = result
                     else:
                         # Unknown tool name - answer it with an error rather than executing
                         # nothing and staying silent, so the model doesn't assume it worked.
