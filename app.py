@@ -2057,17 +2057,55 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
             if not was_completed:
                 item.completed_at = datetime.now()
 
-                # There used to be a step here that re-anchored every still-upcoming sibling in
-                # the recurring series around "now" whenever one occurrence was completed. It's
-                # gone: create_item already pre-generates the whole series (up to 180 days out)
-                # with correct, evenly-spaced absolute dates at creation time - those dates don't
-                # go stale as real time passes, so there was never anything to fix. In practice
-                # the "fix" was destructive - reported directly, twice: completing today's
-                # occurrence made tomorrow's disappear (it got pushed to the day after), and
-                # completing an OVERDUE occurrence (e.g. finishing yesterday's task this morning)
-                # pushed the already-correct, not-yet-completed "due today" row out to tomorrow -
-                # "I completed a task yesterday... it should have a new one for me for today."
-                # Completing one occurrence now only ever touches that one row.
+                # Rolling reschedule for a LATE completion of a multi-day-interval series (every N
+                # days with N>1, or weekly/monthly/yearly) - e.g. "clean the kitty water every 3
+                # days": if you finish it a day late, the next occurrence should be 3 days from
+                # when you actually did it, not 3 days from the original (now-passed) due date -
+                # otherwise the gap between real-world occurrences keeps shrinking every time
+                # you're late. Explicitly does NOT apply to a true daily (1-day-apart) series or
+                # to an on-time completion - create_item's pre-generated schedule is already
+                # correct in both of those cases, and shifting it was exactly the destructive bug
+                # fixed twice before (a fresh occurrence is expected every single calendar day
+                # regardless of catch-up timing, and completing something on time changes nothing).
+                if item.recurring_group_id:
+                    future_items = session.exec(
+                        select(Item)
+                        .where(
+                            Item.recurring_group_id == item.recurring_group_id,
+                            Item.is_completed == False,
+                            Item.id != item.id,
+                            Item.due_date > item.due_date
+                        )
+                        .order_by(Item.due_date.asc())
+                    ).all()
+
+                    if future_items:
+                        rec_type = item.recurrence_type or "daily"
+                        today = get_user_today_date(user.timezone if user else "UTC")
+                        delay_days = (today - item.due_date.date()).days
+
+                        eligible_for_roll = False
+                        if delay_days > 0:
+                            if rec_type == "daily":
+                                # "daily" covers both true 1-day recurrence and a custom "every N
+                                # days" interval - interval isn't stored per-item, so infer it from
+                                # the actual gap between existing sibling rows. Only roll when that
+                                # gap is genuinely more than 1 day; with fewer than 2 future items
+                                # to measure a gap from, stay conservative and don't roll.
+                                if len(future_items) > 1:
+                                    gap = (future_items[1].due_date.date() - future_items[0].due_date.date()).days
+                                    eligible_for_roll = gap > 1
+                            elif rec_type in ("weekly", "monthly", "yearly"):
+                                eligible_for_roll = True
+
+                        if eligible_for_roll:
+                            for f_item in future_items:
+                                f_item.due_date = f_item.due_date + timedelta(days=delay_days)
+                                session.add(f_item)
+                            updated_items = [
+                                {"id": f.id, "due_date": f.due_date.strftime("%Y-%m-%d"), "due_date_formatted": f.due_date.strftime("%b %d, %Y")}
+                                for f in future_items
+                            ]
 
             else:
                 item.completed_at = None

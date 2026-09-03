@@ -2521,13 +2521,28 @@
             }
         }
 
-        // Applies the side effects of a completion that aren't "remove this one task" - a completed
-        // shoppable task can surface a reorder suggestion. (Completing a recurring task used to also
-        // reschedule its still-upcoming siblings via result.updated_items, but that step was removed
-        // from toggle_item_complete in app.py - it was actively destructive, shifting/skipping
-        // already-correct future occurrences instead of leaving the pre-generated series alone - so
-        // the server no longer ever sends a non-empty updated_items to patch here.)
+        // Applies the side effects of a completion that aren't "remove this one task": a completed
+        // shoppable task can surface a reorder suggestion, and completing a LATE occurrence of a
+        // multi-day-interval recurring series (every N days with N>1, or weekly/monthly/yearly -
+        // e.g. "clean the kitty water every 3 days") rolls its still-upcoming siblings forward by
+        // however many days late it was (see toggle_item_complete in app.py) - a true daily series,
+        // or completing anything on time, never touches other occurrences at all, so
+        // updated_items is usually empty. Scans both in-memory Space View data sources (spaceRealms
+        // for the normal per-bucket/All Tasks view, multiverseLanes for the Multiverse Timeline)
+        // since either could hold the affected tasks.
         function applyToggleCompleteResult(result) {
+            if (result.updated_items && result.updated_items.length) {
+                const byId = new Map(result.updated_items.map(u => [String(u.id), u]));
+                const patchTask = (task) => {
+                    const update = byId.get(String(task.id));
+                    if (update) {
+                        task.dueDate = update.due_date;
+                        task.dueDateFormatted = update.due_date_formatted;
+                    }
+                };
+                spaceRealms.forEach(realm => (realm.buckets || []).forEach(bucket => (bucket.tasks || []).forEach(patchTask)));
+                multiverseLanes.forEach(lane => (lane.tasks || []).forEach(patchTask));
+            }
             if (result.reorder_suggestion) {
                 showReorderSuggestion(result.reorder_suggestion);
             }
