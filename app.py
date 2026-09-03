@@ -2073,14 +2073,25 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
 
                     if future_items:
                         rec_type = item.recurrence_type or "daily"
-                        
+
                         # Fix 12:00 AM rollover issue by ensuring hour defaults to 9 AM if 00:00
                         hour = future_items[0].due_date.hour
                         minute = future_items[0].due_date.minute
                         if hour == 0 and minute == 0:
                             hour = 9
 
-                        today_base = now_dt.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                        # Anchored to the user's own local calendar date (get_user_today_date),
+                        # NOT now_dt's server-clock date - a bug reported directly: completing a
+                        # daily "Make $1500" task left the very next day's occurrence missing,
+                        # jumping straight from today to +2d. Root cause: the server can be a
+                        # calendar day ahead of the user's own local date at the moment of
+                        # completion (e.g. a UTC server after 8pm Eastern is already into
+                        # tomorrow's UTC date) - re-anchoring off that date shifted every future
+                        # sibling forward by a day, so nothing was left with tomorrow's date.
+                        # Every other "what day is it" computation in this file already uses
+                        # get_user_today_date(user.timezone) for exactly this reason.
+                        user_today = get_user_today_date(user.timezone if user else "UTC")
+                        today_base = datetime(user_today.year, user_today.month, user_today.day, hour, minute)
 
                         if rec_type in ["daily", "weekly", "none"]:
                             # Measure step interval between occurrences (defaulting to 3 if missing)
