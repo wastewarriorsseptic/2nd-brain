@@ -2500,12 +2500,13 @@ if GEMINI_ENABLED:
     )
     _ai_list_tasks_decl = genai_types.FunctionDeclaration(
         name="list_tasks",
-        description="List the current user's tasks, optionally filtered. Results include each task's id, needed to later update_task or navigate_to_task it. To check whether a task exists anywhere among the user's incomplete tasks, one call with status \"all\" is enough - it already includes both overdue AND upcoming tasks, so calling \"overdue\" or \"upcoming\" afterward on top of \"all\" is redundant. \"completed\" is the only status \"all\" does NOT include - call that separately only if the user is asking about something they may have already finished.",
+        description="List the current user's tasks, optionally filtered. Results include each task's id, needed to later update_task or navigate_to_task it. To check whether a task exists anywhere among the user's incomplete tasks, one call with status \"all\" is enough - it already includes both overdue AND upcoming tasks, so calling \"overdue\" or \"upcoming\" afterward on top of \"all\" is redundant. \"completed\" is the only status \"all\" does NOT include - call that separately only if the user is asking about something they may have already finished. Results are capped, ordered by due date - a user with many recurring tasks can easily have more near-term tasks than the cap, which would push something scheduled further out (e.g. next month) off the end BEFORE it's ever seen. Whenever the user is asking whether a SPECIFIC task/topic exists (a name, merchant, keyword) rather than asking for a general list, always pass that as `query` - it filters server-side before the cap is applied, so a real match far in the future is never missed. Never conclude something doesn't exist from an unfiltered call alone if a keyword was available to search for.",
         parameters={
             "type": "OBJECT",
             "properties": {
                 "status": {"type": "STRING", "enum": ["overdue", "upcoming", "all", "completed"], "description": "\"all\" = every incomplete task (overdue + upcoming combined) - the usual first/only call needed. \"completed\" is separate and not included in \"all\"."},
                 "due_within_days": {"type": "INTEGER", "description": "e.g. 7 for 'this week'"},
+                "query": {"type": "STRING", "description": "Case-insensitive substring to search for in task titles, e.g. \"amex\". Use this whenever checking if a specific task exists - it's applied before the result cap, so it finds a match regardless of how far in the future it's due or how many other tasks exist."},
             },
         },
     )
@@ -2676,6 +2677,7 @@ def _ai_execute_list_tasks(session: Session, user: "User", args: dict) -> list:
 
     status = args.get("status") or "all"
     due_within_days = args.get("due_within_days")
+    query = (args.get("query") or "").strip().lower()
     today_date = get_user_today_date(user.timezone or "UTC")
     today_dt = datetime(today_date.year, today_date.month, today_date.day)
 
@@ -2690,6 +2692,15 @@ def _ai_execute_list_tasks(session: Session, user: "User", args: dict) -> list:
         if status == "upcoming" and it.due_date < today_dt:
             continue
         if due_within_days is not None and it.due_date > today_dt + timedelta(days=due_within_days):
+            continue
+        # A keyword search is applied BEFORE the 40-result cap below, not after - without this, a
+        # user with many recurring series (dozens-to-hundreds of near-term occurrences from OTHER
+        # tasks) could have a genuinely-existing task pushed past the cap just by being scheduled
+        # further out, making the assistant wrongly report "you don't have that task" when it
+        # simply never got returned. Reported directly: asked whether an "Amex" task existed (it
+        # did, in October) and got told no, because the unfiltered due-date-ascending list was
+        # entirely consumed by nearer-term recurring tasks before reaching it.
+        if query and query not in it.title.lower():
             continue
 
         bucket = session.get(Bucket, it.bucket_id)
