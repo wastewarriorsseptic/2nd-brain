@@ -4111,10 +4111,11 @@
                 const touchedPlace = data.navigate_place || data.place_created;
 
                 if (touchedTask) {
-                    // A navigate response is already about to redirect the page itself (below) -
-                    // a tappable link in the bubble would be redundant there, so it's only attached
-                    // for a plain create/update (no navigation already in flight this turn).
-                    const linkTarget = data.navigate ? null : (data.task_created || data.task_updated);
+                    // A navigate response - or a brand new place, which now also triggers a real
+                    // navigation below - is already about to redirect the page itself, so a
+                    // tappable link in the bubble would be redundant there; it's only attached for
+                    // a plain create/update with no navigation already in flight this turn.
+                    const linkTarget = (data.navigate || data.place_created) ? null : (data.task_created || data.task_updated);
                     renderAiChatBubble('assistant', data.reply, 'task_created', linkTarget);
                 } else if (touchedPlace) {
                     renderAiChatBubble('assistant', data.reply, 'task_created');
@@ -4132,13 +4133,23 @@
                     navigateToTaskFromChat(data.navigate);
                 } else if (data.navigate_place) {
                     navigateToPlaceFromChat(data.navigate_place);
-                } else if (touchedTask || data.place_created) {
-                    // A created/updated task, or a newly-created Universe/Realm/Bucket, otherwise
-                    // wouldn't show up anywhere on the current page (sidebar, Timeline list, Space
-                    // View, the Multiverse picker) until a real reload - refresh the underlying
-                    // data in place instead, with no visible navigation. Skipped when navigate_place
-                    // is also set (e.g. "create X and take me there") since that real navigation
-                    // already loads everything fresh.
+                } else if (data.place_created) {
+                    // A brand new Universe/Realm/Bucket was actually created this turn - but the
+                    // sidebar realm tree and the Multiverse picker overlay are server-rendered
+                    // Jinja fragments that only reflect the DB as of the last full page load, and
+                    // silentlyRefreshTaskData() (below) can't patch those in place. Left as a silent
+                    // refresh, the new place was really created but looked like nothing happened at
+                    // all ("I asked it to make a universe and don't see it anywhere"). A real
+                    // navigation to wherever the new task (or, if no task was created, the new place
+                    // itself) landed forces a fresh server render that actually shows it.
+                    if (data.task_created) {
+                        navigateToTaskFromChat(data.task_created);
+                    } else {
+                        navigateToPlaceFromChat(data.place_created);
+                    }
+                } else if (touchedTask) {
+                    // A created/updated task in an EXISTING bucket - nothing server-rendered needs
+                    // to change, so a silent in-place data refresh is enough (no visible navigation).
                     silentlyRefreshTaskData();
                 }
             } catch (e) {
