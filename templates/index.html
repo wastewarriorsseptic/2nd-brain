@@ -5316,7 +5316,7 @@
                                 realmId: realm.id,
                                 angle: 0,
                                 orbitRadius: blobMinOrbit,
-                                radius: isMobile ? 22 : 19
+                                radius: isMobile ? 33 : 28.5 // 50% bigger than the 22/19 this used to be - requested directly, it's the button that starts every chain
                             };
 
                             // How far this bucket's own cluster (itself + its outermost task + label)
@@ -6422,6 +6422,24 @@
                             task.baseY = task.y;
                             allTasksOnCanvas.push(task);
                         });
+
+                        // A "+" between every adjacent pair of tasks, not just the one at the very
+                        // start of the chain - reported directly: wants the ability to add a task
+                        // "between nodes" without it having to mean the new task is actually DUE
+                        // there (it opens the exact same Add Task modal the start-of-chain button
+                        // does, with no due date pre-filled, same as that one). Recomputed fresh
+                        // every frame alongside task.x above, same convention this whole block
+                        // already follows rather than trying to cache it.
+                        bucket.midAddButtons = [];
+                        for (let i = 0; i < linearSortedTasks.length - 1; i++) {
+                            bucket.midAddButtons.push({
+                                x: (linearSortedTasks[i].x + linearSortedTasks[i + 1].x) / 2,
+                                y: bucket.y,
+                                bucketId: bucket.id,
+                                realmId: realm.id,
+                                radius: isMobile ? 22 : 19,
+                            });
+                        }
                     } else {
                         bucket.tasks.forEach(task => {
                             const hoverX = Math.cos(frameCount + task.floatOffset) * 3;
@@ -6682,6 +6700,32 @@
                         spaceCtx.fillText('+', atb.x, atb.y + 1);
                         spaceCtx.restore();
                     }
+
+                    // Same "+" styling as the start-of-chain button above, just smaller and one per
+                    // gap - only ever populated (see the position pass) while drilled into this
+                    // bucket's own linear task view, so this naturally draws nothing otherwise.
+                    (bucket.midAddButtons || []).forEach(mab => {
+                        spaceCtx.save();
+                        spaceCtx.beginPath();
+                        spaceCtx.arc(mab.x, mab.y, mab.radius, 0, Math.PI * 2);
+                        spaceCtx.fillStyle = 'rgba(20, 40, 34, 0.9)';
+                        spaceCtx.strokeStyle = '#34d399';
+                        spaceCtx.lineWidth = 2;
+                        spaceCtx.shadowColor = '#34d399';
+                        spaceCtx.shadowBlur = 16;
+                        spaceCtx.setLineDash([6, 5]);
+                        spaceCtx.fill();
+                        spaceCtx.stroke();
+                        spaceCtx.setLineDash([]);
+
+                        spaceCtx.shadowBlur = 0;
+                        spaceCtx.textAlign = 'center';
+                        spaceCtx.textBaseline = 'middle';
+                        spaceCtx.font = `${Math.round(mab.radius * 1.1)}px sans-serif`;
+                        spaceCtx.fillStyle = '#34d399';
+                        spaceCtx.fillText('+', mab.x, mab.y + 1);
+                        spaceCtx.restore();
+                    });
                 });
 
                 // LAYER 2: RENDER BUCKET MOONS & BUCKET LABELS SECOND (MIDDLE LAYER ABOVE TASKS)
@@ -7627,6 +7671,17 @@
                             clickedAddTaskButton = atb;
                         }
                     }
+
+                    // Same hit-test as the start-of-chain "+" above, just checked against every
+                    // between-tasks "+" this bucket currently has (only populated while drilled
+                    // into its linear view - see the position pass) - hitting any of them opens the
+                    // identical Add Task modal the start button does below.
+                    (bucket.midAddButtons || []).forEach(mab => {
+                        const distMab = Math.hypot(worldX - mab.x, worldY - mab.y);
+                        if (distMab <= mab.radius + 14) {
+                            clickedAddTaskButton = mab;
+                        }
+                    });
 
                     bucket.tasks.forEach(task => {
                         const dist = Math.hypot(worldX - task.x, worldY - task.y);
