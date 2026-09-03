@@ -319,6 +319,19 @@ class PendingInvite(SQLModel, table=True):
     realm_id: int = Field(foreign_key="realm.id")
     email: str = Field(index=True)
 
+class UniverseShare(SQLModel, table=True):
+    """Universe-level counterpart to RealmShare: grants access to every Realm inside the
+    Universe, including ones created after the share (unlike RealmShare, which only ever names
+    one specific realm_id)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    universe_id: int = Field(foreign_key="universe.id")
+    user_id: int = Field(foreign_key="users.id")
+
+class PendingUniverseInvite(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    universe_id: int = Field(foreign_key="universe.id")
+    email: str = Field(index=True)
+
 class AiChatMessage(SQLModel, table=True):
     """One turn of the AI chat assistant's conversation with a user, persisted server-side (not
     just localStorage) so the same history follows the user across devices/browsers. task_id/
@@ -575,9 +588,12 @@ def user_owns_realm(session: Session, user: Optional[User], realm_id: Optional[i
     return bool(realm and realm.user_id == user.id)
 
 def user_can_access_realm(session: Session, user: Optional[User], realm_id: Optional[int]) -> bool:
-    """True if this user owns the realm OR has been granted collaborator access to it via
-    RealmShare. Used to gate everyday actions (adding/editing/completing buckets and tasks)
-    that both the owner and any collaborator should be able to do."""
+    """True if this user owns the realm, has been granted collaborator access to it directly via
+    RealmShare, OR has been granted access to its parent Universe via UniverseShare (a Universe
+    share is meant to cover every Realm inside it, including ones created after the share - so
+    this check has to go all the way up to the Universe, not just the Realm's own share table).
+    Used to gate everyday actions (adding/editing/completing buckets and tasks) that both the
+    owner and any collaborator should be able to do."""
     if not user or not realm_id:
         return False
     if user_owns_realm(session, user, realm_id):
@@ -585,7 +601,12 @@ def user_can_access_realm(session: Session, user: Optional[User], realm_id: Opti
     share = session.exec(
         select(RealmShare).where(RealmShare.realm_id == realm_id, RealmShare.user_id == user.id)
     ).first()
-    return share is not None
+    if share is not None:
+        return True
+    realm = session.get(Realm, realm_id)
+    if realm and realm.universe_id and user_can_access_universe(session, user, realm.universe_id):
+        return True
+    return False
 
 def user_can_access_bucket(session: Session, user: Optional[User], bucket_id: Optional[int]) -> bool:
     """True if this user has access (owner or collaborator) to the realm a bucket lives in."""
@@ -606,12 +627,26 @@ def user_can_access_item(session: Session, user: Optional[User], item_id: Option
     return user_can_access_bucket(session, user, item.bucket_id)
 
 def user_owns_universe(session: Session, user: Optional[User], universe_id: Optional[int]) -> bool:
-    """True only if this user owns the universe. Universes aren't shareable, so this is
-    equivalent to "can access" - there's no collaborator concept for them."""
+    """True only if this user is the universe's actual owner. Used to gate ownership-level
+    actions (deleting/renaming/sharing the universe, creating realms directly inside it) that
+    shouldn't be available to a UniverseShare collaborator - the same owner-vs-collaborator split
+    user_owns_realm/user_can_access_realm already draw."""
     if not user or not universe_id:
         return False
     universe = session.get(Universe, universe_id)
     return bool(universe and universe.user_id == user.id)
+
+def user_can_access_universe(session: Session, user: Optional[User], universe_id: Optional[int]) -> bool:
+    """True if this user owns the universe OR has been granted collaborator access to it via
+    UniverseShare. Mirrors user_can_access_realm's owner-or-share check one level up."""
+    if not user or not universe_id:
+        return False
+    if user_owns_universe(session, user, universe_id):
+        return True
+    share = session.exec(
+        select(UniverseShare).where(UniverseShare.universe_id == universe_id, UniverseShare.user_id == user.id)
+    ).first()
+    return share is not None
 
 def get_realm_universe_kind(session: Session, realm_id: Optional[int]) -> Optional[str]:
     """The kind ("task"/"contact") of the Universe a Realm belongs to, or None if unknown.
@@ -844,9 +879,10 @@ def on_startup():
 
 def find_or_create_user_and_log_in(request: Request, email: str, name: str):
     """Shared by every sign-in provider (Google, Apple, ...) - looks up or creates the User by email,
-    sets up default realms for brand-new accounts, claims any pending realm-share invites sent to this
-    email, and stores the session. Keying purely on email (not provider) means someone who signs in
-    with Google today and Apple tomorrow, using the same email address, lands on the same account."""
+    sets up default realms for brand-new accounts, claims any pending realm-share and universe-share
+    invites sent to this email, and stores the session. Keying purely on email (not provider) means
+    someone who signs in with Google today and Apple tomorrow, using the same email address, lands
+    on the same account."""
     email = email.lower()
 
     with Session(engine) as session:
@@ -886,6 +922,22 @@ def find_or_create_user_and_log_in(request: Request, email: str, name: str):
             ).first()
             if not existing_share:
                 session.add(RealmShare(realm_id=invite.realm_id, user_id=user.id))
+            session.delete(invite)
+
+        # Same claim step, one level up, for pending Universe-share invites.
+        pending_universe_invites = session.exec(
+            select(PendingUniverseInvite).where(PendingUniverseInvite.email == email)
+        ).all()
+
+        for invite in pending_universe_invites:
+            existing_share = session.exec(
+                select(UniverseShare).where(
+                    UniverseShare.universe_id == invite.universe_id,
+                    UniverseShare.user_id == user.id
+                )
+            ).first()
+            if not existing_share:
+                session.add(UniverseShare(universe_id=invite.universe_id, user_id=user.id))
             session.delete(invite)
 
         session.commit()
@@ -999,13 +1051,28 @@ def dashboard(
                     # the whole page with a 500 for every logged-out request - this happened in
                     # production. Belt-and-suspenders alongside the template's own `default([])`.
                     "universes_tree": [],
-                    "multiverse_tasks": []
+                    "multiverse_tasks": [],
+                    # Same belt-and-suspenders for the new universeCollaboratorData block (mirrors
+                    # realmCollaboratorData) - keep every key the authenticated context supplies
+                    # present here too, even ones only read inside a {% if user %} guard.
+                    "universes": [],
+                    "realms": [],
+                    "collaborators_map": {},
+                    "pending_invites_map": {},
+                    "universe_collaborators_map": {},
+                    "universe_pending_invites_map": {}
                 }
             )
 
-        universes = session.exec(
+        owned_universes = session.exec(
             select(Universe).where(Universe.user_id == user.id).order_by(Universe.sort_order)
         ).all()
+        # Universes shared with this user via UniverseShare - appended after the owned ones so
+        # they show up as their own selectable cards in the Multiverse picker, distinguishable by
+        # u.user_id != user.id the same way a shared Realm already is.
+        shared_universe_ids = session.exec(select(UniverseShare.universe_id).where(UniverseShare.user_id == user.id)).all()
+        shared_universes = session.exec(select(Universe).where(Universe.id.in_(shared_universe_ids))).all() if shared_universe_ids else []
+        universes = owned_universes + shared_universes
 
         # Active-universe resolution: a realm/bucket link always wins (a realm belongs to
         # exactly one universe, so there's no ambiguity), otherwise fall back to an explicit
@@ -1022,7 +1089,7 @@ def dashboard(
                 if r and r.universe_id:
                     active_universe = session.get(Universe, r.universe_id)
         if not active_universe and universe_id:
-            if user_owns_universe(session, user, universe_id):
+            if user_can_access_universe(session, user, universe_id):
                 active_universe = session.get(Universe, universe_id)
         if not active_universe:
             active_universe = next((u for u in universes if u.kind == "task"), None) or (universes[0] if universes else None)
@@ -1042,7 +1109,17 @@ def dashboard(
         shared_realm_ids = session.exec(select(RealmShare.realm_id).where(RealmShare.user_id == user.id)).all()
         shared_realms = session.exec(select(Realm).where(Realm.id.in_(shared_realm_ids))).all() if shared_realm_ids else []
 
-        realms = list({r.id: r for r in owned_realms + shared_realms}.values())
+        # If the ACTIVE universe itself is shared with this user (not owned), pull in every Realm
+        # that belongs to it - unlike shared_realms above (which only ever names specific realms
+        # via RealmShare), this is what makes a Realm created after the Universe share still show
+        # up automatically, with no new invite needed.
+        universe_shared_realms = []
+        if active_universe and active_universe.user_id != user.id and user_can_access_universe(session, user, active_universe_id):
+            universe_shared_realms = session.exec(
+                select(Realm).where(Realm.universe_id == active_universe_id)
+            ).all()
+
+        realms = list({r.id: r for r in owned_realms + shared_realms + universe_shared_realms}.values())
         realms.sort(key=lambda r: r.sort_order)
 
         all_realm_ids = [r.id for r in realms]
@@ -1059,6 +1136,22 @@ def dashboard(
             else:
                 collaborators_map[realm.id] = []
                 pending_invites_map[realm.id] = []
+
+        # Universe-level counterpart to collaborators_map/pending_invites_map above, same
+        # owner-only-populated shape, keyed by universe id instead of realm id - drives the Share
+        # Universe modal.
+        universe_collaborators_map = {}
+        universe_pending_invites_map = {}
+
+        for u in universes:
+            if u.user_id == user.id:
+                u_shares = session.exec(select(UniverseShare).where(UniverseShare.universe_id == u.id)).all()
+                u_member_ids = [s.user_id for s in u_shares]
+                universe_collaborators_map[u.id] = session.exec(select(User).where(User.id.in_(u_member_ids))).all() if u_member_ids else []
+                universe_pending_invites_map[u.id] = session.exec(select(PendingUniverseInvite).where(PendingUniverseInvite.universe_id == u.id)).all()
+            else:
+                universe_collaborators_map[u.id] = []
+                universe_pending_invites_map[u.id] = []
 
         buckets = session.exec(select(Bucket).where(Bucket.realm_id.in_(all_realm_ids)).order_by(Bucket.sort_order.asc())).all() if all_realm_ids else []
 
@@ -1162,6 +1255,8 @@ def dashboard(
                 "selected_bucket_id": bucket_id,
                 "collaborators_map": collaborators_map,
                 "pending_invites_map": pending_invites_map,
+                "universe_collaborators_map": universe_collaborators_map,
+                "universe_pending_invites_map": universe_pending_invites_map,
                 "today": today_date
             }
         )
@@ -1242,11 +1337,24 @@ def delete_universe(request: Request, universe_id: int = Form(...)):
                 for invite in session.exec(select(PendingInvite).where(PendingInvite.realm_id == realm.id)).all():
                     session.delete(invite)
                 session.delete(realm)
+            # Same manual cascade-delete for the universe's OWN share/invite rows (not its
+            # realms' - handled above), since there's no DB-level cascade here either.
+            for share in session.exec(select(UniverseShare).where(UniverseShare.universe_id == universe.id)).all():
+                session.delete(share)
+            for invite in session.exec(select(PendingUniverseInvite).where(PendingUniverseInvite.universe_id == universe.id)).all():
+                session.delete(invite)
             session.delete(universe)
             session.commit()
 
-    fallback = next((u for u in remaining if u.id != universe_id), None)
-    return RedirectResponse(url=f"/?universe_id={fallback.id}" if fallback else "/", status_code=303)
+        # Computed here, still inside the session - session.commit() above expires every object
+        # already loaded through this session (not just the ones the commit touched), so reading
+        # u.id from `remaining` after the `with` block closes raises a DetachedInstanceError. This
+        # was a pre-existing bug (present before this function had any Universe-share cleanup to
+        # do) that would 500 a real delete whenever the user had more than one other Universe to
+        # fall back to - reproduced directly while testing the Universe-share cascade above.
+        fallback_id = next((u.id for u in remaining if u.id != universe_id), None)
+
+    return RedirectResponse(url=f"/?universe_id={fallback_id}" if fallback_id else "/", status_code=303)
 
 # --- Realm & Bucket Endpoints ---
 @app.post("/realms/")
@@ -1426,6 +1534,114 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
             print(f"Failed to send confirmation email to inviter ({current_user.email}): {e}", flush=True)
 
     return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
+
+@app.post("/universes/share/")
+def share_universe(request: Request, universe_id: int = Form(...), email: str = Form(...)):
+    """Universe-level mirror of share_realm - see that function for the full rationale of each
+    step (owner-only gate, fail-closed on a missing RESEND_API_KEY, existing-user vs.
+    pending-by-email branching, two-email pattern). Grants access to every Realm inside the
+    Universe, including ones created after this share (see user_can_access_realm)."""
+    target_email = email.strip().lower()
+    api_key = os.getenv("RESEND_API_KEY")
+
+    with Session(engine) as session:
+        current_user = get_current_user(request, session)
+        if not user_owns_universe(session, current_user, universe_id):
+            return RedirectResponse(url="/", status_code=303)
+
+    if not api_key:
+        print("Skipping invite emails: RESEND_API_KEY is missing.", flush=True)
+        return RedirectResponse(url=f"/?universe_id={universe_id}", status_code=303)
+
+    resend.api_key = api_key
+
+    with Session(engine) as session:
+        current_user = get_current_user(request, session)
+        if not current_user:
+            return RedirectResponse(url="/", status_code=303)
+
+        universe = session.get(Universe, universe_id)
+        if not universe:
+            return RedirectResponse(url="/", status_code=303)
+
+        target_user = session.exec(select(User).where(User.email == target_email)).first()
+
+        if target_user:
+            existing = session.exec(
+                select(UniverseShare).where(
+                    UniverseShare.universe_id == universe_id,
+                    UniverseShare.user_id == target_user.id
+                )
+            ).first()
+            if not existing:
+                session.add(UniverseShare(universe_id=universe_id, user_id=target_user.id))
+                session.commit()
+        else:
+            existing_pending = session.exec(
+                select(PendingUniverseInvite).where(
+                    PendingUniverseInvite.universe_id == universe_id,
+                    PendingUniverseInvite.email == target_email
+                )
+            ).first()
+            if not existing_pending:
+                session.add(PendingUniverseInvite(universe_id=universe_id, email=target_email))
+                session.commit()
+
+        invitation_subject = f"Collaborate with {current_user.name} on TaskMonster"
+        invitation_body = f"""
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 8px;">
+            <p>Hi there,</p>
+            <p><strong>{current_user.name}</strong> ({current_user.email}) invited you to join the <strong>{universe.name}</strong> universe on TaskMonster so you can manage shared tasks and timelines together.</p>
+            <div style="margin: 24px 0;">
+                <a href="https://usetaskmonster.app/login" style="background-color: #6366f1; color: #ffffff; padding: 12px 22px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">Open {universe.name} Universe</a>
+            </div>
+            <p style="font-size: 13px; color: #4b5563;">
+                Or copy and paste this link into your browser:<br>
+                <a href="https://usetaskmonster.app/login" style="color: #6366f1;">https://usetaskmonster.app/login</a>
+            </p>
+            <p style="font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 28px;">
+                Sent via TaskMonster. You received this because {current_user.email} added your address.
+            </p>
+        </div>
+        """
+
+        try:
+            resend.Emails.send({
+                "from": "TaskMonster <notifications@usetaskmonster.app>",
+                "reply_to": current_user.email,
+                "to": [target_email],
+                "subject": invitation_subject,
+                "html": invitation_body
+            })
+            print(f"Invite email successfully sent to {target_email}", flush=True)
+        except Exception as e:
+            print(f"Failed to send invite email to recipient ({target_email}): {e}", flush=True)
+
+        confirmation_subject = f"Invitation Sent: {target_email} invited to '{universe.name}'"
+        confirmation_body = f"""
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
+            <h2 style="color: #4f46e5; margin-top: 0;">Invitation Dispatched</h2>
+            <p>Hi {current_user.name},</p>
+            <p>Your invitation to <strong>{target_email}</strong> for the <strong>{universe.name}</strong> universe has been successfully sent.</p>
+            <p>Once they log in with Google at <a href="https://usetaskmonster.app" style="color: #6366f1; font-weight: 600; text-decoration: none;">usetaskmonster.app</a>, the shared universe will automatically appear on their dashboard timeline.</p>
+            <p style="font-size: 13px; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 32px;">
+                TaskMonster System Notification
+            </p>
+        </div>
+        """
+
+        try:
+            resend.Emails.send({
+                "from": "TaskMonster <notifications@usetaskmonster.app>",
+                "to": [current_user.email],
+                "subject": confirmation_subject,
+                "html": confirmation_body
+            })
+            print(f"Confirmation email successfully sent to inviter ({current_user.email})", flush=True)
+        except Exception as e:
+            print(f"Failed to send confirmation email to inviter ({current_user.email}): {e}", flush=True)
+
+    return RedirectResponse(url=f"/?universe_id={universe_id}", status_code=303)
 
 @app.post("/buckets/")
 def create_bucket(
@@ -2156,6 +2372,42 @@ def cancel_pending_invite(request: Request, invite_id: int = Form(...), realm_id
                 session.commit()
 
     return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
+
+@app.post("/universes/unshare/")
+def unshare_universe(request: Request, universe_id: int = Form(...), user_id: int = Form(...)):
+    with Session(engine) as session:
+        current_user = get_current_user(request, session)
+        universe = session.get(Universe, universe_id)
+
+        # Ensure only the universe owner can revoke access
+        if current_user and universe and universe.user_id == current_user.id:
+            share_record = session.exec(
+                select(UniverseShare).where(
+                    UniverseShare.universe_id == universe_id,
+                    UniverseShare.user_id == user_id
+                )
+            ).first()
+            if share_record:
+                session.delete(share_record)
+                session.commit()
+
+    return RedirectResponse(url=f"/?universe_id={universe_id}", status_code=303)
+
+
+@app.post("/universes/cancel-invite/")
+def cancel_pending_universe_invite(request: Request, invite_id: int = Form(...), universe_id: int = Form(...)):
+    with Session(engine) as session:
+        current_user = get_current_user(request, session)
+        universe = session.get(Universe, universe_id)
+
+        # Ensure only the universe owner can cancel pending invites
+        if current_user and universe and universe.user_id == current_user.id:
+            invite = session.get(PendingUniverseInvite, invite_id)
+            if invite:
+                session.delete(invite)
+                session.commit()
+
+    return RedirectResponse(url=f"/?universe_id={universe_id}", status_code=303)
 
 # --- AI Chat Assistant (Gemini) ---
 # Task-focused v1: the assistant can create/update/find/navigate-to tasks and answer questions
