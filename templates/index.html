@@ -246,8 +246,9 @@
         </div>
         <div id="ai-chat-messages" class="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-2.5 text-sm"></div>
         <form id="ai-chat-form" onsubmit="return handleAiChatSubmit(event)" class="p-2.5 border-t border-slate-800 flex gap-2 shrink-0">
-            <input id="ai-chat-input" type="text" placeholder="Add a task or ask a question…"
-                   class="flex-1 bg-slate-800 border border-slate-700 rounded-full px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" autocomplete="off">
+            <textarea id="ai-chat-input" rows="1" placeholder="Add a task or ask a question…"
+                   oninput="autoGrowAiChatInput()" onkeydown="handleAiChatInputKeydown(event)"
+                   class="flex-1 bg-slate-800 border border-slate-700 rounded-2xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none overflow-y-auto leading-relaxed" style="max-height: 120px;" autocomplete="off"></textarea>
             <button type="button" id="ai-chat-mic-btn" onclick="toggleAiChatDictation()" title="Dictate"
                     class="hidden w-9 h-9 shrink-0 bg-slate-800 border border-slate-700 hover:border-indigo-500 rounded-full text-slate-300 text-sm transition">🎤</button>
             <button type="submit" class="w-9 h-9 shrink-0 bg-indigo-600/90 hover:bg-indigo-500 rounded-full text-white text-sm transition">➤</button>
@@ -3840,6 +3841,31 @@
         let aiChatListening = false;
         let aiChatDictationBaseText = '';
 
+        // The input used to be a single-line <input>, which silently scrolled long text out of
+        // view horizontally once it filled the visible width - reported directly: "text begins to
+        // get cut off... how can we fix that so we know what is still being dictated or typed?"
+        // It's a <textarea> now, and this grows it to fit its content (capped at max-height, then
+        // it scrolls internally like any other textarea) so everything typed OR dictated stays
+        // visible instead of scrolling out of sight. Called on every real keystroke (oninput) and
+        // manually wherever code sets .value programmatically (dictation's onresult, and clearing
+        // it after send) since a programmatic .value assignment never fires an input event.
+        function autoGrowAiChatInput() {
+            const input = document.getElementById('ai-chat-input');
+            if (!input) return;
+            input.style.height = 'auto';
+            input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+        }
+
+        // A <textarea> doesn't submit its form on Enter by default (unlike the <input> this
+        // replaced) - preserves that same "Enter sends" behavior, with Shift+Enter now available
+        // for a deliberate line break (the standard chat-app convention).
+        function handleAiChatInputKeydown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                document.getElementById('ai-chat-form').requestSubmit();
+            }
+        }
+
         if (AiSpeechRecognition) {
             document.addEventListener('DOMContentLoaded', () => {
                 const micBtn = document.getElementById('ai-chat-mic-btn');
@@ -3867,6 +3893,7 @@
                     aiChatDictationBaseText = (aiChatDictationBaseText + ' ' + finalText).trim();
                 }
                 input.value = (aiChatDictationBaseText + ' ' + interimText).trim();
+                autoGrowAiChatInput();
             };
 
             aiChatRecognition.onerror = () => {
@@ -3978,6 +4005,7 @@
             if (!text) return false;
 
             input.value = '';
+            autoGrowAiChatInput();
             renderAiChatBubble('user', text);
             const thinkingBubble = renderAiChatThinkingBubble();
             aiChatSending = true;
