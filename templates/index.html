@@ -837,6 +837,25 @@
             </button>
         </div>
 
+        <!-- Cross-Universe Daily Digest - same Overdue / Due Today / Due Tomorrow / Completed
+             Yesterday breakdown as the per-Universe one in Space View, but spanning every Task-kind
+             Universe at once (see computeMultiverseDailyDigestData()), matching this page's own
+             all-Universes scope. Populated by renderMultiversePickerDigest(), called from
+             openMultiverseView(). -->
+        <div class="relative z-10 px-4 mt-2 flex justify-center">
+            <div>
+                <div id="mv-picker-daily-digest-header" onclick="toggleMultiversePickerDigestExpanded()"
+                     class="cursor-pointer bg-slate-900/90 border border-indigo-500/40 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2 text-xs font-bold text-indigo-300 hover:text-white transition w-fit mx-auto">
+                    <span>📋 Daily Digest</span>
+                    <span id="mv-picker-daily-digest-count-badge" class="hidden bg-indigo-500/30 text-indigo-200 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full border border-indigo-400/30">0</span>
+                    <span id="mv-picker-daily-digest-chevron" class="text-[10px]">▾</span>
+                </div>
+                <div id="mv-picker-daily-digest-body-wrapper" class="hidden mt-2 w-[92vw] max-w-sm max-h-[45vh] overflow-y-auto overscroll-contain bg-slate-900/95 border border-indigo-500/40 rounded-2xl backdrop-blur-md shadow-2xl p-3.5 space-y-3 text-xs mx-auto">
+                    <!-- Populated dynamically by renderMultiversePickerDigest() -->
+                </div>
+            </div>
+        </div>
+
         <div class="max-w-3xl mx-auto px-6 py-10">
             <p class="text-slate-400 text-sm mb-4 text-center">Your brain, on AI.</p>
             <div class="flex justify-center mb-8">
@@ -4316,26 +4335,74 @@
             return { overdue, dueToday, dueTomorrow, completedYesterday };
         }
 
-        function renderDailyDigest() {
-            const badge = document.getElementById('daily-digest-count-badge');
-            const body = document.getElementById('daily-digest-body-wrapper');
-            if (!badge || !body) return;
+        // Cross-Universe counterpart to computeDailyDigestData() above - built from
+        // multiverseTasksData (every Task-kind Universe's tasks, not just whichever one is
+        // currently loaded) instead of DOM elements, for the digest wherever it needs to match the
+        // same "everything, everywhere" scope as the Multiverse Timeline/picker it sits alongside.
+        // Each entry also carries universeName/universeIcon so tasks from different Universes stay
+        // distinguishable in one merged list - the single-Universe version has no need for that.
+        function computeMultiverseDailyDigestData() {
+            const now = new Date();
+            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const tomorrowStart = new Date(todayStart);
+            tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+            const yesterdayStart = new Date(todayStart);
+            yesterdayStart.setDate(yesterdayStart.getDate() - 1);
 
-            const data = computeDailyDigestData();
-            const urgentCount = data.overdue.length + data.dueToday.length;
-            if (urgentCount > 0) {
-                badge.innerText = urgentCount;
-                badge.classList.remove('hidden');
-            } else {
-                badge.classList.add('hidden');
-            }
+            const overdue = [];
+            const dueToday = [];
+            const dueTomorrow = [];
+            const completedYesterday = [];
 
+            multiverseTasksData.forEach(t => {
+                const entry = {
+                    title: t.title, realmName: t.realmName, bucketName: t.bucketName,
+                    realmId: t.realmId, bucketId: t.bucketId, itemId: t.id,
+                    universeName: t.universeName, universeIcon: t.universeIcon,
+                };
+
+                if (t.isCompleted) {
+                    if (!t.completedAt) return;
+                    const completedDate = new Date(t.completedAt);
+                    if (isNaN(completedDate.getTime())) return;
+                    const completedDayStart = new Date(completedDate.getFullYear(), completedDate.getMonth(), completedDate.getDate());
+                    if (completedDayStart.getTime() === yesterdayStart.getTime()) {
+                        completedYesterday.push(entry);
+                    }
+                    return;
+                }
+
+                if (!t.dueDate) return;
+                const dueDate = new Date(t.dueDate + 'T00:00:00');
+                if (isNaN(dueDate.getTime())) return;
+
+                if (dueDate < todayStart) {
+                    entry.daysLate = Math.round((todayStart - dueDate) / 86400000);
+                    overdue.push(entry);
+                } else if (dueDate.getTime() === todayStart.getTime()) {
+                    dueToday.push(entry);
+                } else if (dueDate.getTime() === tomorrowStart.getTime()) {
+                    dueTomorrow.push(entry);
+                }
+            });
+
+            overdue.sort((a, b) => b.daysLate - a.daysLate);
+            return { overdue, dueToday, dueTomorrow, completedYesterday };
+        }
+
+        // Shared HTML builder for every digest instance (the single-Universe one and every
+        // cross-Universe one below) - completeToggleFn names the JS function each row's checkbox
+        // should call, since they patch different underlying data sources on completion (see
+        // handleDigestCompleteToggle vs handleMultiverseDigestCompleteToggle).
+        function buildDigestSectionsHtml(data, completeToggleFn) {
             function renderSection(titleHtml, items, emptyMsg, isOverdueSection, isCompletedSection) {
                 let inner;
                 if (items.length === 0) {
                     inner = `<p class="text-slate-500 text-[11px] italic">${emptyMsg}</p>`;
                 } else {
                     const rows = items.map(it => {
+                        // Only present on cross-Universe entries - see computeMultiverseDailyDigestData.
+                        const universeTag = it.universeIcon ? `<span class="text-slate-500 text-[10px]">${escapeHtml(it.universeIcon)} </span>` : '';
                         const locationTag = (it.realmName || it.bucketName)
                             ? `<span class="text-slate-500 text-[10px]"> [${escapeHtml(it.realmName)}${it.bucketName ? ' / ' + escapeHtml(it.bucketName) : ''}]</span>`
                             : '';
@@ -4349,26 +4416,71 @@
                         const checkboxHtml = isCompletedSection
                             ? `<span class="w-4 h-4 rounded border border-emerald-500 bg-emerald-500 text-slate-950 flex items-center justify-center text-[10px] leading-none shrink-0 mt-0.5">✓</span>`
                             : (it.itemId
-                                ? `<button type="button" onclick="handleDigestCompleteToggle(event, this, '${escapeHtml(it.itemId)}')" title="Mark Complete" class="w-4 h-4 rounded border border-slate-600 hover:border-emerald-400 text-transparent hover:text-emerald-400/50 flex items-center justify-center text-[10px] leading-none shrink-0 mt-0.5 transition">✓</button>`
+                                ? `<button type="button" onclick="${completeToggleFn}(event, this, '${escapeHtml(it.itemId)}')" title="Mark Complete" class="w-4 h-4 rounded border border-slate-600 hover:border-emerald-400 text-transparent hover:text-emerald-400/50 flex items-center justify-center text-[10px] leading-none shrink-0 mt-0.5 transition">✓</button>`
                                 : `<span class="w-4 h-4 shrink-0 mt-0.5"></span>`);
-                        // Tapping the task text (not the checkbox) jumps straight to it in Space View
-                        // (see navigateToDigestItem, wired up via event delegation on the body wrapper
-                        // below) - realmId is the one thing we always need; bucketId/itemId may be
-                        // missing for an orphaned task, in which case navigateToDigestItem just falls
-                        // back to opening the realm.
-                        return `<li class="flex items-start gap-1.5 text-slate-200 leading-snug" data-nav-realm-id="${escapeHtml(it.realmId)}" data-nav-bucket-id="${escapeHtml(it.bucketId)}" data-nav-item-id="${escapeHtml(it.itemId)}">${checkboxHtml}<span class="cursor-pointer hover:text-white transition flex-1"><span class="font-semibold hover:underline">${escapeHtml(it.title)}</span>${overdueTag}${locationTag}</span></li>`;
+                        // Tapping the task text (not the checkbox) jumps straight to it - either the
+                        // in-page camera jump (navigateToDigestItem) or a real navigation for a
+                        // cross-Universe entry (navigateToDigestItemCrossUniverse), wired up via event
+                        // delegation on each digest's own body wrapper below. realmId is the one thing
+                        // always needed; bucketId/itemId may be missing for an orphaned task.
+                        return `<li class="flex items-start gap-1.5 text-slate-200 leading-snug" data-nav-realm-id="${escapeHtml(it.realmId)}" data-nav-bucket-id="${escapeHtml(it.bucketId)}" data-nav-item-id="${escapeHtml(it.itemId)}">${checkboxHtml}<span class="cursor-pointer hover:text-white transition flex-1">${universeTag}<span class="font-semibold hover:underline">${escapeHtml(it.title)}</span>${overdueTag}${locationTag}</span></li>`;
                     }).join('');
                     inner = `<ul class="space-y-1">${rows}</ul>`;
                 }
                 return `<div><h4 class="text-[11px] font-extrabold tracking-wide mb-1">${titleHtml}</h4>${inner}</div>`;
             }
 
-            body.innerHTML = [
+            return [
                 renderSection('⚠️ Overdue', data.overdue, 'No overdue tasks!', true, false),
                 renderSection('📅 Due Today', data.dueToday, 'Nothing due today.', false, false),
                 renderSection('🔜 Due Tomorrow', data.dueTomorrow, 'Nothing scheduled for tomorrow.', false, false),
                 renderSection('✅ Completed Yesterday', data.completedYesterday, 'Nothing completed yesterday.', false, true)
             ].join('<div class="border-t border-slate-800/80"></div>');
+        }
+
+        // Writes computed digest data into one specific badge/body element pair - shared by every
+        // digest instance below.
+        function renderDigestInto(data, badgeEl, bodyEl, completeToggleFn) {
+            if (!badgeEl || !bodyEl) return;
+            const urgentCount = data.overdue.length + data.dueToday.length;
+            if (urgentCount > 0) {
+                badgeEl.innerText = urgentCount;
+                badgeEl.classList.remove('hidden');
+            } else {
+                badgeEl.classList.add('hidden');
+            }
+            bodyEl.innerHTML = buildDigestSectionsHtml(data, completeToggleFn);
+        }
+
+        // The Space View HUD's Daily Digest reflects whichever scope is actually on screen: the
+        // single active Universe in the normal ring view, or every Task-kind Universe at once
+        // while the Multiverse Timeline (isMultiverseStackedView) is showing instead - same
+        // widget, same ids, just a different data source and completion handler underneath.
+        function renderDailyDigest() {
+            const badge = document.getElementById('daily-digest-count-badge');
+            const body = document.getElementById('daily-digest-body-wrapper');
+            if (isMultiverseStackedView) {
+                renderDigestInto(computeMultiverseDailyDigestData(), badge, body, 'handleMultiverseDigestCompleteToggle');
+            } else {
+                renderDigestInto(computeDailyDigestData(), badge, body, 'handleDigestCompleteToggle');
+            }
+        }
+
+        // Renders the Multiverse picker overlay's own Daily Digest - always cross-Universe, since
+        // that page itself spans every Universe with no single "active" one to scope to.
+        function renderMultiversePickerDigest() {
+            const badge = document.getElementById('mv-picker-daily-digest-count-badge');
+            const body = document.getElementById('mv-picker-daily-digest-body-wrapper');
+            renderDigestInto(computeMultiverseDailyDigestData(), badge, body, 'handleMultiverseDigestCompleteToggle');
+        }
+
+        // Refreshes every cross-Universe digest instance that could currently be relevant after a
+        // completion - the Space View HUD (only actually meaningful while isMultiverseStackedView)
+        // and the Multiverse picker's own copy (harmless to refresh even while it isn't open; it'll
+        // just be current whenever it's next shown).
+        function refreshAllMultiverseDigests() {
+            if (isMultiverseStackedView) renderDailyDigest();
+            renderMultiversePickerDigest();
         }
 
         // Marks a task complete directly from the Daily Digest, without leaving Space View or
@@ -4394,6 +4506,29 @@
             applyToggleCompleteResult(result);
 
             renderDailyDigest();
+        }
+
+        // Cross-Universe counterpart to handleDigestCompleteToggle - patches multiverseTasksData in
+        // place (the source computeMultiverseDailyDigestData() reads from) instead of a DOM
+        // .timeline-card-wrapper, since a task shown in a cross-Universe digest might belong to a
+        // Universe that isn't even loaded into the current page's DOM.
+        async function handleMultiverseDigestCompleteToggle(event, btnElement, itemId) {
+            event.stopPropagation();
+            fireCompleteConfetti(btnElement);
+
+            const result = await submitToggleCompleteAjax(itemId);
+            if (!result) return;
+
+            const task = multiverseTasksData.find(t => String(t.id) === String(itemId));
+            if (task) {
+                task.isCompleted = true;
+                task.completedAt = new Date().toISOString();
+            }
+
+            removeTaskFromSpaceData(itemId);
+            applyToggleCompleteResult(result);
+
+            refreshAllMultiverseDigests();
         }
 
         function toggleDailyDigestExpanded() {
@@ -4499,13 +4634,39 @@
             persistSpaceSelection();
         }
 
+        // Cross-Universe digest item click - always a real page navigation (never the in-page
+        // camera jump navigateToDigestItem uses above), since a task in a cross-Universe digest can
+        // belong to ANY Task-kind Universe, not just whichever one happens to be currently loaded.
+        // Reuses the exact same ?realm_id=&bucket_id=&goto_item= scheme (and its existing pickup
+        // logic on page load, below) the AI chat's own "go to task" link already established.
+        function navigateToDigestItemCrossUniverse(realmId, bucketId, itemId) {
+            if (!realmId || !bucketId || !itemId) return;
+            window.location.href = aiChatTaskUrl({ realm_id: realmId, bucket_id: bucketId, id: itemId });
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             const digestBody = document.getElementById('daily-digest-body-wrapper');
             if (digestBody) {
                 digestBody.addEventListener('click', (e) => {
                     const li = e.target.closest('[data-nav-realm-id]');
                     if (!li) return;
-                    navigateToDigestItem(
+                    const realmId = li.getAttribute('data-nav-realm-id');
+                    const bucketId = li.getAttribute('data-nav-bucket-id');
+                    const itemId = li.getAttribute('data-nav-item-id');
+                    if (isMultiverseStackedView) {
+                        navigateToDigestItemCrossUniverse(realmId, bucketId, itemId);
+                    } else {
+                        navigateToDigestItem(realmId, bucketId, itemId);
+                    }
+                });
+            }
+
+            const mvPickerDigestBody = document.getElementById('mv-picker-daily-digest-body-wrapper');
+            if (mvPickerDigestBody) {
+                mvPickerDigestBody.addEventListener('click', (e) => {
+                    const li = e.target.closest('[data-nav-realm-id]');
+                    if (!li) return;
+                    navigateToDigestItemCrossUniverse(
                         li.getAttribute('data-nav-realm-id'),
                         li.getAttribute('data-nav-bucket-id'),
                         li.getAttribute('data-nav-item-id')
@@ -4571,10 +4732,24 @@
 
         function openMultiverseView() {
             document.getElementById('multiverse-view-overlay').classList.remove('hidden');
+            renderMultiversePickerDigest();
         }
 
         function closeMultiverseView() {
             document.getElementById('multiverse-view-overlay').classList.add('hidden');
+        }
+
+        // Starts collapsed, deliberately NOT persisted across reloads - same reasoning as
+        // dailyDigestExpanded (the per-Universe Space View one) has, kept as its own separate flag
+        // since this is a genuinely different widget instance the user can open/close independently.
+        let mvPickerDigestExpanded = false;
+
+        function toggleMultiversePickerDigestExpanded() {
+            mvPickerDigestExpanded = !mvPickerDigestExpanded;
+            const body = document.getElementById('mv-picker-daily-digest-body-wrapper');
+            const chevron = document.getElementById('mv-picker-daily-digest-chevron');
+            if (body) body.classList.toggle('hidden', !mvPickerDigestExpanded);
+            if (chevron) chevron.innerText = mvPickerDigestExpanded ? '▲' : '▾';
         }
 
         function openEditUniverse(el) {
@@ -5364,11 +5539,15 @@
             multiverseActiveLaneId = null;
             hideHudCard();
             deselectBucketSwipeDock();
-            const digestHud = document.getElementById('daily-digest-hud');
-            if (digestHud) digestHud.classList.add('hidden');
+            // isMultiverseStackedView must already be true before this runs, so
+            // updateDailyDigestVisibility() -> renderDailyDigest() picks the cross-Universe data
+            // source (computeMultiverseDailyDigestData) instead of the single-Universe one - the
+            // Daily Digest used to be force-hidden here entirely; now it shows the same widget,
+            // just spanning every Universe like the rest of this view does.
+            isMultiverseStackedView = true;
+            updateDailyDigestVisibility();
 
             multiverseLanes = buildMultiverseLanes();
-            isMultiverseStackedView = true;
 
             const isMobile = window.innerWidth < 768;
             const laneCount = Math.max(multiverseLanes.length, 1);

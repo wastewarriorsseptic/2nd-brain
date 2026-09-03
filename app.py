@@ -1224,6 +1224,7 @@ def dashboard(
                         "amount": it.amount if it.amount is not None else "",
                         "isShoppable": bool(it.is_shoppable),
                         "isCompleted": bool(it.is_completed),
+                        "completedAt": it.completed_at.isoformat() if it.completed_at else None,
                         "description": it.description or "",
                         "recurrenceType": it.recurrence_type or "none",
                         "isRecurring": bool((it.recurrence_type and it.recurrence_type != "none") or it.recurring_group_id),
