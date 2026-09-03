@@ -2055,73 +2055,19 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
             updated_items = []
 
             if not was_completed:
-                now_dt = datetime.now()
-                item.completed_at = now_dt
+                item.completed_at = datetime.now()
 
-                # Recalculate all remaining future instances in series
-                if item.recurring_group_id:
-                    future_items = session.exec(
-                        select(Item)
-                        .where(
-                            Item.recurring_group_id == item.recurring_group_id,
-                            Item.is_completed == False,
-                            Item.id != item.id,
-                            Item.due_date > item.due_date
-                        )
-                        .order_by(Item.due_date.asc())
-                    ).all()
-
-                    if future_items:
-                        rec_type = item.recurrence_type or "daily"
-
-                        # Fix 12:00 AM rollover issue by ensuring hour defaults to 9 AM if 00:00
-                        hour = future_items[0].due_date.hour
-                        minute = future_items[0].due_date.minute
-                        if hour == 0 and minute == 0:
-                            hour = 9
-
-                        # Anchored to the user's own local calendar date (get_user_today_date),
-                        # NOT now_dt's server-clock date - a bug reported directly: completing a
-                        # daily "Make $1500" task left the very next day's occurrence missing,
-                        # jumping straight from today to +2d. Root cause: the server can be a
-                        # calendar day ahead of the user's own local date at the moment of
-                        # completion (e.g. a UTC server after 8pm Eastern is already into
-                        # tomorrow's UTC date) - re-anchoring off that date shifted every future
-                        # sibling forward by a day, so nothing was left with tomorrow's date.
-                        # Every other "what day is it" computation in this file already uses
-                        # get_user_today_date(user.timezone) for exactly this reason.
-                        user_today = get_user_today_date(user.timezone if user else "UTC")
-                        today_base = datetime(user_today.year, user_today.month, user_today.day, hour, minute)
-
-                        if rec_type in ["daily", "weekly", "none"]:
-                            # Measure step interval between occurrences (defaulting to 3 if missing)
-                            step_days = 3
-                            if len(future_items) > 1:
-                                calculated_step = (future_items[1].due_date.date() - future_items[0].due_date.date()).days
-                                if calculated_step >= 1:
-                                    step_days = calculated_step
-
-                            for idx, f_item in enumerate(future_items):
-                                # Re-anchor: 1st future task is today_base + step_days
-                                new_due = today_base + timedelta(days=(idx + 1) * step_days)
-                                f_item.due_date = new_due
-                                session.add(f_item)
-
-                        elif rec_type == "monthly":
-                            m_gap = 1
-                            if len(future_items) > 1:
-                                m_gap = (future_items[1].due_date.year - future_items[0].due_date.year) * 12 + (future_items[1].due_date.month - future_items[0].due_date.month)
-                                m_gap = max(1, m_gap)
-
-                            for idx, f_item in enumerate(future_items):
-                                new_due = add_months(today_base, (idx + 1) * m_gap)
-                                f_item.due_date = new_due
-                                session.add(f_item)
-
-                        updated_items = [
-                            {"id": f.id, "due_date": f.due_date.strftime("%Y-%m-%d"), "due_date_formatted": f.due_date.strftime("%b %d, %Y")}
-                            for f in future_items
-                        ]
+                # There used to be a step here that re-anchored every still-upcoming sibling in
+                # the recurring series around "now" whenever one occurrence was completed. It's
+                # gone: create_item already pre-generates the whole series (up to 180 days out)
+                # with correct, evenly-spaced absolute dates at creation time - those dates don't
+                # go stale as real time passes, so there was never anything to fix. In practice
+                # the "fix" was destructive - reported directly, twice: completing today's
+                # occurrence made tomorrow's disappear (it got pushed to the day after), and
+                # completing an OVERDUE occurrence (e.g. finishing yesterday's task this morning)
+                # pushed the already-correct, not-yet-completed "due today" row out to tomorrow -
+                # "I completed a task yesterday... it should have a new one for me for today."
+                # Completing one occurrence now only ever touches that one row.
 
             else:
                 item.completed_at = None

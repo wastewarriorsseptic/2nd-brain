@@ -2522,23 +2522,12 @@
         }
 
         // Applies the side effects of a completion that aren't "remove this one task" - a completed
-        // recurring task can reschedule its still-upcoming siblings (see toggle_item_complete in
-        // app.py), and a completed shoppable task can surface a reorder suggestion. Scans both
-        // in-memory Space View data sources (spaceRealms for the normal per-bucket/All Tasks view,
-        // multiverseLanes for the Multiverse Timeline) since either could hold the affected tasks.
+        // shoppable task can surface a reorder suggestion. (Completing a recurring task used to also
+        // reschedule its still-upcoming siblings via result.updated_items, but that step was removed
+        // from toggle_item_complete in app.py - it was actively destructive, shifting/skipping
+        // already-correct future occurrences instead of leaving the pre-generated series alone - so
+        // the server no longer ever sends a non-empty updated_items to patch here.)
         function applyToggleCompleteResult(result) {
-            if (result.updated_items && result.updated_items.length) {
-                const byId = new Map(result.updated_items.map(u => [String(u.id), u]));
-                const patchTask = (task) => {
-                    const update = byId.get(String(task.id));
-                    if (update) {
-                        task.dueDate = update.due_date;
-                        task.dueDateFormatted = update.due_date_formatted;
-                    }
-                };
-                spaceRealms.forEach(realm => (realm.buckets || []).forEach(bucket => (bucket.tasks || []).forEach(patchTask)));
-                multiverseLanes.forEach(lane => (lane.tasks || []).forEach(patchTask));
-            }
             if (result.reorder_suggestion) {
                 showReorderSuggestion(result.reorder_suggestion);
             }
