@@ -1679,22 +1679,8 @@
 
                 <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Title</label>
-                    <input type="text" name="title" required placeholder="e.g. Standup Meeting or Rent" 
+                    <input type="text" name="title" required placeholder="e.g. Standup Meeting or Rent"
                            class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
-                </div>
-
-                <div class="w-full">
-                    <label class="block text-xs font-semibold text-slate-400 mb-1">Amount ($ optional)</label>
-                    <input type="number" step="0.01" name="amount" placeholder="0.00" 
-                           class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
-                </div>
-
-                <div class="w-full flex items-start gap-2">
-                    <input type="checkbox" name="is_shoppable" id="add-item-shoppable" value="true"
-                           class="mt-0.5 rounded border-slate-700 bg-slate-900 text-indigo-500 focus:ring-indigo-500 cursor-pointer shrink-0">
-                    <label for="add-item-shoppable" class="text-xs font-semibold text-slate-400 cursor-pointer leading-snug">
-                        🛒 Shoppable on Amazon <span class="font-normal text-slate-500">(the Amount above becomes your budget - a "Shop" button opens Amazon pre-filtered to it)</span>
-                    </label>
                 </div>
 
                 <div class="w-full">
@@ -1704,27 +1690,8 @@
                 </div>
 
                 <div class="w-full">
-                    <label class="block text-xs font-semibold text-slate-400 mb-1">Due Time (Optional)</label>
-                    <input type="time" name="due_time" onclick="this.showPicker()"
-                           class="w-full min-w-0 h-[38px] min-h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border appearance-none text-left leading-normal cursor-pointer">
-                </div>
-
-                <div class="w-full">
-                    <label class="block text-xs font-semibold text-slate-400 mb-1">Email Reminder</label>
-                    <select name="reminder_offset" class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition cursor-pointer box-border">
-                        <option value="0">Due Date Only</option>
-                        <option value="1">1 Day Before</option>
-                        <option value="3">3 Days Before</option>
-                        <option value="5">5 Days Before</option>
-                        <option value="7">1 Week Before</option>
-                        <option value="14">2 Weeks Before</option>
-                        <option value="-1">Daily (3 Days Leading Up)</option>
-                    </select>
-                </div>
-
-                <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Repeat</label>
-                    <button type="button" onclick="openRecurrenceModal('add')" 
+                    <button type="button" onclick="openRecurrenceModal('add')"
                             id="repeat-button-label"
                             class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-left text-slate-200 flex justify-between items-center hover:border-slate-500 transition box-border">
                         <span>Never</span>
@@ -1732,18 +1699,58 @@
                     </button>
                 </div>
 
-                <div class="w-full">
-                    <label class="block text-xs font-semibold text-slate-400 mb-1">Description / Notes</label>
-                    <textarea name="description" rows="2" placeholder="Add optional details..."
-                              class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border"></textarea>
+                <button type="button" onclick="toggleAdvancedFields('add-item')"
+                        class="w-full flex items-center justify-between text-xs font-semibold text-slate-400 hover:text-slate-200 transition py-1">
+                    <span>Advanced (amount, shopping, time, reminder, notes)</span>
+                    <span id="add-item-advanced-chevron" class="text-[10px]">▾</span>
+                </button>
+                <div id="add-item-advanced-fields" class="hidden space-y-3.5">
+                    <div class="w-full">
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Amount ($ optional)</label>
+                        <input type="number" step="0.01" name="amount" placeholder="0.00"
+                               class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                    </div>
+
+                    <div class="w-full flex items-start gap-2">
+                        <input type="checkbox" name="is_shoppable" id="add-item-shoppable" value="true"
+                               class="mt-0.5 rounded border-slate-700 bg-slate-900 text-indigo-500 focus:ring-indigo-500 cursor-pointer shrink-0">
+                        <label for="add-item-shoppable" class="text-xs font-semibold text-slate-400 cursor-pointer leading-snug">
+                            🛒 Shoppable on Amazon <span class="font-normal text-slate-500">(the Amount above becomes your budget - a "Shop" button opens Amazon pre-filtered to it)</span>
+                        </label>
+                    </div>
+
+                    <div class="w-full">
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Due Time (Optional)</label>
+                        <input type="time" name="due_time" onclick="this.showPicker()"
+                               class="w-full min-w-0 h-[38px] min-h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border appearance-none text-left leading-normal cursor-pointer">
+                    </div>
+
+                    <div class="w-full">
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Email Reminder</label>
+                        <select name="reminder_offset" class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition cursor-pointer box-border">
+                            <option value="0">Due Date Only</option>
+                            <option value="1">1 Day Before</option>
+                            <option value="3">3 Days Before</option>
+                            <option value="5">5 Days Before</option>
+                            <option value="7">1 Week Before</option>
+                            <option value="14">2 Weeks Before</option>
+                            <option value="-1">Daily (3 Days Leading Up)</option>
+                        </select>
+                    </div>
+
+                    <div class="w-full">
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Description / Notes</label>
+                        <textarea name="description" rows="2" placeholder="Add optional details..."
+                                  class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border"></textarea>
+                    </div>
                 </div>
 
                 <div class="flex justify-end gap-3 pt-2">
-                    <button type="button" onclick="document.getElementById('add-item-modal').classList.add('hidden')" 
+                    <button type="button" onclick="document.getElementById('add-item-modal').classList.add('hidden')"
                             class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium transition">
                         Cancel
                     </button>
-                    <button type="submit" 
+                    <button type="submit"
                             class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition shadow-lg shadow-indigo-600/20">
                         Save Task
                     </button>
@@ -1935,6 +1942,12 @@
             <form action="/items/update/" method="POST" class="space-y-3.5">
                 <input type="hidden" name="item_id" id="edit-item-id">
 
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Title</label>
+                    <input type="text" name="title" id="edit-item-title" required
+                           class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                </div>
+
                 <!-- Universe, Realm and Bucket Dynamic Pickers for Editing/Moving a Task -->
                 <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Universe</label>
@@ -1961,64 +1974,19 @@
                 <input type="hidden" name="months" id="edit-months-input" value="">
 
                 <div class="w-full">
-                    <label class="block text-xs font-semibold text-slate-400 mb-1">Title</label>
-                    <input type="text" name="title" id="edit-item-title" required 
-                           class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
-                </div>
-
-                <div class="w-full">
-                    <label class="block text-xs font-semibold text-slate-400 mb-1">Amount ($ optional)</label>
-                    <input type="number" step="0.01" name="amount" id="edit-item-amount" placeholder="0.00" 
-                           class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
-                </div>
-
-                <div class="w-full flex items-start gap-2">
-                    <input type="checkbox" name="is_shoppable" id="edit-item-shoppable" value="true"
-                           class="mt-0.5 rounded border-slate-700 bg-slate-900 text-indigo-500 focus:ring-indigo-500 cursor-pointer shrink-0">
-                    <label for="edit-item-shoppable" class="text-xs font-semibold text-slate-400 cursor-pointer leading-snug">
-                        🛒 Shoppable on Amazon <span class="font-normal text-slate-500">(the Amount above becomes your budget - a "Shop" button opens Amazon pre-filtered to it)</span>
-                    </label>
-                </div>
-
-                <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Due Date</label>
                     <input type="date" name="due_date" id="edit-item-due-date" required onclick="this.showPicker()"
                            class="w-full min-w-0 h-[38px] min-h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border appearance-none text-left leading-normal cursor-pointer">
                 </div>
 
                 <div class="w-full">
-                    <label class="block text-xs font-semibold text-slate-400 mb-1">Due Time (Optional)</label>
-                    <input type="time" name="due_time" id="edit-item-due-time" onclick="this.showPicker()"
-                           class="w-full min-w-0 h-[38px] min-h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border appearance-none text-left leading-normal cursor-pointer">
-                </div>
-
-                <div class="w-full">
-                    <label class="block text-xs font-semibold text-slate-400 mb-1">Email Reminder</label>
-                    <select name="reminder_offset" id="edit-item-reminder-offset" class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition cursor-pointer box-border">
-                        <option value="0">Due Date Only</option>
-                        <option value="1">1 Day Before</option>
-                        <option value="3">3 Days Before</option>
-                        <option value="5">5 Days Before</option>
-                        <option value="7">1 Week Before</option>
-                        <option value="14">2 Weeks Before</option>
-                        <option value="-1">Daily (3 Days Leading Up)</option>
-                    </select>
-                </div>
-
-                <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Repeat</label>
-                    <button type="button" onclick="openRecurrenceModal('edit')" 
+                    <button type="button" onclick="openRecurrenceModal('edit')"
                             id="edit-repeat-button-label"
                             class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-left text-slate-200 flex justify-between items-center hover:border-slate-500 transition box-border">
                         <span id="edit-repeat-status">Never</span>
                         <span class="text-xs text-slate-500">⚙️</span>
                     </button>
-                </div>
-
-                <div class="w-full">
-                    <label class="block text-xs font-semibold text-slate-400 mb-1">Description / Notes</label>
-                    <textarea name="description" id="edit-item-description" rows="2" placeholder="Add optional details..."
-                              class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border"></textarea>
                 </div>
 
                 <div id="edit-item-series-wrapper" class="hidden">
@@ -2028,15 +1996,67 @@
                     </label>
                 </div>
 
-                <div class="flex justify-end gap-3 pt-2">
-                    <button type="button" onclick="document.getElementById('edit-item-modal').classList.add('hidden')" 
-                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium transition">
-                        Cancel
+                <button type="button" onclick="toggleAdvancedFields('edit-item')"
+                        class="w-full flex items-center justify-between text-xs font-semibold text-slate-400 hover:text-slate-200 transition py-1">
+                    <span>Advanced (amount, shopping, time, reminder, notes)</span>
+                    <span id="edit-item-advanced-chevron" class="text-[10px]">▾</span>
+                </button>
+                <div id="edit-item-advanced-fields" class="hidden space-y-3.5">
+                    <div class="w-full">
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Amount ($ optional)</label>
+                        <input type="number" step="0.01" name="amount" id="edit-item-amount" placeholder="0.00"
+                               class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                    </div>
+
+                    <div class="w-full flex items-start gap-2">
+                        <input type="checkbox" name="is_shoppable" id="edit-item-shoppable" value="true"
+                               class="mt-0.5 rounded border-slate-700 bg-slate-900 text-indigo-500 focus:ring-indigo-500 cursor-pointer shrink-0">
+                        <label for="edit-item-shoppable" class="text-xs font-semibold text-slate-400 cursor-pointer leading-snug">
+                            🛒 Shoppable on Amazon <span class="font-normal text-slate-500">(the Amount above becomes your budget - a "Shop" button opens Amazon pre-filtered to it)</span>
+                        </label>
+                    </div>
+
+                    <div class="w-full">
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Due Time (Optional)</label>
+                        <input type="time" name="due_time" id="edit-item-due-time" onclick="this.showPicker()"
+                               class="w-full min-w-0 h-[38px] min-h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border appearance-none text-left leading-normal cursor-pointer">
+                    </div>
+
+                    <div class="w-full">
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Email Reminder</label>
+                        <select name="reminder_offset" id="edit-item-reminder-offset" class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition cursor-pointer box-border">
+                            <option value="0">Due Date Only</option>
+                            <option value="1">1 Day Before</option>
+                            <option value="3">3 Days Before</option>
+                            <option value="5">5 Days Before</option>
+                            <option value="7">1 Week Before</option>
+                            <option value="14">2 Weeks Before</option>
+                            <option value="-1">Daily (3 Days Leading Up)</option>
+                        </select>
+                    </div>
+
+                    <div class="w-full">
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Description / Notes</label>
+                        <textarea name="description" id="edit-item-description" rows="2" placeholder="Add optional details..."
+                                  class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border"></textarea>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between gap-3 pt-2">
+                    <button type="button" onclick="deleteFromEditModal()"
+                            class="px-4 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900/70 border border-rose-500/40 text-rose-300 text-sm font-semibold transition">
+                        🗑 Delete
                     </button>
-                    <button type="submit" 
-                            class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition shadow-lg shadow-indigo-600/20">
-                        Save Changes
-                    </button>
+                    <div class="flex gap-3">
+                        <button type="button" onclick="document.getElementById('edit-item-modal').classList.add('hidden')"
+                                class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium transition">
+                            Cancel
+                        </button>
+                        <button type="submit"
+                                class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition shadow-lg shadow-indigo-600/20">
+                            Save Changes
+                        </button>
+                    </div>
                 </div>
             </form>
         </div>
@@ -3620,6 +3640,20 @@
                 new MutationObserver(updateLauncherVisibility).observe(modal, { attributes: true, attributeFilter: ['class'] });
             });
             updateLauncherVisibility();
+
+            // Add Task is opened from several different raw onclick handlers (no single function
+            // like Edit Task's openEditItem(), which resets this itself) - collapse its Advanced
+            // section back closed every time it opens, the same fresh-start behavior Edit Task
+            // gets, rather than leaving it however a previous open left it.
+            const addItemModal = document.getElementById('add-item-modal');
+            if (addItemModal) {
+                let wasHidden = addItemModal.classList.contains('hidden');
+                new MutationObserver(() => {
+                    const isHidden = addItemModal.classList.contains('hidden');
+                    if (wasHidden && !isHidden) collapseAdvancedFields('add-item');
+                    wasHidden = isHidden;
+                }).observe(addItemModal, { attributes: true, attributeFilter: ['class'] });
+            }
         });
 
         function toggleAiChatPanel() {
@@ -4212,7 +4246,43 @@
                 seriesWrapper.classList.add('hidden');
             }
 
+            // Advanced always starts collapsed on a fresh open, regardless of whatever state it
+            // was left in for a previous task - each open is a different task, so a stray expanded
+            // section from last time isn't meaningful context to carry forward.
+            collapseAdvancedFields('edit-item');
+
             document.getElementById('edit-item-modal').classList.remove('hidden');
+        }
+
+        // Shared disclosure toggle for the Advanced section in both Add Task and Edit Task -
+        // `prefix` is 'add-item' or 'edit-item', matching each modal's own -advanced-fields/
+        // -advanced-chevron element ids. Keeps Amount/Shoppable/Due Time/Reminder/Description out
+        // of the way by default so Title/Realm/Bucket/Due Date/Repeat - the fields actually used
+        // most often - don't require scrolling past them.
+        function toggleAdvancedFields(prefix) {
+            const wrapper = document.getElementById(`${prefix}-advanced-fields`);
+            const chevron = document.getElementById(`${prefix}-advanced-chevron`);
+            if (!wrapper) return;
+            wrapper.classList.toggle('hidden');
+            if (chevron) chevron.innerText = wrapper.classList.contains('hidden') ? '▾' : '▲';
+        }
+
+        function collapseAdvancedFields(prefix) {
+            const wrapper = document.getElementById(`${prefix}-advanced-fields`);
+            const chevron = document.getElementById(`${prefix}-advanced-chevron`);
+            if (wrapper) wrapper.classList.add('hidden');
+            if (chevron) chevron.innerText = '▾';
+        }
+
+        // The Delete button inside Edit Task reuses the exact same "one occurrence vs. entire
+        // series" confirmation the Timeline List trash icon and Space View's task long-press
+        // already use (openDeleteModal/#delete-item-modal) - closes Edit Task first since both
+        // modals share the same z-index and stacking two at once would be confusing.
+        function deleteFromEditModal() {
+            const itemId = document.getElementById('edit-item-id').value;
+            const isRecurring = !document.getElementById('edit-item-series-wrapper').classList.contains('hidden');
+            document.getElementById('edit-item-modal').classList.add('hidden');
+            openDeleteModal(itemId, isRecurring);
         }
 
         function openDeleteModal(itemId, isRecurring) {
@@ -5760,6 +5830,7 @@
 
             if (longPressTaskForDelete) {
                 drawTaskDeleteIcon(longPressTaskForDelete);
+                drawTaskEditIcon(longPressTaskForDelete);
             }
         }
 
@@ -6653,6 +6724,7 @@
             }
             if (longPressTaskForDelete) {
                 drawTaskDeleteIcon(longPressTaskForDelete);
+                drawTaskEditIcon(longPressTaskForDelete);
             }
 
             spaceCtx.restore();
@@ -6930,13 +7002,21 @@
                         });
                     }
 
+                    // Holding on a task's TEXT LABEL, not just its dot, now arms the same hold-to-act
+                    // menu - a long title can visually extend well past the dot itself. task._labelRect
+                    // is the exact same rect the normal-tap path already hit-tests against in
+                    // detectClickNode below (only ever set while the label is genuinely on screen, so
+                    // there's no stale-rect risk here either).
                     let pressedTask = null;
                     if (!pressedBucket && !pressedRealm) {
                         if (isMultiverseStackedView) {
                             multiverseLanes.forEach(lane => {
                                 lane.tasks.forEach(task => {
                                     const dist = Math.hypot(worldX - task.x, worldY - task.y);
-                                    if (dist <= task.radius + 18) pressedTask = task;
+                                    const hitNode = dist <= task.radius + 18;
+                                    const r = task._labelRect;
+                                    const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
+                                    if (hitNode || hitLabel) pressedTask = task;
                                 });
                             });
                         } else if (activeSelectedRealm) {
@@ -6945,7 +7025,10 @@
                                 if (bucket.isAddButton) return;
                                 bucket.tasks.forEach(task => {
                                     const dist = Math.hypot(worldX - task.x, worldY - task.y);
-                                    if (dist <= task.radius + 18) pressedTask = task;
+                                    const hitNode = dist <= task.radius + 18;
+                                    const r = task._labelRect;
+                                    const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
+                                    if (hitNode || hitLabel) pressedTask = task;
                                 });
                             });
                         }
@@ -7182,6 +7265,45 @@
             spaceCtx.restore();
         }
 
+        function getTaskEditIconPos(task) {
+            const offsetAngle = (-3 * Math.PI) / 4; // up-left diagonal - mirrors the delete icon's up-right spot
+            const dist = task.radius + 26; // kept in sync with getTaskDeleteIconPos
+            return {
+                x: task.x + Math.cos(offsetAngle) * dist,
+                y: task.y + Math.sin(offsetAngle) * dist,
+                radius: 26
+            };
+        }
+
+        function drawTaskEditIcon(task) {
+            const pos = getTaskEditIconPos(task);
+            const pulse = 1 + Math.sin(frameCount * 5) * 0.08;
+
+            spaceCtx.save();
+
+            spaceCtx.beginPath();
+            spaceCtx.arc(pos.x, pos.y, pos.radius * 1.35 * pulse, 0, Math.PI * 2);
+            spaceCtx.fillStyle = 'rgba(99, 102, 241, 0.25)';
+            spaceCtx.fill();
+
+            spaceCtx.beginPath();
+            spaceCtx.arc(pos.x, pos.y, pos.radius * pulse, 0, Math.PI * 2);
+            spaceCtx.fillStyle = 'rgba(79, 70, 229, 0.97)';
+            spaceCtx.strokeStyle = '#c7d2fe';
+            spaceCtx.lineWidth = 3;
+            spaceCtx.shadowColor = '#4f46e5';
+            spaceCtx.shadowBlur = 24;
+            spaceCtx.fill();
+            spaceCtx.stroke();
+
+            spaceCtx.shadowBlur = 0;
+            spaceCtx.textAlign = 'center';
+            spaceCtx.textBaseline = 'middle';
+            spaceCtx.font = `${Math.round(pos.radius * 0.72)}px serif`;
+            spaceCtx.fillText('✏️', pos.x - (pos.radius * 0.04), pos.y + pos.radius * 0.08);
+            spaceCtx.restore();
+        }
+
         function getBucketDeleteIconPos(bucket) {
             const offsetAngle = -Math.PI / 4; // up-right diagonal off the bucket node
             // Buckets are much smaller than realms, so this pairs a smaller icon radius with a
@@ -7311,20 +7433,30 @@
             const worldX = (clientX - cameraOffset.x) / cameraZoom;
             const worldY = (clientY - cameraOffset.y) / cameraZoom;
 
-            // If a task's hold-to-delete trash icon is showing, this tap either hits it (delete) or
-            // lands elsewhere (dismiss) - reuses the existing "Delete Task" modal (with its recurring
-            // series choice) exactly as the pencil/checkbox controls already do.
+            // If a task's hold-to-act trash/edit icons are showing, this tap either hits one of them
+            // or lands elsewhere (dismiss) - delete reuses the existing "Delete Task" modal (with
+            // its recurring series choice) exactly as the pencil/checkbox controls already do; edit
+            // reuses the same openEditItemFromTask the swipe-dock/HUD pencil icon already calls.
             if (longPressTaskForDelete) {
-                const iconPos = getTaskDeleteIconPos(longPressTaskForDelete);
-                const dist = Math.hypot(worldX - iconPos.x, worldY - iconPos.y);
-                if (dist <= iconPos.radius + 10) {
-                    if (longPressTaskForDelete.isPerson) {
-                        deletePersonDirect(longPressTaskForDelete.id, longPressTaskForDelete.title);
+                const taskForActions = longPressTaskForDelete;
+                const deleteIconPos = getTaskDeleteIconPos(taskForActions);
+                const editIconPos = getTaskEditIconPos(taskForActions);
+                const distToDelete = Math.hypot(worldX - deleteIconPos.x, worldY - deleteIconPos.y);
+                const distToEdit = Math.hypot(worldX - editIconPos.x, worldY - editIconPos.y);
+                longPressTaskForDelete = null;
+                if (distToDelete <= deleteIconPos.radius + 10) {
+                    if (taskForActions.isPerson) {
+                        deletePersonDirect(taskForActions.id, taskForActions.title);
                     } else {
-                        openDeleteModal(longPressTaskForDelete.id, !!longPressTaskForDelete.isRecurring);
+                        openDeleteModal(taskForActions.id, !!taskForActions.isRecurring);
+                    }
+                } else if (distToEdit <= editIconPos.radius + 10) {
+                    if (taskForActions.isPerson) {
+                        openEditPersonFromTask(taskForActions);
+                    } else {
+                        openEditItemFromTask(taskForActions);
                     }
                 }
-                longPressTaskForDelete = null;
                 return;
             }
 
