@@ -4212,6 +4212,16 @@
         let initialPinchDistance = null;
         let frameCount = 0;
         let lastTouchTime = 0;
+        // Was this touch gesture a drag or pinch rather than a tap? Set once the finger moves past
+        // TAP_MOVE_THRESHOLD (gestureMoved) or a second finger ever joins (gestureWasMultiTouch,
+        // which stays true for the rest of the gesture even if it resolves back down to one finger
+        // before lifting) - ontouchend only treats the release as a tap on whatever's underneath
+        // when NEITHER is set. Without this, panning or pinching around and releasing over a task
+        // node fired the exact same tap/select as deliberately touching it.
+        let gestureMoved = false;
+        let gestureWasMultiTouch = false;
+        let mouseDownPos = null;
+        const TAP_MOVE_THRESHOLD = 12;
         // Always starts collapsed - deliberately NOT persisted across page reloads (which happen
         // often in this app, e.g. after completing a task), so the digest never reopens expanded on
         // its own. Only an explicit tap opens it, each time.
@@ -6619,16 +6629,26 @@
             spaceCanvas.onmousedown = (e) => {
                 if (Date.now() - lastTouchTime < 400) return;
                 isDragging = true;
+                gestureMoved = false;
+                mouseDownPos = { x: e.clientX, y: e.clientY };
                 dragStart = { x: e.clientX - cameraOffset.x, y: e.clientY - cameraOffset.y };
             };
 
             spaceCanvas.onclick = (e) => {
                 if (Date.now() - lastTouchTime < 400) return;
+                // Same drag-vs-tap distinction as the touch path below - the browser still fires a
+                // native click after a mouse drag-pan regardless of how far it moved, which used to
+                // mean releasing over a task after panning selected it exactly like a real click.
+                if (gestureMoved) return;
                 detectClickNode(e.clientX, e.clientY);
             };
 
             window.onmousemove = (e) => {
                 if (isDragging) {
+                    if (mouseDownPos) {
+                        const moveDist = Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y);
+                        if (moveDist > TAP_MOVE_THRESHOLD) gestureMoved = true;
+                    }
                     targetCameraOffset = { x: e.clientX - dragStart.x, y: e.clientY - dragStart.y };
                     cameraOffset = { ...targetCameraOffset };
                 }
@@ -6659,6 +6679,11 @@
                 e.preventDefault();
                 lastTouchTime = Date.now();
                 if (e.touches.length === 1) {
+                    // A fresh single-finger touch is always the START of a brand new gesture (going
+                    // from 2 fingers back down to 1 fires touchend for the lifted one, never
+                    // touchstart) - safe to reset both flags here for the gesture that's beginning.
+                    gestureMoved = false;
+                    gestureWasMultiTouch = false;
                     isDragging = true;
                     dragStart = { x: e.touches[0].clientX - cameraOffset.x, y: e.touches[0].clientY - cameraOffset.y };
 
@@ -6738,6 +6763,7 @@
                     }
                 } else if (e.touches.length === 2) {
                     isDragging = false;
+                    gestureWasMultiTouch = true;
                     clearTimeout(longPressTimer);
                     initialPinchDistance = Math.hypot(
                         e.touches[0].clientX - e.touches[1].clientX,
@@ -6750,8 +6776,9 @@
                 if (longPressStartPos && e.touches.length === 1) {
                     const touch = e.touches[0];
                     const moveDist = Math.hypot(touch.clientX - longPressStartPos.x, touch.clientY - longPressStartPos.y);
-                    if (moveDist > 12) {
+                    if (moveDist > TAP_MOVE_THRESHOLD) {
                         clearTimeout(longPressTimer);
+                        gestureMoved = true;
                     }
                 }
 
@@ -6785,9 +6812,19 @@
                     return;
                 }
 
-                if (e.changedTouches.length === 1) {
+                // Only treat this release as a tap on whatever's underneath when the finger never
+                // moved past TAP_MOVE_THRESHOLD and this gesture never involved a second finger -
+                // reported directly: panning or pinching around and releasing over a task kept
+                // accidentally "tapping" it. Reset once every finger is actually up (not on every
+                // touchend - a pinch can shed one finger before the other, and that first lift must
+                // still count as part of the same multi-touch gesture).
+                if (!gestureMoved && !gestureWasMultiTouch && e.changedTouches.length === 1) {
                     const touch = e.changedTouches[0];
                     detectClickNode(touch.clientX, touch.clientY);
+                }
+                if (e.touches.length === 0) {
+                    gestureMoved = false;
+                    gestureWasMultiTouch = false;
                 }
             };
         }
