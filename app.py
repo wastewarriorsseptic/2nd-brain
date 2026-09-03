@@ -2058,16 +2058,27 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
             if not was_completed:
                 item.completed_at = datetime.now()
 
-                # Rolling reschedule for a LATE completion of a multi-day-interval series (every N
-                # days with N>1, or weekly/monthly/yearly) - e.g. "clean the kitty water every 3
-                # days": if you finish it a day late, the next occurrence should be 3 days from
-                # when you actually did it, not 3 days from the original (now-passed) due date -
-                # otherwise the gap between real-world occurrences keeps shrinking every time
-                # you're late. Explicitly does NOT apply to a true daily (1-day-apart) series or
-                # to an on-time completion - create_item's pre-generated schedule is already
-                # correct in both of those cases, and shifting it was exactly the destructive bug
-                # fixed twice before (a fresh occurrence is expected every single calendar day
-                # regardless of catch-up timing, and completing something on time changes nothing).
+                # Rolling reschedule for a LATE completion of a genuine multi-day-INTERVAL series
+                # (every N days with N>1, e.g. "clean the kitty water every 3 days" - not tied to
+                # any specific calendar day): if you finish it a day late, the next occurrence
+                # should be 3 days from when you actually did it, not 3 days from the original
+                # (now-passed) due date - otherwise the gap between real-world occurrences keeps
+                # shrinking every time you're late.
+                #
+                # Explicitly does NOT apply to weekly/monthly/yearly - reported directly: a monthly
+                # bill set to a SPECIFIC day of the month (the 2nd) got bumped to the 3rd after
+                # being completed a day late. Unlike "every 3 days" (a pure interval with no
+                # calendar anchor), every weekly/monthly/yearly series create_item generates in
+                # this app IS anchored to a specific weekday/day-of-month/month+day
+                # (compute_future_recurrence_dates always resolves selected_weekdays/
+                # selected_month_days, defaulting to the day the FIRST occurrence fell on) - shifting
+                # those by a uniform day-delta would walk them off their configured day, which is
+                # never what "every month on the 2nd" means. Nor does it apply to a true daily
+                # (1-day-apart) series or an on-time completion - create_item's pre-generated
+                # schedule is already correct in both of those cases, and shifting it was exactly
+                # the destructive bug fixed twice before (a fresh occurrence is expected every
+                # single calendar day regardless of catch-up timing, and completing something on
+                # time changes nothing).
                 if item.recurring_group_id:
                     future_items = session.exec(
                         select(Item)
@@ -2086,18 +2097,16 @@ def toggle_item_complete(request: Request, item_id: int = Form(...)):
                         delay_days = (today - item.due_date.date()).days
 
                         eligible_for_roll = False
-                        if delay_days > 0:
-                            if rec_type == "daily":
-                                # "daily" covers both true 1-day recurrence and a custom "every N
-                                # days" interval - interval isn't stored per-item, so infer it from
-                                # the actual gap between existing sibling rows. Only roll when that
-                                # gap is genuinely more than 1 day; with fewer than 2 future items
-                                # to measure a gap from, stay conservative and don't roll.
-                                if len(future_items) > 1:
-                                    gap = (future_items[1].due_date.date() - future_items[0].due_date.date()).days
-                                    eligible_for_roll = gap > 1
-                            elif rec_type in ("weekly", "monthly", "yearly"):
-                                eligible_for_roll = True
+                        if delay_days > 0 and rec_type == "daily":
+                            # "daily" covers both true 1-day recurrence and a custom "every N
+                            # days" interval - interval isn't stored per-item, so infer it from
+                            # the actual gap between existing sibling rows. Only roll when that
+                            # gap is genuinely more than 1 day; with fewer than 2 future items
+                            # to measure a gap from, stay conservative and don't roll. weekly/
+                            # monthly/yearly are never eligible - see the comment above.
+                            if len(future_items) > 1:
+                                gap = (future_items[1].due_date.date() - future_items[0].due_date.date()).days
+                                eligible_for_roll = gap > 1
 
                         if eligible_for_roll:
                             for f_item in future_items:
