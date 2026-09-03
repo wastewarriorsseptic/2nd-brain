@@ -138,6 +138,18 @@
         .universe-card-float:hover {
             animation-play-state: paused;
         }
+        /* iOS home-screen-style jiggle while reordering Universe cards (see
+           enterMultiverseReorderMode) - reuses each card's own --float-delay so they wobble out of
+           phase with each other, same as the idle float above. !important overrides the float
+           animation on the same element while this class is present, rather than the two competing. */
+        @keyframes universe-card-wobble {
+            0%, 100% { transform: rotate(-2deg); }
+            50% { transform: rotate(2deg); }
+        }
+        .universe-card-wobbling {
+            animation: universe-card-wobble 0.22s ease-in-out infinite !important;
+            animation-delay: var(--float-delay, 0s) !important;
+        }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex">
@@ -846,10 +858,19 @@
                 <span class="text-base">🌀</span>
                 <h2 class="text-xs font-bold text-white tracking-wide">Multiverse</h2>
             </div>
-            <button onclick="closeMultiverseView()"
-                    class="px-3.5 py-1.5 bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-indigo-400/30">
-                ✖ Close
-            </button>
+            <div class="flex items-center gap-2">
+                <!-- Shown only while reordering (see enterMultiverseReorderMode/exitMultiverseReorderMode) -
+                     the explicit way out of wobble mode, matching iOS's own "Done" button rather than
+                     relying on people discovering that tapping blank space also exits it. -->
+                <button type="button" id="multiverse-reorder-done-btn" onclick="exitMultiverseReorderMode()"
+                        class="hidden px-3.5 py-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-emerald-400/30">
+                    ✓ Done
+                </button>
+                <button onclick="closeMultiverseView()"
+                        class="px-3.5 py-1.5 bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-indigo-400/30">
+                    ✖ Close
+                </button>
+            </div>
         </div>
 
         <!-- Cross-Universe Daily Digest - same Overdue / Due Today / Due Tomorrow / Completed
@@ -3843,6 +3864,14 @@
             panel.style.height = `${panelHeight}px`;
             panel.style.top = `${vv.offsetTop + KEYBOARD_TOP_MARGIN}px`;
             panel.style.bottom = 'auto';
+            // Resizing the panel to fit above the keyboard shrinks how much of #ai-chat-messages is
+            // actually visible - a bubble that was fully in view before the keyboard came up (or
+            // shifted, e.g. the predictive-text bar toggling) can end up with its tail clipped by
+            // the panel's new, smaller height. Re-pinning to the bottom here, every time this fires
+            // (the keyboard's open animation dispatches several of these in quick succession),
+            // keeps the latest message actually on screen instead of just scrolled-to at send time.
+            const messagesWrapper = document.getElementById('ai-chat-messages');
+            if (messagesWrapper) messagesWrapper.scrollTop = messagesWrapper.scrollHeight;
         }
 
         if (window.visualViewport) {
@@ -5057,6 +5086,7 @@
 
         function closeMultiverseView() {
             document.getElementById('multiverse-view-overlay').classList.add('hidden');
+            if (multiverseReorderMode) exitMultiverseReorderMode();
         }
 
         // Starts collapsed, deliberately NOT persisted across reloads - same reasoning as
@@ -5081,22 +5111,74 @@
         }
 
         // Multiverse cards: a plain tap/click on the circle navigates into that Universe (the
-        // <a> just works natively) - the Edit/Delete buttons only ever appear after a press-and-
-        // hold, mirroring the long-press-to-reveal pattern already used for realms/tasks in the
-        // Space View canvas. This avoids the old hover-reveal approach, which doesn't behave
-        // consistently on touch (a tap can register as "hover" on some mobile browsers, showing
-        // the buttons right when the user just wanted to go into the Universe).
+        // <a> just works natively) - holding one down instead enters a global "reorder mode"
+        // mirroring iOS's own home-screen jiggle: every card starts wobbling and shows its
+        // Edit/Delete/Share buttons, dragging any card reorders the grid (persisted immediately,
+        // same as the existing Realm/Bucket drag-reorder below), and a "✓ Done" button - or
+        // tapping blank space - exits back to normal tap-to-navigate.
         let multiverseLongPressTimer = null;
         let multiverseLongPressStartPos = null;
-        let multiverseLongPressedCard = null;
+        let multiverseReorderMode = false;
+        let multiverseSortable = null;
 
         function hideAllMultiverseCardActions() {
             document.querySelectorAll('.universe-card-action').forEach(el => el.classList.add('hidden'));
         }
 
+        function enterMultiverseReorderMode() {
+            if (multiverseReorderMode) return;
+            multiverseReorderMode = true;
+            const grid = document.getElementById('multiverse-grid');
+            if (!grid) return;
+            grid.querySelectorAll('.universe-card').forEach(card => {
+                card.classList.add('universe-card-wobbling');
+                card.querySelectorAll('.universe-card-action').forEach(el => el.classList.remove('hidden'));
+            });
+            const doneBtn = document.getElementById('multiverse-reorder-done-btn');
+            if (doneBtn) doneBtn.classList.remove('hidden');
+            if (multiverseSortable) multiverseSortable.option('disabled', false);
+        }
+
+        function exitMultiverseReorderMode() {
+            multiverseReorderMode = false;
+            const grid = document.getElementById('multiverse-grid');
+            if (grid) {
+                grid.querySelectorAll('.universe-card-wobbling').forEach(el => el.classList.remove('universe-card-wobbling'));
+            }
+            hideAllMultiverseCardActions();
+            const doneBtn = document.getElementById('multiverse-reorder-done-btn');
+            if (doneBtn) doneBtn.classList.add('hidden');
+            if (multiverseSortable) multiverseSortable.option('disabled', true);
+        }
+
+        function initMultiverseSortable() {
+            const grid = document.getElementById('multiverse-grid');
+            if (!grid || multiverseSortable || typeof Sortable === 'undefined') return;
+            multiverseSortable = new Sortable(grid, {
+                animation: 150,
+                disabled: true,
+                // Excludes the "Add Universe" button and each card's own nested Edit/Delete/Share
+                // <button>s from starting a drag - they're all plain <button> elements, unlike the
+                // cards themselves, which are dragged via their <a> (see the click-swallow below).
+                filter: 'button',
+                onEnd: () => {
+                    const order = Array.from(grid.querySelectorAll('.universe-card'))
+                        .map(el => parseInt(el.getAttribute('data-universe-id')))
+                        .filter(Boolean);
+                    fetch('/universes/reorder/', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(order)
+                    });
+                }
+            });
+        }
+
         function setupMultiverseLongPress() {
             const grid = document.getElementById('multiverse-grid');
             if (!grid) return;
+
+            initMultiverseSortable();
 
             grid.querySelectorAll('.universe-card').forEach(card => {
                 const link = card.querySelector('.universe-card-link');
@@ -5106,11 +5188,7 @@
                     if (e.pointerType === 'mouse' && e.button !== 0) return;
                     multiverseLongPressStartPos = { x: e.clientX, y: e.clientY };
                     clearTimeout(multiverseLongPressTimer);
-                    multiverseLongPressTimer = setTimeout(() => {
-                        hideAllMultiverseCardActions();
-                        card.querySelectorAll('.universe-card-action').forEach(el => el.classList.remove('hidden'));
-                        multiverseLongPressedCard = card;
-                    }, 500);
+                    multiverseLongPressTimer = setTimeout(enterMultiverseReorderMode, 500);
                 });
 
                 const cancelPress = () => clearTimeout(multiverseLongPressTimer);
@@ -5123,19 +5201,19 @@
                     if (dist > 10) clearTimeout(multiverseLongPressTimer);
                 });
 
-                // The long-press that just revealed this card's buttons still ends in a native
-                // click on the <a> (pointerup -> click) - swallow only that one click so it
-                // doesn't also navigate away right as the buttons appear.
+                // While in reorder mode every card is a live drag target, so the native click on
+                // its <a> (which still fires on pointerup, whether that ended a drag or just the
+                // long-press that entered this mode) must never navigate away.
                 link.addEventListener('click', (e) => {
-                    if (multiverseLongPressedCard === card) {
-                        e.preventDefault();
-                        multiverseLongPressedCard = null;
-                    }
+                    if (multiverseReorderMode) e.preventDefault();
                 });
             });
 
             document.addEventListener('pointerdown', (e) => {
-                if (!e.target.closest('.universe-card')) {
+                if (e.target.closest('.universe-card') || e.target.closest('#multiverse-reorder-done-btn')) return;
+                if (multiverseReorderMode) {
+                    exitMultiverseReorderMode();
+                } else {
                     hideAllMultiverseCardActions();
                 }
             });
