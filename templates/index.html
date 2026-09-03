@@ -3688,6 +3688,12 @@
                 toggleAiChatPanel();
             }
             aiChatQuickTaskPending = true;
+            // Logged-out skips this - maybeGreetLoggedOutVisitor() (triggered by the panel open
+            // above) already shows the sign-in prompt there, and asking what task they want right
+            // alongside "you need to sign in first" would be a contradictory double message.
+            if (aiChatLoggedIn) {
+                renderAiChatBubble('assistant', 'What task would you like me to create for you?');
+            }
             const input = document.getElementById('ai-chat-input');
             if (input) {
                 input.placeholder = 'e.g. Buy milk tomorrow';
