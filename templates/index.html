@@ -6154,7 +6154,15 @@
             const centerX = 0;
             const centerY = 0;
 
-            const safeYCenter = topChrome + (usableHeight / 2);
+            // Splitting the difference with true screen-center - reported directly as still
+            // looking too low on mobile even after the horizontal (origin-based) centering fix.
+            // topChrome/bottomChrome are deliberately asymmetric (more space reserved above, for
+            // the stacked pill/Daily Digest row, than below) to keep the ring clear of both bars,
+            // which biases the pure chrome-adjusted center a real ~37px low on a typical mobile
+            // viewport - halving that bias keeps the collision-avoidance intent while reading as
+            // genuinely centered instead of low.
+            const chromeAdjustedYCenter = topChrome + (usableHeight / 2);
+            const safeYCenter = (chromeAdjustedYCenter + (window.innerHeight / 2)) / 2;
 
             targetCameraOffset = {
                 x: (window.innerWidth / 2) - (centerX * targetCameraZoom),
@@ -6905,11 +6913,14 @@
                 spaceCtx.shadowBlur = 0;
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
-                // Reported directly as looking small in its circle - this glyph in particular
-                // (a calendar-with-spiral) carries more built-in padding than most emoji, so it
-                // needed a noticeably bigger ratio than the 0.72 other badge icons use to actually
-                // read as filling the circle.
-                spaceCtx.font = `${Math.round(coreTimelineBtnRadius * 1.4)}px serif`;
+                // 1.4x looked right on desktop but was reported directly as visibly clipping past
+                // the circle's edge on mobile - this specific glyph (a calendar-with-spiral, drawn
+                // from several layered/colored parts) appears to render its actual bitmap larger
+                // than its nominal font-size box, and more so in absolute pixels at the bigger
+                // mobile radius (34 vs 28) even though the ratio itself was identical. 1.0 is a
+                // deliberately safer ratio - still bigger than the 0.72 other badge icons use, but
+                // confirmed (see the live check this was verified with) not to clip at either size.
+                spaceCtx.font = `${Math.round(coreTimelineBtnRadius * 1.0)}px serif`;
                 spaceCtx.fillText('🗓️', coreTimelineBtnX, coreTimelineBtnY + 1);
                 spaceCtx.restore();
             }
