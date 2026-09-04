@@ -1099,9 +1099,12 @@ def find_or_create_user_and_log_in(request: Request, email: str, name: str):
         if accepted_via_login:
             accepted_universe = session.get(Universe, accepted_via_login)
             universe_name = accepted_universe.name if accepted_universe else ""
+            inviter = session.get(User, accepted_universe.user_id) if accepted_universe else None
+            inviter_name = inviter.name if inviter else "a teammate"
             from urllib.parse import quote as _quote
             request.session['post_login_redirect'] = (
-                f"/?universe_id={accepted_via_login}&invite_accepted=1&invited_universe_name={_quote(universe_name)}"
+                f"/?universe_id={accepted_via_login}&invite_accepted=1"
+                f"&invited_universe_name={_quote(universe_name)}&invited_by_name={_quote(inviter_name)}"
             )
 
 @app.get("/login")
@@ -1871,6 +1874,8 @@ def accept_universe_invite(request: Request, token: str):
 
         universe = session.get(Universe, invite.universe_id)
         universe_name = universe.name if universe else "that universe"
+        inviter = session.get(User, universe.user_id) if universe else None
+        inviter_name = inviter.name if inviter else "a teammate"
 
         current_user = get_current_user(request, session)
 
@@ -1899,7 +1904,10 @@ def accept_universe_invite(request: Request, token: str):
 
     from urllib.parse import quote as _quote
     return RedirectResponse(
-        url=f"/?universe_id={invite.universe_id}&invite_accepted=1&invited_universe_name={_quote(universe_name)}",
+        url=(
+            f"/?universe_id={invite.universe_id}&invite_accepted=1"
+            f"&invited_universe_name={_quote(universe_name)}&invited_by_name={_quote(inviter_name)}"
+        ),
         status_code=303
     )
 

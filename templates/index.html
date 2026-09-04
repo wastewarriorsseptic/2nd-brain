@@ -3716,28 +3716,44 @@
             document.getElementById('reorder-suggestion-toast').classList.remove('hidden');
         }
 
+        // A one-off follow-up line after the "Welcome to X, shared with Y!" opener - same fun,
+        // short, devil-emoji-app voice as AI_CHAT_HINT_PHRASES above, picked at random for variety.
+        const INVITE_ACCEPTED_FOLLOWUPS = [
+            "Chaos is now a team sport 😈",
+            "Two brains, one task list.",
+            "Let's wreck this list together.",
+            "Shared minds, shared wins.",
+            "Divide and conquer starts now.",
+            "Teamwork makes the tasks work.",
+        ];
+
         // Fires after landing back here from /universes/accept-invite/{token} (either directly, or
-        // via a login redirect that finished accepting - see post_login_redirect in app.py). Same
-        // query-param-then-strip-it pattern as the reorder/recurring toasts below.
+        // via a login redirect that finished accepting - see post_login_redirect in app.py). Reuses
+        // the AI chat launcher's own floating hint pill (see AI_CHAT_HINT_PHRASES/
+        // rotateAiChatHintPhrase above) rather than a separate toast element - reported directly
+        // that a plain toast wasn't clear/noticeable enough, and this is the one bubble already
+        // established as "the assistant talking to you". Its own rotation timer (already running,
+        // 2-5 min cadence from page load) will naturally swap this out for a normal phrase later -
+        // deliberately not rescheduled here, so a page that already had a timer mid-flight doesn't
+        // end up with two competing next-swaps.
         function checkForInviteAccepted() {
             const params = new URLSearchParams(window.location.search);
             if (params.get('invite_accepted') !== '1') return;
 
             const universeName = params.get('invited_universe_name') || 'the universe';
-            let toast = document.getElementById('invite-accepted-toast');
-            if (!toast) {
-                toast = document.createElement('div');
-                toast.id = 'invite-accepted-toast';
-                toast.className = 'fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-80 z-[65] bg-slate-900/95 border border-emerald-500/40 text-slate-200 text-xs font-semibold rounded-2xl px-4 py-3 shadow-2xl';
-                document.body.appendChild(toast);
+            const inviterName = params.get('invited_by_name') || 'a teammate';
+            const followUp = INVITE_ACCEPTED_FOLLOWUPS[Math.floor(Math.random() * INVITE_ACCEPTED_FOLLOWUPS.length)];
+
+            const hint = document.getElementById('ai-chat-launcher-hint');
+            if (hint) {
+                setAiChatHintSpecialMode(true);
+                hint.textContent = `Welcome to your Shared ${universeName} with ${inviterName}! ${followUp}`;
+                hint.classList.remove('hidden', 'opacity-0');
             }
-            toast.textContent = `🎉 You now have access to ${universeName}!`;
-            toast.classList.remove('hidden');
-            setTimeout(() => toast.classList.add('hidden'), 6000);
 
             const cleanUrl = window.location.pathname +
                 (params.toString() ? '?' + Array.from(params.entries())
-                    .filter(([k]) => k !== 'invite_accepted' && k !== 'invited_universe_name')
+                    .filter(([k]) => k !== 'invite_accepted' && k !== 'invited_universe_name' && k !== 'invited_by_name')
                     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
                     .join('&') : '');
             history.replaceState({}, '', cleanUrl || window.location.pathname);
@@ -4071,12 +4087,30 @@
         const AI_CHAT_HINT_MIN_MS = 2 * 60 * 1000;
         const AI_CHAT_HINT_MAX_MS = 5 * 60 * 1000;
 
+        // The hint pill is normally a single-line, fully-rounded "pill" (whitespace-nowrap, no
+        // width cap) - fine for the short AI_CHAT_HINT_PHRASES above, but a one-off message like
+        // the invite-accepted welcome (see checkForInviteAccepted) runs much longer and would
+        // overflow off the left edge of the screen instead of wrapping. This toggles it into a
+        // wider, wrappable card shape for exactly that kind of message, and back to the normal
+        // pill shape the next time the ambient rotation below swaps in a normal short phrase.
+        function setAiChatHintSpecialMode(isSpecial) {
+            const hint = document.getElementById('ai-chat-launcher-hint');
+            if (!hint) return;
+            hint.classList.toggle('rounded-full', !isSpecial);
+            hint.classList.toggle('whitespace-nowrap', !isSpecial);
+            hint.classList.toggle('rounded-2xl', isSpecial);
+            hint.classList.toggle('whitespace-normal', isSpecial);
+            hint.classList.toggle('text-left', isSpecial);
+            hint.style.maxWidth = isSpecial ? '13rem' : '';
+        }
+
         function rotateAiChatHintPhrase() {
             const hint = document.getElementById('ai-chat-launcher-hint');
             if (hint) {
                 hint.classList.add('opacity-0');
                 setTimeout(() => {
                     aiChatHintPhraseIndex = pickRandomAiChatHintIndex();
+                    setAiChatHintSpecialMode(false);
                     hint.textContent = AI_CHAT_HINT_PHRASES[aiChatHintPhraseIndex];
                     hint.classList.remove('opacity-0');
                 }, 300);
