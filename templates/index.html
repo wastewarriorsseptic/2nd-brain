@@ -195,6 +195,17 @@
             animation-timing-function: ease-in-out;
             animation-iteration-count: infinite;
         }
+        /* "Invite pending" badge on a universe circle in the Multiverse picker (see
+           universe_pending_invites_map) - a slow pulse so it reads as "waiting on something"
+           without being distracting, always visible (not gated behind wobble/reorder mode like
+           the Edit/Delete/Share icons) since this is status, not an action. */
+        @keyframes universe-invite-pending-pulse {
+            0%, 100% { opacity: 0.75; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.12); }
+        }
+        .universe-invite-pending-badge {
+            animation: universe-invite-pending-pulse 1.8s ease-in-out infinite;
+        }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex">
@@ -973,6 +984,7 @@
             <p class="text-slate-400 text-sm mb-8 text-center">Your brain, on AI.</p>
             <div id="multiverse-grid" class="flex flex-wrap items-start justify-center gap-5">
                 {% for u in universes %}
+                {% set pending_for_u = universe_pending_invites_map.get(u.id, []) if universe_pending_invites_map else [] %}
                 <div class="universe-card universe-card-float relative flex flex-col items-center gap-2 w-28 group" data-universe-id="{{ u.id }}" style="--float-delay: -{{ (loop.index0 * 0.53) % 3.2 }}s;">
                     {% if u.user_id == user.id %}
                     <button type="button" onclick="openEditUniverse(this)"
@@ -989,6 +1001,9 @@
                     <button type="button" onclick="openShareUniverse(this)"
                             data-id="{{ u.id }}" title="Share Universe"
                             class="universe-card-action hidden absolute -bottom-1 -right-1 z-10 w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-indigo-400 hover:border-indigo-400/50 text-xs flex items-center justify-center transition">👥</button>
+                    {% if pending_for_u %}
+                    <span class="universe-invite-pending-badge pointer-events-none absolute -top-1.5 left-1/2 -translate-x-1/2 z-10 w-6 h-6 rounded-full bg-amber-500 border-2 border-slate-950 text-[11px] flex items-center justify-center shadow-lg shadow-amber-500/40" title="Invite sent to {{ pending_for_u[0].email }} - waiting for them to accept">⏳</span>
+                    {% endif %}
                     {% endif %}
                     <a href="/?universe_id={{ u.id }}" class="universe-card-link flex flex-col items-center gap-2 w-full">
                         <div class="w-20 h-20 rounded-full flex items-center justify-center text-3xl border-2 border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30 transition">
@@ -1000,6 +1015,9 @@
                         </span>
                         {% if u.user_id != user.id %}
                         <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700" title="Shared with you by {{ u.user.name if u.user else 'another owner' }}">👥 Shared by {{ u.user.name if u.user else 'owner' }}</span>
+                        {% endif %}
+                        {% if pending_for_u %}
+                        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 truncate max-w-full" title="{{ pending_for_u[0].email }}">⏳ Invite sent</span>
                         {% endif %}
                     </a>
                 </div>
@@ -2058,6 +2076,11 @@
 
             <form action="/items/update/" method="POST" class="space-y-3.5">
                 <input type="hidden" name="item_id" id="edit-item-id">
+                <!-- Set by openEditItem() from isMultiverseStackedView at the moment this modal
+                     opens - tells update_item's redirect to reopen the Multiverse Timeline instead
+                     of falling back to a plain Referer redirect, which otherwise landed on that
+                     task's own Universe's realm view after saving (reported directly). -->
+                <input type="hidden" name="from_multiverse_timeline" id="edit-item-from-multiverse-timeline" value="">
 
                 <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Title</label>
@@ -3279,6 +3302,7 @@
             updateSelectionUI();
             checkForReorderSuggestion();
             checkForRecurringSuggestion();
+            checkForInviteAccepted();
 
             const realmsContainer = document.getElementById('realms-container');
             if (realmsContainer) {
@@ -3658,6 +3682,33 @@
                     : `Early estimate - just one prior reorder so far`;
 
             document.getElementById('reorder-suggestion-toast').classList.remove('hidden');
+        }
+
+        // Fires after landing back here from /universes/accept-invite/{token} (either directly, or
+        // via a login redirect that finished accepting - see post_login_redirect in app.py). Same
+        // query-param-then-strip-it pattern as the reorder/recurring toasts below.
+        function checkForInviteAccepted() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('invite_accepted') !== '1') return;
+
+            const universeName = params.get('invited_universe_name') || 'the universe';
+            let toast = document.getElementById('invite-accepted-toast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = 'invite-accepted-toast';
+                toast.className = 'fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-80 z-[65] bg-slate-900/95 border border-emerald-500/40 text-slate-200 text-xs font-semibold rounded-2xl px-4 py-3 shadow-2xl';
+                document.body.appendChild(toast);
+            }
+            toast.textContent = `🎉 You now have access to ${universeName}!`;
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 6000);
+
+            const cleanUrl = window.location.pathname +
+                (params.toString() ? '?' + Array.from(params.entries())
+                    .filter(([k]) => k !== 'invite_accepted' && k !== 'invited_universe_name')
+                    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+                    .join('&') : '');
+            history.replaceState({}, '', cleanUrl || window.location.pathname);
         }
 
         function checkForReorderSuggestion() {
@@ -4670,6 +4721,7 @@
             const universeId = element.getAttribute('data-universe-id') || activeUniverseId;
 
             document.getElementById('edit-item-id').value = id;
+            document.getElementById('edit-item-from-multiverse-timeline').value = isMultiverseStackedView ? '1' : '';
             document.getElementById('edit-item-title').value = title;
             document.getElementById('edit-item-due-date').value = dueDate;
             document.getElementById('edit-item-due-time').value = dueTime;
@@ -5302,21 +5354,28 @@
             const params = new URLSearchParams(window.location.search);
             const gotoItemId = params.get('goto_item');
             const chatNav = params.get('chat_nav');
-            if (!gotoItemId && !chatNav) return;
+            // Set by update_item's redirect when the edit was opened from inside the Multiverse
+            // Timeline (see edit-item-from-multiverse-timeline) - reopens that view directly
+            // instead of falling into the normal single-Universe goto_item/chat_nav handling below.
+            const openMultiverseTimelineFlag = params.get('open_multiverse_timeline');
+            if (!gotoItemId && !chatNav && !openMultiverseTimelineFlag) return;
 
             if (!isSpaceViewActive) {
                 toggleSpaceView();
                 document.documentElement.classList.remove('preload-space-view');
             }
-            if (currentSelectedRealmId) {
+            if (openMultiverseTimelineFlag) {
+                openMultiverseTimeline();
+            } else if (currentSelectedRealmId) {
                 navigateToDigestItem(currentSelectedRealmId, currentSelectedBucketId, gotoItemId);
             }
 
-            // Strip goto_item/chat_nav (keeping realm_id/bucket_id/universe_id) so a manual
-            // refresh of this URL doesn't re-trigger the same camera jump every time.
+            // Strip these (keeping realm_id/bucket_id/universe_id) so a manual refresh of this URL
+            // doesn't re-trigger the same camera jump / re-open every time.
             const cleanUrl = new URL(window.location.href);
             cleanUrl.searchParams.delete('goto_item');
             cleanUrl.searchParams.delete('chat_nav');
+            cleanUrl.searchParams.delete('open_multiverse_timeline');
             history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
         });
 
@@ -6932,14 +6991,11 @@
                 spaceCtx.shadowBlur = 0;
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
-                // 1.4x looked right on desktop but was reported directly as visibly clipping past
-                // the circle's edge on mobile - this specific glyph (a calendar-with-spiral, drawn
-                // from several layered/colored parts) appears to render its actual bitmap larger
-                // than its nominal font-size box, and more so in absolute pixels at the bigger
-                // mobile radius (34 vs 28) even though the ratio itself was identical. 1.0 is a
-                // deliberately safer ratio - still bigger than the 0.72 other badge icons use, but
-                // confirmed (see the live check this was verified with) not to clip at either size.
-                spaceCtx.font = `${Math.round(coreTimelineBtnRadius * 1.0)}px serif`;
+                // 1.4x previously clipped past the circle's edge on mobile (this glyph's actual
+                // bitmap renders larger than its nominal font-size box), so this was dialed back to
+                // 1.0x and verified not to clip. Bumped to 1.6x directly on request - if this
+                // clips on mobile again, dial back toward 1.0-1.2x rather than all the way.
+                spaceCtx.font = `${Math.round(coreTimelineBtnRadius * 1.6)}px serif`;
                 // textAlign/textBaseline center/middle doesn't actually center most emoji glyphs -
                 // a small manual correction is the established fix elsewhere in this file (see the
                 // 🗑 delete-icon draws using pos.x - radius*0.04, pos.y + radius*0.08). This

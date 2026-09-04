@@ -2,6 +2,7 @@ import os
 import shutil
 import uuid
 import sqlite3
+import secrets
 import time
 import json as _json
 import re
@@ -185,6 +186,8 @@ def safe_apply_migrations():
             # ever created the person table (a brand-new DB) - ADD COLUMN IF NOT EXISTS alone
             # only guards the column, not a missing table.
             conn.execute(text('ALTER TABLE IF EXISTS person ADD COLUMN IF NOT EXISTS nickname VARCHAR;'))
+            conn.execute(text('ALTER TABLE IF EXISTS pendinguniverseinvite ADD COLUMN IF NOT EXISTS token VARCHAR;'))
+            conn.execute(text('ALTER TABLE IF EXISTS pendinguniverseinvite ADD COLUMN IF NOT EXISTS created_at TIMESTAMP;'))
     else:
         sqlite_file_name = "brain.db"
         if os.path.exists(sqlite_file_name):
@@ -228,6 +231,15 @@ def safe_apply_migrations():
                 person_cols = [col[1] for col in cursor.fetchall()]
                 if 'nickname' not in person_cols:
                     cursor.execute('ALTER TABLE person ADD COLUMN "nickname" VARCHAR;')
+
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='pendinguniverseinvite';")
+            if cursor.fetchone():
+                cursor.execute("PRAGMA table_info(pendinguniverseinvite);")
+                invite_cols = [col[1] for col in cursor.fetchall()]
+                if 'token' not in invite_cols:
+                    cursor.execute('ALTER TABLE pendinguniverseinvite ADD COLUMN "token" VARCHAR;')
+                if 'created_at' not in invite_cols:
+                    cursor.execute('ALTER TABLE pendinguniverseinvite ADD COLUMN "created_at" TIMESTAMP;')
 
             conn.commit()
             conn.close()
@@ -327,10 +339,20 @@ class UniverseShare(SQLModel, table=True):
     universe_id: int = Field(foreign_key="universe.id")
     user_id: int = Field(foreign_key="users.id")
 
+UNIVERSE_INVITE_EXPIRY_HOURS = 24
+
 class PendingUniverseInvite(SQLModel, table=True):
+    """token is the accept-link secret (see /universes/accept-invite/{token}) - generated fresh
+    whenever an invite is sent or re-sent, so an old copied link can't be reused for a resend.
+    created_at drives the UNIVERSE_INVITE_EXPIRY_HOURS auto-expiry (see
+    expire_stale_universe_invites) - invites made before this field existed are backfilled with
+    the current time on startup (see backfill_pending_universe_invite_tokens), giving them a full
+    fresh window rather than expiring instantly."""
     id: Optional[int] = Field(default=None, primary_key=True)
     universe_id: int = Field(foreign_key="universe.id")
     email: str = Field(index=True)
+    token: str = Field(default_factory=lambda: secrets.token_urlsafe(32), unique=True, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class AiChatMessage(SQLModel, table=True):
     """One turn of the AI chat assistant's conversation with a user, persisted server-side (not
@@ -873,6 +895,43 @@ def backfill_important_dates_universes():
         for user_id in user_ids:
             get_or_create_important_dates_universe(session, user_id)
 
+def backfill_pending_universe_invite_tokens():
+    """Rows created before token/created_at existed on PendingUniverseInvite (see the migration in
+    safe_apply_migrations) have both columns NULL - give them a fresh token and treat them as sent
+    right now, rather than either crashing on a NULL token or having them expire the instant this
+    deploys."""
+    with Session(engine) as session:
+        legacy = session.exec(
+            select(PendingUniverseInvite).where(PendingUniverseInvite.token == None)  # noqa: E711
+        ).all()
+        for invite in legacy:
+            invite.token = secrets.token_urlsafe(32)
+            invite.created_at = datetime.utcnow()
+            session.add(invite)
+        if legacy:
+            session.commit()
+
+def expire_stale_universe_invites(session: Session):
+    """Deletes any PendingUniverseInvite older than UNIVERSE_INVITE_EXPIRY_HOURS. Called both
+    lazily (right before anything reads or acts on pending invites - sending a new one, rendering
+    the owner's pending-invite badge, an accept-link click, a matching login) and periodically via
+    the scheduler, so a stale invite disappears promptly regardless of which path notices it
+    first."""
+    cutoff = datetime.utcnow() - timedelta(hours=UNIVERSE_INVITE_EXPIRY_HOURS)
+    stale = session.exec(
+        select(PendingUniverseInvite).where(PendingUniverseInvite.created_at < cutoff)
+    ).all()
+    for invite in stale:
+        session.delete(invite)
+    if stale:
+        session.commit()
+
+def run_expire_stale_universe_invites():
+    """Scheduler-job wrapper for expire_stale_universe_invites - opens its own Session since the
+    scheduler calls this on its own background thread, not inside a request."""
+    with Session(engine) as session:
+        expire_stale_universe_invites(session)
+
 def build_task_universe_context(session: Session, user: "User", today_date) -> dict:
     """The AI chat assistant's only grounding for where a task belongs: the user's OWNED,
     task-kind-only Universe -> Realm -> Bucket tree (contact universes and shared/collaborator
@@ -935,6 +994,9 @@ def on_startup():
     SQLModel.metadata.create_all(engine)
     backfill_default_universes()
     backfill_important_dates_universes()
+    backfill_pending_universe_invite_tokens()
+    run_expire_stale_universe_invites()
+    scheduler.add_job(run_expire_stale_universe_invites, 'interval', minutes=30)
 
 def find_or_create_user_and_log_in(request: Request, email: str, name: str):
     """Shared by every sign-in provider (Google, Apple, ...) - looks up or creates the User by email,
@@ -989,11 +1051,16 @@ def find_or_create_user_and_log_in(request: Request, email: str, name: str):
                 session.add(RealmShare(realm_id=invite.realm_id, user_id=user.id))
             session.delete(invite)
 
-        # Same claim step, one level up, for pending Universe-share invites.
+        # Same claim step, one level up, for pending Universe-share invites - logging in with the
+        # invited email counts as accepting, same as clicking the email's "Accept Invite" button
+        # (see /universes/accept-invite/{token}). expire_stale_universe_invites() first means a
+        # stale invite older than UNIVERSE_INVITE_EXPIRY_HOURS is never silently claimed here.
+        expire_stale_universe_invites(session)
         pending_universe_invites = session.exec(
             select(PendingUniverseInvite).where(PendingUniverseInvite.email == email)
         ).all()
 
+        accepted_via_login = None
         for invite in pending_universe_invites:
             existing_share = session.exec(
                 select(UniverseShare).where(
@@ -1003,10 +1070,39 @@ def find_or_create_user_and_log_in(request: Request, email: str, name: str):
             ).first()
             if not existing_share:
                 session.add(UniverseShare(universe_id=invite.universe_id, user_id=user.id))
+            accepted_via_login = invite.universe_id
             session.delete(invite)
+
+        # The accept-invite link (see /universes/accept-invite/{token}) stashes its token here
+        # when the visitor wasn't signed in yet, so it can pick up right where it left off now
+        # that sign-in just finished, rather than silently dropping the invite on the floor.
+        pending_token = request.session.pop('pending_universe_invite_token', None)
+        if pending_token:
+            token_invite = session.exec(
+                select(PendingUniverseInvite).where(PendingUniverseInvite.token == pending_token)
+            ).first()
+            if token_invite and token_invite.email.lower() == email:
+                existing_share = session.exec(
+                    select(UniverseShare).where(
+                        UniverseShare.universe_id == token_invite.universe_id,
+                        UniverseShare.user_id == user.id
+                    )
+                ).first()
+                if not existing_share:
+                    session.add(UniverseShare(universe_id=token_invite.universe_id, user_id=user.id))
+                accepted_via_login = token_invite.universe_id
+                session.delete(token_invite)
 
         session.commit()
         request.session['user_id'] = user.id
+
+        if accepted_via_login:
+            accepted_universe = session.get(Universe, accepted_via_login)
+            universe_name = accepted_universe.name if accepted_universe else ""
+            from urllib.parse import quote as _quote
+            request.session['post_login_redirect'] = (
+                f"/?universe_id={accepted_via_login}&invite_accepted=1&invited_universe_name={_quote(universe_name)}"
+            )
 
 @app.get("/login")
 async def login(request: Request):
@@ -1028,7 +1124,8 @@ async def auth_callback(request: Request):
     name = user_info.get('name', email.split('@')[0])
     find_or_create_user_and_log_in(request, email, name)
 
-    return RedirectResponse(url="/", status_code=303)
+    post_login_redirect = request.session.pop('post_login_redirect', None)
+    return RedirectResponse(url=post_login_redirect or "/", status_code=303)
 
 @app.get("/login/apple")
 async def login_apple(request: Request):
@@ -1081,7 +1178,8 @@ async def auth_callback_apple(request: Request):
 
     find_or_create_user_and_log_in(request, email, name)
 
-    return RedirectResponse(url="/", status_code=303)
+    post_login_redirect = request.session.pop('post_login_redirect', None)
+    return RedirectResponse(url=post_login_redirect or "/", status_code=303)
 
 @app.get("/logout")
 def logout(request: Request):
@@ -1204,7 +1302,9 @@ def dashboard(
 
         # Universe-level counterpart to collaborators_map/pending_invites_map above, same
         # owner-only-populated shape, keyed by universe id instead of realm id - drives the Share
-        # Universe modal.
+        # Universe modal and the "⏳ Invite pending" badge on the universe circle. Swept for
+        # expired invites right before reading, so a stale one never shows as still-pending here.
+        expire_stale_universe_invites(session)
         universe_collaborators_map = {}
         universe_pending_invites_map = {}
 
@@ -1604,9 +1704,18 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
 @app.post("/universes/share/")
 def share_universe(request: Request, universe_id: int = Form(...), email: str = Form(...)):
     """Universe-level mirror of share_realm - see that function for the full rationale of each
-    step (owner-only gate, fail-closed on a missing RESEND_API_KEY, existing-user vs.
-    pending-by-email branching, two-email pattern). Grants access to every Realm inside the
-    Universe, including ones created after this share (see user_can_access_realm)."""
+    step (owner-only gate, fail-closed on a missing RESEND_API_KEY, two-email pattern). Grants
+    access to every Realm inside the Universe, including ones created after this share (see
+    user_can_access_realm).
+
+    Unlike share_realm, access is never granted immediately here, even when the invited email
+    already has a TaskMonster account - it always goes through a PendingUniverseInvite and an
+    explicit accept step (a real click on the emailed accept link, or logging in with the invited
+    email - see /universes/accept-invite/{token} and find_or_create_user_and_log_in). Reported
+    directly that the old immediate-grant-if-already-a-user behavior left the invited person with
+    no idea where to go or that anything had happened - an explicit accept link fixes that, and
+    also gives the "invite pending" badge on the universe circle (see universe_pending_invites_map)
+    something real to represent."""
     target_email = email.strip().lower()
     api_key = os.getenv("RESEND_API_KEY")
 
@@ -1630,40 +1739,57 @@ def share_universe(request: Request, universe_id: int = Form(...), email: str = 
         if not universe:
             return RedirectResponse(url="/", status_code=303)
 
-        target_user = session.exec(select(User).where(User.email == target_email)).first()
+        expire_stale_universe_invites(session)
 
+        # Already a full collaborator (a prior invite was already accepted) - nothing to (re-)send.
+        target_user = session.exec(select(User).where(User.email == target_email)).first()
         if target_user:
-            existing = session.exec(
+            already_shared = session.exec(
                 select(UniverseShare).where(
                     UniverseShare.universe_id == universe_id,
                     UniverseShare.user_id == target_user.id
                 )
             ).first()
-            if not existing:
-                session.add(UniverseShare(universe_id=universe_id, user_id=target_user.id))
-                session.commit()
-        else:
-            existing_pending = session.exec(
-                select(PendingUniverseInvite).where(
-                    PendingUniverseInvite.universe_id == universe_id,
-                    PendingUniverseInvite.email == target_email
-                )
-            ).first()
-            if not existing_pending:
-                session.add(PendingUniverseInvite(universe_id=universe_id, email=target_email))
-                session.commit()
+            if already_shared:
+                return RedirectResponse(url=f"/?universe_id={universe_id}", status_code=303)
 
-        invitation_subject = f"Collaborate with {current_user.name} on TaskMonster"
+        # Re-sending to someone with an already-pending invite gets a fresh token and a fresh
+        # UNIVERSE_INVITE_EXPIRY_HOURS window - an old copied-and-pasted link shouldn't stay live
+        # forever just because it was never expired, and a deliberate resend should reset the clock.
+        invite_token = secrets.token_urlsafe(32)
+        existing_pending = session.exec(
+            select(PendingUniverseInvite).where(
+                PendingUniverseInvite.universe_id == universe_id,
+                PendingUniverseInvite.email == target_email
+            )
+        ).first()
+        if existing_pending:
+            existing_pending.token = invite_token
+            existing_pending.created_at = datetime.utcnow()
+            session.add(existing_pending)
+        else:
+            session.add(PendingUniverseInvite(universe_id=universe_id, email=target_email, token=invite_token))
+        session.commit()
+
+        accept_url = f"https://usetaskmonster.app/universes/accept-invite/{invite_token}"
+
+        invitation_subject = f"{current_user.name} invited you to a TaskMonster universe"
         invitation_body = f"""
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 8px;">
             <p>Hi there,</p>
             <p><strong>{current_user.name}</strong> ({current_user.email}) invited you to join the <strong>{universe.name}</strong> universe on TaskMonster so you can manage shared tasks and timelines together.</p>
             <div style="margin: 24px 0;">
-                <a href="https://usetaskmonster.app/login" style="background-color: #6366f1; color: #ffffff; padding: 12px 22px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">Open {universe.name} Universe</a>
+                <a href="{accept_url}" style="background-color: #22c55e; color: #ffffff; padding: 14px 26px; text-decoration: none; border-radius: 6px; font-weight: 700; display: inline-block; font-size: 15px;">✅ Accept Invite</a>
             </div>
             <p style="font-size: 13px; color: #4b5563;">
+                Click the button above and sign in with <strong>{target_email}</strong> - that's the exact address this invite was sent to, so it's the one to sign in with.
+            </p>
+            <p style="font-size: 13px; color: #4b5563;">
                 Or copy and paste this link into your browser:<br>
-                <a href="https://usetaskmonster.app/login" style="color: #6366f1;">https://usetaskmonster.app/login</a>
+                <a href="{accept_url}" style="color: #6366f1;">{accept_url}</a>
+            </p>
+            <p style="font-size: 12px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 12px; margin-top: 16px;">
+                ⏳ This invite expires in {UNIVERSE_INVITE_EXPIRY_HOURS} hours if not accepted.
             </p>
             <p style="font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 28px;">
                 Sent via TaskMonster. You received this because {current_user.email} added your address.
@@ -1688,8 +1814,8 @@ def share_universe(request: Request, universe_id: int = Form(...), email: str = 
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
             <h2 style="color: #4f46e5; margin-top: 0;">Invitation Dispatched</h2>
             <p>Hi {current_user.name},</p>
-            <p>Your invitation to <strong>{target_email}</strong> for the <strong>{universe.name}</strong> universe has been successfully sent.</p>
-            <p>Once they log in with Google at <a href="https://usetaskmonster.app" style="color: #6366f1; font-weight: 600; text-decoration: none;">usetaskmonster.app</a>, the shared universe will automatically appear on their dashboard timeline.</p>
+            <p>Your invitation to <strong>{target_email}</strong> for the <strong>{universe.name}</strong> universe has been successfully sent, with an "Accept Invite" button they can click directly.</p>
+            <p>You'll see a "⏳ Invite pending" badge on the {universe.name} circle until they accept. If they don't accept within {UNIVERSE_INVITE_EXPIRY_HOURS} hours, the invite expires automatically and you can send a new one.</p>
             <p style="font-size: 13px; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 32px;">
                 TaskMonster System Notification
             </p>
@@ -1708,6 +1834,80 @@ def share_universe(request: Request, universe_id: int = Form(...), email: str = 
             print(f"Failed to send confirmation email to inviter ({current_user.email}): {e}", flush=True)
 
     return RedirectResponse(url=f"/?universe_id={universe_id}", status_code=303)
+
+@app.get("/universes/accept-invite/{token}")
+def accept_universe_invite(request: Request, token: str):
+    """Where the email's "Accept Invite" button actually lands. Three outcomes besides success:
+    unknown/already-used token, expired (past UNIVERSE_INVITE_EXPIRY_HOURS), or signed in as the
+    wrong email (told explicitly to sign out and back in as the invited address, rather than
+    silently failing). Not signed in at all -> stash the token in the session and send them to
+    /login; find_or_create_user_and_log_in picks that stashed token back up right after sign-in
+    completes and finishes the accept from there."""
+    with Session(engine) as session:
+        expire_stale_universe_invites(session)
+
+        invite = session.exec(
+            select(PendingUniverseInvite).where(PendingUniverseInvite.token == token)
+        ).first()
+
+        if not invite:
+            return HTMLResponse(_invite_status_page(
+                "This invite link isn't valid",
+                "It may have already been accepted, cancelled, or the link was mistyped. Ask whoever invited you to send a new one."
+            ))
+
+        universe = session.get(Universe, invite.universe_id)
+        universe_name = universe.name if universe else "that universe"
+
+        current_user = get_current_user(request, session)
+
+        if not current_user:
+            request.session['pending_universe_invite_token'] = token
+            return RedirectResponse(url="/login", status_code=303)
+
+        if current_user.email.lower() != invite.email.lower():
+            return HTMLResponse(_invite_status_page(
+                f"This invite was sent to {invite.email}",
+                f"You're currently signed in as {current_user.email}. Sign out and sign back in with {invite.email} to accept it.",
+                show_logout=True
+            ))
+
+        existing_share = session.exec(
+            select(UniverseShare).where(
+                UniverseShare.universe_id == invite.universe_id,
+                UniverseShare.user_id == current_user.id
+            )
+        ).first()
+        if not existing_share:
+            session.add(UniverseShare(universe_id=invite.universe_id, user_id=current_user.id))
+        session.delete(invite)
+        session.commit()
+        request.session.pop('pending_universe_invite_token', None)
+
+    from urllib.parse import quote as _quote
+    return RedirectResponse(
+        url=f"/?universe_id={invite.universe_id}&invite_accepted=1&invited_universe_name={_quote(universe_name)}",
+        status_code=303
+    )
+
+def _invite_status_page(heading: str, body: str, show_logout: bool = False) -> str:
+    """Minimal standalone page for the accept-invite link's non-success outcomes (invalid,
+    expired, wrong-account) - deliberately not the full app shell, since the visitor may not even
+    have an account yet."""
+    logout_link = (
+        '<a href="/logout" style="color: #6366f1; font-weight: 600;">Sign out</a> and then '
+        '<a href="/login" style="color: #6366f1; font-weight: 600;">sign back in</a> with the right address.'
+        if show_logout else
+        '<a href="https://usetaskmonster.app" style="color: #6366f1; font-weight: 600;">Go to TaskMonster</a>'
+    )
+    return f"""
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 480px; margin: 80px auto; padding: 28px; border: 1px solid #e5e7eb; border-radius: 12px; text-align: center;">
+        <div style="font-size: 32px; margin-bottom: 8px;">😈</div>
+        <h2 style="margin-top: 0;">{heading}</h2>
+        <p style="color: #4b5563;">{body}</p>
+        <p style="margin-top: 24px;">{logout_link}</p>
+    </div>
+    """
 
 @app.post("/buckets/")
 def create_bucket(
@@ -2286,10 +2486,19 @@ def update_item(
     is_shoppable: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
     bucket_id: Optional[int] = Form(None),
-    update_series: bool = Form(False)
+    update_series: bool = Form(False),
+    from_multiverse_timeline: Optional[str] = Form(None)
 ):
     referer = request.headers.get("referer")
     redirect_url = referer if referer else "/"
+    # The Multiverse Timeline is a client-side canvas overlay with no URL of its own, so the
+    # Referer above is just whatever Universe happened to be active underneath it - saving an
+    # edit landed the user on that Universe's plain realm view instead of back in the Multiverse
+    # Timeline they were actually looking at (reported directly). edit-item-from-multiverse-
+    # timeline (set from isMultiverseStackedView the moment the modal opens) overrides that with a
+    # redirect the ?open_multiverse_timeline= pickup listener recognizes and reopens instead.
+    if from_multiverse_timeline == '1':
+        redirect_url = "/?open_multiverse_timeline=1"
 
     # Same manual string parsing as create_item - see the comment there for why.
     is_shoppable_flag = is_shoppable is not None and is_shoppable.strip().lower() in ("true", "on", "1", "yes")
