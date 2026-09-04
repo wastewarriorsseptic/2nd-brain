@@ -3788,6 +3788,46 @@
             }, 900);
         }
 
+        // Rotates the floating launcher's hint pill through a handful of encouraging phrases
+        // instead of always sitting on the same "I'm your ai!" - fades out, swaps the text, fades
+        // back in (the button's own `transition` class already covers opacity), on a slow interval
+        // so it reads as a gentle nudge rather than something distractingly busy. Runs continuously
+        // regardless of whether the pill is currently visible (it's hidden - not removed - while
+        // the chat panel is open) since swapping hidden text costs nothing and keeps the rotation
+        // in sync with real elapsed time rather than resetting every time the panel closes.
+        const AI_CHAT_HINT_PHRASES = [
+            "I'm your ai!",
+            "Let's crush your list 💪",
+            "You've got this!",
+            "Ready to help you win",
+            "Let's knock one out",
+            "Small steps, big wins",
+            "Let's make today count",
+            "You + me = unstoppable",
+            "Cheering you on 🎉",
+            "One task at a time",
+            "Let's get it done",
+            "Progress feels good",
+            "I'm here to help you win",
+            "Let's turn chaos into checkmarks",
+            "You're crushing it",
+            "Keep going - you've got this",
+        ];
+        let aiChatHintPhraseIndex = 0;
+
+        function rotateAiChatHintPhrase() {
+            const hint = document.getElementById('ai-chat-launcher-hint');
+            if (!hint) return;
+            hint.classList.add('opacity-0');
+            setTimeout(() => {
+                aiChatHintPhraseIndex = (aiChatHintPhraseIndex + 1) % AI_CHAT_HINT_PHRASES.length;
+                hint.textContent = AI_CHAT_HINT_PHRASES[aiChatHintPhraseIndex];
+                hint.classList.remove('opacity-0');
+            }, 300);
+        }
+
+        setInterval(rotateAiChatHintPhrase, 6000);
+
         function toggleAiChatPanel() {
             const panel = document.getElementById('ai-chat-panel');
             if (!panel) return;
@@ -5976,9 +6016,10 @@
 
             targetCameraZoom = zoomVal;
             targetCameraOffset = {
-                // Centered rather than left-biased: overdue tasks now extend LEFT of each hub and
-                // upcoming ones RIGHT (see buildMultiverseLanes), so both directions need room.
-                x: window.innerWidth * (isMobile ? 0.44 : 0.42),
+                // Every lane's hub sits at world x=0 (see buildMultiverseLanes), so this offset IS
+                // each hub's screen x directly - dead center of the viewport, matching how overdue
+                // tasks extend LEFT and upcoming ones extend RIGHT in equal, symmetric room.
+                x: window.innerWidth * 0.5,
                 y: (window.innerHeight / 2) - ((totalHeight / 2) * zoomVal)
             };
         }
