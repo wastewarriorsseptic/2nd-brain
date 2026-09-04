@@ -6141,7 +6141,18 @@
             const isMobile = window.innerWidth < 768;
             const topChrome = isMobile ? 244 : 180;
             const bottomChrome = isMobile ? 170 : 110;
-            const usableHeight = Math.max(200, window.innerHeight - topChrome - bottomChrome);
+
+            // A "halfway" compromise between the chrome-adjusted center and true center was
+            // reported directly as still visibly low, twice - a compromise on the CENTER position
+            // can't actually win: it's never quite true-center, and it doesn't reserve full
+            // clearance either. Reserving the LARGER of the two chrome amounts on BOTH sides
+            // instead (clearanceEachSide) fixes both at once - the ring fits inside a
+            // symmetric envelope no matter which bar is actually taller, so true center
+            // (window.innerHeight / 2) is *always* far enough from both to never collide, with
+            // no bias to split the difference on. Costs a bit of extra zoom-out on whichever side
+            // had the smaller original chrome value - a fine trade for actually being centered.
+            const clearanceEachSide = Math.max(topChrome, bottomChrome);
+            const usableHeight = Math.max(200, window.innerHeight - (clearanceEachSide * 2));
 
             const fitZoomX = window.innerWidth / boundingWidth;
             const fitZoomY = usableHeight / boundingHeight;
@@ -6154,19 +6165,9 @@
             const centerX = 0;
             const centerY = 0;
 
-            // Splitting the difference with true screen-center - reported directly as still
-            // looking too low on mobile even after the horizontal (origin-based) centering fix.
-            // topChrome/bottomChrome are deliberately asymmetric (more space reserved above, for
-            // the stacked pill/Daily Digest row, than below) to keep the ring clear of both bars,
-            // which biases the pure chrome-adjusted center a real ~37px low on a typical mobile
-            // viewport - halving that bias keeps the collision-avoidance intent while reading as
-            // genuinely centered instead of low.
-            const chromeAdjustedYCenter = topChrome + (usableHeight / 2);
-            const safeYCenter = (chromeAdjustedYCenter + (window.innerHeight / 2)) / 2;
-
             targetCameraOffset = {
                 x: (window.innerWidth / 2) - (centerX * targetCameraZoom),
-                y: safeYCenter - (centerY * targetCameraZoom)
+                y: (window.innerHeight / 2) - (centerY * targetCameraZoom)
             };
             updateDailyDigestVisibility();
         }
@@ -6433,13 +6434,21 @@
             const totalHeight = (laneCount - 1) * laneSpacing;
             const zoomVal = isMobile ? 0.22 : 0.32;
 
+            // Reported directly (desktop specifically): with several lanes, the stack's total
+            // height often exceeds the viewport, and centering against the RAW window height
+            // (ignoring that the top ~100px is the Multiverse/Daily Digest pill row) left the
+            // topmost lane sitting flush against - sometimes nearly under - that chrome. Desktop
+            // only for now, matching what was actually reported; mobile's existing spacing wasn't
+            // flagged.
+            const topChrome = isMobile ? 0 : 100;
+
             targetCameraZoom = zoomVal;
             targetCameraOffset = {
                 // Every lane's hub sits at world x=0 (see buildMultiverseLanes), so this offset IS
                 // each hub's screen x directly - dead center of the viewport, matching how overdue
                 // tasks extend LEFT and upcoming ones extend RIGHT in equal, symmetric room.
                 x: window.innerWidth * 0.5,
-                y: (window.innerHeight / 2) - ((totalHeight / 2) * zoomVal)
+                y: topChrome + ((window.innerHeight - topChrome) / 2) - ((totalHeight / 2) * zoomVal)
             };
         }
 
