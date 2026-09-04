@@ -4666,6 +4666,13 @@
         let multiverseActiveLaneId = null;
         let initialPinchDistance = null;
         let frameCount = 0;
+        // Purely decorative starfield (see generateSpaceStars/drawSpaceStars) - screen-space, not
+        // world-space, so it stays put as a fixed backdrop while panning/zooming rather than
+        // trying to populate real star positions across the whole pannable world. Experimental per
+        // the user's own request ("not sure if i want this... ready to undo") - isolated to these
+        // two functions, one array, and one call site in renderSpaceFrameInner, so removing it
+        // later is a clean, contained revert.
+        let spaceStars = [];
         let lastTouchTime = 0;
         // Was this touch gesture a drag or pinch rather than a tap? Set once the finger moves past
         // TAP_MOVE_THRESHOLD (gestureMoved) or a second finger ever joins (gestureWasMultiTouch,
@@ -5329,12 +5336,45 @@
         // all visibly speeding up).
         let spaceRenderLoopRunning = false;
 
+        // A small, fixed handful of screen-space stars - deliberately sparse and low-opacity per
+        // the user's own ask ("very very subtle... only a few... cannot be distracting"). Random
+        // position/size/opacity/twinkle-phase per star, generated fresh each time Space View opens
+        // (cheap, and keeps them matching the current viewport size rather than a stale one).
+        function generateSpaceStars() {
+            const STAR_COUNT = 40;
+            spaceStars = [];
+            for (let i = 0; i < STAR_COUNT; i++) {
+                spaceStars.push({
+                    x: Math.random() * window.innerWidth,
+                    y: Math.random() * window.innerHeight,
+                    radius: 0.6 + Math.random() * 1.0,
+                    baseOpacity: 0.12 + Math.random() * 0.22,
+                    twinklePhase: Math.random() * Math.PI * 2,
+                    twinkleSpeed: 0.4 + Math.random() * 0.5,
+                });
+            }
+        }
+
+        // Drawn in SCREEN space (called before the camera translate/scale in
+        // renderSpaceFrameInner) so stars read as a fixed backdrop rather than panning/zooming
+        // with the content - "we are actually in space" rather than stars living inside it.
+        function drawSpaceStars() {
+            spaceStars.forEach(star => {
+                const twinkle = 0.55 + 0.45 * Math.sin(frameCount * star.twinkleSpeed + star.twinklePhase);
+                spaceCtx.beginPath();
+                spaceCtx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+                spaceCtx.fillStyle = `rgba(226, 232, 240, ${(star.baseOpacity * twinkle).toFixed(3)})`;
+                spaceCtx.fill();
+            });
+        }
+
         function initSpaceCanvas() {
             spaceCanvas = document.getElementById('space-canvas');
             spaceCtx = spaceCanvas.getContext('2d');
 
             resizeSpaceCanvas();
             window.addEventListener('resize', resizeSpaceCanvas);
+            generateSpaceStars();
 
             // Tracks how many occurrences of each recurring series (keyed by bucket + title)
             // have already been added to the canvas - a count, not just a seen/unseen flag, so
@@ -6468,6 +6508,10 @@
 
             spaceCtx.save();
             spaceCtx.scale(deviceDPR, deviceDPR);
+
+            // Drawn here, before the camera translate/scale below, so stars stay fixed on screen
+            // (a backdrop) rather than panning/zooming with the world content.
+            drawSpaceStars();
 
             spaceCtx.translate(cameraOffset.x, cameraOffset.y);
             spaceCtx.scale(cameraZoom, cameraZoom);
