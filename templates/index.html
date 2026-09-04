@@ -6999,6 +6999,20 @@
                                 radius: isMobile ? 22 : 19,
                             });
                         }
+
+                        // One more "+" one step past the LAST task, to keep extending the chain
+                        // forward instead of only being able to add between existing tasks -
+                        // reported directly. Same shape/behavior as every other entry in this array
+                        // (opens the identical Add Task modal, no due date pre-filled), so it rides
+                        // along on the exact same draw/hit-test code with no changes needed there.
+                        const lastTask = linearSortedTasks[linearSortedTasks.length - 1];
+                        bucket.midAddButtons.push({
+                            x: lastTask.x + stepSpacing,
+                            y: bucket.y,
+                            bucketId: bucket.id,
+                            realmId: realm.id,
+                            radius: isMobile ? 22 : 19,
+                        });
                     } else {
                         bucket.tasks.forEach(task => {
                             const hoverX = Math.cos(frameCount + task.floatOffset) * 3;
