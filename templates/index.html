@@ -7082,11 +7082,17 @@
                 // a small manual correction is the established fix elsewhere in this file (see the
                 // 🗑 delete-icon draws using pos.x - radius*0.04, pos.y + radius*0.08). This
                 // particular glyph (calendar + VS16) needed a much bigger correction than that
-                // precedent - measured directly against a large zoomed-in iOS Simulator screenshot
-                // (circle radius ~136px, glyph bounding-box center sitting ~81px right and ~19px
-                // below the circle's actual center at that zoom, i.e. roughly 0.6r right / 0.14r
-                // down before this fix), not just estimated by eye.
-                spaceCtx.fillText('🗓️', coreTimelineBtnX - (coreTimelineBtnRadius * 0.56), coreTimelineBtnY - (coreTimelineBtnRadius * 0.03));
+                // precedent, and the correction itself differs by platform - iOS's Apple Color
+                // Emoji and desktop Chrome's own emoji font don't center this glyph the same way
+                // relative to a fillText anchor, so one shared offset undercorrected on desktop
+                // (reported directly - "only on desktop like that, mobile is fine"). Mobile's value
+                // was measured against a zoomed-in iOS Simulator screenshot; desktop's was measured
+                // the same way against a headless-Chrome screenshot at real desktop width (the
+                // in-app Browser pane's own physical frame is too narrow to render/screenshot a
+                // genuine >=768px desktop layout, so this needed an actual Chrome window instead).
+                const coreTimelineBtnGlyphOffsetX = isMobileCore ? -0.56 : -0.05;
+                const coreTimelineBtnGlyphOffsetY = isMobileCore ? -0.03 : 0.08;
+                spaceCtx.fillText('🗓️', coreTimelineBtnX + (coreTimelineBtnRadius * coreTimelineBtnGlyphOffsetX), coreTimelineBtnY + (coreTimelineBtnRadius * coreTimelineBtnGlyphOffsetY));
                 spaceCtx.restore();
             }
 
