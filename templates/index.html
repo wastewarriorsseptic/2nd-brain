@@ -5544,6 +5544,12 @@
                 // <button>s from starting a drag - they're all plain <button> elements, unlike the
                 // cards themselves, which are dragged via their <a> (see the click-swallow below).
                 filter: 'button',
+                // SortableJS's default (preventOnFilter: true) calls preventDefault() on the
+                // touchstart that matched `filter` - which suppresses the browser's synthesized
+                // click on mobile, so the Edit/Delete/Share buttons became untappable in reorder
+                // mode on touch devices only (desktop's mouse path never hits this). Reported
+                // directly - "wobble mode not letting me tap edit/delete/share... only on mobile".
+                preventOnFilter: false,
                 onEnd: () => {
                     const order = Array.from(grid.querySelectorAll('.universe-card'))
                         .map(el => parseInt(el.getAttribute('data-universe-id')))
@@ -6139,18 +6145,22 @@
             // the top bar that this framing math needs to account for - without it, realms render too
             // close to the top and visually collide with that pill.
             const isMobile = window.innerWidth < 768;
-            const topChrome = isMobile ? 244 : 180;
-            const bottomChrome = isMobile ? 170 : 110;
+            // Trimmed down from 244/180 - reported directly as too zoomed out once these got
+            // reserved symmetrically on both sides (see clearanceEachSide below). 244 had grown
+            // well past what the actual pill stack needs on mobile; 190 still comfortably covers
+            // the "TaskMonster / Universe" + "Close View" row and the Daily Digest pill under it.
+            const topChrome = isMobile ? 190 : 150;
+            // The bottom HUD is just the single "Multiverse Timeline" pill now (the mobile +/-
+            // zoom buttons were removed) - doesn't need as much room as before either.
+            const bottomChrome = isMobile ? 130 : 100;
 
-            // A "halfway" compromise between the chrome-adjusted center and true center was
-            // reported directly as still visibly low, twice - a compromise on the CENTER position
-            // can't actually win: it's never quite true-center, and it doesn't reserve full
-            // clearance either. Reserving the LARGER of the two chrome amounts on BOTH sides
-            // instead (clearanceEachSide) fixes both at once - the ring fits inside a
-            // symmetric envelope no matter which bar is actually taller, so true center
-            // (window.innerHeight / 2) is *always* far enough from both to never collide, with
-            // no bias to split the difference on. Costs a bit of extra zoom-out on whichever side
-            // had the smaller original chrome value - a fine trade for actually being centered.
+            // True center (window.innerHeight / 2, no compromise/split) needs EQUAL clearance on
+            // both sides to guarantee no collision with whichever bar is taller - reserving the
+            // larger of the two on both sides (clearanceEachSide) does that, at the cost of some
+            // extra zoom-out on the side with the smaller original value. Trimming topChrome/
+            // bottomChrome themselves (above) keeps that cost as small as it can be while topChrome
+            // is still the taller one and true centering still needs to reserve its own value on
+            // the bottom too.
             const clearanceEachSide = Math.max(topChrome, bottomChrome);
             const usableHeight = Math.max(200, window.innerHeight - (clearanceEachSide * 2));
 
@@ -6930,7 +6940,15 @@
                 // deliberately safer ratio - still bigger than the 0.72 other badge icons use, but
                 // confirmed (see the live check this was verified with) not to clip at either size.
                 spaceCtx.font = `${Math.round(coreTimelineBtnRadius * 1.0)}px serif`;
-                spaceCtx.fillText('🗓️', coreTimelineBtnX, coreTimelineBtnY + 1);
+                // textAlign/textBaseline center/middle doesn't actually center most emoji glyphs -
+                // a small manual correction is the established fix elsewhere in this file (see the
+                // 🗑 delete-icon draws using pos.x - radius*0.04, pos.y + radius*0.08). This
+                // particular glyph (calendar + VS16) needed a much bigger correction than that
+                // precedent - measured directly against a large zoomed-in iOS Simulator screenshot
+                // (circle radius ~136px, glyph bounding-box center sitting ~81px right and ~19px
+                // below the circle's actual center at that zoom, i.e. roughly 0.6r right / 0.14r
+                // down before this fix), not just estimated by eye.
+                spaceCtx.fillText('🗓️', coreTimelineBtnX - (coreTimelineBtnRadius * 0.56), coreTimelineBtnY - (coreTimelineBtnRadius * 0.03));
                 spaceCtx.restore();
             }
 
