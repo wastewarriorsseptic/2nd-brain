@@ -1982,6 +1982,12 @@ def create_item(
         created_by_name = current_user.name if current_user else "A collaborator"
         created_by_email = current_user.email if current_user else None
 
+        # For a recurring task this loop creates one Item per occurrence and new_item ends up
+        # holding the LAST one - first_created_item is captured separately so the post-save
+        # redirect can send the camera to the occurrence the user actually just filled the form
+        # out for (the earliest one), not whichever happened to be created last.
+        first_created_item = None
+
         for target_due_date in target_dates:
             target_due_str = target_due_date.strftime("%Y-%m-%d %I:%M %p") if due_time and due_time.strip() else target_due_date.strftime("%Y-%m-%d")
             new_item = Item(
@@ -1998,6 +2004,8 @@ def create_item(
             session.commit()
             session.refresh(new_item)
             print(f"[SHOP DEBUG] after commit+refresh, new_item.id={new_item.id} is_shoppable={new_item.is_shoppable!r}", flush=True)
+            if first_created_item is None:
+                first_created_item = new_item
 
             if reminder_offset == -1:
                 for day in range(1, 4):
@@ -2062,7 +2070,16 @@ def create_item(
             session.refresh(new_item)
             recurring_suggestion = find_recurring_suggestion(session, new_item)
 
+        realm_id_for_redirect = realm.id if realm else None
+        first_created_item_id = first_created_item.id if first_created_item else None
+
+    # goto_item/realm_id send the camera straight to the task actually just created (the earliest
+    # occurrence, for a recurring one) via the same pickup mechanism Daily Digest/AI chat
+    # navigation already use - reported directly: saving a new task from a bucket's timeline was
+    # landing back on the bucket's own hub instead of following to where the task ended up.
     redirect_url = f"/?bucket_id={bucket_id}"
+    if realm_id_for_redirect and first_created_item_id:
+        redirect_url += f"&realm_id={realm_id_for_redirect}&goto_item={first_created_item_id}"
     if recurring_suggestion:
         redirect_url += (
             f"&recur_title={quote(recurring_suggestion['title'])}"

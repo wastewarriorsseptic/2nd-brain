@@ -2683,14 +2683,20 @@
         // incomplete if later re-toggled from there. Only reports back whichever match corresponds to
         // the view actually on screen (isMultiverseStackedView), so the caller re-renders the right
         // dock instead of one that isn't even visible.
+        // Returns the removed task object itself alongside which bucket/lane it came from (not
+        // just the container) - lets a caller offer Undo by simply pushing the exact same object
+        // straight back in, instead of having to refetch or reconstruct it from scratch.
         function removeTaskFromSpaceData(itemId) {
             let bucketMatch = null;
             let laneMatch = null;
+            let removedFromBucket = null;
+            let removedFromLane = null;
 
             for (const realm of spaceRealms) {
                 for (const bucket of (realm.buckets || [])) {
                     const idx = (bucket.tasks || []).findIndex(t => String(t.id) === String(itemId));
                     if (idx !== -1) {
+                        removedFromBucket = bucket.tasks[idx];
                         bucket.tasks.splice(idx, 1);
                         bucketMatch = bucket;
                     }
@@ -2699,15 +2705,55 @@
             for (const lane of multiverseLanes) {
                 const idx = (lane.tasks || []).findIndex(t => String(t.id) === String(itemId));
                 if (idx !== -1) {
+                    removedFromLane = lane.tasks[idx];
                     lane.tasks.splice(idx, 1);
                     laneMatch = lane;
                 }
             }
 
             if (isMultiverseStackedView) {
-                return laneMatch ? { lane: laneMatch } : (bucketMatch ? { bucket: bucketMatch } : null);
+                return laneMatch ? { lane: laneMatch, task: removedFromLane } : (bucketMatch ? { bucket: bucketMatch, task: removedFromBucket } : null);
             }
-            return bucketMatch ? { bucket: bucketMatch } : (laneMatch ? { lane: laneMatch } : null);
+            return bucketMatch ? { bucket: bucketMatch, task: removedFromBucket } : (laneMatch ? { lane: laneMatch, task: removedFromLane } : null);
+        }
+
+        // Small, self-creating toast offering to reverse a just-completed task - requested
+        // directly ("if i complete a task accidentally... show a very small and very temporary
+        // undo button"). Auto-hides after 5s (deliberately short - this is a quick "oops" catch,
+        // not a persistent banner). Undo re-calls the same toggle-complete endpoint (flipping
+        // is_completed back off) and, only on success, hands off to restoreFn to put the task back
+        // wherever the caller removed it from - each completion handler knows its own shape
+        // (bucket/lane re-insertion, DOM attribute, dock re-render, digest re-render, ...) well
+        // enough to do that itself; this function only owns the toast's own show/hide/timing.
+        let undoCompleteToastTimer = null;
+        function showUndoCompleteToast(itemId, title, restoreFn) {
+            let toast = document.getElementById('undo-complete-toast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = 'undo-complete-toast';
+                toast.className = 'hidden fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-80 z-[65] bg-slate-900/95 border border-emerald-500/40 text-slate-200 text-xs font-semibold rounded-2xl px-4 py-3 shadow-2xl flex items-center justify-between gap-3';
+                document.body.appendChild(toast);
+            }
+            clearTimeout(undoCompleteToastTimer);
+
+            toast.innerHTML = `
+                <span class="truncate">✓ "${escapeHtml(title)}" completed</span>
+                <button type="button" class="shrink-0 text-emerald-300 hover:text-emerald-100 underline underline-offset-2 font-bold">Undo</button>
+            `;
+            toast.classList.remove('hidden');
+
+            toast.querySelector('button').onclick = async () => {
+                clearTimeout(undoCompleteToastTimer);
+                toast.classList.add('hidden');
+                const result = await submitToggleCompleteAjax(itemId);
+                if (result) {
+                    restoreFn();
+                } else {
+                    showSpaceActionError("Couldn't undo - check your connection and try again.");
+                }
+            };
+
+            undoCompleteToastTimer = setTimeout(() => toast.classList.add('hidden'), 5000);
         }
 
         // A minimal, self-creating toast for when an in-place Space View action fails - reused by
@@ -2752,10 +2798,33 @@
             const removed = removeTaskFromSpaceData(itemId);
             applyToggleCompleteResult(result);
 
+            // Keeps the Timeline List view in sync without a reload - reported directly: completing
+            // something here left the Timeline List still showing it as active until a real page
+            // refresh, since the two views share the same server-rendered DOM row but this AJAX
+            // path never touched it (handleDigestCompleteToggle already did, this didn't).
+            const wrapper = document.querySelector(`.timeline-card-wrapper[data-item-id="${itemId}"]`);
+            if (wrapper) wrapper.setAttribute('data-completed', 'true');
+
             if (removed && removed.bucket) {
                 renderBucketTaskSwipeDock(removed.bucket, { focusFirst: false });
             } else if (removed && removed.lane) {
                 renderBucketTaskSwipeDock({ id: `__mv_lane_${removed.lane.id}__`, name: removed.lane.name, tasks: removed.lane.tasks }, { focusFirst: false });
+            }
+
+            // "if i complete a task accidentally... show a very small and very temporary undo
+            // button" - re-inserts the exact same task object this removed, so it reappears in
+            // exactly the shape it left (same fields, same recurrence/overdue flags), no refetch.
+            if (removed && removed.task) {
+                showUndoCompleteToast(itemId, removed.task.title, () => {
+                    if (wrapper) wrapper.setAttribute('data-completed', 'false');
+                    if (removed.bucket) {
+                        removed.bucket.tasks.push(removed.task);
+                        renderBucketTaskSwipeDock(removed.bucket, { focusFirst: false });
+                    } else if (removed.lane) {
+                        removed.lane.tasks.push(removed.task);
+                        renderBucketTaskSwipeDock({ id: `__mv_lane_${removed.lane.id}__`, name: removed.lane.name, tasks: removed.lane.tasks }, { focusFirst: false });
+                    }
+                });
             }
         }
 
@@ -2775,9 +2844,20 @@
                 return;
             }
 
-            removeTaskFromSpaceData(itemId);
+            const removed = removeTaskFromSpaceData(itemId);
             applyToggleCompleteResult(result);
             hideHudCard();
+
+            const wrapper = document.querySelector(`.timeline-card-wrapper[data-item-id="${itemId}"]`);
+            if (wrapper) wrapper.setAttribute('data-completed', 'true');
+
+            if (removed && removed.task) {
+                showUndoCompleteToast(itemId, removed.task.title, () => {
+                    if (wrapper) wrapper.setAttribute('data-completed', 'false');
+                    if (removed.bucket) removed.bucket.tasks.push(removed.task);
+                    else if (removed.lane) removed.lane.tasks.push(removed.task);
+                });
+            }
         }
 
         function toggleEmojiGrid(prefix) {
@@ -4981,10 +5061,19 @@
             const wrapper = document.querySelector(`.timeline-card-wrapper[data-item-id="${itemId}"]`);
             if (wrapper) wrapper.setAttribute('data-completed', 'true');
 
-            removeTaskFromSpaceData(itemId);
+            const removed = removeTaskFromSpaceData(itemId);
             applyToggleCompleteResult(result);
 
             renderDailyDigest();
+
+            if (removed && removed.task) {
+                showUndoCompleteToast(itemId, removed.task.title, () => {
+                    if (wrapper) wrapper.setAttribute('data-completed', 'false');
+                    if (removed.bucket) removed.bucket.tasks.push(removed.task);
+                    else if (removed.lane) removed.lane.tasks.push(removed.task);
+                    renderDailyDigest();
+                });
+            }
         }
 
         // Cross-Universe counterpart to handleDigestCompleteToggle - patches multiverseTasksData in
@@ -5007,10 +5096,20 @@
                 task.completedAt = new Date().toISOString();
             }
 
-            removeTaskFromSpaceData(itemId);
+            const removed = removeTaskFromSpaceData(itemId);
             applyToggleCompleteResult(result);
 
             refreshAllMultiverseDigests();
+
+            if (task) {
+                showUndoCompleteToast(itemId, task.title, () => {
+                    task.isCompleted = false;
+                    task.completedAt = null;
+                    if (removed && removed.bucket) removed.bucket.tasks.push(removed.task);
+                    else if (removed && removed.lane) removed.lane.tasks.push(removed.task);
+                    refreshAllMultiverseDigests();
+                });
+            }
         }
 
         function toggleDailyDigestExpanded() {
@@ -5959,7 +6058,20 @@
                 return;
             }
 
+            // maxOrbitDist (not the raw min/max bounding box) is what actually drives the framing
+            // below - reported directly ("universes are centered on mobile... this looks like its
+            // low"). Realms sit at evenly-spaced ANGLES around the same fixed orbitRadius (see the
+            // ORBIT-LOCKED REALM PHYSICS comment below), so for anything but a count evenly
+            // divisible into a symmetric layout (2 realms at 3+ realms in particular), their raw
+            // min/max positions are NOT symmetric around the origin - e.g. 3 realms at 0°/120°/240°
+            // span x=[-0.5r, r], not [-r, r]. Centering on that lopsided box put the devil core
+            // (always genuinely at the origin) visibly off-center. Framing a box that's always
+            // symmetric around the origin instead guarantees the core - and so the whole ring -
+            // reads as centered regardless of how many realms there are or which angles they land
+            // at, at the minor cost of slightly more zoomed-out than the strict minimum for a
+            // lopsided ring.
             let minX = -100, maxX = 100, minY = -100, maxY = 100;
+            let maxOrbitDist = 100;
             spaceRealms.forEach(r => {
                 r.targetX = r.baseX;
                 r.targetY = r.baseY;
@@ -5967,6 +6079,8 @@
                 if (r.baseX > maxX) maxX = r.baseX;
                 if (r.baseY < minY) minY = r.baseY;
                 if (r.baseY > maxY) maxY = r.baseY;
+                const orbitDist = Math.hypot(r.baseX, r.baseY);
+                if (orbitDist > maxOrbitDist) maxOrbitDist = orbitDist;
             });
 
             // Padding is computed from the ACTUAL circle size + widest label pill (not a flat guess),
@@ -5981,8 +6095,8 @@
             const paddingX = Math.max(currentRealmRadius + glow, currentMaxPillWidth / 2) + safetyMargin;
             const paddingY = currentRealmRadius + glow + 12 + pillHeight + safetyMargin;
 
-            const boundingWidth = (maxX - minX) + (paddingX * 2);
-            const boundingHeight = (maxY - minY) + (paddingY * 2);
+            const boundingWidth = (maxOrbitDist * 2) + (paddingX * 2);
+            const boundingHeight = (maxOrbitDist * 2) + (paddingY * 2);
 
             // The "TaskMonster Universe" / "Close View" pills up top and the "+ / - / Multiverse
             // Timeline" row at the bottom are fixed overlays sitting ON TOP of the canvas - they don't shrink the canvas
@@ -6005,8 +6119,10 @@
             // that requires - always fully fits on screen instead of being clipped by an artificial floor.
             targetCameraZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.12), 0.90);
 
-            const centerX = (minX + maxX) / 2;
-            const centerY = (minY + maxY) / 2;
+            // The origin, not the (potentially lopsided) bounding-box midpoint - see the comment
+            // on maxOrbitDist above for why.
+            const centerX = 0;
+            const centerY = 0;
 
             const safeYCenter = topChrome + (usableHeight / 2);
 
@@ -6759,7 +6875,11 @@
                 spaceCtx.shadowBlur = 0;
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
-                spaceCtx.font = `${Math.round(coreTimelineBtnRadius * 1.1)}px serif`;
+                // Reported directly as looking small in its circle - this glyph in particular
+                // (a calendar-with-spiral) carries more built-in padding than most emoji, so it
+                // needed a noticeably bigger ratio than the 0.72 other badge icons use to actually
+                // read as filling the circle.
+                spaceCtx.font = `${Math.round(coreTimelineBtnRadius * 1.4)}px serif`;
                 spaceCtx.fillText('🗓️', coreTimelineBtnX, coreTimelineBtnY + 1);
                 spaceCtx.restore();
             }
