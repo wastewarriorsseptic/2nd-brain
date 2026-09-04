@@ -322,9 +322,6 @@
                     <div class="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 mr-1">
                         <span id="realms-card-chevron" class="text-xs text-slate-400 group-hover:text-indigo-400 transition-transform duration-200 shrink-0">▼</span>
                         <a href="/" onclick="selectRealm(event, null)" class="text-xs font-extrabold uppercase tracking-wider {% if not selected_realm_id and not selected_bucket_id %}text-indigo-400{% else %}text-slate-300 group-hover:text-white{% endif %} shrink-0 transition-colors">Realms</a>
-                        <span class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">
-                            {{ realms|length }}
-                        </span>
 
                         <div id="card-selection-badge-container" class="inline-flex items-center min-w-0 flex-1">
                             {% set ns = namespace(active_realm=None, active_bucket=None) %}
@@ -478,25 +475,21 @@
                         <button id="pill-btn-active" onclick="setTimelineFilter('active')"
                                 class="flex-1 px-1 sm:px-3 py-1.5 text-[10px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1 bg-indigo-600 text-white shadow-md min-w-0">
                             <span>⚡ Active</span>
-                            <span id="active-count-badge" class="hidden sm:inline-block bg-indigo-500/30 text-indigo-100 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full border border-indigo-400/30 shrink-0">0</span>
                         </button>
 
                         <button id="pill-btn-recurring" onclick="setTimelineFilter('recurring')"
                                 class="flex-1 px-1 sm:px-3 py-1.5 text-[10px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1 text-slate-400 hover:text-slate-200 min-w-0">
                             <span>🔄 <span class="hidden sm:inline">Recurring</span><span class="inline sm:hidden">Repeat</span></span>
-                            <span id="recurring-count-badge" class="hidden sm:inline-block bg-amber-500/30 text-amber-200 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full border border-amber-400/30 shrink-0">0</span>
                         </button>
 
                         <button id="pill-btn-overdue" onclick="setTimelineFilter('overdue')"
                                 class="flex-1 px-1 sm:px-3 py-1.5 text-[10px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1 text-slate-400 hover:text-slate-200 min-w-0">
                             <span>⚠️ Overdue</span>
-                            <span id="overdue-count-badge" class="hidden sm:inline-block bg-rose-500/30 text-rose-200 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full border border-rose-400/30 shrink-0">0</span>
                         </button>
 
                         <button id="pill-btn-completed" onclick="setTimelineFilter('completed')"
                                 class="flex-1 px-1 sm:px-3 py-1.5 text-[10px] sm:text-xs font-bold rounded-full transition-all duration-200 flex items-center justify-center gap-1 text-slate-400 hover:text-slate-200 min-w-0">
                             <span>✅ <span class="hidden sm:inline">Completed</span><span class="inline sm:hidden">Done</span></span>
-                            <span id="completed-count-badge" class="hidden sm:inline-block bg-slate-700 text-slate-300 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full shrink-0">0</span>
                         </button>
                     </div>
                     {% endif %}
@@ -793,7 +786,6 @@
                 <div id="daily-digest-header" onclick="toggleDailyDigestExpanded()"
                      class="pointer-events-auto cursor-pointer bg-slate-900/90 border border-indigo-500/40 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2 text-xs font-bold text-indigo-300 hover:text-white transition w-fit">
                     <span>📋 Daily Digest</span>
-                    <span id="daily-digest-count-badge" class="hidden bg-indigo-500/30 text-indigo-200 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full border border-indigo-400/30">0</span>
                     <span id="daily-digest-chevron" class="text-[10px]">▾</span>
                 </div>
                 <div id="daily-digest-body-wrapper" class="hidden pointer-events-auto mt-2 w-11/12 max-w-sm max-h-[55vh] overflow-y-auto overscroll-contain bg-slate-900/95 border border-indigo-500/40 rounded-2xl backdrop-blur-md shadow-2xl p-3.5 space-y-3 text-xs">
@@ -919,7 +911,6 @@
                 <div id="mv-picker-daily-digest-header" onclick="toggleMultiversePickerDigestExpanded()"
                      class="cursor-pointer bg-slate-900/90 border border-indigo-500/40 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2 text-xs font-bold text-indigo-300 hover:text-white transition w-fit mx-auto">
                     <span>📋 Daily Digest</span>
-                    <span id="mv-picker-daily-digest-count-badge" class="hidden bg-indigo-500/30 text-indigo-200 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full border border-indigo-400/30">0</span>
                     <span id="mv-picker-daily-digest-chevron" class="text-[10px]">▾</span>
                 </div>
                 <div id="mv-picker-daily-digest-body-wrapper" class="hidden mt-2 w-[92vw] max-w-sm max-h-[45vh] overflow-y-auto overscroll-contain bg-slate-900/95 border border-indigo-500/40 rounded-2xl backdrop-blur-md shadow-2xl p-3.5 space-y-3 text-xs mx-auto">
@@ -4905,17 +4896,13 @@
             ].join('<div class="border-t border-slate-800/80"></div>');
         }
 
-        // Writes computed digest data into one specific badge/body element pair - shared by every
-        // digest instance below.
+        // Writes computed digest data into one specific body element - shared by every digest
+        // instance below. badgeEl is optional (the count badges next to "Daily Digest" were
+        // removed per "get rid of all of the counts" - kept as a parameter, tolerated as null,
+        // rather than touching every call site).
         function renderDigestInto(data, badgeEl, bodyEl, completeToggleFn) {
-            if (!badgeEl || !bodyEl) return;
-            const urgentCount = data.overdue.length + data.dueToday.length;
-            if (urgentCount > 0) {
-                badgeEl.innerText = urgentCount;
-                badgeEl.classList.remove('hidden');
-            } else {
-                badgeEl.classList.add('hidden');
-            }
+            if (!bodyEl) return;
+            if (badgeEl) badgeEl.classList.add('hidden');
             bodyEl.innerHTML = buildDigestSectionsHtml(data, completeToggleFn);
         }
 
@@ -6269,7 +6256,7 @@
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
                 spaceCtx.font = 'bold 34px sans-serif';
-                const nameText = `${lane.name} (${lane.tasks.length})`;
+                const nameText = lane.name;
                 const nameWidth = spaceCtx.measureText(nameText).width + 36;
                 const pillY = lane.y + lane.hubRadius + 16;
                 const pillHeight = 46;
@@ -8430,9 +8417,7 @@
                 ? [...bucket.tasks].sort((a, b) => a.title.localeCompare(b.title))
                 : [...bucket.tasks].sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
 
-            title.innerText = isContactUniverse
-                ? `⭐️ ${bucket.name} (${sortedTasks.length} People)`
-                : `⭐️ ${bucket.name} (${sortedTasks.length} Tasks)`;
+            title.innerText = `⭐️ ${bucket.name}`;
             wrapper.innerHTML = '';
 
             if (sortedTasks.length === 0) {
@@ -8466,7 +8451,7 @@
 
                         card.innerHTML = `
                             <div class="flex items-center justify-between gap-2 border-b border-slate-700/50 pb-1.5">
-                                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-indigo-500/20 text-indigo-300 border-indigo-500/30">👥 Person ${index + 1} of ${sortedTasks.length}</span>
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-indigo-500/20 text-indigo-300 border-indigo-500/30">👥 Person</span>
                                 <div class="flex items-center gap-2">
                                     <button onclick="event.stopPropagation(); deletePersonDirect('${task.id}', ${JSON.stringify(task.title)})" title="Delete Person" class="text-slate-400 hover:text-red-400 text-xs">🗑️</button>
                                     <button onclick="event.stopPropagation(); openEditPersonFromTask(${JSON.stringify(task).replace(/"/g, '&quot;')})" title="Edit Person" class="text-slate-400 hover:text-indigo-400 text-xs">✏️</button>
@@ -8484,13 +8469,13 @@
                         `;
                     } else {
                         let badgeClass = "bg-indigo-500/20 text-indigo-300 border-indigo-500/30";
-                        let badgeText = `⚡ Task ${index + 1} of ${sortedTasks.length}`;
+                        let badgeText = `⚡ Task`;
                         if (task.isOverdue) {
                             badgeClass = "bg-rose-500/20 text-rose-300 border-rose-500/30";
-                            badgeText = `⚠️ Overdue (${index + 1}/${sortedTasks.length})`;
+                            badgeText = `⚠️ Overdue`;
                         } else if (task.isRecurring) {
                             badgeClass = "bg-amber-500/20 text-amber-300 border-amber-500/30";
-                            badgeText = `🔄 Repeat (${index + 1}/${sortedTasks.length})`;
+                            badgeText = `🔄 Repeat`;
                         }
 
                         const amountText = task.amount ? `<span class="text-emerald-400 font-bold text-xs">$${parseFloat(task.amount).toFixed(2)}</span>` : '';
