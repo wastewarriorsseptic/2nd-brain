@@ -756,10 +756,19 @@
                     <span class="text-slate-500 text-[10px]">🌀 Multiverse</span>
                 </button>
 
-                <button onclick="toggleSpaceView()"
-                        class="pointer-events-auto px-3.5 py-1.5 bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-indigo-400/30">
-                    ✖ Close View
-                </button>
+                <div class="flex items-center gap-2">
+                    <!-- Shown only while hold-to-reordering Universe lanes in the Multiverse Timeline
+                         (see enterMultiverseTimelineReorderMode/exitMultiverseTimelineReorderMode) -
+                         same green "Done" affordance as the Multiverse picker grid's own wobble mode. -->
+                    <button type="button" id="multiverse-timeline-reorder-done-btn" onclick="exitMultiverseTimelineReorderMode()"
+                            class="hidden pointer-events-auto px-3.5 py-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-emerald-400/30">
+                        ✓ Done
+                    </button>
+                    <button onclick="toggleSpaceView()"
+                            class="pointer-events-auto px-3.5 py-1.5 bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-indigo-400/30">
+                        ✖ Close View
+                    </button>
+                </div>
             </div>
 
             <!-- Daily Digest HUD: same Overdue / Due Today / Due Tomorrow / Completed Yesterday
@@ -4548,6 +4557,14 @@
         let longPressRealmForDelete = null;
         let longPressTaskForDelete = null;
         let longPressBucketForDelete = null;
+        // Multiverse Timeline hold-to-reorder (see enterMultiverseTimelineReorderMode) - the canvas
+        // equivalent of the Multiverse picker grid's DOM-based wobble/drag; both write to the same
+        // /universes/reorder/ endpoint (so either surface's reordering shows up on the other) and
+        // share the SAME multiverseReorderMode flag declared below near the grid's own long-press
+        // setup, since a user is only ever looking at one of the two surfaces at a time.
+        let multiverseDraggingLane = null;
+        let multiverseDragStartWorldY = null;
+        let multiverseDragLaneStartY = null;
         let cameraOffset = { x: 0, y: 0 };
         let targetCameraOffset = { x: 0, y: 0 };
         let cameraZoom = 1;
@@ -5076,6 +5093,7 @@
                 longPressBucketForDelete = null;
                 isMultiverseStackedView = false;
                 multiverseActiveLaneId = null;
+                if (multiverseReorderMode) exitMultiverseTimelineReorderMode();
             }
         }
 
@@ -5624,6 +5642,7 @@
             // the stacked lanes view.
             isMultiverseStackedView = false;
             multiverseActiveLaneId = null;
+            if (multiverseReorderMode) exitMultiverseTimelineReorderMode();
 
             activeSelectedRealm = null;
             activeSelectedBucket = null;
@@ -5864,13 +5883,15 @@
 
             const lanes = Array.from(byUniverse.values());
             lanes.forEach(lane => lane.tasks.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)));
-            // Busiest-soonest lane first: whichever Universe's very next task is closest floats to
-            // the top of the stack, so the most time-sensitive lane is the first thing seen.
-            lanes.sort((a, b) => {
-                const aNext = a.tasks.length ? new Date(a.tasks[0].dueDate) : Infinity;
-                const bNext = b.tasks.length ? new Date(b.tasks[0].dueDate) : Infinity;
-                return aNext - bNext;
-            });
+            // Lane order follows each Universe's own sort_order - the same order the Multiverse
+            // picker grid uses, and the same field hold-to-reorder (either surface) writes to via
+            // /universes/reorder/. Used to be "busiest-soonest first" (whichever Universe's next
+            // task was closest floated to the top) before manual reordering existed here; that
+            // auto-sort would have silently undone a manual drag the next time lanes rebuilt (any
+            // task change, or reopening the view), so it's gone in favor of a stable, user-controlled
+            // order - matching how the picker grid, and iOS's own icon reordering, already behave.
+            const universeSortOrder = new Map(allUniversesData.map(u => [String(u.id), u.sort_order || 0]));
+            lanes.sort((a, b) => (universeSortOrder.get(String(a.id)) ?? 0) - (universeSortOrder.get(String(b.id)) ?? 0));
 
             const isMobile = window.innerWidth < 768;
             const laneSpacing = isMobile ? 460 : 400;
@@ -6002,22 +6023,42 @@
                 }
             });
 
-            multiverseLanes.forEach(lane => {
+            multiverseLanes.forEach((lane, laneIdx) => {
                 spaceCtx.save();
+
+                const isDraggedLane = lane === multiverseDraggingLane;
+                // Every OTHER lane jiggles (iOS home-screen style) while reorder mode is active -
+                // the one actually being dragged stays steady and gets a "lifted" halo/scale bump
+                // instead, same distinction iOS itself draws between the held icon and the rest.
+                if (multiverseReorderMode && !isDraggedLane) {
+                    const wobbleAngle = Math.sin(Date.now() / 90 + laneIdx * 1.7) * 0.035;
+                    spaceCtx.translate(lane.x, lane.y);
+                    spaceCtx.rotate(wobbleAngle);
+                    spaceCtx.translate(-lane.x, -lane.y);
+                }
+
+                const hubDrawRadius = isDraggedLane ? lane.hubRadius * 1.08 : lane.hubRadius;
+                if (isDraggedLane) {
+                    spaceCtx.beginPath();
+                    spaceCtx.arc(lane.x, lane.y, hubDrawRadius * 1.2, 0, Math.PI * 2);
+                    spaceCtx.fillStyle = 'rgba(129, 140, 248, 0.25)';
+                    spaceCtx.fill();
+                }
+
                 spaceCtx.beginPath();
-                spaceCtx.arc(lane.x, lane.y, lane.hubRadius, 0, Math.PI * 2);
+                spaceCtx.arc(lane.x, lane.y, hubDrawRadius, 0, Math.PI * 2);
                 spaceCtx.fillStyle = 'rgba(30, 41, 59, 0.95)';
                 spaceCtx.strokeStyle = '#6366f1';
                 spaceCtx.lineWidth = 3;
                 spaceCtx.shadowColor = '#818cf8';
-                spaceCtx.shadowBlur = 20;
+                spaceCtx.shadowBlur = isDraggedLane ? 32 : 20;
                 spaceCtx.fill();
                 spaceCtx.stroke();
 
                 spaceCtx.shadowBlur = 0;
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
-                spaceCtx.font = `${Math.round(lane.hubRadius * 0.9)}px serif`;
+                spaceCtx.font = `${Math.round(hubDrawRadius * 0.9)}px serif`;
                 spaceCtx.fillText(lane.icon, lane.x, lane.y);
                 spaceCtx.restore();
 
@@ -6136,11 +6177,46 @@
             }
         }
 
+        // Long-pressing a lane's hub arms this (see the isMultiverseStackedView branch of
+        // spaceCanvas.ontouchstart) - every OTHER lane starts wobbling (drawn in
+        // renderMultiverseStackedLanes) and the held lane becomes draggable (ontouchmove/ontouchend
+        // below). Exited via the "✓ Done" button (#multiverse-timeline-reorder-done-btn, shown/hidden
+        // by updateDailyDigestVisibility's sibling toggling isn't involved - see toggleSpaceView/
+        // openMultiverseTimeline for where it's shown) or by tapping blank canvas space.
+        // buildMultiverseLanes() stamps each task's own .y from its lane's .y once, at build time
+        // (it's never read live off the lane during normal rendering) - so reassigning lane.y
+        // during a drag must also re-stamp every one of its tasks, or they're left drawn at their
+        // stale original height while the hub they belong to visibly moves away from them.
+        function syncLaneTaskPositions(lane) {
+            lane.tasks.forEach(task => { task.y = lane.y; });
+        }
+
+        function enterMultiverseTimelineReorderMode() {
+            multiverseReorderMode = true;
+            const doneBtn = document.getElementById('multiverse-timeline-reorder-done-btn');
+            if (doneBtn) doneBtn.classList.remove('hidden');
+        }
+
+        function exitMultiverseTimelineReorderMode() {
+            multiverseReorderMode = false;
+            multiverseDraggingLane = null;
+            multiverseDragStartWorldY = null;
+            multiverseDragLaneStartY = null;
+            const doneBtn = document.getElementById('multiverse-timeline-reorder-done-btn');
+            if (doneBtn) doneBtn.classList.add('hidden');
+        }
+
         // Click routing for the stacked Multiverse Timeline view - a hub (or its name pill) drills
         // into that Universe's own normal view (full reload, same as any other Universe circle
         // elsewhere in the app); a task dot/label opens or updates the swipe dock for its own lane
         // only, never mixing cards from a different Universe's lane into the same dock.
         function handleMultiverseStackedClick(worldX, worldY) {
+            // Every hub is a live drag target while reorder mode is active (see
+            // enterMultiverseTimelineReorderMode) - a tap that isn't a drag must never also
+            // navigate away, matching how the Multiverse picker grid suppresses its <a> clicks
+            // during its own wobble mode.
+            if (multiverseReorderMode) return;
+
             for (const lane of multiverseLanes) {
                 const distToHub = Math.hypot(worldX - lane.x, worldY - lane.y);
                 const r = lane._namePillRect;
@@ -7348,13 +7424,24 @@
                         });
                     }
 
+                    // Holding a lane's HUB (not one of its tasks) in the Multiverse Timeline arms
+                    // reorder mode instead - checked first so it takes priority the same way a
+                    // bucket/realm already takes priority over a nearby task above.
+                    let pressedLane = null;
+                    if (isMultiverseStackedView) {
+                        multiverseLanes.forEach(lane => {
+                            const dist = Math.hypot(worldX - lane.x, worldY - lane.y);
+                            if (dist <= lane.hubRadius + 10) pressedLane = lane;
+                        });
+                    }
+
                     // Holding on a task's TEXT LABEL, not just its dot, now arms the same hold-to-act
                     // menu - a long title can visually extend well past the dot itself. task._labelRect
                     // is the exact same rect the normal-tap path already hit-tests against in
                     // detectClickNode below (only ever set while the label is genuinely on screen, so
                     // there's no stale-rect risk here either).
                     let pressedTask = null;
-                    if (!pressedBucket && !pressedRealm) {
+                    if (!pressedBucket && !pressedRealm && !pressedLane) {
                         if (isMultiverseStackedView) {
                             multiverseLanes.forEach(lane => {
                                 lane.tasks.forEach(task => {
@@ -7398,6 +7485,18 @@
                             longPressRealmForDelete = pressedRealm;
                             isDragging = false;
                         }, 550);
+                    } else if (pressedLane) {
+                        longPressTimer = setTimeout(() => {
+                            longPressFired = true;
+                            isDragging = false;
+                            enterMultiverseTimelineReorderMode();
+                            // The lane that was actually held becomes immediately draggable - no
+                            // second press needed, matching how picking up an iOS icon after the
+                            // jiggle starts lets you keep moving it in the same gesture.
+                            multiverseDraggingLane = pressedLane;
+                            multiverseDragStartWorldY = worldY;
+                            multiverseDragLaneStartY = pressedLane.y;
+                        }, 550);
                     }
                 } else if (e.touches.length === 2) {
                     isDragging = false;
@@ -7420,7 +7519,29 @@
                     }
                 }
 
-                if (isDragging && e.touches.length === 1) {
+                if (multiverseDraggingLane && e.touches.length === 1) {
+                    // Follows the finger's raw Y directly (no snapping) - every OTHER lane instead
+                    // snaps to clean slot positions as the array reorders around it, same "one item
+                    // free-floats, everything else reflows" feel Sortable.js gives the DOM grid.
+                    const touch = e.touches[0];
+                    const worldY = (touch.clientY - cameraOffset.y) / cameraZoom;
+                    multiverseDraggingLane.y = multiverseDragLaneStartY + (worldY - multiverseDragStartWorldY);
+                    syncLaneTaskPositions(multiverseDraggingLane);
+
+                    const laneSpacing = window.innerWidth < 768 ? 460 : 400;
+                    const currentIndex = multiverseLanes.indexOf(multiverseDraggingLane);
+                    const targetIndex = Math.max(0, Math.min(multiverseLanes.length - 1, Math.round(multiverseDraggingLane.y / laneSpacing)));
+                    if (currentIndex !== -1 && targetIndex !== currentIndex) {
+                        multiverseLanes.splice(currentIndex, 1);
+                        multiverseLanes.splice(targetIndex, 0, multiverseDraggingLane);
+                        multiverseLanes.forEach((lane, idx) => {
+                            if (lane !== multiverseDraggingLane) {
+                                lane.y = idx * laneSpacing;
+                                syncLaneTaskPositions(lane);
+                            }
+                        });
+                    }
+                } else if (isDragging && e.touches.length === 1) {
                     targetCameraOffset = { x: e.touches[0].clientX - dragStart.x, y: e.touches[0].clientY - dragStart.y };
                     cameraOffset = { ...targetCameraOffset };
                 } else if (e.touches.length === 2 && initialPinchDistance) {
@@ -7442,6 +7563,23 @@
                 initialPinchDistance = null;
                 clearTimeout(longPressTimer);
                 longPressStartPos = null;
+
+                // Committing a lane drag persists it exactly like the Multiverse picker grid's own
+                // Sortable onEnd does - reorder mode itself stays active afterward (iOS keeps every
+                // icon wobbling after you drop one too), so another lane can be picked up right away.
+                if (multiverseDraggingLane) {
+                    const laneSpacing = window.innerWidth < 768 ? 460 : 400;
+                    multiverseLanes.forEach((lane, idx) => { lane.y = idx * laneSpacing; syncLaneTaskPositions(lane); });
+                    const order = multiverseLanes.map(lane => lane.id);
+                    fetch('/universes/reorder/', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(order)
+                    });
+                    multiverseDraggingLane = null;
+                    multiverseDragStartWorldY = null;
+                    multiverseDragLaneStartY = null;
+                }
 
                 if (longPressFired) {
                     // The long press already revealed the trash icon this gesture - swallow this tap
@@ -7841,6 +7979,26 @@
             }
 
             if (isMultiverseStackedView) {
+                // Tapping truly blank canvas space exits reorder mode (tapping a lane/task itself
+                // is handled inside handleMultiverseStackedClick, which no-ops on a hub/task tap
+                // during reorder mode rather than navigating away) - mirrors the Multiverse picker
+                // grid's own "tap outside a card" exit.
+                if (multiverseReorderMode) {
+                    const hitSomething = multiverseLanes.some(lane => {
+                        if (Math.hypot(worldX - lane.x, worldY - lane.y) <= lane.hubRadius + 10) return true;
+                        const pillRect = lane._namePillRect;
+                        if (pillRect && worldX >= pillRect.x && worldX <= pillRect.x + pillRect.w && worldY >= pillRect.y && worldY <= pillRect.y + pillRect.h) return true;
+                        return lane.tasks.some(task => {
+                            if (Math.hypot(worldX - task.x, worldY - task.y) <= task.radius + 18) return true;
+                            const labelRect = task._labelRect;
+                            return labelRect && worldX >= labelRect.x && worldX <= labelRect.x + labelRect.w && worldY >= labelRect.y && worldY <= labelRect.y + labelRect.h;
+                        });
+                    });
+                    if (!hitSomething) {
+                        exitMultiverseTimelineReorderMode();
+                        return;
+                    }
+                }
                 handleMultiverseStackedClick(worldX, worldY);
                 return;
             }

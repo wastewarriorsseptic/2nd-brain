@@ -1206,7 +1206,7 @@ def dashboard(
                     "icon": r.icon or "🔮",
                     "buckets": [{"id": b.id, "name": b.name} for b in sorted(r.buckets, key=lambda b: b.sort_order)],
                 })
-            universes_tree.append({"id": u.id, "name": u.name, "icon": u.icon, "kind": u.kind, "realms": u_realms})
+            universes_tree.append({"id": u.id, "name": u.name, "icon": u.icon, "kind": u.kind, "sort_order": u.sort_order, "realms": u_realms})
 
         # Every Task across every Task-kind Universe the user owns (not just the active one),
         # for the Multiverse view's "Multiverse Timeline" button. Shaped with the same field
