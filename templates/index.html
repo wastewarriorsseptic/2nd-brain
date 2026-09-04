@@ -5293,6 +5293,18 @@
         }
 
         function openMultiverseView() {
+            // Both overlays are position:fixed inset-0 at the same z-index - opening this one
+            // (e.g. from Space View's own pill, see stepOutSpaceView) used to just leave
+            // #space-view-overlay visible-but-covered underneath, canvas and all. Its own
+            // ontouchstart unconditionally calls preventDefault() and starts a camera-pan drag on
+            // ANY single-finger touch, so every tap here - including ones that should do nothing,
+            // like this page's own "😈 TaskMonster" header - was actually landing on that hidden
+            // canvas and blocking this page's native scroll. Reported directly as the page going
+            // completely frozen. Hiding Space View underneath (and restoring it on close, only if
+            // it was the one showing) stops it from receiving anything while this is on top.
+            if (isSpaceViewActive) {
+                document.getElementById('space-view-overlay').classList.add('hidden');
+            }
             document.getElementById('multiverse-view-overlay').classList.remove('hidden');
             generateMultiversePickerStars();
             renderMultiversePickerDigest();
@@ -5301,6 +5313,9 @@
         function closeMultiverseView() {
             document.getElementById('multiverse-view-overlay').classList.add('hidden');
             if (multiverseReorderMode) exitMultiverseReorderMode();
+            if (isSpaceViewActive) {
+                document.getElementById('space-view-overlay').classList.remove('hidden');
+            }
         }
 
         // Starts collapsed, deliberately NOT persisted across reloads - same reasoning as
