@@ -759,13 +759,17 @@
             <div class="flex items-center justify-between w-full">
                 <!-- Used to show the active Universe's own icon/name here, which read as
                      misleading once the Multiverse Timeline (spanning every Universe at once) was
-                     showing underneath it - a single span now, swapped between a plain branded
-                     label and "🌀 Multiverse" by updateSpaceTopPillLabel() based on
-                     isMultiverseStackedView (called from openMultiverseTimeline/toggleSpaceView/
-                     recenterSpace, the three places that flag flips). -->
-                <button onclick="openMultiverseView()"
+                     showing underneath it - icon/text spans now match the Multiverse picker's own
+                     header exactly (same classes) so the two pills render at the same size, swapped
+                     between the branded label and "🌀 Multiverse" by updateSpaceTopPillLabel() based
+                     on isMultiverseStackedView (called from openMultiverseTimeline/toggleSpaceView/
+                     recenterSpace, the three places that flag flips). Tapping it steps OUT one level
+                     (bucket -> realm -> universe -> Multiverse) instead of always jumping straight to
+                     the Multiverse picker - see stepOutSpaceView(). -->
+                <button onclick="stepOutSpaceView()"
                         class="bg-slate-900/90 border border-slate-800 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto hover:border-indigo-500/60 transition">
-                    <span id="space-top-pill-label" class="text-xs font-bold text-white tracking-wide">😈 TaskMonster</span>
+                    <span id="space-top-pill-icon" class="text-base">😈</span>
+                    <h2 id="space-top-pill-text" class="text-xs font-bold text-white tracking-wide" data-default-label="{{ ('TaskMonster / ' + active_universe.name) if active_universe else 'TaskMonster' }}">{{ ('TaskMonster / ' + active_universe.name) if active_universe else 'TaskMonster' }}</h2>
                 </button>
 
                 <div class="flex items-center gap-2">
@@ -5176,14 +5180,52 @@
         });
 
 
-        // The Space View top-left pill (#space-top-pill-label) used to show the active Universe's
-        // own icon/name, which read as misleading once the Multiverse Timeline was showing every
-        // Universe at once underneath it. Called from the three places isMultiverseStackedView
+        // The Space View top-left pill shows "TaskMonster / {active Universe name}" (its
+        // server-rendered default, stashed in data-default-label so JS can restore it exactly)
+        // while looking at that Universe - swapped for "🌀 Multiverse" specifically while the
+        // Multiverse Timeline is showing, since that spans every Universe at once and naming just
+        // one would be misleading again. Called from the three places isMultiverseStackedView
         // actually flips (openMultiverseTimeline, toggleSpaceView, recenterSpace) rather than every
         // render frame, since this label only ever needs to change alongside that flag.
         function updateSpaceTopPillLabel() {
-            const label = document.getElementById('space-top-pill-label');
-            if (label) label.innerText = isMultiverseStackedView ? '🌀 Multiverse' : '😈 TaskMonster';
+            const icon = document.getElementById('space-top-pill-icon');
+            const text = document.getElementById('space-top-pill-text');
+            if (!icon || !text) return;
+            if (isMultiverseStackedView) {
+                icon.textContent = '🌀';
+                text.textContent = 'Multiverse';
+            } else {
+                icon.textContent = '😈';
+                text.textContent = text.dataset.defaultLabel || 'TaskMonster';
+            }
+        }
+
+        // Tapping the top-left pill steps OUT one level of the Universe/Realm/Bucket hierarchy
+        // instead of always jumping straight to the Multiverse picker - a bucket steps out to its
+        // realm's own bucket ring (reusing focusAndRepelRealms, the exact same camera framing a
+        // manual realm tap already uses), a realm steps out to the top-level Universe ring
+        // (recenterSpace), and the top-level ring itself - or the Multiverse Timeline, which has
+        // nothing "under" it to step out to within Space View - steps out to the Multiverse picker.
+        function stepOutSpaceView() {
+            if (isMultiverseStackedView) {
+                openMultiverseView();
+                return;
+            }
+            if (activeSelectedBucket) {
+                const realm = activeSelectedRealm;
+                activeSelectedBucket = null;
+                activeSwipeTaskId = null;
+                hideHudCard();
+                deselectBucketSwipeDock();
+                if (realm) focusAndRepelRealms(realm);
+                persistSpaceSelection();
+                return;
+            }
+            if (activeSelectedRealm) {
+                recenterSpace();
+                return;
+            }
+            openMultiverseView();
         }
 
         function toggleSpaceView() {
