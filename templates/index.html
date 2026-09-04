@@ -433,6 +433,14 @@
                                     {% elif collaborators_map and collaborators_map.get(realm.id) %}
                                     <span class="shrink-0 ml-1 mt-0.5 self-start bg-indigo-500/15 text-indigo-300 border border-indigo-500/20 text-[9px] font-bold px-1.5 py-0.5 rounded-full" title="You've shared this Realm with others">👥 Shared</span>
                                     {% endif %}
+                                    {% if pending_invites_map and pending_invites_map.get(realm.id) %}
+                                    {% set realm_seconds_remaining = realm_invite_seconds_remaining_map.get(realm.id) if realm_invite_seconds_remaining_map else None %}
+                                    <!-- Realm-level counterpart to the Universe circle's green countdown ring - a plain
+                                         list row has no circle to wrap a ring around, so this is the same "invite
+                                         pending, expires in Xh" information as text instead. Brought up to the same
+                                         standard as Universe sharing on request. -->
+                                    <span class="shrink truncate max-w-full ml-1 mt-0.5 self-start bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded-full" title="Invite sent to {{ pending_invites_map.get(realm.id)[0].email }} - waiting for them to accept">⏳ Invite sent{% if realm_seconds_remaining is not none %} · {{ (realm_seconds_remaining / 3600)|round(1) }}h left{% endif %}</span>
+                                    {% endif %}
                                 </div>
 
                                 <div class="grid grid-cols-4 gap-1 shrink-0 ml-auto opacity-100 md:opacity-0 md:w-0 md:overflow-hidden group-hover:opacity-100 group-hover:md:w-20 transition-all w-20 text-center items-center">
@@ -3740,20 +3748,23 @@
             const params = new URLSearchParams(window.location.search);
             if (params.get('invite_accepted') !== '1') return;
 
-            const universeName = params.get('invited_universe_name') || 'the universe';
+            // Realm sharing was brought up to the same explicit-accept standard as Universe
+            // sharing (see /realms/accept-invite/{token}), so this now fires for either kind -
+            // whichever name param is present (never both) is what actually got shared.
+            const sharedName = params.get('invited_universe_name') || params.get('invited_realm_name') || 'that space';
             const inviterName = params.get('invited_by_name') || 'a teammate';
             const followUp = INVITE_ACCEPTED_FOLLOWUPS[Math.floor(Math.random() * INVITE_ACCEPTED_FOLLOWUPS.length)];
 
             const hint = document.getElementById('ai-chat-launcher-hint');
             if (hint) {
                 setAiChatHintSpecialMode(true);
-                hint.textContent = `Welcome to your Shared ${universeName} with ${inviterName}! ${followUp}`;
+                hint.textContent = `Welcome to your Shared ${sharedName} with ${inviterName}! ${followUp}`;
                 hint.classList.remove('hidden', 'opacity-0');
             }
 
             const cleanUrl = window.location.pathname +
                 (params.toString() ? '?' + Array.from(params.entries())
-                    .filter(([k]) => k !== 'invite_accepted' && k !== 'invited_universe_name' && k !== 'invited_by_name')
+                    .filter(([k]) => !['invite_accepted', 'invited_universe_name', 'invited_realm_name', 'invited_by_name'].includes(k))
                     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
                     .join('&') : '');
             history.replaceState({}, '', cleanUrl || window.location.pathname);

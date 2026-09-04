@@ -188,6 +188,8 @@ def safe_apply_migrations():
             conn.execute(text('ALTER TABLE IF EXISTS person ADD COLUMN IF NOT EXISTS nickname VARCHAR;'))
             conn.execute(text('ALTER TABLE IF EXISTS pendinguniverseinvite ADD COLUMN IF NOT EXISTS token VARCHAR;'))
             conn.execute(text('ALTER TABLE IF EXISTS pendinguniverseinvite ADD COLUMN IF NOT EXISTS created_at TIMESTAMP;'))
+            conn.execute(text('ALTER TABLE IF EXISTS pendinginvite ADD COLUMN IF NOT EXISTS token VARCHAR;'))
+            conn.execute(text('ALTER TABLE IF EXISTS pendinginvite ADD COLUMN IF NOT EXISTS created_at TIMESTAMP;'))
     else:
         sqlite_file_name = "brain.db"
         if os.path.exists(sqlite_file_name):
@@ -240,6 +242,15 @@ def safe_apply_migrations():
                     cursor.execute('ALTER TABLE pendinguniverseinvite ADD COLUMN "token" VARCHAR;')
                 if 'created_at' not in invite_cols:
                     cursor.execute('ALTER TABLE pendinguniverseinvite ADD COLUMN "created_at" TIMESTAMP;')
+
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='pendinginvite';")
+            if cursor.fetchone():
+                cursor.execute("PRAGMA table_info(pendinginvite);")
+                realm_invite_cols = [col[1] for col in cursor.fetchall()]
+                if 'token' not in realm_invite_cols:
+                    cursor.execute('ALTER TABLE pendinginvite ADD COLUMN "token" VARCHAR;')
+                if 'created_at' not in realm_invite_cols:
+                    cursor.execute('ALTER TABLE pendinginvite ADD COLUMN "created_at" TIMESTAMP;')
 
             conn.commit()
             conn.close()
@@ -326,10 +337,18 @@ class RealmShare(SQLModel, table=True):
     realm_id: int = Field(foreign_key="realm.id")
     user_id: int = Field(foreign_key="users.id")
 
+INVITE_EXPIRY_HOURS = 24
+
 class PendingInvite(SQLModel, table=True):
+    """Realm-level counterpart to PendingUniverseInvite below - see that class for the full
+    rationale of token/created_at (accept-link secret + INVITE_EXPIRY_HOURS auto-expiry).
+    Realm sharing was brought up to the same explicit-accept standard as Universe sharing, so
+    both invite tables share the identical shape."""
     id: Optional[int] = Field(default=None, primary_key=True)
     realm_id: int = Field(foreign_key="realm.id")
     email: str = Field(index=True)
+    token: str = Field(default_factory=lambda: secrets.token_urlsafe(32), unique=True, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class UniverseShare(SQLModel, table=True):
     """Universe-level counterpart to RealmShare: grants access to every Realm inside the
@@ -339,14 +358,12 @@ class UniverseShare(SQLModel, table=True):
     universe_id: int = Field(foreign_key="universe.id")
     user_id: int = Field(foreign_key="users.id")
 
-UNIVERSE_INVITE_EXPIRY_HOURS = 24
-
 class PendingUniverseInvite(SQLModel, table=True):
     """token is the accept-link secret (see /universes/accept-invite/{token}) - generated fresh
     whenever an invite is sent or re-sent, so an old copied link can't be reused for a resend.
-    created_at drives the UNIVERSE_INVITE_EXPIRY_HOURS auto-expiry (see
-    expire_stale_universe_invites) - invites made before this field existed are backfilled with
-    the current time on startup (see backfill_pending_universe_invite_tokens), giving them a full
+    created_at drives the INVITE_EXPIRY_HOURS auto-expiry (see
+    expire_stale_invites) - invites made before this field existed are backfilled with
+    the current time on startup (see backfill_pending_invite_tokens), giving them a full
     fresh window rather than expiring instantly."""
     id: Optional[int] = Field(default=None, primary_key=True)
     universe_id: int = Field(foreign_key="universe.id")
@@ -895,42 +912,50 @@ def backfill_important_dates_universes():
         for user_id in user_ids:
             get_or_create_important_dates_universe(session, user_id)
 
-def backfill_pending_universe_invite_tokens():
-    """Rows created before token/created_at existed on PendingUniverseInvite (see the migration in
-    safe_apply_migrations) have both columns NULL - give them a fresh token and treat them as sent
-    right now, rather than either crashing on a NULL token or having them expire the instant this
-    deploys."""
+def backfill_pending_invite_tokens():
+    """Rows created before token/created_at existed on PendingInvite/PendingUniverseInvite (see the
+    migration in safe_apply_migrations) have both columns NULL - give them a fresh token and treat
+    them as sent right now, rather than either crashing on a NULL token or having them expire the
+    instant this deploys. Covers both the Realm-level and Universe-level invite tables - Realm
+    sharing was brought up to the same explicit-accept standard as Universe sharing, so both need
+    the identical backfill."""
     with Session(engine) as session:
-        legacy = session.exec(
+        legacy_realm = session.exec(
+            select(PendingInvite).where(PendingInvite.token == None)  # noqa: E711
+        ).all()
+        legacy_universe = session.exec(
             select(PendingUniverseInvite).where(PendingUniverseInvite.token == None)  # noqa: E711
         ).all()
-        for invite in legacy:
+        for invite in legacy_realm + legacy_universe:
             invite.token = secrets.token_urlsafe(32)
             invite.created_at = datetime.utcnow()
             session.add(invite)
-        if legacy:
+        if legacy_realm or legacy_universe:
             session.commit()
 
-def expire_stale_universe_invites(session: Session):
-    """Deletes any PendingUniverseInvite older than UNIVERSE_INVITE_EXPIRY_HOURS. Called both
-    lazily (right before anything reads or acts on pending invites - sending a new one, rendering
-    the owner's pending-invite badge, an accept-link click, a matching login) and periodically via
-    the scheduler, so a stale invite disappears promptly regardless of which path notices it
-    first."""
-    cutoff = datetime.utcnow() - timedelta(hours=UNIVERSE_INVITE_EXPIRY_HOURS)
-    stale = session.exec(
+def expire_stale_invites(session: Session):
+    """Deletes any PendingInvite (Realm-level) or PendingUniverseInvite older than
+    INVITE_EXPIRY_HOURS. Called both lazily (right before anything reads or acts on pending
+    invites - sending a new one, rendering the owner's pending-invite badge, an accept-link click,
+    a matching login) and periodically via the scheduler, so a stale invite disappears promptly
+    regardless of which path notices it first."""
+    cutoff = datetime.utcnow() - timedelta(hours=INVITE_EXPIRY_HOURS)
+    stale_realm = session.exec(
+        select(PendingInvite).where(PendingInvite.created_at < cutoff)
+    ).all()
+    stale_universe = session.exec(
         select(PendingUniverseInvite).where(PendingUniverseInvite.created_at < cutoff)
     ).all()
-    for invite in stale:
+    for invite in stale_realm + stale_universe:
         session.delete(invite)
-    if stale:
+    if stale_realm or stale_universe:
         session.commit()
 
-def run_expire_stale_universe_invites():
-    """Scheduler-job wrapper for expire_stale_universe_invites - opens its own Session since the
+def run_expire_stale_invites():
+    """Scheduler-job wrapper for expire_stale_invites - opens its own Session since the
     scheduler calls this on its own background thread, not inside a request."""
     with Session(engine) as session:
-        expire_stale_universe_invites(session)
+        expire_stale_invites(session)
 
 def build_task_universe_context(session: Session, user: "User", today_date) -> dict:
     """The AI chat assistant's only grounding for where a task belongs: the user's OWNED,
@@ -994,9 +1019,9 @@ def on_startup():
     SQLModel.metadata.create_all(engine)
     backfill_default_universes()
     backfill_important_dates_universes()
-    backfill_pending_universe_invite_tokens()
-    run_expire_stale_universe_invites()
-    scheduler.add_job(run_expire_stale_universe_invites, 'interval', minutes=30)
+    backfill_pending_invite_tokens()
+    run_expire_stale_invites()
+    scheduler.add_job(run_expire_stale_invites, 'interval', minutes=30)
 
 def find_or_create_user_and_log_in(request: Request, email: str, name: str):
     """Shared by every sign-in provider (Google, Apple, ...) - looks up or creates the User by email,
@@ -1035,11 +1060,16 @@ def find_or_create_user_and_log_in(request: Request, email: str, name: str):
             # backfill_important_dates_universes) via the same idempotent helper.
             get_or_create_important_dates_universe(session, user.id)
 
-        # Claim any pending invites for this email address
+        # Claim any pending Realm-share invites for this email address - logging in with the
+        # invited email counts as accepting, same as clicking the email's "Accept Invite" button
+        # (see /realms/accept-invite/{token}). expire_stale_invites() first means a stale invite
+        # older than INVITE_EXPIRY_HOURS is never silently claimed here.
+        expire_stale_invites(session)
         pending_invites = session.exec(
             select(PendingInvite).where(PendingInvite.email == email)
         ).all()
 
+        realm_accepted_via_login = None
         for invite in pending_invites:
             existing_share = session.exec(
                 select(RealmShare).where(
@@ -1049,13 +1079,30 @@ def find_or_create_user_and_log_in(request: Request, email: str, name: str):
             ).first()
             if not existing_share:
                 session.add(RealmShare(realm_id=invite.realm_id, user_id=user.id))
+            realm_accepted_via_login = invite.realm_id
             session.delete(invite)
 
-        # Same claim step, one level up, for pending Universe-share invites - logging in with the
-        # invited email counts as accepting, same as clicking the email's "Accept Invite" button
-        # (see /universes/accept-invite/{token}). expire_stale_universe_invites() first means a
-        # stale invite older than UNIVERSE_INVITE_EXPIRY_HOURS is never silently claimed here.
-        expire_stale_universe_invites(session)
+        # The accept-invite link (see /realms/accept-invite/{token}) stashes its token here when
+        # the visitor wasn't signed in yet, so it can pick up right where it left off now that
+        # sign-in just finished, rather than silently dropping the invite on the floor.
+        pending_realm_token = request.session.pop('pending_realm_invite_token', None)
+        if pending_realm_token:
+            token_invite = session.exec(
+                select(PendingInvite).where(PendingInvite.token == pending_realm_token)
+            ).first()
+            if token_invite and token_invite.email.lower() == email:
+                existing_share = session.exec(
+                    select(RealmShare).where(
+                        RealmShare.realm_id == token_invite.realm_id,
+                        RealmShare.user_id == user.id
+                    )
+                ).first()
+                if not existing_share:
+                    session.add(RealmShare(realm_id=token_invite.realm_id, user_id=user.id))
+                realm_accepted_via_login = token_invite.realm_id
+                session.delete(token_invite)
+
+        # Same claim step, one level up, for pending Universe-share invites - identical rationale.
         pending_universe_invites = session.exec(
             select(PendingUniverseInvite).where(PendingUniverseInvite.email == email)
         ).all()
@@ -1096,15 +1143,28 @@ def find_or_create_user_and_log_in(request: Request, email: str, name: str):
         session.commit()
         request.session['user_id'] = user.id
 
+        from urllib.parse import quote as _quote
+
+        # Both a Realm and a Universe invite could conceivably get accepted in the same login -
+        # rare, but rather than silently drop one, the Universe welcome takes priority (it's the
+        # more encompassing grant) and the Realm one only shows if there was no Universe accept.
         if accepted_via_login:
             accepted_universe = session.get(Universe, accepted_via_login)
             universe_name = accepted_universe.name if accepted_universe else ""
             inviter = session.get(User, accepted_universe.user_id) if accepted_universe else None
             inviter_name = inviter.name if inviter else "a teammate"
-            from urllib.parse import quote as _quote
             request.session['post_login_redirect'] = (
                 f"/?universe_id={accepted_via_login}&invite_accepted=1"
                 f"&invited_universe_name={_quote(universe_name)}&invited_by_name={_quote(inviter_name)}"
+            )
+        elif realm_accepted_via_login:
+            accepted_realm = session.get(Realm, realm_accepted_via_login)
+            realm_name = accepted_realm.name if accepted_realm else ""
+            inviter = session.get(User, accepted_realm.user_id) if accepted_realm else None
+            inviter_name = inviter.name if inviter else "a teammate"
+            request.session['post_login_redirect'] = (
+                f"/?realm_id={realm_accepted_via_login}&invite_accepted=1"
+                f"&invited_realm_name={_quote(realm_name)}&invited_by_name={_quote(inviter_name)}"
             )
 
 @app.get("/login")
@@ -1225,6 +1285,7 @@ def dashboard(
                     "realms": [],
                     "collaborators_map": {},
                     "pending_invites_map": {},
+                    "realm_invite_seconds_remaining_map": {},
                     "universe_collaborators_map": {},
                     "universe_pending_invites_map": {},
                     "universe_invite_seconds_remaining_map": {}
@@ -1291,29 +1352,42 @@ def dashboard(
 
         all_realm_ids = [r.id for r in realms]
 
+        # Swept once here (covers both the Realm-level and Universe-level invite tables) before
+        # anything below reads pending invites, so neither map can ever show one that's already
+        # past INVITE_EXPIRY_HOURS.
+        expire_stale_invites(session)
+
         collaborators_map = {}
         pending_invites_map = {}
+        # Seconds left before the OLDEST pending invite on a Realm hits INVITE_EXPIRY_HOURS - Realm-
+        # level counterpart to universe_invite_seconds_remaining_map below, same idea, used for the
+        # "⏳ Pending Invite - Xh left" text in the Realms sidebar row (a plain list row, not a
+        # circle, so a countdown RING doesn't apply here the way it does for a Universe).
+        realm_invite_seconds_remaining_map = {}
 
         for realm in realms:
             if realm.user_id == user.id:
                 shares = session.exec(select(RealmShare).where(RealmShare.realm_id == realm.id)).all()
                 member_user_ids = [s.user_id for s in shares]
                 collaborators_map[realm.id] = session.exec(select(User).where(User.id.in_(member_user_ids))).all() if member_user_ids else []
-                pending_invites_map[realm.id] = session.exec(select(PendingInvite).where(PendingInvite.realm_id == realm.id)).all()
+                r_pending = session.exec(select(PendingInvite).where(PendingInvite.realm_id == realm.id)).all()
+                pending_invites_map[realm.id] = r_pending
+                if r_pending:
+                    oldest_realm_invite = min(r_pending, key=lambda inv: inv.created_at)
+                    realm_expires_at = oldest_realm_invite.created_at + timedelta(hours=INVITE_EXPIRY_HOURS)
+                    realm_invite_seconds_remaining_map[realm.id] = max(0, (realm_expires_at - datetime.utcnow()).total_seconds())
             else:
                 collaborators_map[realm.id] = []
                 pending_invites_map[realm.id] = []
 
         # Universe-level counterpart to collaborators_map/pending_invites_map above, same
         # owner-only-populated shape, keyed by universe id instead of realm id - drives the Share
-        # Universe modal and the "⏳ Invite pending" badge on the universe circle. Swept for
-        # expired invites right before reading, so a stale one never shows as still-pending here.
-        expire_stale_universe_invites(session)
+        # Universe modal and the "⏳ Invite pending" badge on the universe circle.
         universe_collaborators_map = {}
         universe_pending_invites_map = {}
 
         # Seconds left before the OLDEST pending invite on a Universe hits
-        # UNIVERSE_INVITE_EXPIRY_HOURS - drives the countdown ring's per-card animation-duration
+        # INVITE_EXPIRY_HOURS - drives the countdown ring's per-card animation-duration
         # (see the universe-invite-countdown-ring SVG in the Multiverse picker). Keyed alongside
         # the two maps above rather than folded into them, since it's a number, not a list.
         universe_invite_seconds_remaining_map = {}
@@ -1327,7 +1401,7 @@ def dashboard(
                 universe_pending_invites_map[u.id] = u_pending
                 if u_pending:
                     oldest_invite = min(u_pending, key=lambda inv: inv.created_at)
-                    expires_at = oldest_invite.created_at + timedelta(hours=UNIVERSE_INVITE_EXPIRY_HOURS)
+                    expires_at = oldest_invite.created_at + timedelta(hours=INVITE_EXPIRY_HOURS)
                     universe_invite_seconds_remaining_map[u.id] = max(0, (expires_at - datetime.utcnow()).total_seconds())
             else:
                 universe_collaborators_map[u.id] = []
@@ -1436,6 +1510,7 @@ def dashboard(
                 "selected_bucket_id": bucket_id,
                 "collaborators_map": collaborators_map,
                 "pending_invites_map": pending_invites_map,
+                "realm_invite_seconds_remaining_map": realm_invite_seconds_remaining_map,
                 "universe_collaborators_map": universe_collaborators_map,
                 "universe_pending_invites_map": universe_pending_invites_map,
                 "universe_invite_seconds_remaining_map": universe_invite_seconds_remaining_map,
@@ -1615,6 +1690,13 @@ def delete_realm(request: Request, realm_id: int = Form(...)):
 
 @app.post("/realms/share/")
 def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(...)):
+    """Realm-level mirror of share_universe - see that function for the full rationale (owner-only
+    gate, fail-closed on a missing RESEND_API_KEY, explicit-accept-over-immediate-grant, two-email
+    pattern). Brought up to the same standard directly on request, after Universe sharing already
+    got it: access is never granted immediately here either, even when the invited email already
+    has a TaskMonster account - it always goes through a PendingInvite and an explicit accept step
+    (the emailed accept link, or logging in with the invited email - see
+    /realms/accept-invite/{token} and find_or_create_user_and_log_in)."""
     target_email = email.strip().lower()
     api_key = os.getenv("RESEND_API_KEY")
 
@@ -1628,7 +1710,7 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
         return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
 
     resend.api_key = api_key
-    
+
     with Session(engine) as session:
         current_user = get_current_user(request, session)
         if not current_user:
@@ -1638,47 +1720,63 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
         if not realm:
             return RedirectResponse(url="/", status_code=303)
 
-        target_user = session.exec(select(User).where(User.email == target_email)).first()
+        expire_stale_invites(session)
 
+        # Already a full collaborator (a prior invite was already accepted) - nothing to (re-)send.
+        target_user = session.exec(select(User).where(User.email == target_email)).first()
         if target_user:
-            existing = session.exec(
+            already_shared = session.exec(
                 select(RealmShare).where(
-                    RealmShare.realm_id == realm_id, 
+                    RealmShare.realm_id == realm_id,
                     RealmShare.user_id == target_user.id
                 )
             ).first()
-            if not existing:
-                session.add(RealmShare(realm_id=realm_id, user_id=target_user.id))
-                session.commit()
-        else:
-            existing_pending = session.exec(
-                select(PendingInvite).where(
-                    PendingInvite.realm_id == realm_id,
-                    PendingInvite.email == target_email
-                )
-            ).first()
-            if not existing_pending:
-                session.add(PendingInvite(realm_id=realm_id, email=target_email))
-                session.commit()
+            if already_shared:
+                return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
 
-        invitation_subject = f"Collaborate with {current_user.name} on TaskMonster"
+        # Re-sending to someone with an already-pending invite gets a fresh token and a fresh
+        # INVITE_EXPIRY_HOURS window - see share_universe for why.
+        invite_token = secrets.token_urlsafe(32)
+        existing_pending = session.exec(
+            select(PendingInvite).where(
+                PendingInvite.realm_id == realm_id,
+                PendingInvite.email == target_email
+            )
+        ).first()
+        if existing_pending:
+            existing_pending.token = invite_token
+            existing_pending.created_at = datetime.utcnow()
+            session.add(existing_pending)
+        else:
+            session.add(PendingInvite(realm_id=realm_id, email=target_email, token=invite_token))
+        session.commit()
+
+        accept_url = f"https://usetaskmonster.app/realms/accept-invite/{invite_token}"
+
+        invitation_subject = f"{current_user.name} invited you to a TaskMonster realm"
         invitation_body = f"""
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 8px;">
             <p>Hi there,</p>
             <p><strong>{current_user.name}</strong> ({current_user.email}) invited you to join the <strong>{realm.name}</strong> realm on TaskMonster so you can manage shared tasks and timelines together.</p>
             <div style="margin: 24px 0;">
-                <a href="https://usetaskmonster.app/login" style="background-color: #6366f1; color: #ffffff; padding: 12px 22px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">Open {realm.name} Realm</a>
+                <a href="{accept_url}" style="background-color: #22c55e; color: #ffffff; padding: 14px 26px; text-decoration: none; border-radius: 6px; font-weight: 700; display: inline-block; font-size: 15px;">✅ Accept Invite</a>
             </div>
             <p style="font-size: 13px; color: #4b5563;">
+                Click the button above and sign in with <strong>{target_email}</strong> - that's the exact address this invite was sent to, so it's the one to sign in with.
+            </p>
+            <p style="font-size: 13px; color: #4b5563;">
                 Or copy and paste this link into your browser:<br>
-                <a href="https://usetaskmonster.app/login" style="color: #6366f1;">https://usetaskmonster.app/login</a>
+                <a href="{accept_url}" style="color: #6366f1;">{accept_url}</a>
+            </p>
+            <p style="font-size: 12px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 12px; margin-top: 16px;">
+                ⏳ This invite expires in {INVITE_EXPIRY_HOURS} hours if not accepted.
             </p>
             <p style="font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 28px;">
                 Sent via TaskMonster. You received this because {current_user.email} added your address.
             </p>
         </div>
         """
-        
+
         try:
             resend.Emails.send({
                 "from": "TaskMonster <notifications@usetaskmonster.app>",
@@ -1696,8 +1794,8 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
             <h2 style="color: #4f46e5; margin-top: 0;">Invitation Dispatched</h2>
             <p>Hi {current_user.name},</p>
-            <p>Your invitation to <strong>{target_email}</strong> for the <strong>{realm.name}</strong> realm has been successfully sent.</p>
-            <p>Once they log in with Google at <a href="https://usetaskmonster.app" style="color: #6366f1; font-weight: 600; text-decoration: none;">usetaskmonster.app</a>, the shared realm will automatically appear on their dashboard timeline.</p>
+            <p>Your invitation to <strong>{target_email}</strong> for the <strong>{realm.name}</strong> realm has been successfully sent, with an "Accept Invite" button they can click directly.</p>
+            <p>You'll see a "⏳ Pending Invite" note on {realm.name} until they accept. If they don't accept within {INVITE_EXPIRY_HOURS} hours, the invite expires automatically and you can send a new one.</p>
             <p style="font-size: 13px; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 32px;">
                 TaskMonster System Notification
             </p>
@@ -1716,6 +1814,62 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
             print(f"Failed to send confirmation email to inviter ({current_user.email}): {e}", flush=True)
 
     return RedirectResponse(url=f"/?realm_id={realm_id}", status_code=303)
+
+@app.get("/realms/accept-invite/{token}")
+def accept_realm_invite(request: Request, token: str):
+    """Realm-level mirror of accept_universe_invite - see that function for the full rationale of
+    each outcome (unknown/expired token, wrong-account, not-signed-in stash-and-redirect)."""
+    with Session(engine) as session:
+        expire_stale_invites(session)
+
+        invite = session.exec(
+            select(PendingInvite).where(PendingInvite.token == token)
+        ).first()
+
+        if not invite:
+            return HTMLResponse(_invite_status_page(
+                "This invite link isn't valid",
+                "It may have already been accepted, cancelled, or the link was mistyped. Ask whoever invited you to send a new one."
+            ))
+
+        realm = session.get(Realm, invite.realm_id)
+        realm_name = realm.name if realm else "that realm"
+        inviter = session.get(User, realm.user_id) if realm else None
+        inviter_name = inviter.name if inviter else "a teammate"
+
+        current_user = get_current_user(request, session)
+
+        if not current_user:
+            request.session['pending_realm_invite_token'] = token
+            return RedirectResponse(url="/login", status_code=303)
+
+        if current_user.email.lower() != invite.email.lower():
+            return HTMLResponse(_invite_status_page(
+                f"This invite was sent to {invite.email}",
+                f"You're currently signed in as {current_user.email}. Sign out and sign back in with {invite.email} to accept it.",
+                show_logout=True
+            ))
+
+        existing_share = session.exec(
+            select(RealmShare).where(
+                RealmShare.realm_id == invite.realm_id,
+                RealmShare.user_id == current_user.id
+            )
+        ).first()
+        if not existing_share:
+            session.add(RealmShare(realm_id=invite.realm_id, user_id=current_user.id))
+        session.delete(invite)
+        session.commit()
+        request.session.pop('pending_realm_invite_token', None)
+
+    from urllib.parse import quote as _quote
+    return RedirectResponse(
+        url=(
+            f"/?realm_id={invite.realm_id}&invite_accepted=1"
+            f"&invited_realm_name={_quote(realm_name)}&invited_by_name={_quote(inviter_name)}"
+        ),
+        status_code=303
+    )
 
 @app.post("/universes/share/")
 def share_universe(request: Request, universe_id: int = Form(...), email: str = Form(...)):
@@ -1755,7 +1909,7 @@ def share_universe(request: Request, universe_id: int = Form(...), email: str = 
         if not universe:
             return RedirectResponse(url="/", status_code=303)
 
-        expire_stale_universe_invites(session)
+        expire_stale_invites(session)
 
         # Already a full collaborator (a prior invite was already accepted) - nothing to (re-)send.
         target_user = session.exec(select(User).where(User.email == target_email)).first()
@@ -1770,7 +1924,7 @@ def share_universe(request: Request, universe_id: int = Form(...), email: str = 
                 return RedirectResponse(url=f"/?universe_id={universe_id}", status_code=303)
 
         # Re-sending to someone with an already-pending invite gets a fresh token and a fresh
-        # UNIVERSE_INVITE_EXPIRY_HOURS window - an old copied-and-pasted link shouldn't stay live
+        # INVITE_EXPIRY_HOURS window - an old copied-and-pasted link shouldn't stay live
         # forever just because it was never expired, and a deliberate resend should reset the clock.
         invite_token = secrets.token_urlsafe(32)
         existing_pending = session.exec(
@@ -1805,7 +1959,7 @@ def share_universe(request: Request, universe_id: int = Form(...), email: str = 
                 <a href="{accept_url}" style="color: #6366f1;">{accept_url}</a>
             </p>
             <p style="font-size: 12px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 12px; margin-top: 16px;">
-                ⏳ This invite expires in {UNIVERSE_INVITE_EXPIRY_HOURS} hours if not accepted.
+                ⏳ This invite expires in {INVITE_EXPIRY_HOURS} hours if not accepted.
             </p>
             <p style="font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 28px;">
                 Sent via TaskMonster. You received this because {current_user.email} added your address.
@@ -1831,7 +1985,7 @@ def share_universe(request: Request, universe_id: int = Form(...), email: str = 
             <h2 style="color: #4f46e5; margin-top: 0;">Invitation Dispatched</h2>
             <p>Hi {current_user.name},</p>
             <p>Your invitation to <strong>{target_email}</strong> for the <strong>{universe.name}</strong> universe has been successfully sent, with an "Accept Invite" button they can click directly.</p>
-            <p>You'll see a "⏳ Invite pending" badge on the {universe.name} circle until they accept. If they don't accept within {UNIVERSE_INVITE_EXPIRY_HOURS} hours, the invite expires automatically and you can send a new one.</p>
+            <p>You'll see a "⏳ Invite pending" badge on the {universe.name} circle until they accept. If they don't accept within {INVITE_EXPIRY_HOURS} hours, the invite expires automatically and you can send a new one.</p>
             <p style="font-size: 13px; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 32px;">
                 TaskMonster System Notification
             </p>
@@ -1854,13 +2008,13 @@ def share_universe(request: Request, universe_id: int = Form(...), email: str = 
 @app.get("/universes/accept-invite/{token}")
 def accept_universe_invite(request: Request, token: str):
     """Where the email's "Accept Invite" button actually lands. Three outcomes besides success:
-    unknown/already-used token, expired (past UNIVERSE_INVITE_EXPIRY_HOURS), or signed in as the
+    unknown/already-used token, expired (past INVITE_EXPIRY_HOURS), or signed in as the
     wrong email (told explicitly to sign out and back in as the invited address, rather than
     silently failing). Not signed in at all -> stash the token in the session and send them to
     /login; find_or_create_user_and_log_in picks that stashed token back up right after sign-in
     completes and finishes the accept from there."""
     with Session(engine) as session:
-        expire_stale_universe_invites(session)
+        expire_stale_invites(session)
 
         invite = session.exec(
             select(PendingUniverseInvite).where(PendingUniverseInvite.token == token)
