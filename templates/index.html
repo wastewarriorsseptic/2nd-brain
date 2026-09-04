@@ -5211,6 +5211,19 @@
                 openMultiverseView();
                 return;
             }
+            // The synthetic "All Tasks" realm/bucket (see openAllTasksTimeline) has no meaningful
+            // "realm view" of its own to step back into - falling through to the activeSelectedBucket
+            // branch below would re-focus the camera on that synthetic realm object instead of
+            // actually leaving it, and skip recenterSpace's own cleanup that drops it from
+            // spaceRealms. Left in place, every other real realm stays repelled off-screen (targetX/
+            // targetY still huge from openAllTasksTimeline's own repulsion) and keeps being fed into
+            // the ring-physics loop every frame indefinitely - reported directly as the whole page
+            // freezing solid. recenterSpace() is the correct, already-existing exit for this exact
+            // case (same cleanup a normal realm-to-universe step out already does).
+            if (activeSelectedRealm && activeSelectedRealm.id === '__all_tasks_realm__') {
+                recenterSpace();
+                return;
+            }
             if (activeSelectedBucket) {
                 const realm = activeSelectedRealm;
                 activeSelectedBucket = null;
@@ -6702,6 +6715,35 @@
                 spaceCtx.font = `${Math.round((isMobileCore ? 198 : 116) * pulseScale)}px serif`;
                 spaceCtx.shadowBlur = 0;
                 spaceCtx.fillText('😈', 0, 0);
+                spaceCtx.restore();
+
+                // Small hovering badge on the core's edge, opening the "All Tasks" timeline for
+                // this whole Universe - that used to be triggered by tapping the core itself, but
+                // that broke the enter-a-node/tap-again-to-pop-out symmetry every other node in
+                // Space View follows (reported directly). Tapping the core now steps back out to
+                // the Multiverse picker like everywhere else - see detectClickNode. Same up-right
+                // offset convention every other node's own edit/delete badge already uses.
+                const coreTimelineBtnAngle = -Math.PI / 4;
+                const coreTimelineBtnDist = coreRadius * 1.05;
+                const coreTimelineBtnX = Math.cos(coreTimelineBtnAngle) * coreTimelineBtnDist;
+                const coreTimelineBtnY = Math.sin(coreTimelineBtnAngle) * coreTimelineBtnDist;
+                const coreTimelineBtnRadius = isMobileCore ? 34 : 28;
+
+                spaceCtx.save();
+                spaceCtx.beginPath();
+                spaceCtx.arc(coreTimelineBtnX, coreTimelineBtnY, coreTimelineBtnRadius, 0, Math.PI * 2);
+                spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+                spaceCtx.strokeStyle = '#818cf8';
+                spaceCtx.lineWidth = 2.5;
+                spaceCtx.shadowColor = '#818cf8';
+                spaceCtx.shadowBlur = 16;
+                spaceCtx.fill();
+                spaceCtx.stroke();
+                spaceCtx.shadowBlur = 0;
+                spaceCtx.textAlign = 'center';
+                spaceCtx.textBaseline = 'middle';
+                spaceCtx.font = `${Math.round(coreTimelineBtnRadius * 1.1)}px serif`;
+                spaceCtx.fillText('🗓️', coreTimelineBtnX, coreTimelineBtnY + 1);
                 spaceCtx.restore();
             }
 
@@ -8297,15 +8339,34 @@
                 return;
             }
 
-            // DEVIL CORE TAP DETECTION (0,0) -> OPEN A LINEAR TIMELINE OF EVERY TASK IN EVERY REALM
-            // Only active in the full-universe overview - the core isn't drawn (or tappable) while a
-            // realm is focused, so there's no invisible hit-area left behind at the origin.
+            // DEVIL CORE (0,0) AND ITS "ALL TASKS" TIMELINE BADGE - only active in the full-universe
+            // overview; neither is drawn (or tappable) while a realm is focused, so there's no
+            // invisible hit-area left behind at the origin.
             if (!activeSelectedRealm) {
                 const pulseScale = 1 + Math.sin(frameCount * 2) * 0.08;
                 const coreRadius = (window.innerWidth < 768 ? 150 : 102) * pulseScale;
+
+                // The small "🗓️" badge on the core's edge - checked first since it visually sits
+                // right on/near the core's own boundary. Opens the same All Tasks timeline tapping
+                // the core itself used to.
+                const coreTimelineBtnAngle = -Math.PI / 4;
+                const coreTimelineBtnDist = coreRadius * 1.05;
+                const coreTimelineBtnX = Math.cos(coreTimelineBtnAngle) * coreTimelineBtnDist;
+                const coreTimelineBtnY = Math.sin(coreTimelineBtnAngle) * coreTimelineBtnDist;
+                const coreTimelineBtnRadius = window.innerWidth < 768 ? 34 : 28;
+                const distToTimelineBtn = Math.hypot(worldX - coreTimelineBtnX, worldY - coreTimelineBtnY);
+                if (distToTimelineBtn <= coreTimelineBtnRadius + 12) {
+                    openAllTasksTimeline();
+                    return;
+                }
+
+                // Tapping the core itself now steps back out to the Multiverse picker (like every
+                // other "already at the top level" tap - see stepOutSpaceView) instead of opening
+                // the timeline - reported directly: overloading it with the timeline broke the
+                // enter-a-node/tap-it-again-to-pop-out symmetry every other node here follows.
                 const distToCore = Math.hypot(worldX, worldY);
                 if (distToCore <= coreRadius + 15) {
-                    openAllTasksTimeline();
+                    stepOutSpaceView();
                     return;
                 }
             }
