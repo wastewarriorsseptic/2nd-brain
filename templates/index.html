@@ -5336,14 +5336,28 @@
         // all visibly speeding up).
         let spaceRenderLoopRunning = false;
 
+        // Same accent-color family already used for Universe/Realm hubs and task nodes elsewhere
+        // in Space View (indigo #6366f1/#818cf8, rose #f43f5e, amber #f59e0b, plus violet/sky to
+        // round it out) - each star picks one at random, so the distant "other universes" reads as
+        // genuinely varied rather than a single-tint sky. rgb is the fill (paired with the star's
+        // own low opacity), glow is the shadowColor for its soft halo.
+        const SPACE_STAR_PALETTE = [
+            { rgb: '129, 140, 248', glow: '#6366f1' },
+            { rgb: '196, 181, 253', glow: '#8b5cf6' },
+            { rgb: '125, 211, 252', glow: '#0ea5e9' },
+            { rgb: '253, 164, 175', glow: '#f43f5e' },
+            { rgb: '252, 211, 77', glow: '#f59e0b' },
+        ];
+
         // A small, fixed handful of screen-space stars - deliberately sparse and low-opacity per
         // the user's own ask ("very very subtle... only a few... cannot be distracting"). Random
-        // position/size/opacity/twinkle-phase per star, generated fresh each time Space View opens
-        // (cheap, and keeps them matching the current viewport size rather than a stale one).
+        // position/size/opacity/twinkle-phase/color per star, generated fresh each time Space View
+        // opens (cheap, and keeps them matching the current viewport size rather than a stale one).
         function generateSpaceStars() {
             const STAR_COUNT = 40;
             spaceStars = [];
             for (let i = 0; i < STAR_COUNT; i++) {
+                const palette = SPACE_STAR_PALETTE[Math.floor(Math.random() * SPACE_STAR_PALETTE.length)];
                 spaceStars.push({
                     x: Math.random() * window.innerWidth,
                     y: Math.random() * window.innerHeight,
@@ -5351,20 +5365,29 @@
                     baseOpacity: 0.12 + Math.random() * 0.22,
                     twinklePhase: Math.random() * Math.PI * 2,
                     twinkleSpeed: 0.4 + Math.random() * 0.5,
+                    colorRGB: palette.rgb,
+                    glowColor: palette.glow,
                 });
             }
         }
 
         // Drawn in SCREEN space (called before the camera translate/scale in
         // renderSpaceFrameInner) so stars read as a fixed backdrop rather than panning/zooming
-        // with the content - "we are actually in space" rather than stars living inside it.
+        // with the content - "we are actually in space" rather than stars living inside it. Each
+        // gets a tiny colored glow (shadowBlur tied to its own radius, so it stays proportionally
+        // subtle even on the largest stars) - the glow dims and brightens along with the star's own
+        // twinkle since canvas shadows scale with the shape's fill alpha.
         function drawSpaceStars() {
             spaceStars.forEach(star => {
                 const twinkle = 0.55 + 0.45 * Math.sin(frameCount * star.twinkleSpeed + star.twinklePhase);
+                spaceCtx.save();
+                spaceCtx.shadowColor = star.glowColor;
+                spaceCtx.shadowBlur = star.radius * 2.5;
                 spaceCtx.beginPath();
                 spaceCtx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
-                spaceCtx.fillStyle = `rgba(226, 232, 240, ${(star.baseOpacity * twinkle).toFixed(3)})`;
+                spaceCtx.fillStyle = `rgba(${star.colorRGB}, ${(star.baseOpacity * twinkle).toFixed(3)})`;
                 spaceCtx.fill();
+                spaceCtx.restore();
             });
         }
 
