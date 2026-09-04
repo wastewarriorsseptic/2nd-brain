@@ -836,6 +836,43 @@ def get_or_create_default_task_universe(session: Session, user_id: int) -> "Univ
         session.refresh(universe)
     return universe
 
+def get_or_create_important_dates_universe(session: Session, user_id: int) -> "Universe":
+    """Requested directly: every account should have an "Important Dates" Universe with a "Life
+    Events" Realm already inside it, ready to use - not something the user has to build themselves
+    (via the AI assistant or manually) first. Idempotent by name (checked per user, not globally),
+    so it's safe to call for both a brand-new signup and an existing account without ever creating
+    a duplicate - see backfill_important_dates_universes for the existing-account side."""
+    universe = session.exec(
+        select(Universe).where(Universe.user_id == user_id, Universe.name == "Important Dates", Universe.kind == "task")
+    ).first()
+    if not universe:
+        max_order = len(session.exec(select(Universe).where(Universe.user_id == user_id)).all())
+        universe = Universe(name="Important Dates", icon="📅", kind="task", sort_order=max_order, user_id=user_id)
+        session.add(universe)
+        session.commit()
+        session.refresh(universe)
+
+    realm = session.exec(
+        select(Realm).where(Realm.universe_id == universe.id, Realm.name == "Life Events")
+    ).first()
+    if not realm:
+        realm = Realm(name="Life Events", icon="✨", sort_order=0, user_id=user_id, universe_id=universe.id)
+        session.add(realm)
+        session.commit()
+
+    return universe
+
+def backfill_important_dates_universes():
+    """One-time-per-user migration companion to get_or_create_important_dates_universe - brand-new
+    signups already get this Universe/Realm via find_or_create_user_and_log_in's starter set, but
+    every EXISTING account needs it added too. Idempotent (checked by name per user, same helper
+    both paths share), safe to run on every process start, same pattern as
+    backfill_default_universes right above it."""
+    with Session(engine) as session:
+        user_ids = session.exec(select(User.id)).all()
+        for user_id in user_ids:
+            get_or_create_important_dates_universe(session, user_id)
+
 def build_task_universe_context(session: Session, user: "User", today_date) -> dict:
     """The AI chat assistant's only grounding for where a task belongs: the user's OWNED,
     task-kind-only Universe -> Realm -> Bucket tree (contact universes and shared/collaborator
@@ -897,6 +934,7 @@ def on_startup():
     safe_apply_migrations()
     SQLModel.metadata.create_all(engine)
     backfill_default_universes()
+    backfill_important_dates_universes()
 
 def find_or_create_user_and_log_in(request: Request, email: str, name: str):
     """Shared by every sign-in provider (Google, Apple, ...) - looks up or creates the User by email,
@@ -928,6 +966,12 @@ def find_or_create_user_and_log_in(request: Request, email: str, name: str):
             ]
             session.add_all(starter_universes)
             session.commit()
+            # Important Dates is the one starter Universe that DOES come with a Realm already
+            # inside it ("Life Events") rather than following the inline-create-on-first-use
+            # pattern above - requested directly, so every account starts with somewhere ready for
+            # birthdays/anniversaries/etc. Shared with the existing-account backfill path (see
+            # backfill_important_dates_universes) via the same idempotent helper.
+            get_or_create_important_dates_universe(session, user.id)
 
         # Claim any pending invites for this email address
         pending_invites = session.exec(
