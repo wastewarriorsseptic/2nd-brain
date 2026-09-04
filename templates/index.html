@@ -6031,7 +6031,12 @@
                 tasks: allTasksFlat,
                 addTaskButton: null,
                 angle: 0,
-                orbitRadius: 0,
+                // Same base distance a real realm's own single bucket sits at (see bucketBaseDist
+                // in the normal realm-building pass) - requested directly: match the normal
+                // per-bucket view's exact style/format, which this bucket used to skip entirely
+                // (no hub circle, no label pill, sitting right on top of its realm at the same
+                // orbitRadius:0 origin instead of offset like every real bucket is).
+                orbitRadius: isMobile ? 320 : 260,
                 radius: isMobile ? 50 : 44,
                 maxReach: (isMobile ? 50 : 44) + 500,
                 x: 0, y: 0
@@ -7129,7 +7134,7 @@
 
                     const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
 
-                    if (isSelectedBucket && bucket.tasks.length > 0 && bucket.id !== '__all_tasks_bucket__') {
+                    if (isSelectedBucket && bucket.tasks.length > 0) {
                         const stepSpacing = 420; // Kept in sync with the matching constant above
                         const addButtonSlotX = bucket.x + 90;
                         const startLinearX = addButtonSlotX + stepSpacing;
@@ -7345,10 +7350,6 @@
 
                 // LAYER 2: RENDER BUCKET MOONS & BUCKET LABELS SECOND (MIDDLE LAYER ABOVE TASKS)
                 realm.buckets.forEach(bucket => {
-                    // The synthetic "All Tasks" bucket (see openAllTasksTimeline) skips this whole layer
-                    // entirely - no circle, no orbit ring, no label - so the linear task chain is the
-                    // only thing on screen besides the devil core itself.
-                    if (bucket.id === '__all_tasks_bucket__') return;
 
                     const isSelectedBucket = activeSelectedBucket && activeSelectedBucket.id === bucket.id;
                     if (activeSelectedBucket && !isSelectedBucket) return;
@@ -7571,10 +7572,6 @@
             spaceCtx.shadowBlur = 0;
             spaceCtx.fillText(realm.icon, drawX, drawY);
 
-            // The synthetic "All Tasks" realm (see openAllTasksTimeline) skips its own name label pill
-            // entirely - just the circle and emoji stay, still fully tappable to go back to the universe
-            // view, without a floating text label competing with the task chain right next to it.
-            if (realm.id !== '__all_tasks_realm__') {
             const labelFontPx = realm.labelFontPx || 22;
             const nameFontSpec = `bold ${labelFontPx}px sans-serif`;
 
@@ -7605,7 +7602,6 @@
             spaceCtx.shadowBlur = 0;
             spaceCtx.font = nameFontSpec;
             spaceCtx.fillText(realm.name, drawX, pillY + (pillHeight / 2));
-            }
 
             // Small "shared" badge on the realm's own circle - independent of the label pill
             // below/above it, so it stays visible regardless of where that pill sits.
@@ -8430,10 +8426,14 @@
 
             if (activeSelectedRealm) {
                 activeSelectedRealm.buckets.forEach(bucket => {
-                    // The synthetic "All Tasks" bucket sits at the same position as the devil core
-                    // itself, so leaving it in this check would swallow every tap meant for the devil
-                    // (re-opening/closing the bucket) before the realm-level "tap again to go back to
-                    // the universe" logic below ever gets a chance to run.
+                    // The synthetic "All Tasks" bucket now gets the exact same hub/label rendering
+                    // as a real bucket (see the Layer 1/2 draw code above), but tapping it a second
+                    // time to "deselect" would call focusAndRepelRealms(activeSelectedRealm) on the
+                    // synthetic __all_tasks_realm__ object - the same shape of bug stepOutSpaceView
+                    // had to special-case (a stale synthetic realm left feeding the ring-physics
+                    // loop forever, freezing the tab). Kept excluded from being independently
+                    // clickable for that reason - stepping out of this view goes through the pill/
+                    // core badge (stepOutSpaceView -> recenterSpace), not a second tap on this hub.
                     if (bucket.id === '__all_tasks_bucket__') return;
 
                     const dist = Math.hypot(worldX - bucket.x, worldY - bucket.y);
