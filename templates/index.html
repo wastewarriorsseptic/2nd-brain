@@ -195,16 +195,20 @@
             animation-timing-function: ease-in-out;
             animation-iteration-count: infinite;
         }
-        /* "Invite pending" badge on a universe circle in the Multiverse picker (see
-           universe_pending_invites_map) - a slow pulse so it reads as "waiting on something"
-           without being distracting, always visible (not gated behind wobble/reorder mode like
-           the Edit/Delete/Share icons) since this is status, not an action. */
-        @keyframes universe-invite-pending-pulse {
-            0%, 100% { opacity: 0.75; transform: scale(1); }
-            50% { opacity: 1; transform: scale(1.12); }
+        /* Green 24h countdown ring around a universe circle with a pending invite (see
+           universe_invite_seconds_remaining_map) - stroke-dasharray is the r=44 circle's own
+           circumference (2*pi*44 ~= 276.5), so animating stroke-dashoffset from 0 (full ring
+           visible) to that same value (fully hidden) linearly over the invite's actual remaining
+           seconds reads as the ring emptying out in real time, purely via CSS - no JS ticking loop
+           needed, and it lands on empty at the true expiry moment rather than a fixed duration. */
+        @keyframes universe-invite-countdown {
+            from { stroke-dashoffset: 0; }
+            to { stroke-dashoffset: 276.5; }
         }
-        .universe-invite-pending-badge {
-            animation: universe-invite-pending-pulse 1.8s ease-in-out infinite;
+        .universe-invite-countdown-ring {
+            animation-name: universe-invite-countdown;
+            animation-timing-function: linear;
+            animation-fill-mode: forwards;
         }
     </style>
 </head>
@@ -985,6 +989,8 @@
             <div id="multiverse-grid" class="flex flex-wrap items-start justify-center gap-5">
                 {% for u in universes %}
                 {% set pending_for_u = universe_pending_invites_map.get(u.id, []) if universe_pending_invites_map else [] %}
+                {% set collaborators_for_u = universe_collaborators_map.get(u.id, []) if universe_collaborators_map else [] %}
+                {% set seconds_remaining = universe_invite_seconds_remaining_map.get(u.id) if universe_invite_seconds_remaining_map else None %}
                 <div class="universe-card universe-card-float relative flex flex-col items-center gap-2 w-28 group" data-universe-id="{{ u.id }}" style="--float-delay: -{{ (loop.index0 * 0.53) % 3.2 }}s;">
                     {% if u.user_id == user.id %}
                     <button type="button" onclick="openEditUniverse(this)"
@@ -1001,13 +1007,31 @@
                     <button type="button" onclick="openShareUniverse(this)"
                             data-id="{{ u.id }}" title="Share Universe"
                             class="universe-card-action hidden absolute -bottom-1 -right-1 z-10 w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-indigo-400 hover:border-indigo-400/50 text-xs flex items-center justify-center transition">👥</button>
-                    {% if pending_for_u %}
-                    <span class="universe-invite-pending-badge pointer-events-none absolute -top-1.5 left-1/2 -translate-x-1/2 z-10 w-6 h-6 rounded-full bg-amber-500 border-2 border-slate-950 text-[11px] flex items-center justify-center shadow-lg shadow-amber-500/40" title="Invite sent to {{ pending_for_u[0].email }} - waiting for them to accept">⏳</span>
-                    {% endif %}
                     {% endif %}
                     <a href="/?universe_id={{ u.id }}" class="universe-card-link flex flex-col items-center gap-2 w-full">
-                        <div class="w-20 h-20 rounded-full flex items-center justify-center text-3xl border-2 border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30 transition">
-                            {{ u.icon }}
+                        <div class="relative w-20 h-20">
+                            {% if pending_for_u and seconds_remaining is not none %}
+                            <!-- Green 24h countdown ring around the whole circle (see
+                                 UNIVERSE_INVITE_EXPIRY_HOURS/universe_invite_seconds_remaining_map) -
+                                 distinct in color from the universe's own indigo border so a pending
+                                 invite reads as visibly different at a glance, not just a small
+                                 corner badge. Depletes via a pure-CSS animation (no JS ticking loop
+                                 needed) whose duration is set to however long is ACTUALLY left, so it
+                                 empties out at the real expiry moment even if this page stays open
+                                 that whole time; a fresh page load always recomputes the true
+                                 remaining time server-side rather than restarting the animation. -->
+                            <svg class="absolute -inset-2 w-24 h-24 pointer-events-none" viewBox="0 0 96 96" title="Invite sent to {{ pending_for_u[0].email }} - expires in {{ (seconds_remaining / 3600)|round(1) }}h if not accepted">
+                                <!-- animation-duration MUST live on this <circle> itself, not the
+                                     parent <svg> - animation-* properties don't inherit/cascade to
+                                     children in CSS, so setting it on the wrapper silently did
+                                     nothing (verified via getComputedStyle: duration stayed 0s)
+                                     and every ring animated instantly instead of over 24h. -->
+                                <circle cx="48" cy="48" r="44" fill="none" stroke="#22c55e" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="276.5" class="universe-invite-countdown-ring" style="animation-duration: {{ seconds_remaining|round(0, 'floor')|int }}s;" transform="rotate(-90 48 48)"/>
+                            </svg>
+                            {% endif %}
+                            <div class="w-20 h-20 rounded-full flex items-center justify-center text-3xl border-2 border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30 transition">
+                                {{ u.icon }}
+                            </div>
                         </div>
                         <span class="text-xs font-bold text-white text-center truncate max-w-full">{{ u.name }}</span>
                         <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full {% if u.kind == 'contact' %}bg-emerald-500/15 text-emerald-300 border border-emerald-500/30{% else %}bg-indigo-500/15 text-indigo-300 border border-indigo-500/30{% endif %}">
@@ -1018,6 +1042,14 @@
                         {% endif %}
                         {% if pending_for_u %}
                         <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 truncate max-w-full" title="{{ pending_for_u[0].email }}">⏳ Invite sent</span>
+                        {% endif %}
+                        {% if collaborators_for_u %}
+                        <!-- Persistent (non-expiring) indicator that this Universe is ALREADY
+                             actively shared - separate from the pending-invite ring/pill above,
+                             which disappears the moment an invite is accepted. Reported directly
+                             that there was no way to tell an accepted share apart from a never-
+                             shared Universe once the pending state was gone. -->
+                        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 truncate max-w-full" title="Shared with {{ collaborators_for_u|map(attribute='name')|join(', ') }}">🔗 Shared{% if collaborators_for_u|length > 1 %} ({{ collaborators_for_u|length }}){% endif %}</span>
                         {% endif %}
                     </a>
                 </div>
@@ -6976,7 +7008,11 @@
                 const coreTimelineBtnDist = coreRadius * 1.05;
                 const coreTimelineBtnX = Math.cos(coreTimelineBtnAngle) * coreTimelineBtnDist;
                 const coreTimelineBtnY = Math.sin(coreTimelineBtnAngle) * coreTimelineBtnDist;
-                const coreTimelineBtnRadius = isMobileCore ? 34 : 28;
+                // Radius bumped ~50% (34/28 -> 51/42) specifically to give the enlarged emoji below
+                // room to breathe - growing font-size alone (see below) at the OLD radius was what
+                // clipped past the circle's edge; the badge itself needed to grow to match, not
+                // just the glyph inside it.
+                const coreTimelineBtnRadius = isMobileCore ? 51 : 42;
 
                 spaceCtx.save();
                 spaceCtx.beginPath();
@@ -6991,11 +7027,12 @@
                 spaceCtx.shadowBlur = 0;
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
-                // 1.4x previously clipped past the circle's edge on mobile (this glyph's actual
-                // bitmap renders larger than its nominal font-size box), so this was dialed back to
-                // 1.0x and verified not to clip. Bumped to 1.6x directly on request - if this
-                // clips on mobile again, dial back toward 1.0-1.2x rather than all the way.
-                spaceCtx.font = `${Math.round(coreTimelineBtnRadius * 1.6)}px serif`;
+                // Absolute font size is unchanged from the last "60% bigger" request (old radius
+                // 34/28 * 1.6 = 54.4/44.8px) - only the ratio here changed (1.6 -> ~1.05 against the
+                // NEW bigger radius) so the same-sized glyph now sits inside a circle sized to
+                // actually contain it, instead of growing font and circle in lockstep (which never
+                // fixes clipping, since that ratio - not the absolute size - is what determines fit).
+                spaceCtx.font = `${Math.round(coreTimelineBtnRadius * 1.05)}px serif`;
                 // textAlign/textBaseline center/middle doesn't actually center most emoji glyphs -
                 // a small manual correction is the established fix elsewhere in this file (see the
                 // 🗑 delete-icon draws using pos.x - radius*0.04, pos.y + radius*0.08). This
@@ -8605,7 +8642,9 @@
                 const coreTimelineBtnDist = coreRadius * 1.05;
                 const coreTimelineBtnX = Math.cos(coreTimelineBtnAngle) * coreTimelineBtnDist;
                 const coreTimelineBtnY = Math.sin(coreTimelineBtnAngle) * coreTimelineBtnDist;
-                const coreTimelineBtnRadius = window.innerWidth < 768 ? 34 : 28;
+                // Must match the drawn radius above (see the badge-draw block) exactly, or the tap
+                // target drifts out of sync with what's actually visible.
+                const coreTimelineBtnRadius = window.innerWidth < 768 ? 51 : 42;
                 const distToTimelineBtn = Math.hypot(worldX - coreTimelineBtnX, worldY - coreTimelineBtnY);
                 if (distToTimelineBtn <= coreTimelineBtnRadius + 12) {
                     openAllTasksTimeline();

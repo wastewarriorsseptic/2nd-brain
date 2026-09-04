@@ -1223,7 +1223,8 @@ def dashboard(
                     "collaborators_map": {},
                     "pending_invites_map": {},
                     "universe_collaborators_map": {},
-                    "universe_pending_invites_map": {}
+                    "universe_pending_invites_map": {},
+                    "universe_invite_seconds_remaining_map": {}
                 }
             )
 
@@ -1308,12 +1309,23 @@ def dashboard(
         universe_collaborators_map = {}
         universe_pending_invites_map = {}
 
+        # Seconds left before the OLDEST pending invite on a Universe hits
+        # UNIVERSE_INVITE_EXPIRY_HOURS - drives the countdown ring's per-card animation-duration
+        # (see the universe-invite-countdown-ring SVG in the Multiverse picker). Keyed alongside
+        # the two maps above rather than folded into them, since it's a number, not a list.
+        universe_invite_seconds_remaining_map = {}
+
         for u in universes:
             if u.user_id == user.id:
                 u_shares = session.exec(select(UniverseShare).where(UniverseShare.universe_id == u.id)).all()
                 u_member_ids = [s.user_id for s in u_shares]
                 universe_collaborators_map[u.id] = session.exec(select(User).where(User.id.in_(u_member_ids))).all() if u_member_ids else []
-                universe_pending_invites_map[u.id] = session.exec(select(PendingUniverseInvite).where(PendingUniverseInvite.universe_id == u.id)).all()
+                u_pending = session.exec(select(PendingUniverseInvite).where(PendingUniverseInvite.universe_id == u.id)).all()
+                universe_pending_invites_map[u.id] = u_pending
+                if u_pending:
+                    oldest_invite = min(u_pending, key=lambda inv: inv.created_at)
+                    expires_at = oldest_invite.created_at + timedelta(hours=UNIVERSE_INVITE_EXPIRY_HOURS)
+                    universe_invite_seconds_remaining_map[u.id] = max(0, (expires_at - datetime.utcnow()).total_seconds())
             else:
                 universe_collaborators_map[u.id] = []
                 universe_pending_invites_map[u.id] = []
@@ -1423,6 +1435,7 @@ def dashboard(
                 "pending_invites_map": pending_invites_map,
                 "universe_collaborators_map": universe_collaborators_map,
                 "universe_pending_invites_map": universe_pending_invites_map,
+                "universe_invite_seconds_remaining_map": universe_invite_seconds_remaining_map,
                 "today": today_date
             }
         )
