@@ -27,9 +27,21 @@
             cursor: pointer;
         }
 
-        /* Immediate hide of timeline during pre-load to eliminate flicker */
+        /* Immediate hide of timeline during pre-load to eliminate flicker - reported directly as
+           still visibly flashing on a fresh page load. display:flex alone wasn't enough: the
+           overlay's actual position/z-index/background all come from Tailwind utility classes
+           (fixed inset-0 z-40 bg-slate-950), and the Tailwind Play CDN JIT-compiles those
+           asynchronously after the page starts parsing - so for a brief window the overlay was
+           already display:flex but NOT yet fixed/full-screen/opaque/on top, which is exactly what
+           let the Timeline view underneath flash through. These four are plain CSS instead of
+           relying on Tailwind classes, so they're guaranteed to apply the instant this stylesheet
+           loads, with no dependency on the JIT having run yet. */
         html.preload-space-view #space-view-overlay {
             display: flex !important;
+            position: fixed !important;
+            inset: 0 !important;
+            z-index: 999 !important;
+            background: #020617 !important;
         }
 
         @media (max-width: 768px) {
