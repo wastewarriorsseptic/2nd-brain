@@ -44,6 +44,24 @@
             background: #020617 !important;
         }
 
+        /* Companion to the rule above - still flashed even with that fix in place, because
+           #space-view-overlay itself sits ~580 lines into <body>, well after <main>'s entire
+           Timeline List content. The browser can paint everything above it in source order before
+           that element even exists in the DOM, so an overlay-only fix can't cover a gap that opens
+           before the overlay exists to do any covering. #preload-curtain is the literal first node
+           in <body> for exactly that reason - covers the viewport immediately, then gets out of
+           the way (display:none) the instant preload-space-view is removed, same trigger as above. */
+        #preload-curtain {
+            display: none;
+        }
+        html.preload-space-view #preload-curtain {
+            display: block !important;
+            position: fixed !important;
+            inset: 0 !important;
+            z-index: 1000 !important;
+            background: #020617 !important;
+        }
+
         @media (max-width: 768px) {
             body {
                 flex-direction: column !important;
@@ -180,6 +198,18 @@
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex">
+
+    <!-- Preload curtain - covers the viewport the instant <body> starts parsing, before the real
+         #space-view-overlay (~580 lines further down, after <main>'s entire Timeline List content)
+         even exists in the DOM yet. The <head> CSS rule that forces #space-view-overlay visible
+         during preload can only apply once that element exists - the browser can still paint
+         <main>'s content in the meantime, which is the actual flash reported ("shows for a brief
+         moment the non space view mode") even after that overlay-only fix. This is the very first
+         thing in <body> for exactly that reason - nothing above it in source order to leak through.
+         Pure CSS, no JS dependency: governed by the same html.preload-space-view class the <head>
+         script already sets synchronously, and disappears together with #space-view-overlay's own
+         preload styling once that class is removed. -->
+    <div id="preload-curtain"></div>
 
     <!-- Reorder pattern suggestion toast - shown after completing a shoppable task, only when a real
          pattern (2+ matching completions) was detected server-side. See find_reorder_suggestion() in
