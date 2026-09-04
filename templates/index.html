@@ -941,7 +941,7 @@
                             class="universe-card-action hidden absolute -bottom-1 -right-1 z-10 w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-indigo-400 hover:border-indigo-400/50 text-xs flex items-center justify-center transition">👥</button>
                     {% endif %}
                     <a href="/?universe_id={{ u.id }}" class="universe-card-link flex flex-col items-center gap-2 w-full">
-                        <div class="w-20 h-20 rounded-full flex items-center justify-center text-3xl border-2 {% if active_universe and u.id == active_universe.id %}border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30{% else %}border-slate-700 bg-slate-900 group-hover:border-indigo-500/60{% endif %} transition">
+                        <div class="w-20 h-20 rounded-full flex items-center justify-center text-3xl border-2 border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30 transition">
                             {{ u.icon }}
                         </div>
                         <span class="text-xs font-bold text-white text-center truncate max-w-full">{{ u.name }}</span>
