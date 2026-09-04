@@ -3901,6 +3901,21 @@
             }
         }
 
+        // Tapping anywhere outside the open chat panel closes it - reported directly as hard to
+        // get out of, since the only way out before this was the small ✕ in its header. Excludes
+        // the launcher wrapper (the devil icon, its hint pill, and the "+" quick-task badge) since
+        // each of those already has its own onclick that calls toggleAiChatPanel() itself; without
+        // that exclusion, tapping the devil icon to close would fire this handler AND that onclick
+        // in the same gesture - two toggles netting back to open, so nothing would visibly happen.
+        document.addEventListener('pointerdown', (e) => {
+            const panel = document.getElementById('ai-chat-panel');
+            if (!panel || panel.classList.contains('hidden')) return;
+            if (panel.contains(e.target)) return;
+            const launcherWrapper = document.getElementById('ai-chat-launcher-wrapper');
+            if (launcherWrapper && launcherWrapper.contains(e.target)) return;
+            toggleAiChatPanel();
+        });
+
         // iOS Safari's position:fixed doesn't reliably track the visual viewport once the on-screen
         // keyboard opens - the whole page shifts to keep the focused input visible, which can drag a
         // fixed element like this panel partway or entirely off-screen instead of just shrinking it
