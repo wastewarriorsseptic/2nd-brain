@@ -3817,7 +3817,25 @@
             "Time, Grade, Repetition = Success!",
             "We have to succeed, we don't try.",
         ];
-        let aiChatHintPhraseIndex = 0;
+        // Picks a random phrase, never immediately repeating whatever's currently showing (so a
+        // rotation never fades out and back into the exact same text).
+        function pickRandomAiChatHintIndex() {
+            if (AI_CHAT_HINT_PHRASES.length <= 1) return 0;
+            let next;
+            do {
+                next = Math.floor(Math.random() * AI_CHAT_HINT_PHRASES.length);
+            } while (next === aiChatHintPhraseIndex);
+            return next;
+        }
+
+        // Random on every refresh (not always "I'm your ai!" first) and random on every later
+        // rotation too - not a fixed sequential cycle through the list.
+        let aiChatHintPhraseIndex = Math.floor(Math.random() * AI_CHAT_HINT_PHRASES.length);
+        {
+            const initialHint = document.getElementById('ai-chat-launcher-hint');
+            if (initialHint) initialHint.textContent = AI_CHAT_HINT_PHRASES[aiChatHintPhraseIndex];
+        }
+
         const AI_CHAT_HINT_MIN_MS = 2 * 60 * 1000;
         const AI_CHAT_HINT_MAX_MS = 5 * 60 * 1000;
 
@@ -3826,7 +3844,7 @@
             if (hint) {
                 hint.classList.add('opacity-0');
                 setTimeout(() => {
-                    aiChatHintPhraseIndex = (aiChatHintPhraseIndex + 1) % AI_CHAT_HINT_PHRASES.length;
+                    aiChatHintPhraseIndex = pickRandomAiChatHintIndex();
                     hint.textContent = AI_CHAT_HINT_PHRASES[aiChatHintPhraseIndex];
                     hint.classList.remove('opacity-0');
                 }, 300);
