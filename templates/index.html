@@ -150,6 +150,21 @@
             animation: universe-card-wobble 0.22s ease-in-out infinite !important;
             animation-delay: var(--float-delay, 0s) !important;
         }
+        /* Multiverse picker starfield (see generateMultiversePickerStars) - the DOM/CSS
+           counterpart to Space View's canvas-drawn one (generateSpaceStars/drawSpaceStars), same
+           idea: tiny, sparse, colored, gently twinkling. Per-star opacity range/delay/duration
+           come in via inline style so one shared keyframe covers all of them. */
+        @keyframes multiverse-picker-star-twinkle {
+            0%, 100% { opacity: var(--star-min-o, 0.12); }
+            50% { opacity: var(--star-max-o, 0.34); }
+        }
+        .multiverse-picker-star {
+            position: absolute;
+            border-radius: 9999px;
+            animation-name: multiverse-picker-star-twinkle;
+            animation-timing-function: ease-in-out;
+            animation-iteration-count: infinite;
+        }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex">
@@ -790,8 +805,12 @@
         <!-- Bottom Layout HUD Inspection Card & Controls Wrapper -->
         <div class="relative z-20 pb-6 px-4 flex flex-col items-center gap-3 pointer-events-none select-none w-full">
             
-            <!-- UNIFIED BUCKET TASK SWIPE DOCK -->
-            <div id="bucket-task-swipe-dock" class="hidden pointer-events-auto w-11/12 max-w-sm bg-slate-900/95 border border-indigo-500/40 p-3 rounded-2xl backdrop-blur-md shadow-2xl space-y-2">
+            <!-- UNIFIED BUCKET TASK SWIPE DOCK - mb-16 lifts it clear of the fixed AI chat
+                 launcher (bottom-24 right-4), which otherwise sits right on top of this card's own
+                 bottom-right corner (its checkbox/edit icons) on mobile, where this card's w-11/12
+                 width reaches close to the same right edge. Reset on desktop (md:mb-0) since the
+                 launcher doesn't overlap a narrower, centered card there. -->
+            <div id="bucket-task-swipe-dock" class="hidden pointer-events-auto w-11/12 max-w-sm bg-slate-900/95 border border-indigo-500/40 p-3 rounded-2xl backdrop-blur-md shadow-2xl space-y-2 mb-16 md:mb-0">
                 <div class="flex items-center justify-between px-1 border-b border-slate-800/80 pb-1.5">
                     <span id="swipe-dock-bucket-title" class="text-[11px] font-extrabold text-indigo-300 tracking-wide uppercase truncate">
                         ⭐️ Bucket Tasks
@@ -804,8 +823,10 @@
                 </div>
             </div>
 
-            <!-- Standalone Task Inspection HUD (Used when tapping standalone tasks outside bucket mode) -->
-            <div id="space-hud-card" class="hidden pointer-events-auto w-11/12 max-w-sm bg-slate-900/95 border border-indigo-500/40 p-3.5 rounded-2xl backdrop-blur-md shadow-2xl space-y-2.5">
+            <!-- Standalone Task Inspection HUD (Used when tapping standalone tasks outside bucket
+                 mode) - same mb-16 clearance from the fixed chat launcher as the swipe dock above,
+                 for the same reason. -->
+            <div id="space-hud-card" class="hidden pointer-events-auto w-11/12 max-w-sm bg-slate-900/95 border border-indigo-500/40 p-3.5 rounded-2xl backdrop-blur-md shadow-2xl space-y-2.5 mb-16 md:mb-0">
                 <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
                     <span id="hud-category-badge" class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full truncate">
                         Realm / Bucket
@@ -862,6 +883,12 @@
          camera/physics world is complex enough already) - clicking a universe here does a plain
          full-page navigation to /?universe_id=<id>, same pattern as existing realm/bucket links. -->
     <div id="multiverse-view-overlay" class="hidden fixed inset-0 bg-slate-950 z-40 overflow-y-auto">
+        <!-- Same subtle colored-glow starfield as Space View's canvas (see generateSpaceStars/
+             drawSpaceStars) - this overlay is plain DOM/CSS, not canvas, so it's small twinkling
+             <div>s instead, populated once by generateMultiversePickerStars(). Fixed (not absolute)
+             so it stays put as a backdrop while the grid below it scrolls; no z-index needed since
+             every other direct child here already opts into its own stacking context via z-10. -->
+        <div id="multiverse-picker-stars" class="fixed inset-0 pointer-events-none overflow-hidden"></div>
         <div class="relative z-10 pt-10 md:pt-6 px-4 flex items-center justify-between">
             <div class="bg-slate-900/90 border border-slate-800 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2">
                 <span class="text-base">🌀</span>
@@ -3816,6 +3843,7 @@
             "Keep going - you've got this",
             "Time, Grade, Repetition = Success!",
             "We have to succeed, we don't try.",
+            "Learn, analyze & improve your habits!",
         ];
         // Picks a random phrase, never immediately repeating whatever's currently showing (so a
         // rotation never fades out and back into the exact same text).
@@ -5186,8 +5214,37 @@
             }
         }
 
+        // DOM/CSS counterpart to Space View's canvas-drawn starfield (generateSpaceStars/
+        // drawSpaceStars) - this overlay has no canvas or render loop, so each star is a tiny
+        // absolutely-positioned <div> with its own CSS twinkle animation instead of a per-frame
+        // draw call. Built once (guarded by the container's own dataset flag) rather than
+        // regenerated on every open, so positions don't jarringly reshuffle each time this view
+        // is reopened - same palette as Space View's stars for a consistent "distant universes"
+        // feel across both.
+        function generateMultiversePickerStars() {
+            const container = document.getElementById('multiverse-picker-stars');
+            if (!container || container.dataset.populated === 'true') return;
+            const STAR_COUNT = 40;
+            let html = '';
+            for (let i = 0; i < STAR_COUNT; i++) {
+                const palette = SPACE_STAR_PALETTE[Math.floor(Math.random() * SPACE_STAR_PALETTE.length)];
+                const size = (1.2 + Math.random() * 2.2).toFixed(2);
+                const minO = (0.10 + Math.random() * 0.14).toFixed(2);
+                const maxO = (0.28 + Math.random() * 0.18).toFixed(2);
+                const left = (Math.random() * 100).toFixed(2);
+                const top = (Math.random() * 100).toFixed(2);
+                const delay = (Math.random() * 4).toFixed(2);
+                const duration = (2.5 + Math.random() * 2.5).toFixed(2);
+                const glowRadius = (parseFloat(size) * 2.5).toFixed(1);
+                html += `<div class="multiverse-picker-star" style="left:${left}%; top:${top}%; width:${size}px; height:${size}px; background: rgba(${palette.rgb}, ${maxO}); box-shadow: 0 0 ${glowRadius}px ${palette.glow}; animation-delay: ${delay}s; animation-duration: ${duration}s; --star-min-o: ${minO}; --star-max-o: ${maxO};"></div>`;
+            }
+            container.innerHTML = html;
+            container.dataset.populated = 'true';
+        }
+
         function openMultiverseView() {
             document.getElementById('multiverse-view-overlay').classList.remove('hidden');
+            generateMultiversePickerStars();
             renderMultiversePickerDigest();
         }
 
