@@ -757,11 +757,15 @@
         <!-- Streamlined Top Floating Space Bar -->
         <div class="relative z-10 pt-10 md:pt-4 px-3 md:px-6 flex flex-col gap-2 pointer-events-none">
             <div class="flex items-center justify-between w-full">
+                <!-- Used to show the active Universe's own icon/name here, which read as
+                     misleading once the Multiverse Timeline (spanning every Universe at once) was
+                     showing underneath it - a single span now, swapped between a plain branded
+                     label and "🌀 Multiverse" by updateSpaceTopPillLabel() based on
+                     isMultiverseStackedView (called from openMultiverseTimeline/toggleSpaceView/
+                     recenterSpace, the three places that flag flips). -->
                 <button onclick="openMultiverseView()"
                         class="bg-slate-900/90 border border-slate-800 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto hover:border-indigo-500/60 transition">
-                    <span class="text-base">{{ active_universe.icon if active_universe else '😈' }}</span>
-                    <h2 class="text-xs font-bold text-white tracking-wide">{{ active_universe.name if active_universe else 'TaskMonster Universe' }}</h2>
-                    <span class="text-slate-500 text-[10px]">🌀 Multiverse</span>
+                    <span id="space-top-pill-label" class="text-xs font-bold text-white tracking-wide">😈 TaskMonster</span>
                 </button>
 
                 <div class="flex items-center gap-2">
@@ -5172,6 +5176,16 @@
         });
 
 
+        // The Space View top-left pill (#space-top-pill-label) used to show the active Universe's
+        // own icon/name, which read as misleading once the Multiverse Timeline was showing every
+        // Universe at once underneath it. Called from the three places isMultiverseStackedView
+        // actually flips (openMultiverseTimeline, toggleSpaceView, recenterSpace) rather than every
+        // render frame, since this label only ever needs to change alongside that flag.
+        function updateSpaceTopPillLabel() {
+            const label = document.getElementById('space-top-pill-label');
+            if (label) label.innerText = isMultiverseStackedView ? '🌀 Multiverse' : '😈 TaskMonster';
+        }
+
         function toggleSpaceView() {
             const overlay = document.getElementById('space-view-overlay');
             const toggleIcon = document.getElementById('view-toggle-icon');
@@ -5185,6 +5199,7 @@
                 toggleLabel.innerText = 'Timeline View';
                 localStorage.setItem('active_dashboard_view', 'space');
                 initSpaceCanvas();
+                updateSpaceTopPillLabel();
             } else {
                 overlay.classList.add('hidden');
                 toggleIcon.innerText = '🌌';
@@ -5832,6 +5847,7 @@
             isMultiverseStackedView = false;
             multiverseActiveLaneId = null;
             if (multiverseReorderMode) exitMultiverseTimelineReorderMode();
+            updateSpaceTopPillLabel();
 
             activeSelectedRealm = null;
             activeSelectedBucket = null;
@@ -6153,6 +6169,7 @@
             // Daily Digest used to be force-hidden here entirely; now it shows the same widget,
             // just spanning every Universe like the rest of this view does.
             isMultiverseStackedView = true;
+            updateSpaceTopPillLabel();
             updateDailyDigestVisibility();
 
             multiverseLanes = buildMultiverseLanes();
