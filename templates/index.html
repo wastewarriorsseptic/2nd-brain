@@ -8439,14 +8439,22 @@
             if (activeSelectedRealm) {
                 activeSelectedRealm.buckets.forEach(bucket => {
                     // The synthetic "All Tasks" bucket now gets the exact same hub/label rendering
-                    // as a real bucket (see the Layer 1/2 draw code above), but tapping it a second
-                    // time to "deselect" would call focusAndRepelRealms(activeSelectedRealm) on the
-                    // synthetic __all_tasks_realm__ object - the same shape of bug stepOutSpaceView
-                    // had to special-case (a stale synthetic realm left feeding the ring-physics
-                    // loop forever, freezing the tab). Kept excluded from being independently
-                    // clickable for that reason - stepping out of this view goes through the pill/
-                    // core badge (stepOutSpaceView -> recenterSpace), not a second tap on this hub.
-                    if (bucket.id === '__all_tasks_bucket__') return;
+                    // as a real bucket, but it must NOT fall into the normal "deselect this bucket"
+                    // branch below - focusAndRepelRealms(activeSelectedRealm) on this synthetic
+                    // realm object is the same shape of bug stepOutSpaceView had to special-case (a
+                    // stale synthetic realm left feeding the ring-physics loop forever, freezing the
+                    // tab). Tapping it goes straight to recenterSpace() instead - requested directly
+                    // ("the bucket node doesn't do anything... have it go back to the realms of the
+                    // universe") - the same safe exit stepOutSpaceView already uses for this view.
+                    if (bucket.id === '__all_tasks_bucket__') {
+                        const distToAllTasks = Math.hypot(worldX - bucket.x, worldY - bucket.y);
+                        const allTasksLabelRect = bucket._labelRect;
+                        const hitAllTasksLabel = allTasksLabelRect && worldX >= allTasksLabelRect.x && worldX <= allTasksLabelRect.x + allTasksLabelRect.w && worldY >= allTasksLabelRect.y && worldY <= allTasksLabelRect.y + allTasksLabelRect.h;
+                        if (distToAllTasks <= bucket.radius + 28 || hitAllTasksLabel) {
+                            recenterSpace();
+                        }
+                        return;
+                    }
 
                     const dist = Math.hypot(worldX - bucket.x, worldY - bucket.y);
                     const hitNode = dist <= bucket.radius + 28;
