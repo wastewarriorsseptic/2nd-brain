@@ -8687,8 +8687,11 @@
             if (clickedTask) {
                 if (activeSelectedBucket) {
                     if (String(activeSwipeTaskId) === String(clickedTask.id)) {
+                        // Just dismiss the dock and leave the camera exactly where it is - reported
+                        // directly: tapping an already-selected task was re-focusing the camera out
+                        // to frame the whole realm/bucket ring again (focusAndRepelRealms), instead
+                        // of just closing the HUD like the "tap to unselect" behavior implies.
                         deselectBucketSwipeDock();
-                        focusAndRepelRealms(activeSelectedRealm);
                     } else {
                         activeSwipeTaskId = clickedTask.id;
                         focusCameraOnTask(clickedTask);
