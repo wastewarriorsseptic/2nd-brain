@@ -5273,12 +5273,18 @@
             for (let i = 0; i < STAR_COUNT; i++) {
                 const palette = SPACE_STAR_PALETTE[Math.floor(Math.random() * SPACE_STAR_PALETTE.length)];
                 const size = (1.2 + Math.random() * 2.2).toFixed(2);
-                const minO = (0.10 + Math.random() * 0.14).toFixed(2);
-                const maxO = (0.28 + Math.random() * 0.18).toFixed(2);
+                const maxOVal = 0.28 + Math.random() * 0.18;
+                // minO is a FRACTION of maxO (never below 60% of it), same narrow-swing idea as
+                // Space View's canvas stars, rather than two independently-random values that could
+                // land far apart - reported directly that the previous, wider swing (as low as ~22%
+                // of peak) read as blinking on/off rather than a gentle pulse. Duration is also
+                // considerably longer now for the same "slow" ask.
+                const minO = (maxOVal * (0.6 + Math.random() * 0.15)).toFixed(2);
+                const maxO = maxOVal.toFixed(2);
                 const left = (Math.random() * 100).toFixed(2);
                 const top = (Math.random() * 100).toFixed(2);
-                const delay = (Math.random() * 4).toFixed(2);
-                const duration = (2.5 + Math.random() * 2.5).toFixed(2);
+                const delay = (Math.random() * 6).toFixed(2);
+                const duration = (8 + Math.random() * 8).toFixed(2);
                 const glowRadius = (parseFloat(size) * 2.5).toFixed(1);
                 html += `<div class="multiverse-picker-star" style="left:${left}%; top:${top}%; width:${size}px; height:${size}px; background: rgba(${palette.rgb}, ${maxO}); box-shadow: 0 0 ${glowRadius}px ${palette.glow}; animation-delay: ${delay}s; animation-duration: ${duration}s; --star-min-o: ${minO}; --star-max-o: ${maxO};"></div>`;
             }
@@ -5465,7 +5471,10 @@
                     radius: 0.6 + Math.random() * 1.0,
                     baseOpacity: 0.12 + Math.random() * 0.22,
                     twinklePhase: Math.random() * Math.PI * 2,
-                    twinkleSpeed: 0.4 + Math.random() * 0.5,
+                    // Slow enough for a full dim-to-bright-to-dim cycle to take roughly 40-100
+                    // seconds - reported directly that the previous, much faster speed read as
+                    // blinking on/off rather than a gentle pulse.
+                    twinkleSpeed: 0.05 + Math.random() * 0.08,
                     colorRGB: palette.rgb,
                     glowColor: palette.glow,
                 });
@@ -5480,7 +5489,10 @@
         // twinkle since canvas shadows scale with the shape's fill alpha.
         function drawSpaceStars() {
             spaceStars.forEach(star => {
-                const twinkle = 0.55 + 0.45 * Math.sin(frameCount * star.twinkleSpeed + star.twinklePhase);
+                // Narrower amplitude (never dims below 60% of its own base opacity) reads as a
+                // slow, gentle glow breathing in and out rather than the wide 10%-100% swing this
+                // used to have, which looked like blinking on/off.
+                const twinkle = 0.8 + 0.2 * Math.sin(frameCount * star.twinkleSpeed + star.twinklePhase);
                 spaceCtx.save();
                 spaceCtx.shadowColor = star.glowColor;
                 spaceCtx.shadowBlur = star.radius * 2.5;
