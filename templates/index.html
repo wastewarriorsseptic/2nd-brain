@@ -168,6 +168,20 @@
         .universe-card-float:hover {
             animation-play-state: paused;
         }
+        /* Same float motion/timing as the launcher (see ai-chat-launcher-float above) so the quick-
+           add badge visibly moves with it, but ALSO pulses in scale - a "breathing" effect the
+           launcher and hint pill deliberately don't have, requested directly to make the badge read
+           as its own distinct, more alive element rather than just riding along with the launcher. */
+        @keyframes ai-chat-quick-task-float-breathe {
+            0%, 100% { transform: translateY(0) scale(1); }
+            50% { transform: translateY(-6px) scale(1.12); }
+        }
+        #ai-chat-quick-task-btn {
+            animation: ai-chat-quick-task-float-breathe 3.2s ease-in-out infinite;
+        }
+        #ai-chat-quick-task-btn:hover {
+            animation-play-state: paused;
+        }
         /* iOS home-screen-style jiggle while reordering Universe cards (see
            enterMultiverseReorderMode) - reuses each card's own --float-delay so they wobble out of
            phase with each other, same as the idle float above. !important overrides the float
@@ -303,7 +317,7 @@
          #multiverse-view-overlay) so it survives toggling between Timeline View and Space View,
          same pattern as the toasts above. Offset to bottom-24 rather than bottom-4 specifically to
          avoid stacking under/behind the reorder/recurring toasts above, which both sit at bottom-4. -->
-    <div id="ai-chat-launcher-wrapper" class="fixed bottom-24 right-4 z-[70] flex items-center gap-2">
+    <div id="ai-chat-launcher-wrapper" class="fixed bottom-24 right-10 z-[70] flex items-center gap-2">
         <button type="button" id="ai-chat-launcher-hint" onclick="toggleAiChatPanel()"
                 style="animation: ai-chat-launcher-float 3.2s ease-in-out infinite; animation-delay: -0.6s;"
                 class="bg-slate-900/95 border border-indigo-500/40 text-indigo-200 text-[11px] font-semibold px-3 py-1.5 rounded-full shadow-lg whitespace-nowrap hover:border-indigo-400/70 hover:text-white transition">I'm your ai!</button>
