@@ -317,6 +317,11 @@
          #multiverse-view-overlay) so it survives toggling between Timeline View and Space View,
          same pattern as the toasts above. Offset to bottom-24 rather than bottom-4 specifically to
          avoid stacking under/behind the reorder/recurring toasts above, which both sit at bottom-4. -->
+    <!-- Zero-height probe whose padding-top resolves env(safe-area-inset-top) into a real pixel
+         value syncAiChatPanelToViewport() can read via getBoundingClientRect() - env() can't be
+         read directly from JS, only from a rendered box. 0 in a normal browser tab, so this is a
+         no-op there. -->
+    <div id="ai-chat-safe-area-probe" style="position: fixed; top: 0; left: 0; height: 0; padding-top: env(safe-area-inset-top); pointer-events: none; visibility: hidden;"></div>
     <div id="ai-chat-launcher-wrapper" class="fixed bottom-24 right-10 z-[70] flex items-center gap-2">
         <button type="button" id="ai-chat-launcher-hint" onclick="toggleAiChatPanel()"
                 style="animation: ai-chat-launcher-float 3.2s ease-in-out infinite; animation-delay: -0.6s;"
@@ -374,6 +379,24 @@
             </div>
 
             {% if user %}
+            <!-- Active Universe + View Mode indicator - moved here from the top of <main> so it's
+                 the first thing under the logo instead of buried below the profile footer once the
+                 mobile layout stacks aside above main (see the max-width:768px block up top). Same
+                 two buttons/functions as before (openMultiverseView/toggleSpaceView), just
+                 relocated - nothing else about them changed. -->
+            <div class="flex items-center justify-between w-full mb-3 gap-2">
+                <button onclick="openMultiverseView()"
+                        class="min-w-0 shrink px-2.5 py-1.5 bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white font-bold text-xs rounded-full shadow-md transition flex items-center gap-1.5">
+                    <span>{{ active_universe.icon if active_universe else '😈' }}</span>
+                    <span class="truncate max-w-[110px]">{{ active_universe.name if active_universe else 'TaskMonster Universe' }}</span>
+                    <span class="text-slate-500">🌀</span>
+                </button>
+                <button onclick="toggleSpaceView()"
+                        class="shrink-0 px-3 py-1.5 bg-indigo-600/90 hover:bg-indigo-500 text-white font-bold text-xs rounded-full shadow-md shadow-indigo-600/20 transition flex items-center gap-1.5 border border-indigo-400/30">
+                    <span id="view-toggle-icon">🌌</span> <span id="view-toggle-label">Space View</span>
+                </button>
+            </div>
+
             <!-- + New Task/Person Button below logo -->
             {% if is_contact_universe %}
             <button onclick="openGlobalAddPersonModal()"
@@ -516,10 +539,12 @@
         </div>
 
         {% if user %}
-        <!-- Sidebar User Profile Footer -->
-        <div class="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400 mt-auto">
-            <span class="truncate max-w-[140px] font-medium text-slate-300">👤 {{ user.name }}</span>
-            <a href="/logout" class="hover:text-rose-400 font-semibold text-[11px] transition-colors">
+        <!-- Sidebar User Profile Footer - kept deliberately quiet (small, muted, no border) now
+             that the Universe/view-mode indicator above covers the "where am I" job this row used
+             to help with; it's just an account escape hatch now. -->
+        <div class="pt-2 flex items-center justify-between text-[10px] text-slate-500 mt-auto">
+            <span class="truncate max-w-[140px]">👤 {{ user.name }}</span>
+            <a href="/logout" class="hover:text-rose-400 transition-colors">
                 Sign Out
             </a>
         </div>
@@ -532,21 +557,6 @@
         <div>
             <div class="max-w-4xl mx-auto pt-2 sm:pt-4">
                 {% if user %}
-                    
-                    <!-- View Mode Toggle Bar (Timeline vs. Space View) -->
-                    <div class="flex items-center justify-between w-full max-w-xl mx-auto mb-4 px-2 gap-2">
-                        <button onclick="openMultiverseView()"
-                                class="min-w-0 shrink px-2.5 py-1.5 bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white font-bold text-xs rounded-full shadow-md transition flex items-center gap-1.5">
-                            <span>{{ active_universe.icon if active_universe else '😈' }}</span>
-                            <span class="truncate max-w-[120px]">{{ active_universe.name if active_universe else 'TaskMonster Universe' }}</span>
-                            <span class="text-slate-500">🌀</span>
-                        </button>
-                        <button onclick="toggleSpaceView()"
-                                class="shrink-0 px-3.5 py-1.5 bg-indigo-600/90 hover:bg-indigo-500 text-white font-bold text-xs rounded-full shadow-md shadow-indigo-600/20 transition flex items-center gap-1.5 border border-indigo-400/30">
-                            <span id="view-toggle-icon">🌌</span> <span id="view-toggle-label">Space View</span>
-                        </button>
-                    </div>
-
                     <!-- 4-Segment Responsive Filter Pill (Task universes only - filtering by
                          due-date/recurring/overdue/completed has no meaning for a contact list) -->
                     {% if not is_contact_universe %}
@@ -4242,9 +4252,16 @@
             }
             const KEYBOARD_TOP_MARGIN = 28;
             const KEYBOARD_BOTTOM_GAP = 10;
-            const panelHeight = vv.height - KEYBOARD_TOP_MARGIN - KEYBOARD_BOTTOM_GAP;
+            // Floor the top margin to the notch/Dynamic Island's own height (plus a small gap) so
+            // the header doesn't slide up underneath it once the keyboard pushes the panel toward
+            // the top of the viewport - the flat 28px margin alone was clearing it on some devices
+            // but not others.
+            const safeAreaProbe = document.getElementById('ai-chat-safe-area-probe');
+            const safeAreaTop = safeAreaProbe ? safeAreaProbe.getBoundingClientRect().height : 0;
+            const topMargin = Math.max(KEYBOARD_TOP_MARGIN, safeAreaTop + 8);
+            const panelHeight = vv.height - topMargin - KEYBOARD_BOTTOM_GAP;
             panel.style.height = `${panelHeight}px`;
-            panel.style.top = `${vv.offsetTop + KEYBOARD_TOP_MARGIN}px`;
+            panel.style.top = `${vv.offsetTop + topMargin}px`;
             panel.style.bottom = 'auto';
             // Resizing the panel to fit above the keyboard shrinks how much of #ai-chat-messages is
             // actually visible - a bubble that was fully in view before the keyboard came up (or
