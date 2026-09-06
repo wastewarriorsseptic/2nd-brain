@@ -179,22 +179,36 @@
         .universe-card-float:hover {
             animation-play-state: paused;
         }
-        /* Devil launcher, "+" quick-task badge, and 🌀 Multiverse badge all share this exact
-           animation with no per-element delay, so the three tangent circles bob and pulse as one
-           unit - independently staggering them (as the "+" and 🌀 briefly were) read as distracting
-           next to each other rather than lively. Toned down from an earlier -6px/1.12 pass - that
-           much motion combined with each circle scaling around its own center (not a shared cluster
-           center) swelled the overlap between them noticeably at the peak of every cycle; this
-           calmer amplitude keeps them looking like one pinned/bonded cluster throughout, not just
-           at rest. */
+        /* Devil launcher, "+" quick-task badge, and 🌀 Multiverse badge all share the exact same
+           timing/easing/duration with no per-element delay, so the three tangent circles still bob
+           and pulse as one synced unit - independently staggering them (as the "+" and 🌀 briefly
+           were) read as distracting next to each other rather than lively. Toned down from an
+           earlier -6px/1.12 pass - that much motion combined with each circle scaling around its
+           own center (not a shared cluster center) swelled the overlap between them noticeably at
+           the peak of every cycle; this calmer amplitude keeps them looking like one pinned/bonded
+           cluster throughout, not just at rest. The "+" and 🌀 variants below ALSO nudge sideways,
+           away from the devil, at that same peak - like the devil's own growth is gently repelling
+           them outward - which doubles as extra insurance against the overlap-at-peak issue above. */
         @keyframes ai-chat-quick-task-float-breathe {
             0%, 100% { transform: translateY(0) scale(1); }
             50% { transform: translateY(-3px) scale(1.06); }
         }
-        #ai-chat-launcher,
-        #ai-chat-quick-task-btn,
-        #multiverse-quick-btn {
+        @keyframes ai-chat-plus-repel-breathe {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(4px, -3px) scale(1.06); }
+        }
+        @keyframes ai-chat-multiverse-repel-breathe {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(-4px, -3px) scale(1.06); }
+        }
+        #ai-chat-launcher {
             animation: ai-chat-quick-task-float-breathe 3.2s ease-in-out infinite;
+        }
+        #ai-chat-quick-task-btn {
+            animation: ai-chat-plus-repel-breathe 3.2s ease-in-out infinite;
+        }
+        #multiverse-quick-btn {
+            animation: ai-chat-multiverse-repel-breathe 3.2s ease-in-out infinite;
         }
         #ai-chat-launcher:hover,
         #ai-chat-quick-task-btn:hover,
