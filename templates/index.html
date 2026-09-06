@@ -131,7 +131,7 @@
         }
 
         /* Same safe-area treatment for the Space View's floating top bar
-           (the "TaskMonster Universe" / "Close View" pills) - the flat pt-10
+           (the "TaskMonster Universe" / "Card View" pills) - the flat pt-10
            Tailwind class gave a fixed 40px regardless of notch height, which
            landed right at the Dynamic Island's edge instead of clearly below
            it. env(safe-area-inset-top) is 0 in a normal browser tab, so this
@@ -871,7 +871,7 @@
                     </button>
                     <button onclick="toggleSpaceView()"
                             class="pointer-events-auto px-3.5 py-1.5 bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-indigo-400/30">
-                        ✖ Close View
+                        🃏 Card View
                     </button>
                 </div>
             </div>
@@ -6238,7 +6238,7 @@
             // load fallback below) - without it, the camera would recenter on the normal realm ring
             // while renderSpaceFrame kept drawing the lanes on top. The bottom HUD's own dedicated
             // button used to double as this view's exit before it was replaced with a direct
-            // Multiverse Timeline shortcut - "Close View" (toggleSpaceView) is now the way out of
+            // Multiverse Timeline shortcut - "Card View" (toggleSpaceView) is now the way out of
             // the stacked lanes view.
             isMultiverseStackedView = false;
             multiverseActiveLaneId = null;
@@ -6301,7 +6301,7 @@
             const boundingWidth = (maxOrbitDist * 2) + (paddingX * 2);
             const boundingHeight = (maxOrbitDist * 2) + (paddingY * 2);
 
-            // The "TaskMonster Universe" / "Close View" pills up top and the "+ / - / Multiverse
+            // The "TaskMonster Universe" / "Card View" pills up top and the "+ / - / Multiverse
             // Timeline" row at the bottom are fixed overlays sitting ON TOP of the canvas - they don't shrink the canvas
             // itself, so fitting/centering against the raw window height lets the ring hide behind them
             // (bottom realms clipped by the zoom controls) or look vertically off-center. Fit and center
@@ -6315,7 +6315,7 @@
             // Trimmed down from 244/180 - reported directly as too zoomed out once these got
             // reserved symmetrically on both sides (see clearanceEachSide below). 244 had grown
             // well past what the actual pill stack needs on mobile; 190 still comfortably covers
-            // the "TaskMonster / Universe" + "Close View" row and the Daily Digest pill under it.
+            // the "TaskMonster / Universe" + "Card View" row and the Daily Digest pill under it.
             const topChrome = isMobile ? 190 : 150;
             // The bottom HUD is just the single "Multiverse Timeline" pill now (the mobile +/-
             // zoom buttons were removed) - doesn't need as much room as before either.
