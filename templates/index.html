@@ -182,10 +182,14 @@
         /* Devil launcher, "+" quick-task badge, and 🌀 Multiverse badge all share this exact
            animation with no per-element delay, so the three tangent circles bob and pulse as one
            unit - independently staggering them (as the "+" and 🌀 briefly were) read as distracting
-           next to each other rather than lively. */
+           next to each other rather than lively. Toned down from an earlier -6px/1.12 pass - that
+           much motion combined with each circle scaling around its own center (not a shared cluster
+           center) swelled the overlap between them noticeably at the peak of every cycle; this
+           calmer amplitude keeps them looking like one pinned/bonded cluster throughout, not just
+           at rest. */
         @keyframes ai-chat-quick-task-float-breathe {
             0%, 100% { transform: translateY(0) scale(1); }
-            50% { transform: translateY(-6px) scale(1.12); }
+            50% { transform: translateY(-3px) scale(1.06); }
         }
         #ai-chat-launcher,
         #ai-chat-quick-task-btn,
@@ -352,7 +356,7 @@
                  box, and flags the next message sent so the backend skips straight to treating a
                  bare "Buy milk tomorrow" as a create request instead of asking what's meant. -->
             <button type="button" id="ai-chat-quick-task-btn" onclick="openAiChatQuickTask(event)" title="Add a new task"
-                    class="absolute -bottom-9 -right-9 w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 border-2 border-slate-950 text-white text-2xl font-extrabold flex items-center justify-center shadow-lg transition">
+                    class="absolute -bottom-8 -right-8 w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 border-2 border-slate-950 text-white text-2xl font-extrabold flex items-center justify-center shadow-lg transition">
                 +
             </button>
             {% if user %}
@@ -361,7 +365,7 @@
                  see openMultiverseView()) from anywhere in the app instead of only via the
                  sidebar's Universe pill or Space View's own top-left pill. -->
             <button type="button" id="multiverse-quick-btn" onclick="openMultiverseView()" title="Universes Home"
-                    class="absolute -bottom-9 -left-9 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 border-2 border-slate-950 text-white text-xl flex items-center justify-center shadow-lg transition">
+                    class="absolute -bottom-8 -left-8 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 border-2 border-slate-950 text-white text-xl flex items-center justify-center shadow-lg transition">
                 🌀
             </button>
             {% endif %}
@@ -899,7 +903,11 @@
                             class="hidden pointer-events-auto px-3.5 py-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-emerald-400/30">
                         ✓ Done
                     </button>
-                    <button onclick="toggleSpaceView()"
+                    <!-- Hidden alongside the Universe pill above (see updateSpaceTopPillLabel) while
+                         the Multiverse Timeline is showing - the launcher cluster's own 🌀 bubble is
+                         the way out of Space View entirely from here now, so this row goes fully
+                         empty rather than leaving one lone button up top. -->
+                    <button id="space-card-view-btn" onclick="toggleSpaceView()"
                             class="pointer-events-auto px-3.5 py-1.5 bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-indigo-400/30">
                         🃏 Card View
                     </button>
@@ -908,15 +916,22 @@
 
             <!-- Daily Digest HUD: same Overdue / Due Today / Due Tomorrow / Completed Yesterday
                  breakdown as the daily morning email, but only ever shown at the top-level Universe
-                 view (hidden the instant a realm is selected) - see updateDailyDigestVisibility(). -->
+                 view (hidden the instant a realm is selected) - see updateDailyDigestVisibility().
+                 daily-digest-hud itself only ever carries the hidden/shown toggle - alignment lives
+                 on the inner daily-digest-align wrapper instead (see updateSpaceTopPillLabel) so the
+                 two concerns never fight over the same element's classList. -->
             <div id="daily-digest-hud" class="hidden">
-                <div id="daily-digest-header" onclick="toggleDailyDigestExpanded()"
-                     class="pointer-events-auto cursor-pointer bg-slate-900/90 border border-indigo-500/40 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2 text-xs font-bold text-indigo-300 hover:text-white transition w-fit">
-                    <span>📋 Daily Digest</span>
-                    <span id="daily-digest-chevron" class="text-[10px]">▾</span>
-                </div>
-                <div id="daily-digest-body-wrapper" class="hidden pointer-events-auto mt-2 w-11/12 max-w-sm max-h-[55vh] overflow-y-auto overscroll-contain bg-slate-900/95 border border-indigo-500/40 rounded-2xl backdrop-blur-md shadow-2xl p-3.5 space-y-3 text-xs">
-                    <!-- Populated dynamically by renderDailyDigest() -->
+                <div id="daily-digest-align" class="flex">
+                    <div>
+                        <div id="daily-digest-header" onclick="toggleDailyDigestExpanded()"
+                             class="pointer-events-auto cursor-pointer bg-slate-900/90 border border-indigo-500/40 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2 text-xs font-bold text-indigo-300 hover:text-white transition w-fit">
+                            <span>📋 Daily Digest</span>
+                            <span id="daily-digest-chevron" class="text-[10px]">▾</span>
+                        </div>
+                        <div id="daily-digest-body-wrapper" class="hidden pointer-events-auto mt-2 w-11/12 max-w-sm max-h-[55vh] overflow-y-auto overscroll-contain bg-slate-900/95 border border-indigo-500/40 rounded-2xl backdrop-blur-md shadow-2xl p-3.5 space-y-3 text-xs">
+                            <!-- Populated dynamically by renderDailyDigest() -->
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -5524,6 +5539,8 @@
             const btn = document.getElementById('space-top-pill-btn');
             const icon = document.getElementById('space-top-pill-icon');
             const text = document.getElementById('space-top-pill-text');
+            const cardViewBtn = document.getElementById('space-card-view-btn');
+            const digestAlign = document.getElementById('daily-digest-align');
             if (!icon || !text) return;
             if (isMultiverseStackedView) {
                 icon.textContent = '🌀';
@@ -5532,10 +5549,17 @@
                 // always on screen) does the exact same "back to Multiverse Home" job stepOutSpaceView()
                 // falls through to at this level - no "under" it left to step out to within Space View.
                 if (btn) btn.classList.add('hidden');
+                // Card View goes with it - same reasoning, and it leaves the whole top row empty
+                // rather than one lone button. Daily Digest, the only thing left up top, gets
+                // centered instead of sitting left-aligned under an otherwise-empty row.
+                if (cardViewBtn) cardViewBtn.classList.add('hidden');
+                if (digestAlign) digestAlign.classList.add('justify-center');
             } else {
                 icon.textContent = '😈';
                 text.textContent = text.dataset.defaultLabel || 'TaskMonster';
                 if (btn) btn.classList.remove('hidden');
+                if (cardViewBtn) cardViewBtn.classList.remove('hidden');
+                if (digestAlign) digestAlign.classList.remove('justify-center');
             }
         }
 
