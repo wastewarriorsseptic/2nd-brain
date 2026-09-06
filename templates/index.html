@@ -6666,13 +6666,7 @@
             const totalHeight = (laneCount - 1) * laneSpacing;
             const zoomVal = isMobile ? 0.22 : 0.32;
 
-            // Reported directly (desktop specifically): with several lanes, the stack's total
-            // height often exceeds the viewport, and centering against the RAW window height
-            // (ignoring that the top ~100px is the Multiverse/Daily Digest pill row) left the
-            // topmost lane sitting flush against - sometimes nearly under - that chrome. Desktop
-            // only for now, matching what was actually reported; mobile's existing spacing wasn't
-            // flagged.
-            const topChrome = isMobile ? 0 : 100;
+            const topChrome = isMobile ? 0 : 60;
 
             targetCameraZoom = zoomVal;
             targetCameraOffset = {
@@ -6680,7 +6674,17 @@
                 // each hub's screen x directly - dead center of the viewport, matching how overdue
                 // tasks extend LEFT and upcoming ones extend RIGHT in equal, symmetric room.
                 x: window.innerWidth * 0.5,
-                y: topChrome + ((window.innerHeight - topChrome) / 2) - ((totalHeight / 2) * zoomVal)
+                // Desktop: top-anchored just under the chrome (now just the centered Daily Digest
+                // pill - Card View and the Universe pill both hide in this view, see
+                // updateSpaceTopPillLabel) rather than vertically centered in the full viewport -
+                // centering a short stack (the common case) against the RAW window height left a
+                // large empty gap under the pill, since the center of a tall desktop viewport sits
+                // well below a couple of lanes' worth of content. Reported directly. Mobile keeps
+                // the original centered formula (untouched, wasn't flagged) since its topChrome is
+                // always 0 anyway.
+                y: isMobile
+                    ? ((window.innerHeight / 2) - ((totalHeight / 2) * zoomVal))
+                    : (topChrome + 40)
             };
         }
 
