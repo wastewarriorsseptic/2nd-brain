@@ -352,7 +352,7 @@
                  box, and flags the next message sent so the backend skips straight to treating a
                  bare "Buy milk tomorrow" as a create request instead of asking what's meant. -->
             <button type="button" id="ai-chat-quick-task-btn" onclick="openAiChatQuickTask(event)" title="Add a new task"
-                    class="absolute -bottom-8 -right-8 w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 border-2 border-slate-950 text-white text-2xl font-extrabold flex items-center justify-center shadow-lg transition">
+                    class="absolute -bottom-9 -right-9 w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 border-2 border-slate-950 text-white text-2xl font-extrabold flex items-center justify-center shadow-lg transition">
                 +
             </button>
             {% if user %}
@@ -361,7 +361,7 @@
                  see openMultiverseView()) from anywhere in the app instead of only via the
                  sidebar's Universe pill or Space View's own top-left pill. -->
             <button type="button" id="multiverse-quick-btn" onclick="openMultiverseView()" title="Universes Home"
-                    class="absolute -bottom-8 -left-8 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 border-2 border-slate-950 text-white text-xl flex items-center justify-center shadow-lg transition">
+                    class="absolute -bottom-9 -left-9 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 border-2 border-slate-950 text-white text-xl flex items-center justify-center shadow-lg transition">
                 🌀
             </button>
             {% endif %}
@@ -871,7 +871,7 @@
 
         <!-- Streamlined Top Floating Space Bar -->
         <div class="relative z-10 pt-10 md:pt-4 px-3 md:px-6 flex flex-col gap-2 pointer-events-none">
-            <div class="flex items-center justify-between w-full">
+            <div class="flex items-center w-full">
                 <!-- Used to show the active Universe's own icon/name here, which read as
                      misleading once the Multiverse Timeline (spanning every Universe at once) was
                      showing underneath it - icon/text spans now match the Multiverse picker's own
@@ -880,14 +880,18 @@
                      on isMultiverseStackedView (called from openMultiverseTimeline/toggleSpaceView/
                      recenterSpace, the three places that flag flips). Tapping it steps OUT one level
                      (bucket -> realm -> universe -> Multiverse) instead of always jumping straight to
-                     the Multiverse picker - see stepOutSpaceView(). -->
+                     the Multiverse picker - see stepOutSpaceView(). Hidden entirely (see
+                     updateSpaceTopPillLabel) while the Multiverse Timeline is showing - ml-auto on
+                     the button group below (rather than justify-between up here) is what keeps Card
+                     View pinned to the right when this pill isn't in the layout at all to justify
+                     against; justify-between alone collapsed to the left with only one flex child left. -->
                 <button id="space-top-pill-btn" onclick="stepOutSpaceView()"
                         class="bg-slate-900/90 border border-slate-800 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto hover:border-indigo-500/60 transition">
                     <span id="space-top-pill-icon" class="text-base">😈</span>
                     <h2 id="space-top-pill-text" class="text-xs font-bold text-white tracking-wide" data-default-label="{{ ('TaskMonster / ' + active_universe.name) if active_universe else 'TaskMonster' }}">{{ ('TaskMonster / ' + active_universe.name) if active_universe else 'TaskMonster' }}</h2>
                 </button>
 
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 ml-auto">
                     <!-- Shown only while hold-to-reordering Universe lanes in the Multiverse Timeline
                          (see enterMultiverseTimelineReorderMode/exitMultiverseTimelineReorderMode) -
                          same green "Done" affordance as the Multiverse picker grid's own wobble mode. -->
