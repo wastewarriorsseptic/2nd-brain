@@ -356,9 +356,15 @@
          no-op there. -->
     <div id="ai-chat-safe-area-probe" style="position: fixed; top: 0; left: 0; height: 0; padding-top: env(safe-area-inset-top); pointer-events: none; visibility: hidden;"></div>
     <div id="ai-chat-launcher-wrapper" class="fixed bottom-24 right-10 z-[70] flex items-center gap-2">
+        <!-- No longer an always-on ambient bubble (the constant idle rotation through
+             AI_CHAT_HINT_PHRASES read as clutter/distracting, cute as the sayings themselves are) -
+             hidden by default now, and only ever shown for the invite-accepted welcome message (see
+             checkForInviteAccepted). The sayings themselves live on inside the chat now instead - see
+             toggleAiChatPanel's greetLoggedInVisitorWithSaying() call, which only fires for the devil
+             launcher's plain open, not the "+" quick-task shortcut. -->
         <button type="button" id="ai-chat-launcher-hint" onclick="toggleAiChatPanel()"
                 style="animation: ai-chat-launcher-float 3.2s ease-in-out infinite; animation-delay: -0.6s;"
-                class="bg-slate-900/95 border border-indigo-500/40 text-indigo-200 text-[11px] font-semibold px-3 py-1.5 rounded-full shadow-lg whitespace-nowrap hover:border-indigo-400/70 hover:text-white transition">I'm your ai!</button>
+                class="hidden bg-slate-900/95 border border-indigo-500/40 text-indigo-200 text-[11px] font-semibold px-3 py-1.5 rounded-full shadow-lg whitespace-nowrap hover:border-indigo-400/70 hover:text-white transition">I'm your ai!</button>
         <div class="relative">
             <button id="ai-chat-launcher" onclick="toggleAiChatPanel()" title="Ask the AI assistant"
                     class="w-14 h-14 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border border-indigo-400/30 shadow-2xl flex items-center justify-center text-2xl transition">
@@ -4051,7 +4057,7 @@
             if (event) event.stopPropagation();
             const panel = document.getElementById('ai-chat-panel');
             if (panel && panel.classList.contains('hidden')) {
-                toggleAiChatPanel();
+                toggleAiChatPanel(true);
             }
             aiChatQuickTaskPending = true;
             // Logged-out skips this - maybeGreetLoggedOutVisitor() (triggered by the panel open
@@ -4124,15 +4130,11 @@
             }, 900);
         }
 
-        // Rotates the floating launcher's hint pill through a handful of encouraging phrases
-        // instead of always sitting on the same "I'm your ai!" - fades out, swaps the text, fades
-        // back in (the button's own `transition` class already covers opacity). Explicitly slow -
-        // a random 2-5 minute gap between swaps (not a fixed interval, so it doesn't read as a
-        // metronome) - so it reads as an occasional gentle nudge rather than something
-        // distractingly busy. Runs continuously regardless of whether the pill is currently
-        // visible (it's hidden - not removed - while the chat panel is open) since swapping hidden
-        // text costs nothing and keeps the rotation in sync with real elapsed time rather than
-        // resetting every time the panel closes.
+        // Used to be an ambient rotation on the floating launcher's hint pill, swapping through
+        // these on a 2-5 minute timer whether anyone was looking or not - reported as distracting
+        // clutter despite the phrases themselves being liked. Now they only show up inside the chat
+        // itself, once, right when it's opened via the devil launcher (not the "+" quick-task
+        // shortcut, which has its own opening line) - see greetLoggedInVisitorWithSaying() below.
         const AI_CHAT_HINT_PHRASES = [
             "I'm your ai!",
             "Let's crush your list 💪",
@@ -4165,23 +4167,16 @@
             return next;
         }
 
-        // Random on every refresh (not always "I'm your ai!" first) and random on every later
-        // rotation too - not a fixed sequential cycle through the list.
+        // Tracks the last phrase shown (by either greetLoggedInVisitorWithSaying() or the
+        // invite-accepted welcome's own follow-up line) purely so pickRandomAiChatHintIndex() can
+        // avoid repeating it back-to-back - no longer drives an ambient rotation.
         let aiChatHintPhraseIndex = Math.floor(Math.random() * AI_CHAT_HINT_PHRASES.length);
-        {
-            const initialHint = document.getElementById('ai-chat-launcher-hint');
-            if (initialHint) initialHint.textContent = AI_CHAT_HINT_PHRASES[aiChatHintPhraseIndex];
-        }
-
-        const AI_CHAT_HINT_MIN_MS = 2 * 60 * 1000;
-        const AI_CHAT_HINT_MAX_MS = 5 * 60 * 1000;
 
         // The hint pill is normally a single-line, fully-rounded "pill" (whitespace-nowrap, no
-        // width cap) - fine for the short AI_CHAT_HINT_PHRASES above, but a one-off message like
-        // the invite-accepted welcome (see checkForInviteAccepted) runs much longer and would
+        // width cap) - fine for the short AI_CHAT_HINT_PHRASES, but the invite-accepted welcome
+        // (see checkForInviteAccepted, the pill's only remaining use) runs much longer and would
         // overflow off the left edge of the screen instead of wrapping. This toggles it into a
-        // wider, wrappable card shape for exactly that kind of message, and back to the normal
-        // pill shape the next time the ambient rotation below swaps in a normal short phrase.
+        // wider, wrappable card shape for that message.
         function setAiChatHintSpecialMode(isSpecial) {
             const hint = document.getElementById('ai-chat-launcher-hint');
             if (!hint) return;
@@ -4193,24 +4188,21 @@
             hint.style.maxWidth = isSpecial ? '13rem' : '';
         }
 
-        function rotateAiChatHintPhrase() {
-            const hint = document.getElementById('ai-chat-launcher-hint');
-            if (hint) {
-                hint.classList.add('opacity-0');
-                setTimeout(() => {
-                    aiChatHintPhraseIndex = pickRandomAiChatHintIndex();
-                    setAiChatHintSpecialMode(false);
-                    hint.textContent = AI_CHAT_HINT_PHRASES[aiChatHintPhraseIndex];
-                    hint.classList.remove('opacity-0');
-                }, 300);
-            }
-            const nextDelay = AI_CHAT_HINT_MIN_MS + Math.random() * (AI_CHAT_HINT_MAX_MS - AI_CHAT_HINT_MIN_MS);
-            setTimeout(rotateAiChatHintPhrase, nextDelay);
+        // The devil launcher's replacement for the old floating hint pill - a random encouraging
+        // line from the assistant itself, once, the first time the chat is opened with nothing said
+        // yet. Logged-out visitors get their own dedicated greeting instead (see
+        // maybeGreetLoggedOutVisitor); the "+" quick-task shortcut skips this entirely (see its own
+        // isQuickTask guard in toggleAiChatPanel) since it already opens with its own "what task..."
+        // line and showing both would be a double greeting.
+        function greetLoggedInVisitorWithSaying() {
+            if (!aiChatLoggedIn) return;
+            const wrapper = document.getElementById('ai-chat-messages');
+            if (!wrapper || wrapper.children.length > 0) return;
+            aiChatHintPhraseIndex = pickRandomAiChatHintIndex();
+            renderAiChatBubble('assistant', AI_CHAT_HINT_PHRASES[aiChatHintPhraseIndex]);
         }
 
-        setTimeout(rotateAiChatHintPhrase, AI_CHAT_HINT_MIN_MS + Math.random() * (AI_CHAT_HINT_MAX_MS - AI_CHAT_HINT_MIN_MS));
-
-        function toggleAiChatPanel() {
+        function toggleAiChatPanel(isQuickTask) {
             const panel = document.getElementById('ai-chat-panel');
             if (!panel) return;
             panel.classList.toggle('hidden');
@@ -4237,8 +4229,11 @@
                 const messagesWrapper = document.getElementById('ai-chat-messages');
                 if (messagesWrapper) messagesWrapper.scrollTop = messagesWrapper.scrollHeight;
                 maybeGreetLoggedOutVisitor();
+                if (!isQuickTask) greetLoggedInVisitorWithSaying();
             } else {
-                if (hint) hint.classList.remove('hidden');
+                // Deliberately NOT re-showing the hint pill here - it's retired as an ambient
+                // fixture (see greetLoggedInVisitorWithSaying above) and now only ever appears for
+                // the invite-accepted welcome, which shows it explicitly when that fires.
                 // Drop any keyboard-open sizing from last time (see syncAiChatPanelToViewport) so
                 // the next open starts clean from the CSS classes' own layout, not a stale height/
                 // top from wherever the keyboard happened to leave things.
