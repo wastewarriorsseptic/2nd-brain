@@ -387,7 +387,8 @@
          keeps its own compact floating-card layout, untouched. -->
     <div id="ai-chat-panel" class="hidden fixed inset-x-3 bottom-24 h-[55vh] md:inset-x-auto md:top-auto md:bottom-40 md:right-4 md:w-11/12 md:max-w-md md:h-[80vh] md:max-h-[720px] z-[70] bg-slate-900/95 border border-indigo-500/40 rounded-2xl backdrop-blur-md shadow-2xl flex flex-col overflow-hidden">
         <div class="flex items-center justify-between px-3.5 py-2.5 border-b border-slate-800 shrink-0">
-            <span class="text-xs font-extrabold text-indigo-300 uppercase tracking-wide">🤖 TaskMonster Assistant</span>
+            <span onclick="toggleAiChatPanel()" title="Minimize"
+                  class="text-xs font-extrabold text-indigo-300 uppercase tracking-wide cursor-pointer select-none hover:text-white transition">🤖 TaskMonster Assistant</span>
             <div class="flex items-center gap-2">
                 <button type="button" id="ai-chat-audio-btn" onclick="toggleAiChatAudio()"
                         class="hidden text-sm text-slate-400 hover:text-white px-1 transition">🔇</button>
@@ -891,7 +892,7 @@
                      recenterSpace, the three places that flag flips). Tapping it steps OUT one level
                      (bucket -> realm -> universe -> Multiverse) instead of always jumping straight to
                      the Multiverse picker - see stepOutSpaceView(). -->
-                <button onclick="stepOutSpaceView()"
+                <button id="space-top-pill-btn" onclick="stepOutSpaceView()"
                         class="bg-slate-900/90 border border-slate-800 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto hover:border-indigo-500/60 transition">
                     <span id="space-top-pill-icon" class="text-base">😈</span>
                     <h2 id="space-top-pill-text" class="text-xs font-bold text-white tracking-wide" data-default-label="{{ ('TaskMonster / ' + active_universe.name) if active_universe else 'TaskMonster' }}">{{ ('TaskMonster / ' + active_universe.name) if active_universe else 'TaskMonster' }}</h2>
@@ -5527,15 +5528,21 @@
         // actually flips (openMultiverseTimeline, toggleSpaceView, recenterSpace) rather than every
         // render frame, since this label only ever needs to change alongside that flag.
         function updateSpaceTopPillLabel() {
+            const btn = document.getElementById('space-top-pill-btn');
             const icon = document.getElementById('space-top-pill-icon');
             const text = document.getElementById('space-top-pill-text');
             if (!icon || !text) return;
             if (isMultiverseStackedView) {
                 icon.textContent = '🌀';
                 text.textContent = 'Multiverse';
+                // Redundant here now that the launcher cluster's own 🌀 bubble (bottom-right,
+                // always on screen) does the exact same "back to Multiverse Home" job stepOutSpaceView()
+                // falls through to at this level - no "under" it left to step out to within Space View.
+                if (btn) btn.classList.add('hidden');
             } else {
                 icon.textContent = '😈';
                 text.textContent = text.dataset.defaultLabel || 'TaskMonster';
+                if (btn) btn.classList.remove('hidden');
             }
         }
 
