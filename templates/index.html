@@ -163,19 +163,14 @@
 
         /* Gentle idle bob, echoing the same soft floating drift Realm circles have in Space View (a
            slow sine-wave offset, not a bounce/spring) - purely decorative so it's a plain CSS
-           animation rather than wiring into the canvas physics. Shared by the AI chat launcher and
-           the Universe cards on the Multiverse picker (see .universe-card-float below) - each
-           Universe card gets its own --float-delay (set inline per-card) so they don't all bob in
-           perfect unison, matching how Space View staggers each realm's own floatOffsetPhase. */
+           animation rather than wiring into the canvas physics. Shared by the Universe cards on the
+           Multiverse picker (see .universe-card-float below) - each Universe card gets its own
+           --float-delay (set inline per-card) so they don't all bob in perfect unison, matching how
+           Space View staggers each realm's own floatOffsetPhase. The launcher cluster (devil/+/🌀)
+           uses the breathing variant below instead, all three perfectly in sync - see it for why. */
         @keyframes ai-chat-launcher-float {
             0%, 100% { transform: translateY(0); }
             50% { transform: translateY(-6px); }
-        }
-        #ai-chat-launcher {
-            animation: ai-chat-launcher-float 3.2s ease-in-out infinite;
-        }
-        #ai-chat-launcher:hover {
-            animation-play-state: paused;
         }
         .universe-card-float {
             animation: ai-chat-launcher-float 3.2s ease-in-out infinite;
@@ -184,27 +179,21 @@
         .universe-card-float:hover {
             animation-play-state: paused;
         }
-        /* Same float motion/timing as the launcher (see ai-chat-launcher-float above) so the quick-
-           add badge visibly moves with it, but ALSO pulses in scale - a "breathing" effect the
-           launcher and hint pill deliberately don't have, requested directly to make the badge read
-           as its own distinct, more alive element rather than just riding along with the launcher. */
+        /* Devil launcher, "+" quick-task badge, and 🌀 Multiverse badge all share this exact
+           animation with no per-element delay, so the three tangent circles bob and pulse as one
+           unit - independently staggering them (as the "+" and 🌀 briefly were) read as distracting
+           next to each other rather than lively. */
         @keyframes ai-chat-quick-task-float-breathe {
             0%, 100% { transform: translateY(0) scale(1); }
             50% { transform: translateY(-6px) scale(1.12); }
         }
-        #ai-chat-quick-task-btn {
-            animation: ai-chat-quick-task-float-breathe 3.2s ease-in-out infinite;
-        }
-        #ai-chat-quick-task-btn:hover {
-            animation-play-state: paused;
-        }
-        /* Same breathing float as the "+" quick-task badge above, just phased half a cycle apart
-           (-1.6s, half of the 3.2s loop) so the two tangent circles don't pulse in exact lockstep -
-           requested to match the launcher cluster's existing wobble rather than sit still next to it. */
+        #ai-chat-launcher,
+        #ai-chat-quick-task-btn,
         #multiverse-quick-btn {
             animation: ai-chat-quick-task-float-breathe 3.2s ease-in-out infinite;
-            animation-delay: -1.6s;
         }
+        #ai-chat-launcher:hover,
+        #ai-chat-quick-task-btn:hover,
         #multiverse-quick-btn:hover {
             animation-play-state: paused;
         }
