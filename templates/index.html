@@ -145,6 +145,22 @@
             }
         }
 
+        /* The Multiverse picker's own header now carries nothing but a reorder-mode "Done" button
+           that's hidden the rest of the time (see #multiverse-view-overlay markup - the
+           "TaskMonster" / "Close" pills that used to live here are gone, this picker being Space
+           View's own Home rather than a sub-screen you need a way back out of) - so its top padding
+           only needs to clear the notch/Dynamic Island itself, not leave room for a pill row.
+           Pulling this down from the old flat 40px lets the Daily Digest pill and Universe grid
+           below sit noticeably higher. */
+        #multiverse-view-overlay > .relative.pt-10 {
+            padding-top: max(0.75rem, calc(env(safe-area-inset-top) + 0.25rem)) !important;
+        }
+        @media (min-width: 768px) {
+            #multiverse-view-overlay > .relative.pt-10 {
+                padding-top: max(0.75rem, env(safe-area-inset-top)) !important;
+            }
+        }
+
         /* Gentle idle bob, echoing the same soft floating drift Realm circles have in Space View (a
            slow sine-wave offset, not a bounce/spring) - purely decorative so it's a plain CSS
            animation rather than wiring into the canvas physics. Shared by the AI chat launcher and
@@ -978,24 +994,19 @@
              so it stays put as a backdrop while the grid below it scrolls; no z-index needed since
              every other direct child here already opts into its own stacking context via z-10. -->
         <div id="multiverse-picker-stars" class="fixed inset-0 pointer-events-none overflow-hidden"></div>
-        <div class="relative z-10 pt-10 md:pt-6 px-4 flex items-center justify-between">
-            <div class="bg-slate-900/90 border border-slate-800 py-1.5 px-3 rounded-full backdrop-blur-md shadow-2xl flex items-center gap-2">
-                <span class="text-base">😈</span>
-                <h2 class="text-xs font-bold text-white tracking-wide">TaskMonster</h2>
-            </div>
-            <div class="flex items-center gap-2">
-                <!-- Shown only while reordering (see enterMultiverseReorderMode/exitMultiverseReorderMode) -
-                     the explicit way out of wobble mode, matching iOS's own "Done" button rather than
-                     relying on people discovering that tapping blank space also exits it. -->
-                <button type="button" id="multiverse-reorder-done-btn" onclick="exitMultiverseReorderMode()"
-                        class="hidden px-3.5 py-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-emerald-400/30">
-                    ✓ Done
-                </button>
-                <button onclick="closeMultiverseView()"
-                        class="px-3.5 py-1.5 bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-indigo-400/30">
-                    ✖ Close
-                </button>
-            </div>
+        <!-- No "TaskMonster" / "Close" pills here - this picker is Space View's own Home (the
+             top-level "which Universe" landing screen, not a sub-screen you step into and need a
+             way back out of), so the header is just the reorder-mode "Done" button when that's
+             active and nothing otherwise. closeMultiverseView() itself is unchanged/still used
+             programmatically (e.g. openMultiverseTimeline() calls it before opening Space View). -->
+        <div class="relative z-10 pt-10 md:pt-6 px-4 flex items-center justify-end">
+            <!-- Shown only while reordering (see enterMultiverseReorderMode/exitMultiverseReorderMode) -
+                 the explicit way out of wobble mode, matching iOS's own "Done" button rather than
+                 relying on people discovering that tapping blank space also exits it. -->
+            <button type="button" id="multiverse-reorder-done-btn" onclick="exitMultiverseReorderMode()"
+                    class="hidden px-3.5 py-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-emerald-400/30">
+                ✓ Done
+            </button>
         </div>
 
         <!-- Cross-Universe Daily Digest - same Overdue / Due Today / Due Tomorrow / Completed
