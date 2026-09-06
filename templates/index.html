@@ -198,6 +198,16 @@
         #ai-chat-quick-task-btn:hover {
             animation-play-state: paused;
         }
+        /* Same breathing float as the "+" quick-task badge above, just phased half a cycle apart
+           (-1.6s, half of the 3.2s loop) so the two tangent circles don't pulse in exact lockstep -
+           requested to match the launcher cluster's existing wobble rather than sit still next to it. */
+        #multiverse-quick-btn {
+            animation: ai-chat-quick-task-float-breathe 3.2s ease-in-out infinite;
+            animation-delay: -1.6s;
+        }
+        #multiverse-quick-btn:hover {
+            animation-play-state: paused;
+        }
         /* iOS home-screen-style jiggle while reordering Universe cards (see
            enterMultiverseReorderMode) - reuses each card's own --float-delay so they wobble out of
            phase with each other, same as the idle float above. !important overrides the float
@@ -356,6 +366,16 @@
                     class="absolute -bottom-8 -right-8 w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 border-2 border-slate-950 text-white text-2xl font-extrabold flex items-center justify-center shadow-lg transition">
                 +
             </button>
+            {% if user %}
+            <!-- Third tangent circle off the launcher, mirroring the "+" quick-task badge on the
+                 opposite side - jumps straight to the Multiverse picker (Space View's own Home,
+                 see openMultiverseView()) from anywhere in the app instead of only via the
+                 sidebar's Universe pill or Space View's own top-left pill. -->
+            <button type="button" id="multiverse-quick-btn" onclick="openMultiverseView()" title="Universes Home"
+                    class="absolute -bottom-8 -left-8 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 border-2 border-slate-950 text-white text-xl flex items-center justify-center shadow-lg transition">
+                🌀
+            </button>
+            {% endif %}
         </div>
     </div>
 
