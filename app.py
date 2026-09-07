@@ -3129,7 +3129,32 @@ def _ai_chat_load_history(session: Session, user: "User", max_turns: int = AI_CH
     ).all()
     rows.reverse()
 
-    messages = [{"role": r.role, "content": r.content} for r in rows]
+    # task_id alone isn't enough for the client's "🎯 Go to this task" link (goToAiChatTask needs
+    # bucket_id/realm_id too, to build the URL without a lookup of its own) - AiChatMessage only
+    # ever stores task_id/task_title, so those two are resolved here via a live join instead of
+    # being duplicated onto the message row at write time. Doing it live also means the link always
+    # points at wherever the task actually lives now, even if it's since been moved to a different
+    # bucket - a stale bucket_id captured at creation time wouldn't self-correct like this does.
+    # Silently drops the nav target (message still renders, just without the tappable link) for a
+    # task that's since been deleted, rather than erroring the whole history load over it.
+    task_ids = {r.task_id for r in rows if r.task_id}
+    task_nav_by_id = {}
+    if task_ids:
+        items = session.exec(select(Item).where(Item.id.in_(task_ids))).all()
+        bucket_ids = {it.bucket_id for it in items}
+        buckets = session.exec(select(Bucket).where(Bucket.id.in_(bucket_ids))).all() if bucket_ids else []
+        realm_id_by_bucket = {b.id: b.realm_id for b in buckets}
+        for it in items:
+            realm_id = realm_id_by_bucket.get(it.bucket_id)
+            if realm_id:
+                task_nav_by_id[it.id] = {"id": it.id, "bucket_id": it.bucket_id, "realm_id": realm_id}
+
+    messages = []
+    for r in rows:
+        msg = {"role": r.role, "content": r.content}
+        if r.task_id and r.task_id in task_nav_by_id:
+            msg["task_nav"] = task_nav_by_id[r.task_id]
+        messages.append(msg)
 
     last_task = None
     for r in reversed(rows):

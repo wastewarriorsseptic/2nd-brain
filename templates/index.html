@@ -4019,7 +4019,16 @@
                 if (!data.ok || !Array.isArray(data.messages)) return;
                 aiChatHistory = data.messages;
                 aiChatHistory.forEach(turn => {
-                    renderAiChatBubble(turn.role === 'assistant' ? 'assistant' : 'user', turn.content || '');
+                    // task_nav (bucket_id/realm_id/id - see _ai_chat_load_history in app.py) is
+                    // what lets a "🎯 Go to this task" link keep working after a reload instead of
+                    // silently disappearing - reported directly. Only ever present on an assistant
+                    // turn that created/updated a task whose target still exists.
+                    renderAiChatBubble(
+                        turn.role === 'assistant' ? 'assistant' : 'user',
+                        turn.content || '',
+                        turn.task_nav ? 'task_created' : undefined,
+                        turn.task_nav
+                    );
                 });
             } catch (e) {}
         }
