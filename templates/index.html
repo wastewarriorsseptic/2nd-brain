@@ -2428,12 +2428,6 @@
     <script>
         const isContactUniverse = {{ 'true' if is_contact_universe else 'false' }};
         const activeUniverseId = {{ active_universe.id if active_universe else 'null' }};
-        // Space View's own core hub (see renderSpaceFrame) draws this instead of a hardcoded 😈 -
-        // the devil is TaskMonster's own mascot/brand, not a stand-in for whatever Universe you're
-        // actually looking at, and showing it regardless of Universe read as not making sense once
-        // pointed out directly (an "Important Dates" universe's core showing a devil face instead
-        // of that Universe's own chosen icon, e.g. 📅).
-        const activeUniverseIcon = {{ (active_universe.icon if active_universe else '😈')|tojson }};
 
         // Full tree of the user's OWNED Universes/Realms/Buckets (every kind, not just the
         // active one) - drives the "move to a different Universe/Realm/Bucket" pickers on the
@@ -6301,46 +6295,6 @@
             spaceCanvas.style.height = `${window.innerHeight}px`;
         }
 
-        // Shared sizing for each realm's own mini-timeline in the top-level ring view (a short
-        // radial "spoke" of its nearest upcoming tasks, extending straight out from the realm along
-        // the same angle the realm itself already sits at) - one shared source so the render loop
-        // (which draws it) and recenterSpace (which needs to know how far it reaches, to keep it
-        // from being clipped by the camera frame) never drift out of sync with each other.
-        function realmMiniTimelineGeometry(isMobile) {
-            return {
-                maxTasks: 3,
-                dotRadius: isMobile ? 15 : 13,
-                startGap: isMobile ? 26 : 22,
-                stepDist: isMobile ? 92 : 78,
-                labelReach: isMobile ? 46 : 38
-            };
-        }
-
-        function realmMiniTimelineReach(isMobile) {
-            const geo = realmMiniTimelineGeometry(isMobile);
-            return geo.startGap + geo.dotRadius + ((geo.maxTasks - 1) * geo.stepDist) + geo.dotRadius + geo.labelReach;
-        }
-
-        // The realm's own buckets already carry a fully filtered/sorted task list per bucket (see
-        // the bucketCardElements pass above - completed tasks excluded, recurring series already
-        // deduped/horizon-capped) built once for EVERY realm regardless of whether it's selected, so
-        // this just flattens across buckets and takes the soonest few UPCOMING (not overdue) ones -
-        // overdue tasks are left out here specifically because "extending outward" has no good
-        // direction left for them once upcoming already claims outward (inward already belongs to
-        // the devil core / other realms).
-        function getRealmMiniTimelineTasks(realm, maxCount) {
-            if (!realm || realm.isAddButton) return [];
-            const flat = [];
-            (realm.buckets || []).forEach(bucket => {
-                if (bucket.isAddButton) return;
-                (bucket.tasks || []).forEach(task => {
-                    if (!task.isOverdue) flat.push(task);
-                });
-            });
-            flat.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
-            return flat.slice(0, maxCount);
-        }
-
         function recenterSpace() {
             // Drop the synthetic "All Tasks" realm (see openAllTasksTimeline) if it's present - it's a
             // client-side-only construct built fresh each time the devil core is tapped, not something
@@ -6408,14 +6362,9 @@
             const glow = 18;
             const pillHeight = Math.round(currentLabelFontPx * 1.9);
             const safetyMargin = 24;
-            // Every realm also draws its own mini-timeline spoke, extending straight outward along
-            // whatever angle it happens to sit at (see realmMiniTimelineReach/getRealmMiniTimelineTasks
-            // in the render loop) - reach needs padding on BOTH axes since a realm near the top/bottom
-            // of the ring extends its spoke mostly vertically, one near the sides mostly horizontally.
-            const miniTimelineReach = realmMiniTimelineReach(window.innerWidth < 768);
 
-            const paddingX = Math.max(currentRealmRadius + glow, currentMaxPillWidth / 2) + safetyMargin + miniTimelineReach;
-            const paddingY = currentRealmRadius + glow + 12 + pillHeight + safetyMargin + miniTimelineReach;
+            const paddingX = Math.max(currentRealmRadius + glow, currentMaxPillWidth / 2) + safetyMargin;
+            const paddingY = currentRealmRadius + glow + 12 + pillHeight + safetyMargin;
 
             const boundingWidth = (maxOrbitDist * 2) + (paddingX * 2);
             const boundingHeight = (maxOrbitDist * 2) + (paddingY * 2);
@@ -7200,7 +7149,7 @@
                 // +100% from the original 99/58px.
                 spaceCtx.font = `${Math.round((isMobileCore ? 198 : 116) * pulseScale)}px serif`;
                 spaceCtx.shadowBlur = 0;
-                spaceCtx.fillText(activeUniverseIcon, 0, 0);
+                spaceCtx.fillText('😈', 0, 0);
                 spaceCtx.restore();
             }
 
@@ -7448,7 +7397,6 @@
                     // entirely while focused, not visible-but-distant.
                     if (!activeSelectedRealm) {
                         renderRealmNode(realm, drawX, drawY, false);
-                        renderRealmMiniTimeline(realm, drawX, drawY, isMobileCore);
                     }
                     return;
                 }
@@ -8118,81 +8066,6 @@
                     spaceCtx.fillText(realm.sharedByName, bubbleCx, bubbleCy + 1);
                 }
             }
-
-            spaceCtx.restore();
-        }
-
-        // A short radial "spoke" of a realm's own soonest upcoming tasks, extending straight out
-        // from its circle along the same angle it already sits at in the ring - so its own timeline
-        // reads as cutting through the ring view without a realm's actual content requiring you to
-        // step into it first. Deliberately plain (dots + a connecting line + one date label) rather
-        // than full task cards - anything busier would be unreadable at the ring's zoomed-out scale,
-        // and would fight visually with the realm's own label pill. See realmMiniTimelineGeometry/
-        // getRealmMiniTimelineTasks above, and the matching padding added in recenterSpace so this
-        // never gets clipped by the camera frame.
-        function renderRealmMiniTimeline(realm, drawX, drawY, isMobile) {
-            const tasks = getRealmMiniTimelineTasks(realm, realmMiniTimelineGeometry(isMobile).maxTasks);
-            if (!tasks.length) return;
-
-            const geo = realmMiniTimelineGeometry(isMobile);
-            const distFromCenter = Math.hypot(drawX, drawY) || 1;
-            const dirX = drawX / distFromCenter;
-            const dirY = drawY / distFromCenter;
-
-            spaceCtx.save();
-            spaceCtx.strokeStyle = 'rgba(129, 140, 248, 0.5)';
-            spaceCtx.lineWidth = 2.5;
-
-            let prevX = drawX + dirX * realm.radius;
-            let prevY = drawY + dirY * realm.radius;
-
-            tasks.forEach((task, idx) => {
-                const dist = realm.radius + geo.startGap + (idx * geo.stepDist);
-                const tx = drawX + dirX * dist;
-                const ty = drawY + dirY * dist;
-
-                spaceCtx.beginPath();
-                spaceCtx.moveTo(prevX, prevY);
-                spaceCtx.lineTo(tx, ty);
-                spaceCtx.stroke();
-
-                spaceCtx.beginPath();
-                spaceCtx.arc(tx, ty, geo.dotRadius, 0, Math.PI * 2);
-                spaceCtx.fillStyle = task.isOverdue ? 'rgba(244, 63, 94, 0.9)' : 'rgba(99, 102, 241, 0.92)';
-                spaceCtx.strokeStyle = '#c7d2fe';
-                spaceCtx.lineWidth = 1.5;
-                spaceCtx.shadowColor = '#818cf8';
-                spaceCtx.shadowBlur = 10;
-                spaceCtx.fill();
-                spaceCtx.stroke();
-                spaceCtx.shadowBlur = 0;
-
-                // Only the soonest task gets a date label - one per dot would be unreadable clutter
-                // at this zoom level, and the soonest date is the one actually worth knowing at a
-                // glance without stepping into the realm.
-                if (idx === 0) {
-                    const labelText = task.dueDateFormatted || task.dueDate;
-                    spaceCtx.font = `bold ${Math.round(geo.dotRadius * 0.9)}px sans-serif`;
-                    const labelWidth = spaceCtx.measureText(labelText).width + 16;
-                    const labelHeight = geo.dotRadius * 1.7;
-                    const labelX = tx - labelWidth / 2;
-                    const labelY = ty + geo.dotRadius + 6;
-                    spaceCtx.beginPath();
-                    spaceCtx.roundRect(labelX, labelY, labelWidth, labelHeight, labelHeight / 2);
-                    spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
-                    spaceCtx.strokeStyle = '#818cf8';
-                    spaceCtx.lineWidth = 1.5;
-                    spaceCtx.fill();
-                    spaceCtx.stroke();
-                    spaceCtx.fillStyle = '#c7d2fe';
-                    spaceCtx.textAlign = 'center';
-                    spaceCtx.textBaseline = 'middle';
-                    spaceCtx.fillText(labelText, tx, labelY + labelHeight / 2 + 1);
-                }
-
-                prevX = tx;
-                prevY = ty;
-            });
 
             spaceCtx.restore();
         }
