@@ -2428,6 +2428,12 @@
     <script>
         const isContactUniverse = {{ 'true' if is_contact_universe else 'false' }};
         const activeUniverseId = {{ active_universe.id if active_universe else 'null' }};
+        // Space View's own core hub (see renderSpaceFrame) draws this instead of a hardcoded 😈 -
+        // the devil is TaskMonster's own mascot/brand, not a stand-in for whatever Universe you're
+        // actually looking at, and showing it regardless of Universe read as not making sense once
+        // pointed out directly (a "Bills" universe's core showing a devil face instead of that
+        // Universe's own chosen icon).
+        const activeUniverseIcon = {{ (active_universe.icon if active_universe else '😈')|tojson }};
 
         // Full tree of the user's OWNED Universes/Realms/Buckets (every kind, not just the
         // active one) - drives the "move to a different Universe/Realm/Bucket" pickers on the
@@ -7149,7 +7155,7 @@
                 // +100% from the original 99/58px.
                 spaceCtx.font = `${Math.round((isMobileCore ? 198 : 116) * pulseScale)}px serif`;
                 spaceCtx.shadowBlur = 0;
-                spaceCtx.fillText('😈', 0, 0);
+                spaceCtx.fillText(activeUniverseIcon, 0, 0);
                 spaceCtx.restore();
             }
 
