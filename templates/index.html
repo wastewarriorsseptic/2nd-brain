@@ -188,18 +188,33 @@
            the peak of every cycle; this calmer amplitude keeps them looking like one pinned/bonded
            cluster throughout, not just at rest. The "+" and 🌀 variants below ALSO nudge sideways,
            away from the devil, at that same peak - like the devil's own growth is gently repelling
-           them outward - which doubles as extra insurance against the overlap-at-peak issue above. */
+           them outward - which doubles as extra insurance against the overlap-at-peak issue above.
+           Intentional design goal: rest (static Tailwind offsets, no transform) is where these
+           circles overlap the devil the MOST - the peak of every cycle should always pull them back
+           out to less overlap than that, never more. The push magnitude below (7px) is tuned to
+           clear the shared -3px vertical float's cancelling effect (devil and badge both float up
+           together, so only the sideways push actually changes their relative distance) - a smaller
+           push was barely perceptible. See the ⏳ Timeline badge's own keyframe for why ITS push
+           doesn't need to fight that same cancellation (it skips the shared float entirely). */
         @keyframes ai-chat-quick-task-float-breathe {
             0%, 100% { transform: translateY(0) scale(1); }
             50% { transform: translateY(-3px) scale(1.06); }
         }
         @keyframes ai-chat-plus-repel-breathe {
             0%, 100% { transform: translate(0, 0) scale(1); }
-            50% { transform: translate(4px, -3px) scale(1.06); }
+            50% { transform: translate(7px, -3px) scale(1.06); }
         }
         @keyframes ai-chat-multiverse-repel-breathe {
             0%, 100% { transform: translate(0, 0) scale(1); }
-            50% { transform: translate(-4px, -3px) scale(1.06); }
+            50% { transform: translate(-7px, -3px) scale(1.06); }
+        }
+        /* The ⏳ Multiverse Timeline badge sits centered below the devil (left-1/2 -translate-x-1/2
+           statically), so its own repel nudge is straight down instead of sideways - keeping the
+           translateX(-50%) constant at every keyframe stop preserves that centering while still
+           adding the vertical push + scale. */
+        @keyframes ai-chat-timeline-repel-breathe {
+            0%, 100% { transform: translateX(-50%) translateY(0) scale(1); }
+            50% { transform: translateX(-50%) translateY(4px) scale(1.06); }
         }
         #ai-chat-launcher {
             animation: ai-chat-quick-task-float-breathe 3.2s ease-in-out infinite;
@@ -210,9 +225,13 @@
         #multiverse-quick-btn {
             animation: ai-chat-multiverse-repel-breathe 3.2s ease-in-out infinite;
         }
+        #multiverse-timeline-quick-btn {
+            animation: ai-chat-timeline-repel-breathe 3.2s ease-in-out infinite;
+        }
         #ai-chat-launcher:hover,
         #ai-chat-quick-task-btn:hover,
-        #multiverse-quick-btn:hover {
+        #multiverse-quick-btn:hover,
+        #multiverse-timeline-quick-btn:hover {
             animation-play-state: paused;
         }
         /* iOS home-screen-style jiggle while reordering Universe cards (see
@@ -376,7 +395,7 @@
                  box, and flags the next message sent so the backend skips straight to treating a
                  bare "Buy milk tomorrow" as a create request instead of asking what's meant. -->
             <button type="button" id="ai-chat-quick-task-btn" onclick="openAiChatQuickTask(event)" title="Add a new task"
-                    class="absolute -bottom-9 -right-6 w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 border-2 border-slate-950 text-white text-2xl font-extrabold flex items-center justify-center shadow-lg transition">
+                    class="absolute -bottom-6 -right-9 w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 border-2 border-slate-950 text-white text-2xl font-extrabold flex items-center justify-center shadow-lg transition">
                 +
             </button>
             {% if user %}
@@ -387,6 +406,15 @@
             <button type="button" id="multiverse-quick-btn" onclick="openMultiverseView()" title="Universes Home"
                     class="absolute -bottom-6 -left-9 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 border-2 border-slate-950 text-white text-xl flex items-center justify-center shadow-lg transition">
                 🌀
+            </button>
+            <!-- Fourth tangent circle, centered below the devil between the "+" and 🌀 badges -
+                 replaces the standalone "🌌 Multiverse Timeline" button/pill that used to live in
+                 Space View's bottom HUD and the Multiverse picker's own footer (both removed) with
+                 one reachable-from-anywhere shortcut straight into the stacked cross-Universe
+                 timeline, same as the other two launcher badges. -->
+            <button type="button" id="multiverse-timeline-quick-btn" onclick="openMultiverseTimeline()" title="Multiverse Timeline"
+                    class="absolute -bottom-11 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full bg-amber-500 hover:bg-amber-400 border-2 border-slate-950 text-white text-xl flex items-center justify-center shadow-lg transition">
+                ⏳
             </button>
             {% endif %}
         </div>
@@ -1020,14 +1048,13 @@
                 </div>
             </div>
 
-            <!-- Bottom Touch & Zoom Controls HUD - the +/- zoom buttons are desktop-only (no
-                 pinch-zoom there); on mobile everyone already zooms with their fingers, so hiding
-                 them leaves the Multiverse Timeline button alone as this row's only child, which
-                 this flex column's items-center already centers at the bottom of the screen. -->
-            <div class="bg-slate-900/90 border border-slate-800 p-1.5 rounded-2xl backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto">
-                <button onclick="zoomSpace(1.2)" class="hidden md:flex w-8 h-8 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm rounded-xl items-center justify-center transition">＋</button>
-                <button onclick="zoomSpace(0.8)" class="hidden md:flex w-8 h-8 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm rounded-xl items-center justify-center transition">－</button>
-                <button onclick="openMultiverseTimeline()" class="px-3 h-8 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-bold text-xs rounded-xl flex items-center justify-center transition">🌌 Multiverse Timeline</button>
+            <!-- Bottom Touch & Zoom Controls HUD - desktop-only now that the Multiverse Timeline
+                 button that used to live here (mobile's only reason to render this row at all, since
+                 the zoom buttons themselves are desktop-only - no pinch-zoom there) moved to the
+                 launcher cluster's own ⏳ badge, reachable from anywhere instead of just Space View. -->
+            <div class="hidden md:flex bg-slate-900/90 border border-slate-800 p-1.5 rounded-2xl backdrop-blur-md shadow-2xl items-center gap-2 pointer-events-auto">
+                <button onclick="zoomSpace(1.2)" class="w-8 h-8 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm rounded-xl flex items-center justify-center transition">＋</button>
+                <button onclick="zoomSpace(0.8)" class="w-8 h-8 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm rounded-xl flex items-center justify-center transition">－</button>
             </div>
         </div>
     </div>
@@ -1157,15 +1184,9 @@
             </div>
         </div>
 
-        <!-- Fixed bottom-center, matching Space View's own Multiverse Timeline button pixel-for-
-             pixel (same wrapper/pill classes) - so this button sits in the exact same spot on
-             screen whether you're in Space View or here, and tapping that same spot always gets
-             you to the Multiverse Timeline. -->
-        <div class="fixed inset-x-0 bottom-0 z-20 pb-6 px-4 flex justify-center pointer-events-none">
-            <div class="bg-slate-900/90 border border-slate-800 p-1.5 rounded-2xl backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto">
-                <button onclick="openMultiverseTimeline()" class="px-3 h-8 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-bold text-xs rounded-xl flex items-center justify-center transition">🌌 Multiverse Timeline</button>
-            </div>
-        </div>
+        <!-- The "🌌 Multiverse Timeline" button that used to sit here (matching Space View's own,
+             now-also-removed copy) moved to the launcher cluster's own ⏳ badge - reachable from
+             this screen too without a dedicated button of its own. -->
     </div>
 
     <!-- Modals Sections (Add Realm, Edit Realm, Share Realm, Add Bucket, Edit Bucket, Add Task, Edit Task, Recurrence, Delete Task) -->
