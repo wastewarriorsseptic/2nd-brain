@@ -7152,8 +7152,10 @@
 
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
-                // +100% from the original 99/58px.
-                spaceCtx.font = `${Math.round((isMobileCore ? 198 : 116) * pulseScale)}px serif`;
+                // +100% from the original 99/58px, then trimmed back ~20% once the core switched
+                // from the devil emoji to each Universe's own icon - most custom icons read as
+                // visually bigger/bolder than 😈 at the same font size and were crowding the circle.
+                spaceCtx.font = `${Math.round((isMobileCore ? 158 : 93) * pulseScale)}px serif`;
                 spaceCtx.shadowBlur = 0;
                 spaceCtx.fillText(activeUniverseIcon, 0, 0);
                 spaceCtx.restore();
