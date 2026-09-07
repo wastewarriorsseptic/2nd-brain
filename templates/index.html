@@ -7387,7 +7387,17 @@
                 const isThisRealmSelected = activeSelectedRealm && activeSelectedRealm.id === realm.id;
 
                 if (!isThisRealmSelected) {
-                    renderRealmNode(realm, drawX, drawY, false);
+                    // Only draw other realms in the normal top-level ring (nothing focused yet).
+                    // Once a realm IS focused, every other realm has already been deliberately
+                    // pushed far off in world space by focusAndRepelRealms() to get out of the way -
+                    // still drawing them here just left their hub circles trailing off into the
+                    // distance in whatever direction they'd been shoved, several of them roughly
+                    // lined up since they'd often been repelled along similar angles - reported
+                    // directly from a screenshot as "chaotic". They're meant to be out of view
+                    // entirely while focused, not visible-but-distant.
+                    if (!activeSelectedRealm) {
+                        renderRealmNode(realm, drawX, drawY, false);
+                    }
                     return;
                 }
 
