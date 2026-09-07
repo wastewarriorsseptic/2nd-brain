@@ -4214,17 +4214,19 @@
         }
 
         // The devil launcher's replacement for the old floating hint pill - a random encouraging
-        // line from the assistant itself, once, the first time the chat is opened with nothing said
-        // yet. Logged-out visitors get their own dedicated greeting instead (see
-        // maybeGreetLoggedOutVisitor); the "+" quick-task shortcut skips this entirely (see its own
-        // isQuickTask guard in toggleAiChatPanel) since it already opens with its own "what task..."
-        // line and showing both would be a double greeting.
+        // line from the assistant itself, followed by an explicit "what can I do for you" prompt so
+        // the greeting doubles as a nudge toward actually typing something instead of just being a
+        // cute aside - once, the first time the chat is opened with nothing said yet. Logged-out
+        // visitors get their own dedicated greeting instead (see maybeGreetLoggedOutVisitor); the
+        // "+" quick-task shortcut skips this entirely (see its own isQuickTask guard in
+        // toggleAiChatPanel) since it already opens with its own "what task..." line and showing
+        // both would be a double greeting.
         function greetLoggedInVisitorWithSaying() {
             if (!aiChatLoggedIn) return;
             const wrapper = document.getElementById('ai-chat-messages');
             if (!wrapper || wrapper.children.length > 0) return;
             aiChatHintPhraseIndex = pickRandomAiChatHintIndex();
-            renderAiChatBubble('assistant', AI_CHAT_HINT_PHRASES[aiChatHintPhraseIndex]);
+            renderAiChatBubble('assistant', `${AI_CHAT_HINT_PHRASES[aiChatHintPhraseIndex]} What may I help you with?`);
         }
 
         function toggleAiChatPanel(isQuickTask) {
