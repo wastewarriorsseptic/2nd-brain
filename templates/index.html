@@ -5932,9 +5932,17 @@
             // deliberate cap on visible clutter, not just a safety ceiling anymore) - the excess
             // stays fully intact in the Timeline list and the DOM, it's just not also drawn here.
             const RECURRING_LOOKAHEAD_MONTHS = 6;
+            // Yearly series get their own, much longer horizon - a 6-month window can never contain
+            // a yearly recurrence's next occurrence for more than half of any given year, which was
+            // reported directly as an anniversary date effectively never showing up anywhere in
+            // Space View. 13 months (not a flat 12) covers the full year plus a little slack for
+            // whichever day this happens to run on relative to the anniversary itself.
+            const RECURRING_LOOKAHEAD_MONTHS_YEARLY = 13;
             const RECURRING_MAX_VISIBLE = 15;
             const recurringHorizonDate = new Date();
             recurringHorizonDate.setMonth(recurringHorizonDate.getMonth() + RECURRING_LOOKAHEAD_MONTHS);
+            const recurringHorizonDateYearly = new Date();
+            recurringHorizonDateYearly.setMonth(recurringHorizonDateYearly.getMonth() + RECURRING_LOOKAHEAD_MONTHS_YEARLY);
 
             // A virtual "+" node rides along on the same ring as real realms, participating in the
             // same spacing/physics, so it never overlaps anything and always has its own slot.
@@ -6125,10 +6133,11 @@
 
                                     const dueDateStr = el.getAttribute('data-due-date') || '';
                                     const dueDate = dueDateStr ? new Date(dueDateStr + 'T00:00:00') : null;
+                                    const isYearlySeries = el.getAttribute('data-recurrence-type') === 'yearly';
                                     // If the date fails to parse, don't let that silently hide a
                                     // task - only apply the horizon cutoff when we actually have
                                     // a valid date to compare.
-                                    if (dueDate && dueDate > recurringHorizonDate) return;
+                                    if (dueDate && dueDate > (isYearlySeries ? recurringHorizonDateYearly : recurringHorizonDate)) return;
 
                                     processedGroupIds.set(seriesKey, seenCount + 1);
                                 }
@@ -6515,9 +6524,14 @@
         function buildMultiverseLanes() {
             const processedGroupIds = new Map();
             const RECURRING_LOOKAHEAD_MONTHS = 6;
+            // See the matching constant in renderSpaceFrame's per-bucket pass for why yearly series
+            // get their own, much longer horizon.
+            const RECURRING_LOOKAHEAD_MONTHS_YEARLY = 13;
             const RECURRING_MAX_VISIBLE = 30;
             const recurringHorizonDate = new Date();
             recurringHorizonDate.setMonth(recurringHorizonDate.getMonth() + RECURRING_LOOKAHEAD_MONTHS);
+            const recurringHorizonDateYearly = new Date();
+            recurringHorizonDateYearly.setMonth(recurringHorizonDateYearly.getMonth() + RECURRING_LOOKAHEAD_MONTHS_YEARLY);
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
@@ -6541,7 +6555,8 @@
                     if (seenCount >= RECURRING_MAX_VISIBLE) return;
 
                     const seriesDueDate = t.dueDate ? new Date(t.dueDate + 'T00:00:00') : null;
-                    if (seriesDueDate && seriesDueDate > recurringHorizonDate) return;
+                    const seriesHorizon = t.recurrenceType === 'yearly' ? recurringHorizonDateYearly : recurringHorizonDate;
+                    if (seriesDueDate && seriesDueDate > seriesHorizon) return;
 
                     processedGroupIds.set(seriesKey, seenCount + 1);
                 }
