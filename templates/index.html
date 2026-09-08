@@ -2547,6 +2547,13 @@
     <script>
         const isContactUniverse = {{ 'true' if is_contact_universe else 'false' }};
         const isEventUniverse = {{ 'true' if is_event_universe else 'false' }};
+        // Mirrors show_event_quick_start (dashboard()) - true while the fun inline "Kick off your
+        // first event" card is covering Space View (see its <form> above). The canvas-drawn realm
+        // ring still builds a "+ Add Realm" node underneath it regardless (see combinedRealmsData
+        // below) - reported directly that node was visibly poking out from behind/above the card.
+        // Suppressing it here, rather than just relying on the card's own z-stacking, is what
+        // actually keeps it from being drawn at all while there's nothing else in the ring anyway.
+        const showEventQuickStart = {{ 'true' if show_event_quick_start else 'false' }};
         const activeUniverseId = {{ active_universe.id if active_universe else 'null' }};
         // Space View's own core hub (see renderSpaceFrame) draws this instead of a hardcoded 😈 -
         // the devil is TaskMonster's own mascot/brand, not a stand-in for whatever Universe you're
@@ -6086,8 +6093,11 @@
 
             // A virtual "+" node rides along on the same ring as real realms, participating in the
             // same spacing/physics, so it never overlaps anything and always has its own slot.
+            // Skipped entirely while showEventQuickStart's own fun inline form is covering the
+            // screen - reported directly that this node was visibly poking out from behind/above
+            // that card. There's nothing else in the ring at that point anyway (no realms yet).
             const addRealmButtonData = { id: '__add_realm__', name: 'Add Realm', icon: '➕', isAddButton: true, buckets: [] };
-            const combinedRealmsData = realmsData.concat([addRealmButtonData]);
+            const combinedRealmsData = showEventQuickStart ? realmsData : realmsData.concat([addRealmButtonData]);
             const totalRealms = Math.max(1, combinedRealmsData.length);
 
             const isMobile = window.innerWidth < 768;
