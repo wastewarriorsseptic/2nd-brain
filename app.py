@@ -197,6 +197,7 @@ def safe_apply_migrations():
             conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS external_id VARCHAR;'))
             conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS location VARCHAR;'))
             conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT FALSE;'))
+            conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS is_draft BOOLEAN DEFAULT FALSE;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT \'UTC\';'))
             conn.execute(text('ALTER TABLE realm ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
             # "IF EXISTS" on the table guards the case where this runs before create_all() has
@@ -248,6 +249,8 @@ def safe_apply_migrations():
                     cursor.execute('ALTER TABLE event ADD COLUMN "location" VARCHAR;')
                 if 'is_private' not in event_cols:
                     cursor.execute('ALTER TABLE event ADD COLUMN "is_private" BOOLEAN DEFAULT 0;')
+                if 'is_draft' not in event_cols:
+                    cursor.execute('ALTER TABLE event ADD COLUMN "is_draft" BOOLEAN DEFAULT 0;')
 
             cursor.execute("PRAGMA table_info(users);")
             user_cols = [col[1] for col in cursor.fetchall()]
@@ -388,6 +391,13 @@ class Event(SQLModel, table=True):
     # confirmation) - the base link being forwardable defeats that regardless of whether the
     # Share button itself is hidden.
     is_private: bool = Field(default=False)
+    # When True, this Event exists (with its guest list already saved) but nothing has gone out
+    # yet - no invite emails, no reminder jobs scheduled. Reported directly: the creator should be
+    # able to draft an event first and only send it when ready, rather than every guest email
+    # firing the instant "Create" is submitted. Cleared by /events/{share_token}/send (or a PATCH
+    # to /api/events/ that flips it false), which is what actually sends the invites and schedules
+    # reminders for the first time.
+    is_draft: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class EventGuest(SQLModel, table=True):
@@ -1594,6 +1604,7 @@ def dashboard(
                     "invited_count": len(event_guests),
                     "location": e.location,
                     "is_private": e.is_private,
+                    "is_draft": e.is_draft,
                 }
 
         # Space View's own event-universe layout (see renderEventUniverseCards in index.html) is a
@@ -1623,6 +1634,7 @@ def dashboard(
                     "invitedCount": info["invited_count"],
                     "location": info["location"] or "",
                     "isPrivate": info["is_private"],
+                    "isDraft": info["is_draft"],
                     "isPast": it.due_date < datetime.utcnow(),
                 })
 
@@ -3240,6 +3252,7 @@ def _create_event_core(
     external_id: Optional[str] = None,
     location: Optional[str] = None,
     is_private: bool = False,
+    is_draft: bool = False,
 ) -> "Event":
     """Shared by BOTH the in-app creation form (create_event) and the external API
     (api_create_event) - the one place that actually builds the Item+Event+EventGuest rows, sends
@@ -3267,6 +3280,7 @@ def _create_event_core(
         external_id=(external_id or "").strip() or None,
         location=(location or "").strip() or None,
         is_private=is_private,
+        is_draft=is_draft,
     )
     session.add(new_event)
     session.commit()
@@ -3280,17 +3294,45 @@ def _create_event_core(
             event_id=new_event.id,
             email=guest_email,
             # A non-RSVP event has nothing for a guest to confirm - they're notified, not
-            # asked - so they start (and stay) "accepted" for reminder-email purposes.
-            status="invited" if requires_rsvp else "accepted",
+            # asked - so they start (and stay) "accepted" for reminder-email purposes. A draft
+            # hasn't notified anyone of anything yet though, regardless of requires_rsvp - stays
+            # "invited" until /events/{share_token}/send actually sends it (see there for where
+            # a non-RSVP draft's guests flip to "accepted" at that point instead).
+            status="invited" if (requires_rsvp or is_draft) else "accepted",
         )
         session.add(guest)
         session.commit()
         session.refresh(guest)
-        _send_event_guest_email(user, new_event, title, base_due_date, description, guest_email, guest.accept_token, location=new_event.location)
+        if not is_draft:
+            _send_event_guest_email(user, new_event, title, base_due_date, description, guest_email, guest.accept_token, location=new_event.location)
 
-    _schedule_event_reminders(new_event.id, base_due_date, remind_day_before, reminder_minutes_before)
+    # A draft schedules nothing until it's actually sent - reported directly: reminders firing
+    # for an event nobody's been invited to yet would be nonsensical.
+    if not is_draft:
+        _schedule_event_reminders(new_event.id, base_due_date, remind_day_before, reminder_minutes_before)
 
     return new_event
+
+def _send_draft_event(session: Session, user: "User", event: "Event", item: "Item"):
+    """The actual "Send Invites" action for a draft (see Event.is_draft) - sends the invite email
+    to every already-saved guest for the first time, schedules reminders, and flips is_draft off.
+    Shared between the in-app /events/{share_token}/send route and api_update_event's own
+    is_draft-toggled-to-False path so the two can't drift apart."""
+    guests = session.exec(select(EventGuest).where(EventGuest.event_id == event.id)).all()
+    if not event.requires_rsvp:
+        for guest in guests:
+            guest.status = "accepted"
+            session.add(guest)
+        session.commit()
+
+    for guest in guests:
+        _send_event_guest_email(user, event, item.title, item.due_date, item.description, guest.email, guest.accept_token, location=event.location)
+
+    _schedule_event_reminders(event.id, item.due_date, event.remind_day_before, event.reminder_minutes_before)
+
+    event.is_draft = False
+    session.add(event)
+    session.commit()
 
 @app.post("/events/")
 def create_event(
@@ -3307,12 +3349,14 @@ def create_event(
     remind_day_before: Optional[str] = Form(None),
     guest_emails: Optional[str] = Form(""),
     is_private: Optional[str] = Form(None),
+    is_draft: Optional[str] = Form(None),
 ):
     # Unchecked checkboxes send nothing at all - parsed as strings ourselves (matching create_item's
     # own is_shoppable handling) rather than relying on FastAPI/Pydantic's implicit bool coercion.
     requires_rsvp_flag = requires_rsvp is not None and requires_rsvp.strip().lower() in ("true", "on", "1", "yes")
     remind_day_before_flag = remind_day_before is not None and remind_day_before.strip().lower() in ("true", "on", "1", "yes")
     is_private_flag = is_private is not None and is_private.strip().lower() in ("true", "on", "1", "yes")
+    is_draft_flag = is_draft is not None and is_draft.strip().lower() in ("true", "on", "1", "yes")
 
     hour, minute = 9, 0
     if due_time and due_time.strip():
@@ -3342,6 +3386,7 @@ def create_event(
             remind_day_before=remind_day_before_flag,
             guest_emails=emails,
             is_private=is_private_flag,
+            is_draft=is_draft_flag,
         )
         share_token = new_event.share_token
 
@@ -3358,6 +3403,7 @@ def create_event_quick(
     location: Optional[str] = Form(None),
     requires_rsvp: Optional[str] = Form(None),
     guest_emails: Optional[str] = Form(""),
+    is_draft: Optional[str] = Form(None),
 ):
     """Space View's always-available fun quick-create form (opened from the "+ New Event" tile in
     the floating card deck - see renderEventUniverseCards in index.html) posts here instead of the
@@ -3365,6 +3411,7 @@ def create_event_quick(
     resolved from whichever Universe was on screen when the form was submitted (see
     get_or_create_default_event_bucket's target_universe param) so the event lands right there."""
     requires_rsvp_flag = requires_rsvp is not None and requires_rsvp.strip().lower() in ("true", "on", "1", "yes")
+    is_draft_flag = is_draft is not None and is_draft.strip().lower() in ("true", "on", "1", "yes")
 
     hour, minute = 9, 0
     if due_time and due_time.strip():
@@ -3396,6 +3443,7 @@ def create_event_quick(
             location=location,
             requires_rsvp=requires_rsvp_flag,
             guest_emails=emails,
+            is_draft=is_draft_flag,
         )
         share_token = new_event.share_token
 
@@ -3430,12 +3478,15 @@ def get_user_from_api_key(session: Session, request: Request) -> Optional["User"
 def api_create_event(request: Request, payload: dict = Body(...)):
     """POST with `Authorization: Bearer <key>` and a JSON body:
         {"title": "...", "due_at": "2026-09-15T10:00:00", "emoji": "🚛",
-         "description": "...", "location": "123 Main St", "is_private": true,
+         "description": "...", "location": "123 Main St", "is_private": true, "is_draft": false,
          "requires_rsvp": false, "reminder_minutes_before": 60, "remind_day_before": true,
          "guest_emails": ["client@example.com"], "bucket_id": null}
     "is_private" (default false) is for exactly the "your appointment is confirmed" case: only
     the specific guest's own personal link (from their invite email) can open it at all - the
     bare share link, self-add-a-stranger, and the page's own Share button are all disabled.
+    "is_draft" (default false) creates the Event (guest list included) without sending anything -
+    no invite emails, no reminders scheduled - until a later PATCH /api/events/ with
+    "is_draft": false publishes it (see api_update_event).
     Only title and due_at are required. requires_rsvp defaults to False here (unlike the in-app
     form's True) since the motivating use case - "your appointment is confirmed" - is a
     notification, not an invite; bucket_id defaults to the account's auto-provisioned Events
@@ -3493,6 +3544,7 @@ def api_create_event(request: Request, payload: dict = Body(...)):
             description=payload.get("description"),
             location=payload.get("location"),
             is_private=bool(payload.get("is_private", False)),
+            is_draft=bool(payload.get("is_draft", False)),
             requires_rsvp=bool(payload.get("requires_rsvp", False)),
             reminder_minutes_before=payload.get("reminder_minutes_before", 60),
             remind_day_before=bool(payload.get("remind_day_before", True)),
@@ -3516,9 +3568,13 @@ def api_update_event(request: Request, payload: dict = Body(...)):
     directly around two real buttons in an external dispatch/scheduling system: "RESEND INVITE"
     (PATCH with no field changes, notify defaults True - re-sends the current details to every
     guest) and "SAVE DATE SILENTLY" (PATCH with `notify: false` - updates the record, reschedules
-    reminders, tells no one). Any of title/due_at/emoji/description/requires_rsvp/
-    reminder_minutes_before/remind_day_before may be included - only the fields actually present
-    in the payload change, everything else is left as-is."""
+    reminders, tells no one). Any of title/due_at/emoji/description/location/is_private/
+    requires_rsvp/reminder_minutes_before/remind_day_before may be included - only the fields
+    actually present in the payload change, everything else is left as-is.
+    A draft (see Event.is_draft) stays silent for any of the above - nothing is sent or scheduled
+    for one until a PATCH explicitly includes "is_draft": false, which publishes it: every saved
+    guest gets their invite email for the first time and reminders get scheduled, regardless of
+    "notify" (publishing always sends)."""
     with Session(engine) as session:
         user = get_user_from_api_key(session, request)
         if not user:
@@ -3565,6 +3621,9 @@ def api_update_event(request: Request, payload: dict = Body(...)):
             event.location = (payload["location"] or "").strip() or None
         if "is_private" in payload:
             event.is_private = bool(payload["is_private"])
+        was_draft = event.is_draft
+        if "is_draft" in payload:
+            event.is_draft = bool(payload["is_draft"])
         if "requires_rsvp" in payload:
             event.requires_rsvp = bool(payload["requires_rsvp"])
         if "reminder_minutes_before" in payload:
@@ -3578,18 +3637,28 @@ def api_update_event(request: Request, payload: dict = Body(...)):
         session.refresh(item)
         session.refresh(event)
 
-        # Reminders are always re-derived from whatever the settings are NOW (even if this call
-        # didn't touch due_at) - cheap to redo, and guarantees a stale job never lingers from
-        # before an earlier update.
-        _schedule_event_reminders(event.id, item.due_date, event.remind_day_before, event.reminder_minutes_before)
+        # A draft (see Event.is_draft) hasn't notified anyone of anything yet, so a plain field
+        # update on one stays silent and unscheduled - same as the in-app editor, updating a
+        # draft's own details shouldn't itself be what sends it. Explicitly flipping is_draft from
+        # true to false in THIS payload is what actually publishes it - full first-send framing via
+        # _send_draft_event (which also flips a non-RSVP event's guests to "accepted"), not the
+        # resend/update framing below, and not gated by "notify" (publishing always sends).
+        publishing_draft = was_draft and not event.is_draft
+        if publishing_draft:
+            _send_draft_event(session, user, event, item)
+        elif not event.is_draft:
+            # Reminders are always re-derived from whatever the settings are NOW (even if this
+            # call didn't touch due_at) - cheap to redo, and guarantees a stale job never lingers
+            # from before an earlier update.
+            _schedule_event_reminders(event.id, item.due_date, event.remind_day_before, event.reminder_minutes_before)
 
-        # "RESEND INVITE" is just this: notify (the default) with no fields changed at all - the
-        # same guest email, re-sent with whatever the current details are. "SAVE DATE SILENTLY"
-        # is notify=false - the update happens, nobody hears about it.
-        if bool(payload.get("notify", True)):
-            guests = session.exec(select(EventGuest).where(EventGuest.event_id == event.id)).all()
-            for guest in guests:
-                _send_event_guest_email(user, event, item.title, item.due_date, item.description, guest.email, guest.accept_token, is_update=True, location=event.location)
+            # "RESEND INVITE" is just this: notify (the default) with no fields changed at all -
+            # the same guest email, re-sent with whatever the current details are.
+            # "SAVE DATE SILENTLY" is notify=false - the update happens, nobody hears about it.
+            if bool(payload.get("notify", True)):
+                guests = session.exec(select(EventGuest).where(EventGuest.event_id == event.id)).all()
+                for guest in guests:
+                    _send_event_guest_email(user, event, item.title, item.due_date, item.description, guest.email, guest.accept_token, is_update=True, location=event.location)
 
         # Captured into plain locals before the session closes below - matching api_create_event's
         # own pattern, since an attribute the session never got a chance to (re-)load before close
@@ -3761,7 +3830,10 @@ def respond_event(
 ):
     with Session(engine) as session:
         event = session.exec(select(Event).where(Event.share_token == share_token)).first()
-        if not event:
+        if not event or event.is_draft:
+            # A draft (see Event.is_draft) hasn't sent anyone an accept_token yet, so this should
+            # never legitimately fire while one's still true - defense in depth alongside
+            # view_event's own RSVP UI being hidden while draft, not a path meant to be reached.
             return RedirectResponse(url="/", status_code=303)
 
         if accept_token and action in ("accept", "decline"):
@@ -3793,6 +3865,28 @@ def respond_event(
             session.commit()
             session.refresh(guest)
             return RedirectResponse(url=f"/events/{share_token}?g={guest.accept_token}", status_code=303)
+
+    return RedirectResponse(url=f"/events/{share_token}", status_code=303)
+
+@app.post("/events/{share_token}/send")
+def send_draft_event(request: Request, share_token: str):
+    """The "Send Invites" action on a draft Event (see Event.is_draft) - only the creator can hit
+    this (a plain session login check, not the public share_token alone), since it's reached from
+    within the app itself (the "📤 Send Invites" button on a draft's own Space View card), not the
+    public invite page. Sends every already-saved guest their invite email for the first time,
+    schedules reminders, and flips is_draft off - see _send_draft_event."""
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+
+        event = session.exec(select(Event).where(Event.share_token == share_token)).first()
+        if not event or event.user_id != user.id:
+            return RedirectResponse(url="/", status_code=303)
+
+        item = session.get(Item, event.item_id)
+        if event.is_draft:
+            _send_draft_event(session, user, event, item)
 
     return RedirectResponse(url=f"/events/{share_token}", status_code=303)
 

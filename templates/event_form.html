@@ -111,6 +111,12 @@
                         <span class="text-sm text-slate-200">🔒 Private - only the people I invite can open it <span class="text-slate-500">(the link itself won't work for anyone else, and can't be shared onward)</span></span>
                     </label>
 
+                    <label class="flex items-center gap-2.5 cursor-pointer">
+                        <input type="checkbox" name="is_draft" value="true" id="event-is-draft"
+                               class="w-4 h-4 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
+                        <span class="text-sm text-slate-200">📝 Save as draft <span class="text-slate-500">(nothing sends yet - no invite emails, no reminders - until you send it yourself)</span></span>
+                    </label>
+
                     <div>
                         <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Invite people (emails, one per line or comma-separated)</label>
                         <textarea name="guest_emails" rows="3" placeholder="friend@example.com, another@example.com"
@@ -134,7 +140,7 @@
                     </div>
                 </div>
 
-                <button type="submit"
+                <button type="submit" id="event-form-submit-btn"
                         class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-indigo-600/30 transition-all">
                     Create & Get Invite Link
                 </button>
@@ -197,6 +203,18 @@
                     : defaultGuestEmailsHint;
             });
         }
+        // Submit button reflects what actually happens - "Save as Draft" doesn't send or
+        // schedule anything (see is_draft on the checkbox above and _create_event_core), so
+        // labeling it "Create & Get Invite Link" while it's checked would be misleading about
+        // whether guests are about to be emailed.
+        const isDraftCheckbox = document.getElementById('event-is-draft');
+        const submitBtn = document.getElementById('event-form-submit-btn');
+        if (isDraftCheckbox && submitBtn) {
+            isDraftCheckbox.addEventListener('change', () => {
+                submitBtn.textContent = isDraftCheckbox.checked ? '📝 Save as Draft' : 'Create & Get Invite Link';
+            });
+        }
+
         const eventCreateForm = document.getElementById('event-create-form');
         if (eventCreateForm) {
             eventCreateForm.addEventListener('submit', (e) => {

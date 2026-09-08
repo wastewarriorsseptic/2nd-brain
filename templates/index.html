@@ -1041,9 +1041,15 @@
                                class="w-4 h-4 rounded border-slate-600 bg-slate-950 text-indigo-500 focus:ring-indigo-500">
                         <span class="text-xs text-slate-300">Ask guests to RSVP <span class="text-slate-500">(off = just a heads up, e.g. an appointment)</span></span>
                     </label>
+
+                    <label class="flex items-center gap-2.5 cursor-pointer pt-0.5">
+                        <input type="checkbox" name="is_draft" value="true" id="event-quick-is-draft"
+                               class="w-4 h-4 rounded border-slate-600 bg-slate-950 text-indigo-500 focus:ring-indigo-500">
+                        <span class="text-xs text-slate-300">📝 Save as draft <span class="text-slate-500">(don't send yet)</span></span>
+                    </label>
                 </div>
 
-                <button type="submit"
+                <button type="submit" id="event-quick-submit-btn"
                         class="mt-4 w-full py-3 bg-gradient-to-r from-indigo-600 to-fuchsia-600 hover:from-indigo-500 hover:to-fuchsia-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-indigo-600/30 transition-all">
                     ✨ Create &amp; Get Invite Link
                 </button>
@@ -6500,6 +6506,20 @@
             if (modal) modal.classList.add('hidden');
         }
 
+        // Submit button reflects what actually happens - "Save as Draft" doesn't send or
+        // schedule anything (see is_draft in create_event_quick), so labeling it "Create & Get
+        // Invite Link" while it's checked would be misleading about whether guests are about to
+        // be emailed.
+        (function setupEventQuickDraftToggle() {
+            const draftCheckbox = document.getElementById('event-quick-is-draft');
+            const submitBtn = document.getElementById('event-quick-submit-btn');
+            if (draftCheckbox && submitBtn) {
+                draftCheckbox.addEventListener('change', () => {
+                    submitBtn.innerHTML = draftCheckbox.checked ? '📝 Save as Draft' : '✨ Create &amp; Get Invite Link';
+                });
+            }
+        })();
+
         // Same accent palette as Space View's own distant-star field (SPACE_STAR_PALETTE) - each
         // card picks one for its border glow, purely decorative, keeping this floating deck's
         // color language consistent with the rest of the "outer space" theme rather than
@@ -6531,25 +6551,56 @@
 
             eventUniverseCards.forEach((ev, idx) => {
                 const glow = EVENT_CARD_GLOWS[idx % EVENT_CARD_GLOWS.length];
-                const card = document.createElement('a');
-                card.href = `/events/${encodeURIComponent(ev.shareToken)}`;
-                card.className = 'universe-card-float pointer-events-auto w-32 md:w-40 rounded-2xl border bg-slate-900/90 backdrop-blur-md flex flex-col items-center text-center gap-1 py-4 px-2.5 shadow-xl transition-transform hover:scale-105' + (ev.isPast ? ' opacity-50 grayscale' : '');
-                card.style.borderColor = glow + '66';
-                card.style.boxShadow = `0 0 18px ${glow}22`;
+                // A draft (see Event.is_draft) hasn't been sent to anyone yet - its card renders
+                // as a <div> with its own explicit Preview/Send actions instead of the plain
+                // whole-card link every other event uses (a <button>/<form> nested inside an <a>
+                // is invalid HTML and unreliable to click), so there's no ambiguity about whether
+                // tapping it does anything guest-facing.
+                const card = document.createElement(ev.isDraft ? 'div' : 'a');
+                if (!ev.isDraft) card.href = `/events/${encodeURIComponent(ev.shareToken)}`;
+                card.className = 'universe-card-float pointer-events-auto w-32 md:w-40 rounded-2xl border bg-slate-900/90 backdrop-blur-md flex flex-col items-center text-center gap-1 py-4 px-2.5 shadow-xl transition-transform' + (ev.isDraft ? '' : ' hover:scale-105') + (ev.isPast ? ' opacity-50 grayscale' : '');
+                card.style.borderColor = ev.isDraft ? 'rgba(148, 163, 184, 0.4)' : (glow + '66');
+                card.style.boxShadow = ev.isDraft ? 'none' : `0 0 18px ${glow}22`;
                 card.style.setProperty('--float-delay', `${(idx % 6) * 0.5}s`);
+                card.style.borderStyle = ev.isDraft ? 'dashed' : 'solid';
 
-                const rsvpBadge = ev.requiresRsvp
-                    ? `<span class="text-[10px] font-bold text-emerald-300">${ev.acceptedCount}/${ev.invitedCount || ev.acceptedCount} going</span>`
-                    : (ev.invitedCount ? '<span class="text-[10px] font-bold text-slate-400">Sent</span>' : '');
+                const rsvpBadge = ev.isDraft
+                    ? '<span class="text-[10px] font-bold text-amber-300">📝 Draft</span>'
+                    : (ev.requiresRsvp
+                        ? `<span class="text-[10px] font-bold text-emerald-300">${ev.acceptedCount}/${ev.invitedCount || ev.acceptedCount} going</span>`
+                        : (ev.invitedCount ? '<span class="text-[10px] font-bold text-slate-400">Sent</span>' : ''));
 
                 card.innerHTML = `
                     <span class="text-3xl">${escapeHtml(ev.emoji)}</span>
                     ${ev.isPrivate ? '<span class="text-[9px] font-bold text-slate-500">🔒 Private</span>' : ''}
                     <span class="text-xs font-bold text-white leading-snug line-clamp-2">${escapeHtml(ev.title)}</span>
-                    <span class="text-[10px] font-semibold" style="color: ${glow}">${escapeHtml(ev.dueDateFormatted)}${ev.dueTimeFormatted ? ' · ' + escapeHtml(ev.dueTimeFormatted) : ''}</span>
+                    <span class="text-[10px] font-semibold" style="color: ${ev.isDraft ? '#94a3b8' : glow}">${escapeHtml(ev.dueDateFormatted)}${ev.dueTimeFormatted ? ' · ' + escapeHtml(ev.dueTimeFormatted) : ''}</span>
                     ${ev.location ? `<span class="text-[9px] text-slate-500 truncate max-w-full">📍 ${escapeHtml(ev.location)}</span>` : ''}
                     ${rsvpBadge}
                 `;
+
+                if (ev.isDraft) {
+                    const actions = document.createElement('div');
+                    actions.className = 'flex items-center gap-1.5 mt-1.5 w-full';
+                    const previewLink = document.createElement('a');
+                    previewLink.href = `/events/${encodeURIComponent(ev.shareToken)}`;
+                    previewLink.className = 'flex-1 text-center text-[10px] font-bold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg py-1.5 transition-colors';
+                    previewLink.textContent = '👀 Preview';
+                    const sendForm = document.createElement('form');
+                    sendForm.method = 'POST';
+                    sendForm.action = `/events/${encodeURIComponent(ev.shareToken)}/send`;
+                    sendForm.className = 'flex-1';
+                    sendForm.onsubmit = () => confirm(`Send this invite to everyone on the guest list now? This can't be undone.`);
+                    const sendBtn = document.createElement('button');
+                    sendBtn.type = 'submit';
+                    sendBtn.className = 'w-full text-[10px] font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg py-1.5 transition-colors';
+                    sendBtn.textContent = '📤 Send';
+                    sendForm.appendChild(sendBtn);
+                    actions.appendChild(previewLink);
+                    actions.appendChild(sendForm);
+                    card.appendChild(actions);
+                }
+
                 inner.appendChild(card);
             });
 

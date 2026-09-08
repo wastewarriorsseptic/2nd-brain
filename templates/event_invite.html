@@ -13,6 +13,12 @@
             {% if event.is_private %}
             <span class="inline-block bg-slate-900/80 border border-slate-700 text-slate-400 text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full mb-2">🔒 Private invite</span>
             {% endif %}
+            {% if event.is_draft %}
+            <div class="bg-amber-950/40 border border-amber-500/40 rounded-2xl p-3 mb-4 text-left">
+                <p class="text-amber-300 text-xs font-bold">📝 This is still a draft</p>
+                <p class="text-amber-200/80 text-xs mt-1">Nothing has been sent yet - this is a preview only. Send it from the event's card in Space View when you're ready.</p>
+            </div>
+            {% endif %}
             <h1 class="text-2xl font-extrabold text-white tracking-tight mb-1">{{ item.title }}</h1>
             <p class="text-indigo-300 font-semibold text-sm mb-1">{{ item.due_date.strftime('%A, %B %d, %Y') }}{% if item.due_date.strftime('%H:%M') != '09:00' %} at {{ item.due_date.strftime('%I:%M %p') }}{% endif %}</p>
             {% if event.location %}
@@ -32,7 +38,7 @@
                 🗓️ Add to Calendar
             </a>
 
-            {% if not event.is_private %}
+            {% if not event.is_private and not event.is_draft %}
             <!-- Sticky invites are only sticky if they're easy to actually hand to someone -
                  native share sheet where it exists (covers Messages/iMessage, most social apps,
                  email, AirDrop, etc. in one tap), with explicit Text/WhatsApp/Copy fallbacks below
@@ -53,7 +59,7 @@
             </div>
             {% endif %}
 
-            {% if event.requires_rsvp %}
+            {% if event.requires_rsvp and not event.is_draft %}
                 {% if viewer_guest and viewer_guest.status in ('accepted', 'declined') %}
                     <div class="mb-4 py-2.5 px-4 rounded-xl text-sm font-bold {{ 'bg-emerald-950/60 border border-emerald-500/50 text-emerald-200' if viewer_guest.status == 'accepted' else 'bg-slate-900/60 border border-slate-700 text-slate-400' }}">
                         {{ "✅ You're in!" if viewer_guest.status == 'accepted' else "You declined this invite." }}
