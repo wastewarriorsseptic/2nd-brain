@@ -11,10 +11,12 @@
     <!-- Explicit way out regardless of how this page was reached (a fresh redirect right after
          creating it, a shared link opened in its own tab, a guest's email link) - reported
          directly - rather than relying only on the browser's own back/close controls, which
-         aren't always present or obvious (mobile, a stripped-down webview, etc.). Works the same
-         for a guest with no account (lands on /login) as it does for the creator (lands on their
-         dashboard) - both are legitimate "get out of this page" outcomes. -->
-    <a href="/" class="fixed top-4 left-4 md:top-6 md:left-6 text-xs font-semibold text-slate-400 hover:text-indigo-300 transition-colors bg-slate-900/80 backdrop-blur-sm px-3 py-1.5 rounded-full border border-slate-700/60 z-10">
+         aren't always present or obvious (mobile, a stripped-down webview, etc.). back_url (see
+         _event_back_url) points at the event's OWN Universe, not just the account's default one -
+         reported directly ("it needs to take me back to the Event area"). Works the same for a
+         guest with no account (lands on /login, ?universe_id ignored) as it does for the creator
+         (lands right back where the event lives) - both are legitimate "get out" outcomes. -->
+    <a href="{{ back_url or '/' }}" class="fixed top-4 left-4 md:top-6 md:left-6 text-xs font-semibold text-slate-400 hover:text-indigo-300 transition-colors bg-slate-900/80 backdrop-blur-sm px-3 py-1.5 rounded-full border border-slate-700/60 z-10">
         ← Back to TaskMonster
     </a>
 

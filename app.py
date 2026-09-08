@@ -3295,6 +3295,7 @@ def edit_event_form(request: Request, share_token: str):
                 "event": event,
                 "item": item,
                 "existing_guest_emails": ", ".join(g.email for g in guests),
+                "back_url": _event_back_url(session, item),
             }
         )
 
@@ -3992,6 +3993,18 @@ def _event_context(session: Session, share_token: str):
     guests = session.exec(select(EventGuest).where(EventGuest.event_id == event.id)).all()
     return event, item, creator, guests
 
+def _event_back_url(session: Session, item: "Item") -> str:
+    """"← Back to TaskMonster" on the invite/edit pages used to always land on "/" - the user's
+    default active Universe, NOT wherever the event itself actually lives - reported directly
+    ("it needs to take me back to the Event area"). Resolves the event's own bucket -> realm ->
+    Universe and points there instead; falls back to plain "/" if that chain is ever broken
+    (shouldn't happen, but this is only ever a "where do I land" nicety, not worth a 500 over)."""
+    bucket = session.get(Bucket, item.bucket_id)
+    realm = session.get(Realm, bucket.realm_id) if bucket else None
+    if realm and realm.universe_id:
+        return f"/?universe_id={realm.universe_id}"
+    return "/"
+
 # Registered BEFORE the generic /events/{share_token} route below - FastAPI/Starlette matches
 # routes in registration order, and {share_token} greedily matches any string with no '/' in it,
 # dots included, so ".ics" would otherwise be swallowed into share_token itself (share_token ends
@@ -4099,6 +4112,7 @@ def view_event(request: Request, share_token: str, g: Optional[str] = None):
             ))
 
         accepted_guests = [gu for gu in guests if gu.status == "accepted"]
+        back_url = _event_back_url(session, item)
 
         return templates.TemplateResponse(
             request=request,
@@ -4110,6 +4124,7 @@ def view_event(request: Request, share_token: str, g: Optional[str] = None):
                 "accepted_guests": accepted_guests,
                 "viewer_guest": viewer_guest,
                 "guest_count": len(guests),
+                "back_url": back_url,
             }
         )
 
