@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Event - TaskMonster</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen p-4 md:p-10 font-sans">
+    <div class="max-w-xl mx-auto">
+        <a href="/" class="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors mb-4 inline-block">← Back to TaskMonster</a>
+
+        <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-6 md:p-8 shadow-2xl">
+            <h1 class="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2 mb-1">
+                🎉 New Event
+            </h1>
+            <p class="text-slate-400 text-sm mb-6">Send a cool, shareable invite for a specific day - with or without RSVPs.</p>
+
+            <form action="/events/" method="POST" class="space-y-5">
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Title</label>
+                    <input type="text" name="title" required placeholder="e.g. Sarah's Birthday Dinner"
+                           class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Date</label>
+                        <input type="date" name="due_date" required
+                               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Time</label>
+                        <input type="time" name="due_time"
+                               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Emoji</label>
+                    <input type="text" name="emoji" value="🎉" maxlength="8"
+                           class="w-16 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-lg text-center focus:outline-none focus:border-indigo-500">
+                </div>
+
+                <!-- Collapsed by default - most events need no organizing decision at all, they
+                     just land in the auto-created default Events bucket (see
+                     get_or_create_default_event_bucket in app.py). The <select> stays in the DOM
+                     either way so its value still submits when this is left collapsed - only the
+                     wrapper's visibility toggles, nothing about the field itself. Expand this for
+                     business-style organization (e.g. separate Realms per client type). -->
+                <div>
+                    <button type="button" onclick="toggleEventOrganize()" id="event-organize-toggle"
+                            class="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors">
+                        📁 Organize this (optional) ›
+                    </button>
+                    <div id="event-organize-body" class="hidden mt-2">
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Save into</label>
+                        <!-- Grouped by Universe (optgroup) since this now spans every Task-bearing
+                             Universe, not just dedicated Event ones - e.g. picking a bucket inside
+                             an existing "Life Events" Universe so the event shows up right there,
+                             not siloed off in a separate Events-only picker. -->
+                        <select name="bucket_id" required
+                                class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                            {% for universe_id, realm_group in realms|groupby('universe_id') %}
+                                {% set universe = universe_by_id.get(universe_id) %}
+                                <optgroup label="{{ universe.icon if universe else '' }} {{ universe.name if universe else 'Universe' }}">
+                                    {% for realm in realm_group %}
+                                        {% for bucket in buckets_by_realm.get(realm.id, []) %}
+                                            <option value="{{ bucket.id }}" {{ 'selected' if bucket.id == default_bucket_id else '' }}>{{ realm.icon }} {{ realm.name }} / {{ bucket.name }}</option>
+                                        {% endfor %}
+                                    {% endfor %}
+                                </optgroup>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Note (optional)</label>
+                    <textarea name="description" rows="2" placeholder="Anything guests should know"
+                              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"></textarea>
+                </div>
+
+                <div class="border-t border-slate-700/80 pt-5 space-y-4">
+                    <label class="flex items-center gap-2.5 cursor-pointer">
+                        <input type="checkbox" name="requires_rsvp" value="true" checked
+                               class="w-4 h-4 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
+                        <span class="text-sm text-slate-200">Ask guests to RSVP <span class="text-slate-500">(turn off for a plain confirmation, e.g. an appointment)</span></span>
+                    </label>
+
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Invite people (emails, one per line or comma-separated)</label>
+                        <textarea name="guest_emails" rows="3" placeholder="friend@example.com, another@example.com"
+                                  class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"></textarea>
+                        <p class="text-[11px] text-slate-500 mt-1">You'll also get a shareable link on the next page, so this is optional.</p>
+                    </div>
+                </div>
+
+                <div class="border-t border-slate-700/80 pt-5 space-y-4">
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">Reminders</p>
+                    <label class="flex items-center gap-2.5 cursor-pointer">
+                        <input type="checkbox" name="remind_day_before" value="true" checked
+                               class="w-4 h-4 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
+                        <span class="text-sm text-slate-200">Remind the day before</span>
+                    </label>
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-sm text-slate-200">Remind</span>
+                        <input type="number" name="reminder_minutes_before" value="60" min="0" step="5"
+                               class="w-24 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                        <span class="text-sm text-slate-200">minutes before (0 = right at the moment)</span>
+                    </div>
+                </div>
+
+                <button type="submit"
+                        class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-indigo-600/30 transition-all">
+                    Create & Get Invite Link
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function toggleEventOrganize() {
+            const body = document.getElementById('event-organize-body');
+            const toggle = document.getElementById('event-organize-toggle');
+            const isHidden = body.classList.toggle('hidden');
+            toggle.textContent = isHidden ? '📁 Organize this (optional) ›' : '📁 Organize this (optional) ⌄';
+        }
+    </script>
+</body>
+</html>

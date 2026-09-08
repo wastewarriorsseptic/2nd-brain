@@ -14,7 +14,7 @@ from typing import Optional, List
 from zoneinfo import ZoneInfo  # Built-in IANA timezone support
 
 from fastapi import FastAPI, Request, Form, Body
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import SQLModel, Field, Relationship, Session, create_engine, select
@@ -180,6 +180,7 @@ def safe_apply_migrations():
             conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS recurrence_type VARCHAR DEFAULT \'none\';'))
             conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;'))
             conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS is_shoppable BOOLEAN DEFAULT FALSE;'))
+            conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS is_event BOOLEAN DEFAULT FALSE;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT \'UTC\';'))
             conn.execute(text('ALTER TABLE realm ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
             # "IF EXISTS" on the table guards the case where this runs before create_all() has
@@ -218,6 +219,8 @@ def safe_apply_migrations():
                 cursor.execute('ALTER TABLE item ADD COLUMN "completed_at" TIMESTAMP;')
             if 'is_shoppable' not in item_cols:
                 cursor.execute('ALTER TABLE item ADD COLUMN "is_shoppable" BOOLEAN DEFAULT 0;')
+            if 'is_event' not in item_cols:
+                cursor.execute('ALTER TABLE item ADD COLUMN "is_event" BOOLEAN DEFAULT 0;')
 
             cursor.execute("PRAGMA table_info(users);")
             user_cols = [col[1] for col in cursor.fetchall()]
@@ -307,6 +310,11 @@ class Item(SQLModel, table=True):
     completed_at: Optional[datetime] = Field(default=None)
     recurring_group_id: Optional[str] = Field(default=None, index=True)
     recurrence_type: Optional[str] = Field(default="none")
+    # True only for the underlying task of an Event invite (see the Event table below) - kept as a
+    # plain flag on the existing Item rather than a wholly separate entity so an Event shows up in
+    # the Timeline/Space View/Daily Digest exactly like any other task, for free, with no second
+    # rendering path needed anywhere.
+    is_event: bool = Field(default=False)
     bucket_id: int = Field(foreign_key="bucket.id")
     bucket: Optional[Bucket] = Relationship(back_populates="items")
     reminders: List["Reminder"] = Relationship(back_populates="item")
@@ -317,6 +325,39 @@ class Reminder(SQLModel, table=True):
     email_sent: bool = False
     item_id: int = Field(foreign_key="item.id")
     item: Optional[Item] = Relationship(back_populates="reminders")
+
+class Event(SQLModel, table=True):
+    """The event-only extras layered onto a plain Item (see Item.is_event above) - this table only
+    ever holds what a normal task doesn't have: an invite emoji theme, a public share link, RSVP
+    settings, and its own day-before/minutes-before reminder schedule (distinct from a task's
+    generic days-before reminder_offset). One row per Event, 1:1 with its Item."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    item_id: int = Field(foreign_key="item.id", unique=True, index=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    emoji: str = Field(default="🎉")
+    # When False, the invite page skips the guest list/accept UI entirely and is just a
+    # confirmation + calendar-add + reminders - e.g. "your pumping appointment is confirmed for
+    # Sept 15th" has no reason to ask the recipient to RSVP.
+    requires_rsvp: bool = Field(default=True)
+    reminder_minutes_before: Optional[int] = Field(default=60)
+    remind_day_before: bool = Field(default=True)
+    share_token: str = Field(default_factory=lambda: secrets.token_urlsafe(16), unique=True, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class EventGuest(SQLModel, table=True):
+    """One row per invited email. accept_token is that guest's own personal link (the one in their
+    invite email) so accepting/declining is a single click with no TaskMonster account required -
+    status/responded_at double as the "who's coming" list shown to everyone who views the event's
+    public page, creator and guests alike. For a non-RSVP event, guests are created already
+    'accepted' (see create_event) since there's nothing for them to confirm."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    event_id: int = Field(foreign_key="event.id", index=True)
+    email: str
+    name: Optional[str] = None
+    status: str = Field(default="invited")  # invited | accepted | declined
+    accept_token: str = Field(default_factory=lambda: secrets.token_urlsafe(16), unique=True, index=True)
+    responded_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class Person(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -901,6 +942,45 @@ def get_or_create_important_dates_universe(session: Session, user_id: int) -> "U
 
     return universe
 
+def get_or_create_default_event_bucket(session: Session, user_id: int) -> "Bucket":
+    """Reported directly: picking a Universe/Realm/Bucket up front made creating a quick event
+    feel like more organizational overhead than it should - most events don't need a decision
+    about where they live at all. Every account gets one default Events Universe -> General Realm
+    -> Events Bucket, auto-created the first time it's needed (not at signup, unlike Important
+    Dates - most users never touch Events at all) - the event form pre-selects this bucket so
+    creating an event needs no organizing decision by default, while still surfacing the full
+    picker (see new_event_form) for anyone who wants their own structure, e.g. separate Realms per
+    client type for a business."""
+    universe = session.exec(
+        select(Universe).where(Universe.user_id == user_id, Universe.name == "Events", Universe.kind == "event")
+    ).first()
+    if not universe:
+        max_order = len(session.exec(select(Universe).where(Universe.user_id == user_id)).all())
+        universe = Universe(name="Events", icon="🎉", kind="event", sort_order=max_order, user_id=user_id)
+        session.add(universe)
+        session.commit()
+        session.refresh(universe)
+
+    realm = session.exec(
+        select(Realm).where(Realm.universe_id == universe.id, Realm.name == "General")
+    ).first()
+    if not realm:
+        realm = Realm(name="General", icon="🎉", sort_order=0, user_id=user_id, universe_id=universe.id)
+        session.add(realm)
+        session.commit()
+        session.refresh(realm)
+
+    bucket = session.exec(
+        select(Bucket).where(Bucket.realm_id == realm.id, Bucket.name == "Events")
+    ).first()
+    if not bucket:
+        bucket = Bucket(name="Events", icon="🎉", sort_order=0, realm_id=realm.id)
+        session.add(bucket)
+        session.commit()
+        session.refresh(bucket)
+
+    return bucket
+
 def backfill_important_dates_universes():
     """One-time-per-user migration companion to get_or_create_important_dates_universe - brand-new
     signups already get this Universe/Realm via find_or_create_user_and_log_in's starter set, but
@@ -968,7 +1048,7 @@ def build_task_universe_context(session: Session, user: "User", today_date) -> d
     carried an id here, which meant the model had nothing to pass for "take me to the X realm/
     universe" and had to refuse outright."""
     universes = session.exec(
-        select(Universe).where(Universe.user_id == user.id, Universe.kind == "task").order_by(Universe.sort_order)
+        select(Universe).where(Universe.user_id == user.id, Universe.kind.in_(["task", "event"])).order_by(Universe.sort_order)
     ).all()
     owned_realms = session.exec(
         select(Realm).where(Realm.user_id == user.id)
@@ -1320,13 +1400,14 @@ def dashboard(
             if user_can_access_universe(session, user, universe_id):
                 active_universe = session.get(Universe, universe_id)
         if not active_universe:
-            active_universe = next((u for u in universes if u.kind == "task"), None) or (universes[0] if universes else None)
+            active_universe = next((u for u in universes if u.kind in ("task", "event")), None) or (universes[0] if universes else None)
             if not active_universe:
                 active_universe = get_or_create_default_task_universe(session, user.id)
                 universes = [active_universe]
 
         active_universe_id = active_universe.id if active_universe else None
         is_contact_universe = bool(active_universe and active_universe.kind == "contact")
+        is_event_universe = bool(active_universe and active_universe.kind == "event")
 
         owned_realms = session.exec(
             select(Realm).where(Realm.user_id == user.id, Realm.universe_id == active_universe_id)
@@ -1421,6 +1502,29 @@ def dashboard(
             items = session.exec(query.order_by(Item.due_date.asc())).all() if all_realm_ids else []
             people = []
 
+        # Event-only extras (emoji/share link/RSVP counts) for whichever of the items above are
+        # actually Events (item.is_event) - the Timeline card for one of these shows this instead
+        # of the plain amount/shopping-cart layout a normal task card has, per "their card info is
+        # different". Keyed by item_id since that's what the template already loops over.
+        events_by_item_id = {}
+        event_item_ids = [it.id for it in items if it.is_event]
+        if event_item_ids:
+            event_rows = session.exec(select(Event).where(Event.item_id.in_(event_item_ids))).all()
+            event_ids = [e.id for e in event_rows]
+            guest_rows = session.exec(select(EventGuest).where(EventGuest.event_id.in_(event_ids))).all() if event_ids else []
+            guests_by_event_id = {}
+            for g in guest_rows:
+                guests_by_event_id.setdefault(g.event_id, []).append(g)
+            for e in event_rows:
+                event_guests = guests_by_event_id.get(e.id, [])
+                events_by_item_id[e.item_id] = {
+                    "emoji": e.emoji,
+                    "share_token": e.share_token,
+                    "requires_rsvp": e.requires_rsvp,
+                    "accepted_count": sum(1 for g in event_guests if g.status == "accepted"),
+                    "invited_count": len(event_guests),
+                }
+
         # Full tree of every Universe/Realm/Bucket the user OWNS (not shared-with-them realms -
         # moving something is an ownership-level action), used client-side to drive the "move to
         # a different Universe/Realm/Bucket" pickers on Edit Task/Person/Realm/Bucket. Built here
@@ -1448,7 +1552,11 @@ def dashboard(
         # recurring-lookahead logic a single bucket's timeline already uses, then feed the result
         # straight into the existing linear-timeline/HUD/swipe-dock rendering unchanged.
         multiverse_tasks = []
-        task_universe_ids = {u.id for u in universes if u.kind == "task"}
+        # Event-kind universes are task-bearing too (their items are just Item rows with
+        # is_event=True) - included here alongside plain task universes so events show up in the
+        # Multiverse Timeline exactly like any other task, per the "still shows up in timelines"
+        # requirement.
+        task_universe_ids = {u.id for u in universes if u.kind in ("task", "event")}
         if task_universe_ids:
             mv_realm_ids = [r.id for r in owned_realms_all if r.universe_id in task_universe_ids]
             if mv_realm_ids:
@@ -1506,6 +1614,8 @@ def dashboard(
                 "gemini_enabled": GEMINI_ENABLED,
                 "active_universe": active_universe,
                 "is_contact_universe": is_contact_universe,
+                "is_event_universe": is_event_universe,
+                "events_by_item_id": events_by_item_id,
                 "selected_realm_id": realm_id,
                 "selected_bucket_id": bucket_id,
                 "collaborators_map": collaborators_map,
@@ -1521,7 +1631,7 @@ def dashboard(
 # --- Universe Endpoints ---
 @app.post("/universes/")
 def create_universe(request: Request, name: str = Form(...), icon: str = Form("😈"), kind: str = Form("task")):
-    if kind not in ("task", "contact"):
+    if kind not in ("task", "contact", "event"):
         kind = "task"
     with Session(engine) as session:
         user = get_current_user(request, session)
@@ -2879,6 +2989,315 @@ def cancel_pending_universe_invite(request: Request, invite_id: int = Form(...),
                 session.commit()
 
     return RedirectResponse(url=f"/?universe_id={universe_id}", status_code=303)
+
+# --- Event Endpoints ---
+# "Events" are a distinct creation flow from plain Tasks (their own form, invite-first, optional
+# RSVP) but the underlying Item is a normal task row with is_event=True - see the Event model's own
+# docstring for why. Covers: the creation form, saving a new Event + its invited guests, the public
+# invite page (works with no TaskMonster account at all), guest accept/decline, and a plain .ics
+# calendar-file download for anyone who'd rather use their own calendar app.
+
+def send_event_reminder_email(event_id: int, kind: str):
+    """Fired by the scheduler at exactly the reminder time (see create_event, which schedules this
+    as a one-off 'date' job per reminder). Looks up the CURRENT accepted-guest list at fire time
+    rather than a recipient list captured back at creation - someone who RSVPs the morning of still
+    needs to get that day's reminder, which a fixed args list handed to the scheduler couldn't do."""
+    with Session(engine) as session:
+        event = session.get(Event, event_id)
+        if not event:
+            return
+        item = session.get(Item, event.item_id)
+        if not item or item.is_completed:
+            return
+        creator = session.get(User, event.user_id)
+        guests = session.exec(
+            select(EventGuest).where(EventGuest.event_id == event_id, EventGuest.status == "accepted")
+        ).all()
+        recipients = list({g.email for g in guests} | ({creator.email} if creator else set()))
+        if not recipients:
+            return
+
+        api_key = os.getenv("RESEND_API_KEY")
+        if api_key:
+            resend.api_key = api_key
+
+        due_str = item.due_date.strftime("%A, %B %d, %Y at %I:%M %p")
+        title = f"⏰ Tomorrow: {item.title}" if kind == "day_before" else f"🔔 Starting soon: {item.title}"
+        send_email_alert(title, due_str, None, item.description or "", recipients=recipients)
+
+@app.get("/events/new", response_class=HTMLResponse)
+def new_event_form(request: Request):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+
+        # Guarantees there's always at least one valid bucket to pre-select - without this, a
+        # brand-new user with no Event Universe yet would hit an empty, unusable picker. This is
+        # also what lets the picker itself stay collapsed/optional in the template: most events
+        # need no organizing decision at all, they just land in this default spot.
+        default_bucket = get_or_create_default_event_bucket(session, user.id)
+
+        # Spans every Task-bearing Universe the user owns (both "task" and "event" kind) - not just
+        # dedicated Event Universes. Reported directly: an event still needs to be pick-able into an
+        # existing Universe like "Life Events" so it shows up right there alongside the tasks
+        # already being watched for what's coming up, not siloed off in a separate Events-only
+        # picker. Contact Universes are excluded (People, not date-bearing tasks, live there).
+        task_bearing_universes = session.exec(
+            select(Universe).where(Universe.user_id == user.id, Universe.kind.in_(["task", "event"])).order_by(Universe.sort_order)
+        ).all()
+        universe_ids = [u.id for u in task_bearing_universes]
+        realms = session.exec(
+            select(Realm).where(Realm.user_id == user.id, Realm.universe_id.in_(universe_ids)).order_by(Realm.sort_order)
+        ).all() if universe_ids else []
+        realm_ids = [r.id for r in realms]
+        buckets = session.exec(
+            select(Bucket).where(Bucket.realm_id.in_(realm_ids)).order_by(Bucket.sort_order)
+        ).all() if realm_ids else []
+        buckets_by_realm = {}
+        for b in buckets:
+            buckets_by_realm.setdefault(b.realm_id, []).append(b)
+        universe_by_id = {u.id: u for u in task_bearing_universes}
+
+        return templates.TemplateResponse(
+            request=request,
+            name="event_form.html",
+            context={
+                "user": user,
+                "realms": realms,
+                "buckets_by_realm": buckets_by_realm,
+                "universe_by_id": universe_by_id,
+                "default_bucket_id": default_bucket.id,
+            }
+        )
+
+@app.post("/events/")
+def create_event(
+    request: Request,
+    title: str = Form(...),
+    bucket_id: int = Form(...),
+    due_date: str = Form(...),
+    due_time: Optional[str] = Form(None),
+    emoji: str = Form("🎉"),
+    description: Optional[str] = Form(None),
+    requires_rsvp: Optional[str] = Form(None),
+    reminder_minutes_before: Optional[int] = Form(60),
+    remind_day_before: Optional[str] = Form(None),
+    guest_emails: Optional[str] = Form(""),
+):
+    # Unchecked checkboxes send nothing at all - parsed as strings ourselves (matching create_item's
+    # own is_shoppable handling) rather than relying on FastAPI/Pydantic's implicit bool coercion.
+    requires_rsvp_flag = requires_rsvp is not None and requires_rsvp.strip().lower() in ("true", "on", "1", "yes")
+    remind_day_before_flag = remind_day_before is not None and remind_day_before.strip().lower() in ("true", "on", "1", "yes")
+
+    hour, minute = 9, 0
+    if due_time and due_time.strip():
+        try:
+            time_obj = datetime.strptime(due_time.strip(), "%H:%M")
+            hour, minute = time_obj.hour, time_obj.minute
+        except ValueError:
+            pass
+    base_due_date = datetime.strptime(due_date, "%Y-%m-%d").replace(hour=hour, minute=minute, second=0)
+
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user or not user_can_access_bucket(session, user, bucket_id):
+            return RedirectResponse(url="/login", status_code=303)
+
+        new_item = Item(
+            title=title,
+            bucket_id=bucket_id,
+            due_date=base_due_date,
+            description=description,
+            is_event=True,
+        )
+        session.add(new_item)
+        session.commit()
+        session.refresh(new_item)
+
+        new_event = Event(
+            item_id=new_item.id,
+            user_id=user.id,
+            emoji=(emoji or "🎉").strip() or "🎉",
+            requires_rsvp=requires_rsvp_flag,
+            reminder_minutes_before=reminder_minutes_before,
+            remind_day_before=remind_day_before_flag,
+        )
+        session.add(new_event)
+        session.commit()
+        session.refresh(new_event)
+
+        api_key = os.getenv("RESEND_API_KEY")
+        if api_key:
+            resend.api_key = api_key
+
+        emails = [e.strip().lower() for e in re.split(r"[,\n]+", guest_emails or "") if e.strip()]
+        for guest_email in emails:
+            guest = EventGuest(
+                event_id=new_event.id,
+                email=guest_email,
+                # A non-RSVP event has nothing for a guest to confirm - they're notified, not
+                # asked - so they start (and stay) "accepted" for reminder-email purposes.
+                status="invited" if requires_rsvp_flag else "accepted",
+            )
+            session.add(guest)
+            session.commit()
+            session.refresh(guest)
+
+            if api_key:
+                invite_url = f"https://usetaskmonster.app/events/{new_event.share_token}?g={guest.accept_token}"
+                try:
+                    resend.Emails.send({
+                        "from": "TaskMonster <notifications@usetaskmonster.app>",
+                        "to": [guest_email],
+                        "subject": f"{new_event.emoji} You're invited: {title}",
+                        "html": f"""
+                        <h3>{new_event.emoji} {user.name} invited you to {title}</h3>
+                        <p><strong>When:</strong> {base_due_date.strftime('%A, %B %d, %Y at %I:%M %p')}</p>
+                        {f'<p>{description}</p>' if description else ''}
+                        <p><a href="{invite_url}" style="background-color:#6366f1;color:#ffffff;padding:10px 20px;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;display:inline-block;">View invite{' &amp; RSVP' if requires_rsvp_flag else ''}</a></p>
+                        """,
+                    })
+                except (ResendError, Exception) as e:
+                    print(f"Event invite email error (non-fatal): {e}", flush=True)
+
+        # Reminders - scheduled as one-off jobs exactly like a normal task's (see create_item), but
+        # calling send_event_reminder_email (which resolves the CURRENT guest list at fire time)
+        # instead of send_email_alert directly with a recipient list frozen at creation.
+        if remind_day_before_flag:
+            remind_time = base_due_date - timedelta(days=1)
+            if remind_time > datetime.now():
+                scheduler.add_job(send_event_reminder_email, 'date', run_date=remind_time, args=[new_event.id, 'day_before'])
+        if reminder_minutes_before is not None:
+            remind_time = base_due_date - timedelta(minutes=reminder_minutes_before)
+            if remind_time > datetime.now():
+                scheduler.add_job(send_event_reminder_email, 'date', run_date=remind_time, args=[new_event.id, 'minutes_before'])
+
+        share_token = new_event.share_token
+
+    return RedirectResponse(url=f"/events/{share_token}", status_code=303)
+
+def _event_context(session: Session, share_token: str):
+    """Shared lookup for every route keyed by an event's public share_token - returns None if the
+    token doesn't match anything, so callers can render one consistent "invalid link" page."""
+    event = session.exec(select(Event).where(Event.share_token == share_token)).first()
+    if not event:
+        return None
+    item = session.get(Item, event.item_id)
+    creator = session.get(User, event.user_id)
+    guests = session.exec(select(EventGuest).where(EventGuest.event_id == event.id)).all()
+    return event, item, creator, guests
+
+# Registered BEFORE the generic /events/{share_token} route below - FastAPI/Starlette matches
+# routes in registration order, and {share_token} greedily matches any string with no '/' in it,
+# dots included, so ".ics" would otherwise be swallowed into share_token itself (share_token ends
+# up literally "<token>.ics", matching no real Event) instead of ever reaching this route.
+@app.get("/events/{share_token}.ics")
+def event_ics(share_token: str):
+    """A plain, dependency-free .ics file - works with Apple Calendar/Google Calendar/Outlook
+    without the recipient needing a TaskMonster account at all, per the "traditional calendar
+    users" half of this feature."""
+    with Session(engine) as session:
+        ctx = _event_context(session, share_token)
+        if not ctx:
+            return HTMLResponse("Not found", status_code=404)
+        event, item, creator, guests = ctx
+
+        dtstart = item.due_date.strftime("%Y%m%dT%H%M%S")
+        dtend = (item.due_date + timedelta(hours=1)).strftime("%Y%m%dT%H%M%S")
+        description_line = (item.description or "").replace("\n", " ").replace(",", "\\,")
+        ics = "\r\n".join([
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "PRODID:-//TaskMonster//Event//EN",
+            "BEGIN:VEVENT",
+            f"UID:event-{event.id}@usetaskmonster.app",
+            f"DTSTART:{dtstart}",
+            f"DTEND:{dtend}",
+            f"SUMMARY:{event.emoji} {item.title}",
+            f"DESCRIPTION:{description_line}",
+            "END:VEVENT",
+            "END:VCALENDAR",
+        ])
+        filename = re.sub(r'[^A-Za-z0-9 _-]', '', item.title).strip() or "event"
+
+    return Response(content=ics, media_type="text/calendar", headers={
+        "Content-Disposition": f'attachment; filename="{filename}.ics"'
+    })
+
+@app.get("/events/{share_token}", response_class=HTMLResponse)
+def view_event(request: Request, share_token: str, g: Optional[str] = None):
+    """The public invite page - deliberately reachable with no login at all, since a guest may not
+    have (or want) a TaskMonster account. `g` (a guest's own accept_token, from their invite email)
+    identifies which guest is viewing so the page can show a one-click Accept/Decline instead of
+    asking them to type their email again; arriving without it (the plain shared link, forwarded or
+    posted publicly) instead offers a name+email form to self-add - see respond_event."""
+    with Session(engine) as session:
+        ctx = _event_context(session, share_token)
+        if not ctx:
+            return HTMLResponse(_invite_status_page(
+                "This invite link isn't valid",
+                "It may have been removed, or the link was mistyped."
+            ))
+        event, item, creator, guests = ctx
+        viewer_guest = next((gu for gu in guests if gu.accept_token == g), None) if g else None
+        accepted_guests = [gu for gu in guests if gu.status == "accepted"]
+
+        return templates.TemplateResponse(
+            request=request,
+            name="event_invite.html",
+            context={
+                "event": event,
+                "item": item,
+                "creator": creator,
+                "accepted_guests": accepted_guests,
+                "viewer_guest": viewer_guest,
+                "guest_count": len(guests),
+            }
+        )
+
+@app.post("/events/{share_token}/respond")
+def respond_event(
+    request: Request,
+    share_token: str,
+    accept_token: Optional[str] = Form(None),
+    action: Optional[str] = Form(None),
+    name: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+):
+    with Session(engine) as session:
+        event = session.exec(select(Event).where(Event.share_token == share_token)).first()
+        if not event:
+            return RedirectResponse(url="/", status_code=303)
+
+        if accept_token and action in ("accept", "decline"):
+            guest = session.exec(
+                select(EventGuest).where(EventGuest.accept_token == accept_token, EventGuest.event_id == event.id)
+            ).first()
+            if guest:
+                guest.status = "accepted" if action == "accept" else "declined"
+                guest.responded_at = datetime.utcnow()
+                session.add(guest)
+                session.commit()
+                return RedirectResponse(url=f"/events/{share_token}?g={accept_token}", status_code=303)
+        elif email and email.strip():
+            # Reached via the plain public link (no personal invite token) and self-adding -
+            # submitting this form IS the RSVP, so this lands straight on "accepted" rather than a
+            # separate invited-then-accept step.
+            clean_email = email.strip().lower()
+            existing = session.exec(
+                select(EventGuest).where(EventGuest.event_id == event.id, EventGuest.email == clean_email)
+            ).first()
+            guest = existing or EventGuest(event_id=event.id, email=clean_email)
+            guest.name = (name or "").strip() or guest.name
+            guest.status = "accepted"
+            guest.responded_at = datetime.utcnow()
+            session.add(guest)
+            session.commit()
+            session.refresh(guest)
+            return RedirectResponse(url=f"/events/{share_token}?g={guest.accept_token}", status_code=303)
+
+    return RedirectResponse(url=f"/events/{share_token}", status_code=303)
 
 # --- AI Chat Assistant (Gemini) ---
 # Task-focused v1: the assistant can create/update/find/navigate-to tasks and answer questions

@@ -479,17 +479,37 @@
                 </button>
             </div>
 
-            <!-- + New Task/Person Button below logo -->
+            <!-- + New Task/Person/Event Button below logo - one primary action per Universe kind,
+                 matching how Contact universes only ever offer "New Person". Events get their own
+                 dedicated kind (see is_event_universe/app.py) rather than being a secondary option
+                 bolted onto every Task universe, since their card info/logic genuinely differs. -->
             {% if is_contact_universe %}
             <button onclick="openGlobalAddPersonModal()"
                     class="w-full mb-3 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs md:text-sm rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all">
                 <span>➕ New Person</span>
             </button>
+            {% elif is_event_universe %}
+            <!-- Full-page link (not a modal) since the Event creation form is its own dedicated
+                 page - see /events/new in app.py. -->
+            <a href="/events/new"
+               class="w-full mb-3 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs md:text-sm rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all">
+                <span>🎉 New Event</span>
+            </a>
             {% else %}
             <button onclick="openGlobalAddTaskModal()"
-                    class="w-full mb-3 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs md:text-sm rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all">
+                    class="w-full mb-2 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs md:text-sm rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all">
                 <span>➕ New Task</span>
             </button>
+            <!-- Also reachable from every Task universe, not just from inside an Event universe -
+                 reported directly that gating it behind already being IN an Event universe made it
+                 hard to discover/reach; it always lands in the auto-created default Events bucket
+                 regardless of which universe you're looking at right now (see
+                 get_or_create_default_event_bucket in app.py), so there's no reason to require
+                 navigating anywhere first. -->
+            <a href="/events/new"
+               class="w-full mb-3 py-2 px-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all">
+                <span>🎉 New Event</span>
+            </a>
             {% endif %}
 
             <div class="bg-slate-800/90 border border-slate-700/50 rounded-2xl p-3 mb-2 md:mb-4 shadow-xl transition-all backdrop-blur-md">
@@ -749,6 +769,7 @@
                     <div id="timeline-list" class="timeline-container relative border-l-2 border-indigo-500/30 ml-3 md:ml-8 pl-4 md:pl-6 space-y-6 md:space-y-8">
                         {% for item in items %}
                         {% set days_out = (item.due_date.date() - today).days %}
+                        {% set event_info = events_by_item_id.get(item.id) if item.is_event else None %}
                         <div class="timeline-card-wrapper relative group" 
                              data-completed="{{ 'true' if item.is_completed else 'false' }}"
                              data-completed-at="{{ item.completed_at.isoformat() if item.completed_at else '' }}"
@@ -786,6 +807,17 @@
                                             {% if (item.recurrence_type and item.recurrence_type != 'none') or item.recurring_group_id %}
                                             <span class="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] md:text-xs font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
                                                 🔄 Recurring
+                                            </span>
+                                            {% endif %}
+
+                                            {% if event_info %}
+                                            <!-- Event-only info a plain task card doesn't have - RSVP
+                                                 count (or "Sent" for a non-RSVP confirmation, which
+                                                 has nothing to accept/decline) - see is_event on Item
+                                                 and events_by_item_id in app.py. -->
+                                            <span class="bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[11px] md:text-xs font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                {{ event_info.emoji }}
+                                                {% if event_info.requires_rsvp %}{{ event_info.accepted_count }} going{% else %}Sent{% endif %}
                                             </span>
                                             {% endif %}
 
@@ -844,6 +876,13 @@
                                                 class="text-slate-500 hover:text-amber-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-700/50">
                                             🛒
                                         </button>
+                                        {% endif %}
+                                        {% if event_info %}
+                                        <a href="/events/{{ event_info.share_token }}" target="_blank" rel="noopener"
+                                           title="View/Share Invite"
+                                           class="text-slate-500 hover:text-amber-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-700/50">
+                                            🔗
+                                        </a>
                                         {% endif %}
                                         <button onclick="openEditItem(this)"
                                                 data-id="{{ item.id }}"
@@ -1157,8 +1196,8 @@
                             </div>
                         </div>
                         <span class="text-xs font-bold text-white text-center truncate max-w-full">{{ u.name }}</span>
-                        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full {% if u.kind == 'contact' %}bg-emerald-500/15 text-emerald-300 border border-emerald-500/30{% else %}bg-indigo-500/15 text-indigo-300 border border-indigo-500/30{% endif %}">
-                            {% if u.kind == 'contact' %}👥 Contacts{% else %}😈 Tasks{% endif %}
+                        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full {% if u.kind == 'contact' %}bg-emerald-500/15 text-emerald-300 border border-emerald-500/30{% elif u.kind == 'event' %}bg-amber-500/15 text-amber-300 border border-amber-500/30{% else %}bg-indigo-500/15 text-indigo-300 border border-indigo-500/30{% endif %}">
+                            {% if u.kind == 'contact' %}👥 Contacts{% elif u.kind == 'event' %}🎉 Events{% else %}😈 Tasks{% endif %}
                         </span>
                         {% if u.user_id != user.id %}
                         <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700" title="Shared with you by {{ u.user.name if u.user else 'another owner' }}">👥 Shared by {{ u.user.name if u.user else 'owner' }}</span>
@@ -1342,16 +1381,24 @@
                 <input type="hidden" name="kind" id="add-universe-kind" value="task">
                 <div>
                     <label class="block text-xs font-medium text-slate-400 mb-2">Universe Type</label>
-                    <div class="grid grid-cols-2 gap-2">
+                    <div class="grid grid-cols-3 gap-2">
                         <button type="button" id="add-universe-kind-task" onclick="selectUniverseKind('task')"
                                 class="p-3 rounded-xl border-2 border-indigo-500 bg-indigo-500/10 text-center transition">
                             <div class="text-2xl mb-1">😈</div>
-                            <div class="text-xs font-bold text-white">Task Universe</div>
+                            <div class="text-xs font-bold text-white">Task</div>
                         </button>
                         <button type="button" id="add-universe-kind-contact" onclick="selectUniverseKind('contact')"
                                 class="p-3 rounded-xl border-2 border-slate-700 bg-slate-900 text-center transition">
                             <div class="text-2xl mb-1">👥</div>
-                            <div class="text-xs font-bold text-slate-300">Contact Universe</div>
+                            <div class="text-xs font-bold text-slate-300">Contact</div>
+                        </button>
+                        <!-- Events are task-bearing under the hood (see is_event_universe/app.py) but
+                             get their own kind here since their card info/logic genuinely differs
+                             (RSVP counts, share links) rather than being just another Task Universe. -->
+                        <button type="button" id="add-universe-kind-event" onclick="selectUniverseKind('event')"
+                                class="p-3 rounded-xl border-2 border-slate-700 bg-slate-900 text-center transition">
+                            <div class="text-2xl mb-1">🎉</div>
+                            <div class="text-xs font-bold text-slate-300">Event</div>
                         </button>
                     </div>
                 </div>
@@ -2427,6 +2474,7 @@
 
     <script>
         const isContactUniverse = {{ 'true' if is_contact_universe else 'false' }};
+        const isEventUniverse = {{ 'true' if is_event_universe else 'false' }};
         const activeUniverseId = {{ active_universe.id if active_universe else 'null' }};
         // Space View's own core hub (see renderSpaceFrame) draws this instead of a hardcoded 😈 -
         // the devil is TaskMonster's own mascot/brand, not a stand-in for whatever Universe you're
@@ -3079,21 +3127,26 @@
             document.getElementById(prefix + '-grid').classList.add('hidden');
         }
 
+        // kind -> its button's default icon, shared between the button-highlighting loop below and
+        // the icon-default-swap at the bottom (kept as one map so a 4th kind only needs adding here).
+        const UNIVERSE_KIND_DEFAULT_ICON = { task: '😈', contact: '👥', event: '🎉' };
+
         function selectUniverseKind(kind) {
             document.getElementById('add-universe-kind').value = kind;
-            const taskBtn = document.getElementById('add-universe-kind-task');
-            const contactBtn = document.getElementById('add-universe-kind-contact');
             const active = 'border-indigo-500 bg-indigo-500/10';
             const inactive = 'border-slate-700 bg-slate-900';
-            taskBtn.className = taskBtn.className.replace(active, '').replace(inactive, '').trim() + ' ' + (kind === 'task' ? active : inactive);
-            contactBtn.className = contactBtn.className.replace(active, '').replace(inactive, '').trim() + ' ' + (kind === 'contact' ? active : inactive);
-            taskBtn.querySelector('.text-xs').className = 'text-xs font-bold ' + (kind === 'task' ? 'text-white' : 'text-slate-300');
-            contactBtn.querySelector('.text-xs').className = 'text-xs font-bold ' + (kind === 'contact' ? 'text-white' : 'text-slate-300');
-            // Only auto-swap the icon while it's still one of the two type defaults - don't
-            // clobber a custom emoji the user already picked from the grid.
+            Object.keys(UNIVERSE_KIND_DEFAULT_ICON).forEach(k => {
+                const btn = document.getElementById(`add-universe-kind-${k}`);
+                if (!btn) return;
+                const isActive = k === kind;
+                btn.className = btn.className.replace(active, '').replace(inactive, '').trim() + ' ' + (isActive ? active : inactive);
+                btn.querySelector('.text-xs').className = 'text-xs font-bold ' + (isActive ? 'text-white' : 'text-slate-300');
+            });
+            // Only auto-swap the icon while it's still one of the type defaults - don't clobber a
+            // custom emoji the user already picked from the grid.
             const iconInput = document.getElementById('add-universe-icon');
-            if (iconInput.value === '😈' || iconInput.value === '👥') {
-                const newIcon = kind === 'task' ? '😈' : '👥';
+            if (Object.values(UNIVERSE_KIND_DEFAULT_ICON).includes(iconInput.value)) {
+                const newIcon = UNIVERSE_KIND_DEFAULT_ICON[kind] || '😈';
                 iconInput.value = newIcon;
                 document.getElementById('add-universe-picker').innerText = newIcon;
             }
