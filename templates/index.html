@@ -27,6 +27,15 @@
             cursor: pointer;
         }
 
+        /* Google Places' own autocomplete dropdown (the event quick-create card's "Where" field)
+           ships with light-mode styling that doesn't follow this page's dark theme. */
+        .pac-container { background: #1e293b; border: 1px solid #475569; border-radius: 0.75rem; margin-top: 4px; font-family: inherit; z-index: 60; }
+        .pac-item { color: #cbd5e1; border-color: #334155; padding: 8px 12px; font-size: 13px; }
+        .pac-item:hover, .pac-item-selected { background: #334155; }
+        .pac-item-query { color: #f1f5f9; }
+        .pac-matched { color: #818cf8; }
+        .pac-icon { filter: invert(1) brightness(1.6); }
+
         /* Immediate hide of timeline during pre-load to eliminate flicker - reported directly as
            still visibly flashing on a fresh page load. display:flex alone wasn't enough: the
            overlay's actual position/z-index/background all come from Tailwind utility classes
@@ -1008,11 +1017,15 @@
                     <div class="grid grid-cols-[1fr_1fr_auto] gap-2">
                         <input type="date" name="due_date" required
                                class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-2.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
-                        <input type="time" name="due_time"
+                        <input type="time" name="due_time" step="900"
                                class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-2.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
                         <input type="text" name="emoji" value="🎉" maxlength="8"
                                class="w-12 bg-slate-950/80 border border-slate-700 rounded-xl px-2 py-2.5 text-lg text-center focus:outline-none focus:border-indigo-500">
                     </div>
+
+                    <input type="text" name="location" id="event-quick-location-input" autocomplete="off"
+                           placeholder="{{ 'Where? Start typing an address or place…' if google_places_enabled else 'Where? (optional - address, place, or \"Zoom\")' }}"
+                           class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
 
                     <input type="text" name="guest_emails" placeholder="Invite by email (optional, comma-separated)"
                            class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
@@ -1034,6 +1047,22 @@
                 </a>
             </form>
         </div>
+        {% if google_places_enabled %}
+        <script>
+            // Progressive enhancement only - event-quick-location-input above is a plain, fully
+            // working text field with no autocomplete of its own; this just helps fill it in with
+            // a clean address when a Google Maps API key is configured (see GOOGLE_PLACES_ENABLED
+            // in app.py). Own callback name (not initGooglePlacesAutocomplete) since /events/new's
+            // own copy of this same script is a completely separate page load, but keeping them
+            // distinct here avoids any risk of a name collision with this page's many other globals.
+            function initEventQuickLocationAutocomplete() {
+                const input = document.getElementById('event-quick-location-input');
+                if (!input || !window.google || !window.google.maps || !window.google.maps.places) return;
+                new google.maps.places.Autocomplete(input, { fields: ['formatted_address', 'name'] });
+            }
+        </script>
+        <script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=places&callback=initEventQuickLocationAutocomplete" async defer></script>
+        {% endif %}
         {% endif %}
 
         <!-- Streamlined Top Floating Space Bar -->
@@ -2124,7 +2153,7 @@
 
                     <div class="w-full">
                         <label class="block text-xs font-semibold text-slate-400 mb-1">Due Time (Optional)</label>
-                        <input type="time" name="due_time" onclick="this.showPicker()"
+                        <input type="time" name="due_time" step="900" onclick="this.showPicker()"
                                class="w-full min-w-0 h-[38px] min-h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border appearance-none text-left leading-normal cursor-pointer">
                     </div>
 
@@ -2426,7 +2455,7 @@
 
                     <div class="w-full">
                         <label class="block text-xs font-semibold text-slate-400 mb-1">Due Time (Optional)</label>
-                        <input type="time" name="due_time" id="edit-item-due-time" onclick="this.showPicker()"
+                        <input type="time" name="due_time" id="edit-item-due-time" step="900" onclick="this.showPicker()"
                                class="w-full min-w-0 h-[38px] min-h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border appearance-none text-left leading-normal cursor-pointer">
                     </div>
 

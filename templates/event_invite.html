@@ -12,6 +12,11 @@
             <div class="text-5xl mb-3">{{ event.emoji }}</div>
             <h1 class="text-2xl font-extrabold text-white tracking-tight mb-1">{{ item.title }}</h1>
             <p class="text-indigo-300 font-semibold text-sm mb-1">{{ item.due_date.strftime('%A, %B %d, %Y') }}{% if item.due_date.strftime('%H:%M') != '09:00' %} at {{ item.due_date.strftime('%I:%M %p') }}{% endif %}</p>
+            {% if event.location %}
+            <p class="text-slate-300 text-sm mb-1">
+                📍 <a href="https://www.google.com/maps/search/?api=1&query={{ event.location|urlencode }}" target="_blank" rel="noopener" class="underline decoration-slate-600 hover:text-indigo-300 hover:decoration-indigo-400 transition-colors">{{ event.location }}</a>
+            </p>
+            {% endif %}
             {% if creator %}
             <p class="text-slate-400 text-xs mb-4">Invited by {{ creator.name }}</p>
             {% endif %}
@@ -23,6 +28,23 @@
                class="inline-block w-full py-2.5 mb-3 bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm rounded-xl transition-all">
                 🗓️ Add to Calendar
             </a>
+
+            <!-- Sticky invites are only sticky if they're easy to actually hand to someone -
+                 native share sheet where it exists (covers Messages/iMessage, most social apps,
+                 email, AirDrop, etc. in one tap), with explicit Text/WhatsApp/Copy fallbacks below
+                 it for browsers without navigator.share (most desktop). -->
+            <button type="button" id="event-share-btn" onclick="shareEventInvite()"
+                    class="w-full py-2.5 mb-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-1.5">
+                🔗 Share This Invite
+            </button>
+            <div class="flex items-center justify-center gap-2 mb-4 text-xs">
+                <a id="event-share-sms" href="#"
+                   class="flex-1 py-2 bg-slate-900/60 border border-slate-700/60 hover:border-indigo-500/50 text-slate-300 hover:text-white rounded-xl transition-all text-center">💬 Text</a>
+                <a id="event-share-whatsapp" href="#" target="_blank" rel="noopener"
+                   class="flex-1 py-2 bg-slate-900/60 border border-slate-700/60 hover:border-indigo-500/50 text-slate-300 hover:text-white rounded-xl transition-all text-center">📱 WhatsApp</a>
+                <button type="button" id="event-share-copy" onclick="copyEventInviteLink()"
+                        class="flex-1 py-2 bg-slate-900/60 border border-slate-700/60 hover:border-indigo-500/50 text-slate-300 hover:text-white rounded-xl transition-all">📋 Copy Link</button>
+            </div>
 
             {% if event.requires_rsvp %}
                 {% if viewer_guest and viewer_guest.status in ('accepted', 'declined') %}
@@ -90,5 +112,74 @@
             </a>
         </div>
     </div>
+
+    <script>
+        // Deliberately origin+pathname, NOT window.location.href - dropping any query string
+        // strips the viewer's own personal ?g=<accept_token> (if they arrived via their invite
+        // email) before it's shared onward. Forwarding that as-is would let anyone with the
+        // shared link accept/decline AS that guest; the bare share link is exactly what
+        // respond_event's own name+email self-add form is built for.
+        const eventShareUrl = window.location.origin + window.location.pathname;
+        const eventShareTitle = {{ (event.emoji + ' ' + item.title)|tojson }};
+        const eventShareText = {{ ('You\'re invited: ' + item.title)|tojson }};
+
+        async function shareEventInvite() {
+            if (navigator.share) {
+                try {
+                    await navigator.share({ title: eventShareTitle, text: eventShareText, url: eventShareUrl });
+                } catch (e) {
+                    // User backed out of the native share sheet - not an error.
+                }
+                return;
+            }
+            copyEventInviteLink();
+        }
+
+        function copyEventInviteLink() {
+            const btn = document.getElementById('event-share-copy');
+            const finish = (ok) => {
+                if (!btn) return;
+                const original = btn.textContent;
+                btn.textContent = ok ? '✅ Copied!' : 'Copy failed';
+                setTimeout(() => { btn.textContent = original; }, 1800);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(eventShareUrl).then(() => finish(true)).catch(() => finish(false));
+            } else {
+                try {
+                    const ta = document.createElement('textarea');
+                    ta.value = eventShareUrl;
+                    ta.style.position = 'fixed';
+                    ta.style.opacity = '0';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    finish(true);
+                } catch (e) {
+                    finish(false);
+                }
+            }
+        }
+
+        (function setupShareFallbackLinks() {
+            const body = encodeURIComponent(eventShareText + ' ' + eventShareUrl);
+            // iOS Messages needs "sms:&body=" (ampersand, no leading number) - the standard
+            // "sms:?body=" (what Android expects) silently leaves the body blank on iOS.
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+            const smsLink = document.getElementById('event-share-sms');
+            if (smsLink) smsLink.href = (isIOS ? 'sms:&body=' : 'sms:?body=') + body;
+            const waLink = document.getElementById('event-share-whatsapp');
+            if (waLink) waLink.href = 'https://wa.me/?text=' + body;
+
+            // navigator.share's own native sheet already offers Messages/WhatsApp/everything
+            // else in one tap on devices that support it - the explicit fallback row only adds
+            // value where that API doesn't exist (most desktop browsers), so it's hidden here
+            // rather than left as redundant clutter next to the Share button.
+            if (navigator.share && smsLink && smsLink.parentElement) {
+                smsLink.parentElement.classList.add('hidden');
+            }
+        })();
+    </script>
 </body>
 </html>

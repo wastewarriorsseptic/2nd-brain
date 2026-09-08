@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>New Event - TaskMonster</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Google Places' own autocomplete dropdown ships with light-mode styling that doesn't
+           follow this page's dark theme - overridden here rather than left illegible. */
+        .pac-container { background: #1e293b; border: 1px solid #475569; border-radius: 0.75rem; margin-top: 4px; font-family: inherit; }
+        .pac-item { color: #cbd5e1; border-color: #334155; padding: 8px 12px; font-size: 13px; }
+        .pac-item:hover, .pac-item-selected { background: #334155; }
+        .pac-item-query { color: #f1f5f9; }
+        .pac-matched { color: #818cf8; }
+        .pac-icon { filter: invert(1) brightness(1.6); }
+    </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen p-4 md:p-10 font-sans">
     <div class="max-w-xl mx-auto">
@@ -31,7 +41,7 @@
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Time</label>
-                        <input type="time" name="due_time"
+                        <input type="time" name="due_time" step="900"
                                class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
                     </div>
                 </div>
@@ -40,6 +50,13 @@
                     <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Emoji</label>
                     <input type="text" name="emoji" value="🎉" maxlength="8"
                            class="w-16 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-lg text-center focus:outline-none focus:border-indigo-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Where (optional)</label>
+                    <input type="text" name="location" id="event-location-input" autocomplete="off"
+                           placeholder="{{ 'Start typing an address or place…' if google_places_enabled else 'Address, place name, or "Zoom" / "TBD"' }}"
+                           class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
                 </div>
 
                 <!-- Collapsed by default - most events need no organizing decision at all, they
@@ -126,6 +143,20 @@
             const isHidden = body.classList.toggle('hidden');
             toggle.textContent = isHidden ? '📁 Organize this (optional) ›' : '📁 Organize this (optional) ⌄';
         }
+
+        {% if google_places_enabled %}
+        // Progressive enhancement only - the "Where" input above is a plain, fully working text
+        // field with no autocomplete of its own; this just helps fill it in with a clean address
+        // when a Google Maps API key is configured (see GOOGLE_PLACES_ENABLED in app.py).
+        function initGooglePlacesAutocomplete() {
+            const input = document.getElementById('event-location-input');
+            if (!input || !window.google || !window.google.maps || !window.google.maps.places) return;
+            new google.maps.places.Autocomplete(input, { fields: ['formatted_address', 'name'] });
+        }
+        {% endif %}
     </script>
+    {% if google_places_enabled %}
+    <script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=places&callback=initGooglePlacesAutocomplete" async defer></script>
+    {% endif %}
 </body>
 </html>

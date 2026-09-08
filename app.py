@@ -41,6 +41,15 @@ if RESEND_API_KEY:
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_ENABLED = bool(GEMINI_API_KEY)
 GEMINI_MODEL = "gemini-flash-latest"
+
+# Google Places Autocomplete for the Event "Where" field - purely a progressive enhancement, same
+# on/off-by-env-var pattern as RESEND_API_KEY/GEMINI_API_KEY above. Without this key the location
+# field is still there and still works, just as a plain text input with no autocomplete. Needs a
+# Google Cloud API key with the "Places API (New)" (or classic Places API) + Maps JavaScript API
+# enabled, ideally with an HTTP-referrer restriction to this app's own domain since it's used
+# client-side.
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+GOOGLE_PLACES_ENABLED = bool(GOOGLE_MAPS_API_KEY)
 gemini_client = None
 if GEMINI_ENABLED:
     from google import genai as _genai
@@ -186,6 +195,7 @@ def safe_apply_migrations():
             # if it hasn't, create_all() right after this creates the whole table (external_id
             # included) fresh, and this line is a harmless no-op.
             conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS external_id VARCHAR;'))
+            conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS location VARCHAR;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT \'UTC\';'))
             conn.execute(text('ALTER TABLE realm ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
             # "IF EXISTS" on the table guards the case where this runs before create_all() has
@@ -233,6 +243,8 @@ def safe_apply_migrations():
                 event_cols = [col[1] for col in cursor.fetchall()]
                 if 'external_id' not in event_cols:
                     cursor.execute('ALTER TABLE event ADD COLUMN "external_id" VARCHAR;')
+                if 'location' not in event_cols:
+                    cursor.execute('ALTER TABLE event ADD COLUMN "location" VARCHAR;')
 
             cursor.execute("PRAGMA table_info(users);")
             user_cols = [col[1] for col in cursor.fetchall()]
@@ -360,6 +372,11 @@ class Event(SQLModel, table=True):
     # later. Scoped per-user (not globally unique) since two different accounts' external systems
     # could reasonably reuse the same id scheme.
     external_id: Optional[str] = Field(default=None, index=True)
+    # Free-text ("Zoom", "TBD") or a real address/place name - Google Places autocomplete (when
+    # GOOGLE_PLACES_ENABLED) just helps fill this in with a clean, canonical address; it's stored
+    # as plain text either way; no lat/lng, since the only downstream uses (invite page, .ics
+    # LOCATION, email body, a plain Google Maps search link) only need the text.
+    location: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class EventGuest(SQLModel, table=True):
@@ -1663,6 +1680,8 @@ def dashboard(
                 # themselves but hasn't used yet. Once it has a Realm (i.e. an event's been created),
                 # this naturally stops showing and the normal ring + "+ Add Realm" node takes over.
                 "show_event_quick_start": is_event_universe and len(owned_realms) == 0,
+                "google_places_enabled": GOOGLE_PLACES_ENABLED,
+                "google_maps_api_key": GOOGLE_MAPS_API_KEY,
                 "selected_realm_id": realm_id,
                 "selected_bucket_id": bucket_id,
                 "collaborators_map": collaborators_map,
@@ -3115,6 +3134,8 @@ def new_event_form(request: Request):
                 "buckets_by_realm": buckets_by_realm,
                 "universe_by_id": universe_by_id,
                 "default_bucket_id": default_bucket.id,
+                "google_places_enabled": GOOGLE_PLACES_ENABLED,
+                "google_maps_api_key": GOOGLE_MAPS_API_KEY,
             }
         )
 
@@ -3139,7 +3160,7 @@ def _schedule_event_reminders(event_id: int, base_due_date: datetime, remind_day
         'minutes_before'
     )
 
-def _send_event_guest_email(user: "User", new_event: "Event", title: str, base_due_date: datetime, description: Optional[str], guest_email: str, accept_token: str, is_update: bool = False):
+def _send_event_guest_email(user: "User", new_event: "Event", title: str, base_due_date: datetime, description: Optional[str], guest_email: str, accept_token: str, is_update: bool = False, location: Optional[str] = None):
     """Shared HTML/subject for both a brand-new invite and a resend/update notification - the only
     difference is the framing ("invited you to" vs "updated:") since an update might just be a
     changed time, not a whole new event."""
@@ -3158,6 +3179,7 @@ def _send_event_guest_email(user: "User", new_event: "Event", title: str, base_d
             "html": f"""
             <h3>{new_event.emoji} {user.name} {verb} {title}</h3>
             <p><strong>When:</strong> {base_due_date.strftime('%A, %B %d, %Y at %I:%M %p')}</p>
+            {f'<p><strong>Where:</strong> {location}</p>' if location else ''}
             {f'<p>{description}</p>' if description else ''}
             <p><a href="{invite_url}" style="background-color:#6366f1;color:#ffffff;padding:10px 20px;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;display:inline-block;">View invite{' &amp; RSVP' if new_event.requires_rsvp else ''}</a></p>
             """,
@@ -3178,6 +3200,7 @@ def _create_event_core(
     remind_day_before: bool = True,
     guest_emails: Optional[List[str]] = None,
     external_id: Optional[str] = None,
+    location: Optional[str] = None,
 ) -> "Event":
     """Shared by BOTH the in-app creation form (create_event) and the external API
     (api_create_event) - the one place that actually builds the Item+Event+EventGuest rows, sends
@@ -3203,6 +3226,7 @@ def _create_event_core(
         reminder_minutes_before=reminder_minutes_before,
         remind_day_before=remind_day_before,
         external_id=(external_id or "").strip() or None,
+        location=(location or "").strip() or None,
     )
     session.add(new_event)
     session.commit()
@@ -3222,7 +3246,7 @@ def _create_event_core(
         session.add(guest)
         session.commit()
         session.refresh(guest)
-        _send_event_guest_email(user, new_event, title, base_due_date, description, guest_email, guest.accept_token)
+        _send_event_guest_email(user, new_event, title, base_due_date, description, guest_email, guest.accept_token, location=new_event.location)
 
     _schedule_event_reminders(new_event.id, base_due_date, remind_day_before, reminder_minutes_before)
 
@@ -3237,6 +3261,7 @@ def create_event(
     due_time: Optional[str] = Form(None),
     emoji: str = Form("🎉"),
     description: Optional[str] = Form(None),
+    location: Optional[str] = Form(None),
     requires_rsvp: Optional[str] = Form(None),
     reminder_minutes_before: Optional[int] = Form(60),
     remind_day_before: Optional[str] = Form(None),
@@ -3269,6 +3294,7 @@ def create_event(
             base_due_date=base_due_date,
             emoji=emoji,
             description=description,
+            location=location,
             requires_rsvp=requires_rsvp_flag,
             reminder_minutes_before=reminder_minutes_before,
             remind_day_before=remind_day_before_flag,
@@ -3286,6 +3312,7 @@ def create_event_quick(
     due_date: str = Form(...),
     due_time: Optional[str] = Form(None),
     emoji: str = Form("🎉"),
+    location: Optional[str] = Form(None),
     requires_rsvp: Optional[str] = Form(None),
     guest_emails: Optional[str] = Form(""),
 ):
@@ -3323,6 +3350,7 @@ def create_event_quick(
             bucket_id=bucket.id,
             base_due_date=base_due_date,
             emoji=emoji,
+            location=location,
             requires_rsvp=requires_rsvp_flag,
             guest_emails=emails,
         )
@@ -3359,8 +3387,9 @@ def get_user_from_api_key(session: Session, request: Request) -> Optional["User"
 def api_create_event(request: Request, payload: dict = Body(...)):
     """POST with `Authorization: Bearer <key>` and a JSON body:
         {"title": "...", "due_at": "2026-09-15T10:00:00", "emoji": "🚛",
-         "description": "...", "requires_rsvp": false, "reminder_minutes_before": 60,
-         "remind_day_before": true, "guest_emails": ["client@example.com"], "bucket_id": null}
+         "description": "...", "location": "123 Main St", "requires_rsvp": false,
+         "reminder_minutes_before": 60, "remind_day_before": true,
+         "guest_emails": ["client@example.com"], "bucket_id": null}
     Only title and due_at are required. requires_rsvp defaults to False here (unlike the in-app
     form's True) since the motivating use case - "your appointment is confirmed" - is a
     notification, not an invite; bucket_id defaults to the account's auto-provisioned Events
@@ -3416,6 +3445,7 @@ def api_create_event(request: Request, payload: dict = Body(...)):
             base_due_date=base_due_date,
             emoji=payload.get("emoji", "🎉"),
             description=payload.get("description"),
+            location=payload.get("location"),
             requires_rsvp=bool(payload.get("requires_rsvp", False)),
             reminder_minutes_before=payload.get("reminder_minutes_before", 60),
             remind_day_before=bool(payload.get("remind_day_before", True)),
@@ -3484,6 +3514,8 @@ def api_update_event(request: Request, payload: dict = Body(...)):
             item.description = payload["description"]
         if "emoji" in payload:
             event.emoji = (payload["emoji"] or "🎉").strip() or "🎉"
+        if "location" in payload:
+            event.location = (payload["location"] or "").strip() or None
         if "requires_rsvp" in payload:
             event.requires_rsvp = bool(payload["requires_rsvp"])
         if "reminder_minutes_before" in payload:
@@ -3508,7 +3540,7 @@ def api_update_event(request: Request, payload: dict = Body(...)):
         if bool(payload.get("notify", True)):
             guests = session.exec(select(EventGuest).where(EventGuest.event_id == event.id)).all()
             for guest in guests:
-                _send_event_guest_email(user, event, item.title, item.due_date, item.description, guest.email, guest.accept_token, is_update=True)
+                _send_event_guest_email(user, event, item.title, item.due_date, item.description, guest.email, guest.accept_token, is_update=True, location=event.location)
 
         # Captured into plain locals before the session closes below - matching api_create_event's
         # own pattern, since an attribute the session never got a chance to (re-)load before close
@@ -3605,7 +3637,8 @@ def event_ics(share_token: str):
         dtstart = item.due_date.strftime("%Y%m%dT%H%M%S")
         dtend = (item.due_date + timedelta(hours=1)).strftime("%Y%m%dT%H%M%S")
         description_line = (item.description or "").replace("\n", " ").replace(",", "\\,")
-        ics = "\r\n".join([
+        location_line = (event.location or "").replace("\n", " ").replace(",", "\\,")
+        ics_lines = [
             "BEGIN:VCALENDAR",
             "VERSION:2.0",
             "PRODID:-//TaskMonster//Event//EN",
@@ -3615,9 +3648,11 @@ def event_ics(share_token: str):
             f"DTEND:{dtend}",
             f"SUMMARY:{event.emoji} {item.title}",
             f"DESCRIPTION:{description_line}",
-            "END:VEVENT",
-            "END:VCALENDAR",
-        ])
+        ]
+        if location_line:
+            ics_lines.append(f"LOCATION:{location_line}")
+        ics_lines += ["END:VEVENT", "END:VCALENDAR"]
+        ics = "\r\n".join(ics_lines)
         filename = re.sub(r'[^A-Za-z0-9 _-]', '', item.title).strip() or "event"
 
     return Response(content=ics, media_type="text/calendar", headers={
