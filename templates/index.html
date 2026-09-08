@@ -398,7 +398,8 @@
                  task-primed input (see openAiChatQuickTask) instead of a blank "ask me anything"
                  box, and flags the next message sent so the backend skips straight to treating a
                  bare "Buy milk tomorrow" as a create request instead of asking what's meant. -->
-            <button type="button" id="ai-chat-quick-task-btn" onclick="openAiChatQuickTask(event)" title="Add a new task"
+            <button type="button" id="ai-chat-quick-task-btn" onclick="openAiChatQuickTask(event)"
+                    title="{{ 'Add a new event' if is_event_universe else 'Add a new task' }}"
                     class="absolute -bottom-6 -right-9 w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 border-2 border-slate-950 text-white text-2xl font-extrabold flex items-center justify-center shadow-lg transition">
                 +
             </button>
@@ -968,6 +969,72 @@
     <div id="space-view-overlay" class="hidden fixed inset-0 bg-slate-950 z-40 overflow-hidden flex flex-col justify-between">
         <!-- Canvas Viewport -->
         <canvas id="space-canvas" class="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"></canvas>
+
+        {% if show_event_quick_start %}
+        <!-- Event Universe, no Realms yet (see show_event_quick_start in dashboard()) - reported
+             directly that landing here only offered the generic "+ Add Realm" node, which is
+             organizational busywork with nothing to do with actually creating an event ("not just
+             make a realm etc"). This replaces that first impression with the real thing: a fun,
+             self-contained mini version of /events/new, right in the space that would otherwise be
+             empty. It disappears on its own once a Realm exists (i.e. the first event's been made)
+             and the normal ring + "+ Add Realm" node take over for further organizing. Sits above
+             the canvas but below the top/bottom HUD bars (no z-index of its own - see stacking
+             comment: an absolute box with z-index:auto here paints above the plain canvas behind it
+             in DOM order, while the bars keep their own explicit z-10/z-20 above it). -->
+        <div class="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
+            <form action="/events/quick" method="POST"
+                  class="pointer-events-auto relative w-full max-w-sm bg-slate-900/95 border border-indigo-500/40 rounded-3xl p-6 shadow-2xl backdrop-blur-md overflow-hidden">
+                <input type="hidden" name="universe_id" value="{{ active_universe.id if active_universe else '' }}">
+
+                <!-- Same tiny twinkling-star primitive as the Multiverse picker's own starfield
+                     (.multiverse-picker-star / multiverse-picker-star-twinkle) - just a handful,
+                     purely decorative, echoing the "outer space and twinkly" look asked for
+                     elsewhere in Events. -->
+                <div class="multiverse-picker-star" style="top:8%; left:10%; width:3px; height:3px; background:#a5b4fc; animation-duration:3.2s; --star-min-o:0.2; --star-max-o:0.85;"></div>
+                <div class="multiverse-picker-star" style="top:14%; right:12%; width:2px; height:2px; background:#fcd34d; animation-duration:2.4s; animation-delay:0.6s; --star-min-o:0.15; --star-max-o:0.7;"></div>
+                <div class="multiverse-picker-star" style="bottom:20%; left:16%; width:2.5px; height:2.5px; background:#7dd3fc; animation-duration:4s; animation-delay:1.1s; --star-min-o:0.15; --star-max-o:0.65;"></div>
+                <div class="multiverse-picker-star" style="bottom:12%; right:20%; width:2px; height:2px; background:#fda4af; animation-duration:3.6s; animation-delay:0.3s; --star-min-o:0.15; --star-max-o:0.6;"></div>
+
+                <div class="text-center mb-4">
+                    <div class="text-4xl mb-2">🎉✨</div>
+                    <h2 class="text-lg font-extrabold text-white tracking-tight">Kick off your first event</h2>
+                    <p class="text-slate-400 text-xs mt-1.5 leading-relaxed">A sticky invite guests can RSVP to, add straight to their calendar, or just get a heads up - your call.</p>
+                </div>
+
+                <div class="space-y-2.5">
+                    <input type="text" name="title" required placeholder="e.g. Sarah's Birthday Dinner"
+                           class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+
+                    <div class="grid grid-cols-[1fr_1fr_auto] gap-2">
+                        <input type="date" name="due_date" required
+                               class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-2.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                        <input type="time" name="due_time"
+                               class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-2.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                        <input type="text" name="emoji" value="🎉" maxlength="8"
+                               class="w-12 bg-slate-950/80 border border-slate-700 rounded-xl px-2 py-2.5 text-lg text-center focus:outline-none focus:border-indigo-500">
+                    </div>
+
+                    <input type="text" name="guest_emails" placeholder="Invite by email (optional, comma-separated)"
+                           class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+
+                    <label class="flex items-center gap-2.5 cursor-pointer pt-0.5">
+                        <input type="checkbox" name="requires_rsvp" value="true" checked
+                               class="w-4 h-4 rounded border-slate-600 bg-slate-950 text-indigo-500 focus:ring-indigo-500">
+                        <span class="text-xs text-slate-300">Ask guests to RSVP <span class="text-slate-500">(off = just a heads up, e.g. an appointment)</span></span>
+                    </label>
+                </div>
+
+                <button type="submit"
+                        class="mt-4 w-full py-3 bg-gradient-to-r from-indigo-600 to-fuchsia-600 hover:from-indigo-500 hover:to-fuchsia-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-indigo-600/30 transition-all">
+                    ✨ Create &amp; Get Invite Link
+                </button>
+
+                <a href="/events/new" class="block mt-2.5 text-center text-[11px] font-semibold text-slate-500 hover:text-indigo-300 transition-colors">
+                    Need more options (organizing, reminders)? Use the full form ›
+                </a>
+            </form>
+        </div>
+        {% endif %}
 
         <!-- Streamlined Top Floating Space Bar -->
         <div class="relative z-10 pt-10 md:pt-4 px-3 md:px-6 flex flex-col gap-2 pointer-events-none">
@@ -4151,6 +4218,15 @@
         // keyboard back the way toggleAiChatPanel() normally does there.
         function openAiChatQuickTask(event) {
             if (event) event.stopPropagation();
+            // Reported directly: sitting in an Event universe (in Space View especially, like the
+            // screenshot that prompted this) with no way to create an actual Event right there -
+            // the chat's own quick-task flow only ever creates a plain task, and Events need their
+            // own richer form (title/date/guests/RSVP - see /events/new) anyway, so this jumps
+            // straight there instead of pretending the chat flow could substitute for it.
+            if (isEventUniverse) {
+                window.location.href = '/events/new';
+                return;
+            }
             const panel = document.getElementById('ai-chat-panel');
             if (panel && panel.classList.contains('hidden')) {
                 toggleAiChatPanel(true);

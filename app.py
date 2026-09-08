@@ -976,7 +976,7 @@ def get_or_create_important_dates_universe(session: Session, user_id: int) -> "U
 
     return universe
 
-def get_or_create_default_event_bucket(session: Session, user_id: int) -> "Bucket":
+def get_or_create_default_event_bucket(session: Session, user_id: int, target_universe: Optional["Universe"] = None) -> "Bucket":
     """Reported directly: picking a Universe/Realm/Bucket up front made creating a quick event
     feel like more organizational overhead than it should - most events don't need a decision
     about where they live at all. Every account gets one default Events Universe -> General Realm
@@ -984,16 +984,23 @@ def get_or_create_default_event_bucket(session: Session, user_id: int) -> "Bucke
     Dates - most users never touch Events at all) - the event form pre-selects this bucket so
     creating an event needs no organizing decision by default, while still surfacing the full
     picker (see new_event_form) for anyone who wants their own structure, e.g. separate Realms per
-    client type for a business."""
-    universe = session.exec(
-        select(Universe).where(Universe.user_id == user_id, Universe.name == "Events", Universe.kind == "event")
-    ).first()
-    if not universe:
-        max_order = len(session.exec(select(Universe).where(Universe.user_id == user_id)).all())
-        universe = Universe(name="Events", icon="🎉", kind="event", sort_order=max_order, user_id=user_id)
-        session.add(universe)
-        session.commit()
-        session.refresh(universe)
+    client type for a business.
+
+    Pass target_universe to provision this same General Realm -> Events Bucket pair inside an
+    ALREADY-CHOSEN Universe instead - used by Space View's inline quick-create card (reported
+    directly: an event created while looking at e.g. "Life Events" should land right there, not
+    always get shunted off to the separate auto-provisioned Events Universe)."""
+    universe = target_universe
+    if universe is None:
+        universe = session.exec(
+            select(Universe).where(Universe.user_id == user_id, Universe.name == "Events", Universe.kind == "event")
+        ).first()
+        if not universe:
+            max_order = len(session.exec(select(Universe).where(Universe.user_id == user_id)).all())
+            universe = Universe(name="Events", icon="🎉", kind="event", sort_order=max_order, user_id=user_id)
+            session.add(universe)
+            session.commit()
+            session.refresh(universe)
 
     realm = session.exec(
         select(Realm).where(Realm.universe_id == universe.id, Realm.name == "General")
@@ -1650,6 +1657,12 @@ def dashboard(
                 "is_contact_universe": is_contact_universe,
                 "is_event_universe": is_event_universe,
                 "events_by_item_id": events_by_item_id,
+                # Gates Space View's inline "create your first event" card - only for an Event-kind
+                # Universe that has no Realms yet (see get_or_create_default_event_bucket's docstring):
+                # a brand-new default "Events" Universe, or any other Event Universe the user made
+                # themselves but hasn't used yet. Once it has a Realm (i.e. an event's been created),
+                # this naturally stops showing and the normal ring + "+ Add Realm" node takes over.
+                "show_event_quick_start": is_event_universe and len(owned_realms) == 0,
                 "selected_realm_id": realm_id,
                 "selected_bucket_id": bucket_id,
                 "collaborators_map": collaborators_map,
@@ -3259,6 +3272,58 @@ def create_event(
             requires_rsvp=requires_rsvp_flag,
             reminder_minutes_before=reminder_minutes_before,
             remind_day_before=remind_day_before_flag,
+            guest_emails=emails,
+        )
+        share_token = new_event.share_token
+
+    return RedirectResponse(url=f"/events/{share_token}", status_code=303)
+
+@app.post("/events/quick")
+def create_event_quick(
+    request: Request,
+    universe_id: int = Form(...),
+    title: str = Form(...),
+    due_date: str = Form(...),
+    due_time: Optional[str] = Form(None),
+    emoji: str = Form("🎉"),
+    requires_rsvp: Optional[str] = Form(None),
+    guest_emails: Optional[str] = Form(""),
+):
+    """Space View's inline "create your first event" card (shown when an Event-kind Universe has
+    no Realms yet - see show_event_quick_start in dashboard()) posts here instead of the full
+    /events/ form: no bucket picker, no description, default reminders. The bucket is resolved
+    from whichever Universe was on screen when the form was submitted (see
+    get_or_create_default_event_bucket's target_universe param) so the event lands right there."""
+    requires_rsvp_flag = requires_rsvp is not None and requires_rsvp.strip().lower() in ("true", "on", "1", "yes")
+
+    hour, minute = 9, 0
+    if due_time and due_time.strip():
+        try:
+            time_obj = datetime.strptime(due_time.strip(), "%H:%M")
+            hour, minute = time_obj.hour, time_obj.minute
+        except ValueError:
+            pass
+    base_due_date = datetime.strptime(due_date, "%Y-%m-%d").replace(hour=hour, minute=minute, second=0)
+
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+
+        universe = session.get(Universe, universe_id)
+        if not universe or universe.user_id != user.id:
+            return RedirectResponse(url="/", status_code=303)
+
+        bucket = get_or_create_default_event_bucket(session, user.id, target_universe=universe)
+
+        emails = [e.strip().lower() for e in re.split(r"[,\n]+", guest_emails or "") if e.strip()]
+        new_event = _create_event_core(
+            session, user,
+            title=title,
+            bucket_id=bucket.id,
+            base_due_date=base_due_date,
+            emoji=emoji,
+            requires_rsvp=requires_rsvp_flag,
             guest_emails=emails,
         )
         share_token = new_event.share_token
