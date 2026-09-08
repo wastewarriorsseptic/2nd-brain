@@ -1592,7 +1592,39 @@ def dashboard(
                     "requires_rsvp": e.requires_rsvp,
                     "accepted_count": sum(1 for g in event_guests if g.status == "accepted"),
                     "invited_count": len(event_guests),
+                    "location": e.location,
+                    "is_private": e.is_private,
                 }
+
+        # Space View's own event-universe layout (see renderEventUniverseCards in index.html) is a
+        # floating deck of HTML cards, not the canvas realm/bucket/task ring every other Universe
+        # kind uses - reported directly that events should "behave differently" there, "more about
+        # having the card info for an event floating in space". Built here as a flat, plain-dict
+        # list (not scraped from Timeline card DOM attributes the way the ring does for tasks) so
+        # it can go straight through |tojson, same pattern as multiverseTasksData - the ring's own
+        # DOM-scraping approach is Task-Universe-specific machinery this view has no reason to
+        # depend on. Already sorted soonest-first; only ever built for an Event-kind Universe.
+        event_universe_cards = []
+        if is_event_universe:
+            for it in sorted((it for it in items if it.is_event), key=lambda it: it.due_date):
+                info = events_by_item_id.get(it.id)
+                if not info:
+                    continue
+                event_universe_cards.append({
+                    "itemId": it.id,
+                    "title": it.title,
+                    "emoji": info["emoji"],
+                    "dueDate": it.due_date.strftime("%Y-%m-%d"),
+                    "dueDateFormatted": it.due_date.strftime("%b %d, %Y"),
+                    "dueTimeFormatted": it.due_date.strftime("%I:%M %p").lstrip("0") if it.due_date.strftime("%H:%M") != "09:00" else "",
+                    "shareToken": info["share_token"],
+                    "requiresRsvp": info["requires_rsvp"],
+                    "acceptedCount": info["accepted_count"],
+                    "invitedCount": info["invited_count"],
+                    "location": info["location"] or "",
+                    "isPrivate": info["is_private"],
+                    "isPast": it.due_date < datetime.utcnow(),
+                })
 
         # Full tree of every Universe/Realm/Bucket the user OWNS (not shared-with-them realms -
         # moving something is an ownership-level action), used client-side to drive the "move to
@@ -1685,12 +1717,7 @@ def dashboard(
                 "is_contact_universe": is_contact_universe,
                 "is_event_universe": is_event_universe,
                 "events_by_item_id": events_by_item_id,
-                # Gates Space View's inline "create your first event" card - only for an Event-kind
-                # Universe that has no Realms yet (see get_or_create_default_event_bucket's docstring):
-                # a brand-new default "Events" Universe, or any other Event Universe the user made
-                # themselves but hasn't used yet. Once it has a Realm (i.e. an event's been created),
-                # this naturally stops showing and the normal ring + "+ Add Realm" node takes over.
-                "show_event_quick_start": is_event_universe and len(owned_realms) == 0,
+                "event_universe_cards": event_universe_cards,
                 "google_places_enabled": GOOGLE_PLACES_ENABLED,
                 "google_maps_api_key": GOOGLE_MAPS_API_KEY,
                 "selected_realm_id": realm_id,
@@ -3332,10 +3359,10 @@ def create_event_quick(
     requires_rsvp: Optional[str] = Form(None),
     guest_emails: Optional[str] = Form(""),
 ):
-    """Space View's inline "create your first event" card (shown when an Event-kind Universe has
-    no Realms yet - see show_event_quick_start in dashboard()) posts here instead of the full
-    /events/ form: no bucket picker, no description, default reminders. The bucket is resolved
-    from whichever Universe was on screen when the form was submitted (see
+    """Space View's always-available fun quick-create form (opened from the "+ New Event" tile in
+    the floating card deck - see renderEventUniverseCards in index.html) posts here instead of the
+    full /events/ form: no bucket picker, no description, default reminders. The bucket is
+    resolved from whichever Universe was on screen when the form was submitted (see
     get_or_create_default_event_bucket's target_universe param) so the event lands right there."""
     requires_rsvp_flag = requires_rsvp is not None and requires_rsvp.strip().lower() in ("true", "on", "1", "yes")
 

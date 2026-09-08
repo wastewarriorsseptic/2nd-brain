@@ -979,21 +979,27 @@
         <!-- Canvas Viewport -->
         <canvas id="space-canvas" class="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"></canvas>
 
-        {% if show_event_quick_start %}
-        <!-- Event Universe, no Realms yet (see show_event_quick_start in dashboard()) - reported
-             directly that landing here only offered the generic "+ Add Realm" node, which is
-             organizational busywork with nothing to do with actually creating an event ("not just
-             make a realm etc"). This replaces that first impression with the real thing: a fun,
-             self-contained mini version of /events/new, right in the space that would otherwise be
-             empty. It disappears on its own once a Realm exists (i.e. the first event's been made)
-             and the normal ring + "+ Add Realm" node take over for further organizing. Sits above
-             the canvas but below the top/bottom HUD bars (no z-index of its own - see stacking
-             comment: an absolute box with z-index:auto here paints above the plain canvas behind it
+        {% if is_event_universe %}
+        <!-- Event Universe Space View: reported directly that this should "behave differently"
+             from the normal Task-universe realm/bucket/task orbit ring - "more about having the
+             card info for an event floating in space". event-universe-cards-wrap (populated by
+             renderEventUniverseCards, called from initSpaceCanvas) holds one floating card per
+             event plus a permanent "+ New Event" tile, so the fun creator stays reachable "at all
+             times" rather than only before the first event exists. That tile opens the modal
+             below - the exact same fun mini-form the old always-rendered version had, just now
+             opened on demand instead of parked center-screen forever once there's real content to
+             look at. Sits above the canvas but below the top/bottom HUD bars (no z-index of its
+             own - an absolute box with z-index:auto here paints above the plain canvas behind it
              in DOM order, while the bars keep their own explicit z-10/z-20 above it). -->
-        <div class="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
+        <div id="event-universe-cards-wrap" class="absolute inset-x-0 top-[13%] bottom-[14%] overflow-y-auto pointer-events-none px-4 md:px-10"></div>
+
+        <div id="event-quick-create-modal" class="hidden absolute inset-0 z-30 flex items-center justify-center px-4" style="background: rgba(2, 6, 23, 0.55);" onclick="if (event.target === this) closeEventQuickCreateModal();">
             <form action="/events/quick" method="POST"
-                  class="pointer-events-auto relative w-full max-w-sm bg-slate-900/95 border border-indigo-500/40 rounded-3xl p-6 shadow-2xl backdrop-blur-md overflow-hidden">
+                  class="relative w-full max-w-sm bg-slate-900/95 border border-indigo-500/40 rounded-3xl p-6 shadow-2xl backdrop-blur-md overflow-hidden">
                 <input type="hidden" name="universe_id" value="{{ active_universe.id if active_universe else '' }}">
+
+                <button type="button" onclick="closeEventQuickCreateModal()" aria-label="Close"
+                        class="absolute top-3 right-3 w-7 h-7 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition-colors">✕</button>
 
                 <!-- Same tiny twinkling-star primitive as the Multiverse picker's own starfield
                      (.multiverse-picker-star / multiverse-picker-star-twinkle) - just a handful,
@@ -1006,12 +1012,12 @@
 
                 <div class="text-center mb-4">
                     <div class="text-4xl mb-2">🎉✨</div>
-                    <h2 class="text-lg font-extrabold text-white tracking-tight">Kick off your first event</h2>
+                    <h2 class="text-lg font-extrabold text-white tracking-tight">New Event</h2>
                     <p class="text-slate-400 text-xs mt-1.5 leading-relaxed">A sticky invite guests can RSVP to, add straight to their calendar, or just get a heads up - your call.</p>
                 </div>
 
                 <div class="space-y-2.5">
-                    <input type="text" name="title" required placeholder="e.g. Sarah's Birthday Dinner"
+                    <input type="text" name="title" id="event-quick-title-input" required placeholder="e.g. Sarah's Birthday Dinner"
                            class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
 
                     <div class="grid grid-cols-[1fr_1fr_auto] gap-2">
@@ -1055,6 +1061,8 @@
             // in app.py). Own callback name (not initGooglePlacesAutocomplete) since /events/new's
             // own copy of this same script is a completely separate page load, but keeping them
             // distinct here avoids any risk of a name collision with this page's many other globals.
+            // Binding still works even while the modal starts out hidden - Places' Autocomplete
+            // attaches to the input element itself, not to whatever is currently visible.
             function initEventQuickLocationAutocomplete() {
                 const input = document.getElementById('event-quick-location-input');
                 if (!input || !window.google || !window.google.maps || !window.google.maps.places) return;
@@ -2576,13 +2584,12 @@
     <script>
         const isContactUniverse = {{ 'true' if is_contact_universe else 'false' }};
         const isEventUniverse = {{ 'true' if is_event_universe else 'false' }};
-        // Mirrors show_event_quick_start (dashboard()) - true while the fun inline "Kick off your
-        // first event" card is covering Space View (see its <form> above). The canvas-drawn realm
-        // ring still builds a "+ Add Realm" node underneath it regardless (see combinedRealmsData
-        // below) - reported directly that node was visibly poking out from behind/above the card.
-        // Suppressing it here, rather than just relying on the card's own z-stacking, is what
-        // actually keeps it from being drawn at all while there's nothing else in the ring anyway.
-        const showEventQuickStart = {{ 'true' if show_event_quick_start else 'false' }};
+        // Plain server-built list (see event_universe_cards in dashboard()), NOT scraped from
+        // Timeline card DOM attributes the way the realm/bucket/task ring builds its own data -
+        // Space View's Event-universe layout (renderEventUniverseCards) is a completely separate,
+        // non-canvas rendering path with no reason to depend on that Task-universe-specific
+        // machinery. Already sorted soonest-first.
+        const eventUniverseCards = {{ (event_universe_cards|default([]))|tojson }};
         const activeUniverseId = {{ active_universe.id if active_universe else 'null' }};
         // Space View's own core hub (see renderSpaceFrame) draws this instead of a hardcoded 😈 -
         // the devil is TaskMonster's own mascot/brand, not a stand-in for whatever Universe you're
@@ -6089,6 +6096,32 @@
             window.addEventListener('resize', resizeSpaceCanvas);
             generateSpaceStars();
 
+            // Event Universes skip the whole realm/bucket/task orbit ring below entirely - reported
+            // directly that Space View here should "behave differently", "more about having the
+            // card info for an event floating in space" rather than the same ring every other
+            // Universe kind uses. spaceRealms stays a plain empty array (every canvas click/render
+            // path below already no-ops safely on that), the camera just rests on the starfield +
+            // hub with no realm ring to frame, and renderEventUniverseCards builds the actual
+            // content as an HTML overlay instead of canvas nodes.
+            if (isEventUniverse) {
+                spaceRealms = [];
+                setupSpaceEvents();
+                setupHudDraggable();
+                restoreOrRecenterSpace();
+                // No swoop-in here either - same reasoning the old quick-start card needed this
+                // for: a static HTML overlay (the floating cards + the core hub) sits on screen
+                // from frame 1, so the backdrop underneath should already be still and centered,
+                // not visibly flying in from a corner.
+                cameraOffset = { ...targetCameraOffset };
+                cameraZoom = targetCameraZoom;
+                renderEventUniverseCards();
+                if (!spaceRenderLoopRunning) {
+                    spaceRenderLoopRunning = true;
+                    requestAnimationFrame(renderSpaceFrame);
+                }
+                return;
+            }
+
             // Tracks how many occurrences of each recurring series (keyed by bucket + title)
             // have already been added to the canvas - a count, not just a seen/unseen flag, so
             // more than just the very next occurrence can be shown. See RECURRING_MAX_VISIBLE
@@ -6122,11 +6155,9 @@
 
             // A virtual "+" node rides along on the same ring as real realms, participating in the
             // same spacing/physics, so it never overlaps anything and always has its own slot.
-            // Skipped entirely while showEventQuickStart's own fun inline form is covering the
-            // screen - reported directly that this node was visibly poking out from behind/above
-            // that card. There's nothing else in the ring at that point anyway (no realms yet).
+            // (Event Universes never reach this code at all - see the early return above.)
             const addRealmButtonData = { id: '__add_realm__', name: 'Add Realm', icon: '➕', isAddButton: true, buckets: [] };
-            const combinedRealmsData = showEventQuickStart ? realmsData : realmsData.concat([addRealmButtonData]);
+            const combinedRealmsData = realmsData.concat([addRealmButtonData]);
             const totalRealms = Math.max(1, combinedRealmsData.length);
 
             const isMobile = window.innerWidth < 768;
@@ -6418,21 +6449,79 @@
             setupSpaceEvents();
             setupHudDraggable();
             restoreOrRecenterSpace();
-            if (showEventQuickStart) {
-                // The fun quick-create card sits statically at true center from frame 1 - the
-                // normal "swoop in" camera animation (cameraOffset easing 10%/frame from wherever
-                // it last was, e.g. the top-left corner on a fresh load - see
-                // renderSpaceFrameInner) reads as the whole universe visibly running across the
-                // screen behind/through it. Reported directly. Snapping straight to the target
-                // here means the twinkly backdrop is already still and centered by the time this
-                // first paints, instead of flying in underneath a card that never moves.
-                cameraOffset = { ...targetCameraOffset };
-                cameraZoom = targetCameraZoom;
-            }
             if (!spaceRenderLoopRunning) {
                 spaceRenderLoopRunning = true;
                 requestAnimationFrame(renderSpaceFrame);
             }
+        }
+
+        function openEventQuickCreateModal() {
+            const modal = document.getElementById('event-quick-create-modal');
+            if (!modal) return;
+            modal.classList.remove('hidden');
+            const titleInput = document.getElementById('event-quick-title-input');
+            if (titleInput) setTimeout(() => titleInput.focus(), 50);
+        }
+
+        function closeEventQuickCreateModal() {
+            const modal = document.getElementById('event-quick-create-modal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        // Same accent palette as Space View's own distant-star field (SPACE_STAR_PALETTE) - each
+        // card picks one for its border glow, purely decorative, keeping this floating deck's
+        // color language consistent with the rest of the "outer space" theme rather than
+        // introducing a separate scheme just for these cards.
+        const EVENT_CARD_GLOWS = ['#6366f1', '#8b5cf6', '#0ea5e9', '#f43f5e', '#f59e0b'];
+
+        // Space View's own layout for an Event Universe: no realm/bucket/task orbit ring at all
+        // (see the isEventUniverse branch in initSpaceCanvas) - instead, one floating card per
+        // event (soonest first, per eventUniverseCards - see dashboard()) plus a permanent
+        // "+ New Event" tile, all gently bobbing via the same .universe-card-float the Multiverse
+        // picker's own Universe cards use. Tapping an event card jumps straight to its shareable
+        // invite page - full editing still happens through the normal Timeline (Card View), this
+        // is meant to be the fun, visual, browsing/sharing surface, not a second editor.
+        function renderEventUniverseCards() {
+            const wrap = document.getElementById('event-universe-cards-wrap');
+            if (!wrap) return;
+            wrap.innerHTML = '';
+
+            const inner = document.createElement('div');
+            inner.className = 'flex flex-wrap items-start justify-center gap-4 md:gap-5 max-w-4xl mx-auto py-2 pointer-events-none';
+
+            const addTile = document.createElement('button');
+            addTile.type = 'button';
+            addTile.onclick = openEventQuickCreateModal;
+            addTile.style.setProperty('--float-delay', '0s');
+            addTile.className = 'universe-card-float pointer-events-auto w-32 md:w-40 rounded-2xl border-2 border-dashed border-indigo-400/50 bg-indigo-500/10 hover:bg-indigo-500/20 hover:border-indigo-400/80 text-indigo-200 flex flex-col items-center justify-center gap-1.5 py-6 transition-colors';
+            addTile.innerHTML = '<span class="text-3xl">✨</span><span class="text-xs font-bold">New Event</span>';
+            inner.appendChild(addTile);
+
+            eventUniverseCards.forEach((ev, idx) => {
+                const glow = EVENT_CARD_GLOWS[idx % EVENT_CARD_GLOWS.length];
+                const card = document.createElement('a');
+                card.href = `/events/${encodeURIComponent(ev.shareToken)}`;
+                card.className = 'universe-card-float pointer-events-auto w-32 md:w-40 rounded-2xl border bg-slate-900/90 backdrop-blur-md flex flex-col items-center text-center gap-1 py-4 px-2.5 shadow-xl transition-transform hover:scale-105' + (ev.isPast ? ' opacity-50 grayscale' : '');
+                card.style.borderColor = glow + '66';
+                card.style.boxShadow = `0 0 18px ${glow}22`;
+                card.style.setProperty('--float-delay', `${(idx % 6) * 0.5}s`);
+
+                const rsvpBadge = ev.requiresRsvp
+                    ? `<span class="text-[10px] font-bold text-emerald-300">${ev.acceptedCount}/${ev.invitedCount || ev.acceptedCount} going</span>`
+                    : (ev.invitedCount ? '<span class="text-[10px] font-bold text-slate-400">Sent</span>' : '');
+
+                card.innerHTML = `
+                    <span class="text-3xl">${escapeHtml(ev.emoji)}</span>
+                    ${ev.isPrivate ? '<span class="text-[9px] font-bold text-slate-500">🔒 Private</span>' : ''}
+                    <span class="text-xs font-bold text-white leading-snug line-clamp-2">${escapeHtml(ev.title)}</span>
+                    <span class="text-[10px] font-semibold" style="color: ${glow}">${escapeHtml(ev.dueDateFormatted)}${ev.dueTimeFormatted ? ' · ' + escapeHtml(ev.dueTimeFormatted) : ''}</span>
+                    ${ev.location ? `<span class="text-[9px] text-slate-500 truncate max-w-full">📍 ${escapeHtml(ev.location)}</span>` : ''}
+                    ${rsvpBadge}
+                `;
+                inner.appendChild(card);
+            });
+
+            wrap.appendChild(inner);
         }
 
         // Creating a task or bucket submits a normal form and reloads the page. Without this, that
