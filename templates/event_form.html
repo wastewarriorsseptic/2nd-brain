@@ -56,7 +56,7 @@
                     <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Where (optional)</label>
                     <input type="text" name="location" id="event-location-input" autocomplete="off"
                            placeholder="Start typing an address or place…"
-                           class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                           class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-ellipsis">
                     {% if not google_places_enabled %}
                     <div id="event-location-suggestions" class="hidden absolute z-20 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden"></div>
                     {% endif %}

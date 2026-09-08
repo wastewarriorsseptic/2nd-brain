@@ -3150,6 +3150,20 @@ def send_event_reminder_email(event_id: int, kind: str):
         title = f"⏰ Tomorrow: {item.title}" if kind == "day_before" else f"🔔 Starting soon: {item.title}"
         send_email_alert(title, due_str, None, item.description or "", recipients=recipients)
 
+def _format_nominatim_result(row: dict) -> str:
+    """Nominatim's own `display_name` is a full administrative breakdown (county, state, postal
+    code, country all spelled out) - reported directly as reading as "cut off" once dropped into
+    a normal-width input, when what was actually happening was just that the text itself was
+    unnecessarily long. Rebuilds a short, address-shaped string from the structured
+    `address` fields (needs addressdetails=1) instead, falling back to the raw display_name only
+    if that structure isn't there for some reason (a non-address place, an API shape change)."""
+    addr = row.get("address") or {}
+    street = " ".join(filter(None, [addr.get("house_number"), addr.get("road")]))
+    locality = addr.get("city") or addr.get("town") or addr.get("village") or addr.get("suburb") or addr.get("county")
+    state_zip = " ".join(filter(None, [addr.get("state"), addr.get("postcode")]))
+    parts = [p for p in [street, locality, state_zip] if p]
+    return ", ".join(parts) if parts else row.get("display_name", "")
+
 @app.get("/api/places/search")
 def places_search(request: Request, q: str = ""):
     """Free, no-API-key location autocomplete for the Event "Where" field, used automatically
@@ -3173,12 +3187,12 @@ def places_search(request: Request, q: str = ""):
     try:
         resp = httpx.get(
             "https://nominatim.openstreetmap.org/search",
-            params={"q": query, "format": "jsonv2", "addressdetails": 0, "limit": 5},
+            params={"q": query, "format": "jsonv2", "addressdetails": 1, "limit": 5},
             headers={"User-Agent": "TaskMonster/1.0 (https://usetaskmonster.app)"},
             timeout=4.0,
         )
         resp.raise_for_status()
-        results = [{"description": row["display_name"]} for row in resp.json()]
+        results = [{"description": _format_nominatim_result(row)} for row in resp.json()]
     except Exception as e:
         print(f"Places search error (non-fatal): {e}", flush=True)
 
@@ -3456,7 +3470,10 @@ def create_event(
         )
         share_token = new_event.share_token
 
-    return RedirectResponse(url=f"/events/{share_token}", status_code=303)
+    # ?sent=1 / ?draft=1 trigger the invite page's own brief confirmation toast (reported
+    # directly - a plain redirect straight to the invite page wasn't a clear enough "that worked"
+    # signal on its own) - see showEventActionToast in event_invite.html.
+    return RedirectResponse(url=f"/events/{share_token}?{'draft=1' if is_draft_flag else 'sent=1'}", status_code=303)
 
 @app.post("/events/quick")
 def create_event_quick(
@@ -3513,7 +3530,7 @@ def create_event_quick(
         )
         share_token = new_event.share_token
 
-    return RedirectResponse(url=f"/events/{share_token}", status_code=303)
+    return RedirectResponse(url=f"/events/{share_token}?{'draft=1' if is_draft_flag else 'sent=1'}", status_code=303)
 
 # --- Event API (for external apps - e.g. confirming an appointment straight from a separate
 # business system) and its API key management ---
@@ -3999,7 +4016,7 @@ def send_draft_event(request: Request, share_token: str):
         if event.is_draft:
             _send_draft_event(session, user, event, item)
 
-    return RedirectResponse(url=f"/events/{share_token}", status_code=303)
+    return RedirectResponse(url=f"/events/{share_token}?sent=1", status_code=303)
 
 # --- AI Chat Assistant (Gemini) ---
 # Task-focused v1: the assistant can create/update/find/navigate-to tasks and answer questions

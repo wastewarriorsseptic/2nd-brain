@@ -8,6 +8,25 @@
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen p-4 md:p-10 font-sans flex items-center justify-center">
+    <!-- Explicit way out regardless of how this page was reached (a fresh redirect right after
+         creating it, a shared link opened in its own tab, a guest's email link) - reported
+         directly - rather than relying only on the browser's own back/close controls, which
+         aren't always present or obvious (mobile, a stripped-down webview, etc.). Works the same
+         for a guest with no account (lands on /login) as it does for the creator (lands on their
+         dashboard) - both are legitimate "get out of this page" outcomes. -->
+    <a href="/" class="fixed top-4 left-4 md:top-6 md:left-6 text-xs font-semibold text-slate-400 hover:text-indigo-300 transition-colors bg-slate-900/80 backdrop-blur-sm px-3 py-1.5 rounded-full border border-slate-700/60 z-10">
+        ← Back to TaskMonster
+    </a>
+
+    <!-- Small, self-dismissing confirmation for whoever just created/sent this - a plain server
+         redirect here (no AJAX) has no other moment to say "that worked" before landing on this
+         page, so ?sent=1 in the redirect URL (see create_event/create_event_quick/send_draft_event
+         routes) is what triggers this. Stripped from the URL bar via history.replaceState below so
+         refreshing or re-sharing the link never repeats it. -->
+    <div id="event-sent-toast" class="hidden fixed top-4 left-1/2 -translate-x-1/2 z-20 bg-emerald-600 text-white text-sm font-bold px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-1.5">
+        ✅ Sent!
+    </div>
+
     <div class="max-w-lg w-full">
         <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-6 md:p-8 shadow-2xl text-center">
             <div class="text-5xl mb-3">{{ event.emoji }}</div>
@@ -128,6 +147,36 @@
     </div>
 
     <script>
+        // Confirms whatever just happened server-side (create/send/save-as-draft) actually
+        // worked, before this page settles in - reported directly that a plain redirect straight
+        // here wasn't a clear enough signal on its own. ?sent=1 / ?draft=1 in the URL (added by
+        // the redirect in create_event/create_event_quick/send_draft_event) pick the toast's
+        // wording; either way it's stripped from the URL right after via history.replaceState so
+        // reloading or re-sharing the link never repeats it or leaks into a copied/forwarded URL.
+        (function showEventActionToast() {
+            const params = new URLSearchParams(window.location.search);
+            const toast = document.getElementById('event-sent-toast');
+            if (!toast) return;
+            let text = null;
+            if (params.get('sent') === '1') {
+                text = '✅ Sent!';
+            } else if (params.get('draft') === '1') {
+                text = '📝 Saved as draft';
+            }
+            if (!text) return;
+
+            toast.textContent = text;
+            toast.classList.remove('hidden');
+            setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.4s'; }, 1800);
+            setTimeout(() => toast.remove(), 2300);
+
+            params.delete('sent');
+            params.delete('draft');
+            const newQuery = params.toString();
+            const newUrl = window.location.pathname + (newQuery ? `?${newQuery}` : '');
+            window.history.replaceState({}, '', newUrl);
+        })();
+
         // Same confetti burst as completing a task in the main app (canvas-confetti, loaded in
         // <head>) - fired from wherever the "Going"/"I'm in!" button actually is on screen, then
         // the real form submit follows a beat later so the burst is visible first. Only for the
