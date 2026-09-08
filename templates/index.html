@@ -6389,6 +6389,17 @@
             setupSpaceEvents();
             setupHudDraggable();
             restoreOrRecenterSpace();
+            if (showEventQuickStart) {
+                // The fun quick-create card sits statically at true center from frame 1 - the
+                // normal "swoop in" camera animation (cameraOffset easing 10%/frame from wherever
+                // it last was, e.g. the top-left corner on a fresh load - see
+                // renderSpaceFrameInner) reads as the whole universe visibly running across the
+                // screen behind/through it. Reported directly. Snapping straight to the target
+                // here means the twinkly backdrop is already still and centered by the time this
+                // first paints, instead of flying in underneath a card that never moves.
+                cameraOffset = { ...targetCameraOffset };
+                cameraZoom = targetCameraZoom;
+            }
             if (!spaceRenderLoopRunning) {
                 spaceRenderLoopRunning = true;
                 requestAnimationFrame(renderSpaceFrame);
