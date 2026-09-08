@@ -1023,8 +1023,8 @@
                     <div class="grid grid-cols-[1fr_1fr_auto] gap-2">
                         <input type="date" name="due_date" required
                                class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-2.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
-                        <input type="time" name="due_time" step="900"
-                               class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-2.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                        <select name="due_time" id="event-quick-due-time-select"
+                               class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-2.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"></select>
                         <input type="text" name="emoji" value="🎉" maxlength="8"
                                class="w-12 bg-slate-950/80 border border-slate-700 rounded-xl px-2 py-2.5 text-lg text-center focus:outline-none focus:border-indigo-500">
                     </div>
@@ -2161,8 +2161,8 @@
 
                     <div class="w-full">
                         <label class="block text-xs font-semibold text-slate-400 mb-1">Due Time (Optional)</label>
-                        <input type="time" name="due_time" step="900" onclick="this.showPicker()"
-                               class="w-full min-w-0 h-[38px] min-h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border appearance-none text-left leading-normal cursor-pointer">
+                        <select name="due_time" id="add-item-due-time-select"
+                               class="w-full min-w-0 h-[38px] min-h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border cursor-pointer"></select>
                     </div>
 
                     <div class="w-full">
@@ -2463,8 +2463,8 @@
 
                     <div class="w-full">
                         <label class="block text-xs font-semibold text-slate-400 mb-1">Due Time (Optional)</label>
-                        <input type="time" name="due_time" id="edit-item-due-time" step="900" onclick="this.showPicker()"
-                               class="w-full min-w-0 h-[38px] min-h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border appearance-none text-left leading-normal cursor-pointer">
+                        <select name="due_time" id="edit-item-due-time"
+                               class="w-full min-w-0 h-[38px] min-h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border cursor-pointer"></select>
                     </div>
 
                     <div class="w-full">
@@ -5059,7 +5059,7 @@
             document.getElementById('edit-item-from-multiverse-timeline').value = isMultiverseStackedView ? '1' : '';
             document.getElementById('edit-item-title').value = title;
             document.getElementById('edit-item-due-date').value = dueDate;
-            document.getElementById('edit-item-due-time').value = dueTime;
+            populateTimeSelect(document.getElementById('edit-item-due-time'), dueTime);
             document.getElementById('edit-item-amount').value = amount;
             document.getElementById('edit-item-shoppable').checked = isShoppable;
             document.getElementById('edit-item-description').value = description;
@@ -5249,6 +5249,38 @@
             div.innerText = str == null ? '' : String(str);
             return div.innerHTML;
         }
+
+        // Native <input type="time"> steppers don't reliably honor the `step` attribute in every
+        // browser's own picker UI (Chrome's desktop dropdown in particular still lists every
+        // single minute regardless) - reported directly. A plain <select> built from a fixed
+        // 15-minute grid guarantees it everywhere instead of just hoping the browser respects a
+        // hint. currentValue, if it doesn't land on the grid, is injected as its own extra option
+        // rather than silently dropped - matters for editing a pre-existing task/event whose due
+        // time was saved before this constraint existed, not for a brand-new one.
+        function populateTimeSelect(select, currentValue) {
+            if (!select) return;
+            let html = '<option value="">Time (optional)</option>';
+            let matched = false;
+            for (let totalMinutes = 0; totalMinutes < 24 * 60; totalMinutes += 15) {
+                const h24 = Math.floor(totalMinutes / 60);
+                const m = totalMinutes % 60;
+                const value = `${String(h24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+                if (currentValue && value === currentValue) matched = true;
+                const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+                const ampm = h24 < 12 ? 'AM' : 'PM';
+                html += `<option value="${value}">${h12}:${String(m).padStart(2, '0')} ${ampm}</option>`;
+            }
+            if (currentValue && !matched) {
+                const [hh, mm] = currentValue.split(':').map(Number);
+                const h12 = hh % 12 === 0 ? 12 : hh % 12;
+                const ampm = hh < 12 ? 'AM' : 'PM';
+                html += `<option value="${currentValue}">${h12}:${String(mm).padStart(2, '0')} ${ampm}</option>`;
+            }
+            select.innerHTML = html;
+            if (currentValue) select.value = currentValue;
+        }
+        populateTimeSelect(document.getElementById('add-item-due-time-select'));
+        populateTimeSelect(document.getElementById('event-quick-due-time-select'));
 
         // Mirrors send_daily_snapshot_emails()'s categorization exactly (overdue / due today / due
         // tomorrow / completed yesterday), but computed client-side from the same data-* attributes
@@ -7414,7 +7446,12 @@
             // core's own halo larger than the realm orbit ring itself on smaller screens.
             const coreRadius = (isMobileCore ? 150 : 102) * pulseScale;
 
-            if (!activeSelectedRealm) {
+            // Also skipped entirely for an Event Universe - reported directly ("no to this emoji /
+            // universe"). There's no orbit ring around it here anymore (see the isEventUniverse
+            // branch in initSpaceCanvas), so the glowing hub had nothing left to be the center OF -
+            // just a large, pulsing, purely decorative circle sitting behind the floating event
+            // cards with no purpose.
+            if (!activeSelectedRealm && !isEventUniverse) {
                 spaceCtx.save();
                 spaceCtx.beginPath();
                 spaceCtx.arc(0, 0, coreRadius, 0, Math.PI * 2);
@@ -9029,7 +9066,10 @@
 
             // DEVIL CORE (0,0) - only active in the full-universe overview; not drawn (or tappable)
             // while a realm is focused, so there's no invisible hit-area left behind at the origin.
-            if (!activeSelectedRealm) {
+            // Same for an Event Universe (see the matching guard in renderSpaceFrameInner) - it's
+            // not drawn there either, so this stays inert too rather than leaving an invisible tap
+            // target sitting right in the middle of the floating card deck.
+            if (!activeSelectedRealm && !isEventUniverse) {
                 const pulseScale = 1 + Math.sin(frameCount * 2) * 0.08;
                 const coreRadius = (window.innerWidth < 768 ? 150 : 102) * pulseScale;
 

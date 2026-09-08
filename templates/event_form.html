@@ -41,8 +41,8 @@
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Time</label>
-                        <input type="time" name="due_time" step="900"
-                               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                        <select name="due_time" id="event-form-due-time-select"
+                               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"></select>
                     </div>
                 </div>
 
@@ -143,6 +143,37 @@
     </div>
 
     <script>
+        // Native <input type="time"> steppers don't reliably honor the `step` attribute in every
+        // browser's own picker UI (Chrome's desktop dropdown in particular still lists every
+        // single minute regardless) - reported directly. A plain <select> built from a fixed
+        // 15-minute grid guarantees it everywhere instead of just hoping the browser respects a
+        // hint. currentValue, if it doesn't land on the grid, is injected as its own extra option
+        // rather than silently dropped - not a concern for a brand-new event, but this same
+        // function is shared with the edit-task form where a pre-existing due time might not be.
+        function populateTimeSelect(select, currentValue) {
+            if (!select) return;
+            let html = '<option value="">Time (optional)</option>';
+            let matched = false;
+            for (let totalMinutes = 0; totalMinutes < 24 * 60; totalMinutes += 15) {
+                const h24 = Math.floor(totalMinutes / 60);
+                const m = totalMinutes % 60;
+                const value = `${String(h24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+                if (currentValue && value === currentValue) matched = true;
+                const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+                const ampm = h24 < 12 ? 'AM' : 'PM';
+                html += `<option value="${value}">${h12}:${String(m).padStart(2, '0')} ${ampm}</option>`;
+            }
+            if (currentValue && !matched) {
+                const [hh, mm] = currentValue.split(':').map(Number);
+                const h12 = hh % 12 === 0 ? 12 : hh % 12;
+                const ampm = hh < 12 ? 'AM' : 'PM';
+                html += `<option value="${currentValue}">${h12}:${String(mm).padStart(2, '0')} ${ampm}</option>`;
+            }
+            select.innerHTML = html;
+            if (currentValue) select.value = currentValue;
+        }
+        populateTimeSelect(document.getElementById('event-form-due-time-select'));
+
         function toggleEventOrganize() {
             const body = document.getElementById('event-organize-body');
             const toggle = document.getElementById('event-organize-toggle');
