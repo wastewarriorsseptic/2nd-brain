@@ -10,6 +10,9 @@
     <div class="max-w-lg w-full">
         <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-6 md:p-8 shadow-2xl text-center">
             <div class="text-5xl mb-3">{{ event.emoji }}</div>
+            {% if event.is_private %}
+            <span class="inline-block bg-slate-900/80 border border-slate-700 text-slate-400 text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full mb-2">🔒 Private invite</span>
+            {% endif %}
             <h1 class="text-2xl font-extrabold text-white tracking-tight mb-1">{{ item.title }}</h1>
             <p class="text-indigo-300 font-semibold text-sm mb-1">{{ item.due_date.strftime('%A, %B %d, %Y') }}{% if item.due_date.strftime('%H:%M') != '09:00' %} at {{ item.due_date.strftime('%I:%M %p') }}{% endif %}</p>
             {% if event.location %}
@@ -29,10 +32,13 @@
                 🗓️ Add to Calendar
             </a>
 
+            {% if not event.is_private %}
             <!-- Sticky invites are only sticky if they're easy to actually hand to someone -
                  native share sheet where it exists (covers Messages/iMessage, most social apps,
                  email, AirDrop, etc. in one tap), with explicit Text/WhatsApp/Copy fallbacks below
-                 it for browsers without navigator.share (most desktop). -->
+                 it for browsers without navigator.share (most desktop). Hidden entirely for a
+                 private event (see Event.is_private) - the whole point of that setting is that
+                 this link isn't meant to go anywhere else, so there's nothing here to share. -->
             <button type="button" id="event-share-btn" onclick="shareEventInvite()"
                     class="w-full py-2.5 mb-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-1.5">
                 🔗 Share This Invite
@@ -45,6 +51,7 @@
                 <button type="button" id="event-share-copy" onclick="copyEventInviteLink()"
                         class="flex-1 py-2 bg-slate-900/60 border border-slate-700/60 hover:border-indigo-500/50 text-slate-300 hover:text-white rounded-xl transition-all">📋 Copy Link</button>
             </div>
+            {% endif %}
 
             {% if event.requires_rsvp %}
                 {% if viewer_guest and viewer_guest.status in ('accepted', 'declined') %}
@@ -105,7 +112,7 @@
         </div>
 
         <div class="bg-indigo-950/40 border border-indigo-500/30 rounded-2xl p-4 mt-4 text-center">
-            <p class="text-sm text-indigo-200 font-semibold mb-2">😈 Want your own tasks handled by AI?</p>
+            <p class="text-sm text-indigo-200 font-semibold mb-2">😈 Want task management, elevated?</p>
             <p class="text-xs text-slate-400 mb-3">TaskMonster keeps your to-dos, dates, and reminders organized - for free.</p>
             <a href="/login" class="inline-block px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition-all">
                 Join TaskMonster

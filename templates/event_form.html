@@ -26,7 +26,7 @@
             </h1>
             <p class="text-slate-400 text-sm mb-6">Send a cool, shareable invite for a specific day - with or without RSVPs.</p>
 
-            <form action="/events/" method="POST" class="space-y-5">
+            <form action="/events/" method="POST" class="space-y-5" id="event-create-form">
                 <div>
                     <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Title</label>
                     <input type="text" name="title" required placeholder="e.g. Sarah's Birthday Dinner"
@@ -105,11 +105,17 @@
                         <span class="text-sm text-slate-200">Ask guests to RSVP <span class="text-slate-500">(turn off for a plain confirmation, e.g. an appointment)</span></span>
                     </label>
 
+                    <label class="flex items-center gap-2.5 cursor-pointer">
+                        <input type="checkbox" name="is_private" value="true" id="event-is-private"
+                               class="w-4 h-4 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
+                        <span class="text-sm text-slate-200">🔒 Private - only the people I invite can open it <span class="text-slate-500">(the link itself won't work for anyone else, and can't be shared onward)</span></span>
+                    </label>
+
                     <div>
                         <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Invite people (emails, one per line or comma-separated)</label>
                         <textarea name="guest_emails" rows="3" placeholder="friend@example.com, another@example.com"
                                   class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"></textarea>
-                        <p class="text-[11px] text-slate-500 mt-1">You'll also get a shareable link on the next page, so this is optional.</p>
+                        <p class="text-[11px] text-slate-500 mt-1" id="event-guest-emails-hint">You'll also get a shareable link on the next page, so this is optional.</p>
                     </div>
                 </div>
 
@@ -142,6 +148,36 @@
             const toggle = document.getElementById('event-organize-toggle');
             const isHidden = body.classList.toggle('hidden');
             toggle.textContent = isHidden ? '📁 Organize this (optional) ›' : '📁 Organize this (optional) ⌄';
+        }
+
+        // A private event (see the 🔒 checkbox above) is only ever viewable via a specific
+        // guest's own personal link - with no guest emails at all, nobody but the creator could
+        // ever open it. Not a hard client-side block (the server doesn't require it either -
+        // someone might genuinely want to add guests later), just steering away from that trap:
+        // the hint text calls it out, and submitting empty prompts a confirm() rather than
+        // silently creating an invite nobody can see.
+        const isPrivateCheckbox = document.getElementById('event-is-private');
+        const guestEmailsHint = document.getElementById('event-guest-emails-hint');
+        const defaultGuestEmailsHint = guestEmailsHint ? guestEmailsHint.textContent : '';
+        if (isPrivateCheckbox && guestEmailsHint) {
+            isPrivateCheckbox.addEventListener('change', () => {
+                guestEmailsHint.textContent = isPrivateCheckbox.checked
+                    ? "Private invites need at least one email - that's the only way in, since the link itself won't work for anyone else."
+                    : defaultGuestEmailsHint;
+            });
+        }
+        const eventCreateForm = document.getElementById('event-create-form');
+        if (eventCreateForm) {
+            eventCreateForm.addEventListener('submit', (e) => {
+                const guestEmailsField = eventCreateForm.querySelector('[name="guest_emails"]');
+                const isPrivate = isPrivateCheckbox && isPrivateCheckbox.checked;
+                const hasGuests = guestEmailsField && guestEmailsField.value.trim().length > 0;
+                if (isPrivate && !hasGuests) {
+                    if (!confirm("This is set to Private with no one invited yet - nobody (not even you, on the invite link itself) will be able to open it until you add at least one guest email. Create it anyway?")) {
+                        e.preventDefault();
+                    }
+                }
+            });
         }
 
         {% if google_places_enabled %}

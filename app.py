@@ -196,6 +196,7 @@ def safe_apply_migrations():
             # included) fresh, and this line is a harmless no-op.
             conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS external_id VARCHAR;'))
             conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS location VARCHAR;'))
+            conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT FALSE;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT \'UTC\';'))
             conn.execute(text('ALTER TABLE realm ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
             # "IF EXISTS" on the table guards the case where this runs before create_all() has
@@ -245,6 +246,8 @@ def safe_apply_migrations():
                     cursor.execute('ALTER TABLE event ADD COLUMN "external_id" VARCHAR;')
                 if 'location' not in event_cols:
                     cursor.execute('ALTER TABLE event ADD COLUMN "location" VARCHAR;')
+                if 'is_private' not in event_cols:
+                    cursor.execute('ALTER TABLE event ADD COLUMN "is_private" BOOLEAN DEFAULT 0;')
 
             cursor.execute("PRAGMA table_info(users);")
             user_cols = [col[1] for col in cursor.fetchall()]
@@ -377,6 +380,14 @@ class Event(SQLModel, table=True):
     # as plain text either way; no lat/lng, since the only downstream uses (invite page, .ics
     # LOCATION, email body, a plain Google Maps search link) only need the text.
     location: Optional[str] = Field(default=None)
+    # When True, the share_token link alone is no longer enough to view this invite - only a
+    # request carrying a specific guest's own accept_token (the ?g= param they got in their
+    # invite email) is let through (see view_event); the self-add-a-stranger form and the "Share
+    # This Invite" button are both disabled too. Reported directly: sharing shouldn't be possible
+    # at all for an invite meant for one specific person (e.g. a client's appointment
+    # confirmation) - the base link being forwardable defeats that regardless of whether the
+    # Share button itself is hidden.
+    is_private: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class EventGuest(SQLModel, table=True):
@@ -3201,6 +3212,7 @@ def _create_event_core(
     guest_emails: Optional[List[str]] = None,
     external_id: Optional[str] = None,
     location: Optional[str] = None,
+    is_private: bool = False,
 ) -> "Event":
     """Shared by BOTH the in-app creation form (create_event) and the external API
     (api_create_event) - the one place that actually builds the Item+Event+EventGuest rows, sends
@@ -3227,6 +3239,7 @@ def _create_event_core(
         remind_day_before=remind_day_before,
         external_id=(external_id or "").strip() or None,
         location=(location or "").strip() or None,
+        is_private=is_private,
     )
     session.add(new_event)
     session.commit()
@@ -3266,11 +3279,13 @@ def create_event(
     reminder_minutes_before: Optional[int] = Form(60),
     remind_day_before: Optional[str] = Form(None),
     guest_emails: Optional[str] = Form(""),
+    is_private: Optional[str] = Form(None),
 ):
     # Unchecked checkboxes send nothing at all - parsed as strings ourselves (matching create_item's
     # own is_shoppable handling) rather than relying on FastAPI/Pydantic's implicit bool coercion.
     requires_rsvp_flag = requires_rsvp is not None and requires_rsvp.strip().lower() in ("true", "on", "1", "yes")
     remind_day_before_flag = remind_day_before is not None and remind_day_before.strip().lower() in ("true", "on", "1", "yes")
+    is_private_flag = is_private is not None and is_private.strip().lower() in ("true", "on", "1", "yes")
 
     hour, minute = 9, 0
     if due_time and due_time.strip():
@@ -3299,6 +3314,7 @@ def create_event(
             reminder_minutes_before=reminder_minutes_before,
             remind_day_before=remind_day_before_flag,
             guest_emails=emails,
+            is_private=is_private_flag,
         )
         share_token = new_event.share_token
 
@@ -3387,9 +3403,12 @@ def get_user_from_api_key(session: Session, request: Request) -> Optional["User"
 def api_create_event(request: Request, payload: dict = Body(...)):
     """POST with `Authorization: Bearer <key>` and a JSON body:
         {"title": "...", "due_at": "2026-09-15T10:00:00", "emoji": "🚛",
-         "description": "...", "location": "123 Main St", "requires_rsvp": false,
-         "reminder_minutes_before": 60, "remind_day_before": true,
+         "description": "...", "location": "123 Main St", "is_private": true,
+         "requires_rsvp": false, "reminder_minutes_before": 60, "remind_day_before": true,
          "guest_emails": ["client@example.com"], "bucket_id": null}
+    "is_private" (default false) is for exactly the "your appointment is confirmed" case: only
+    the specific guest's own personal link (from their invite email) can open it at all - the
+    bare share link, self-add-a-stranger, and the page's own Share button are all disabled.
     Only title and due_at are required. requires_rsvp defaults to False here (unlike the in-app
     form's True) since the motivating use case - "your appointment is confirmed" - is a
     notification, not an invite; bucket_id defaults to the account's auto-provisioned Events
@@ -3446,6 +3465,7 @@ def api_create_event(request: Request, payload: dict = Body(...)):
             emoji=payload.get("emoji", "🎉"),
             description=payload.get("description"),
             location=payload.get("location"),
+            is_private=bool(payload.get("is_private", False)),
             requires_rsvp=bool(payload.get("requires_rsvp", False)),
             reminder_minutes_before=payload.get("reminder_minutes_before", 60),
             remind_day_before=bool(payload.get("remind_day_before", True)),
@@ -3516,6 +3536,8 @@ def api_update_event(request: Request, payload: dict = Body(...)):
             event.emoji = (payload["emoji"] or "🎉").strip() or "🎉"
         if "location" in payload:
             event.location = (payload["location"] or "").strip() or None
+        if "is_private" in payload:
+            event.is_private = bool(payload["is_private"])
         if "requires_rsvp" in payload:
             event.requires_rsvp = bool(payload["requires_rsvp"])
         if "reminder_minutes_before" in payload:
@@ -3675,6 +3697,17 @@ def view_event(request: Request, share_token: str, g: Optional[str] = None):
             ))
         event, item, creator, guests = ctx
         viewer_guest = next((gu for gu in guests if gu.accept_token == g), None) if g else None
+
+        # A private event (see Event.is_private) is only viewable via a specific guest's own
+        # accept_token - the bare share_token link (no g=, or a g= that doesn't match any invited
+        # guest) gets the same "not valid" treatment as a made-up token, rather than falling
+        # through to the normal self-add-a-stranger page.
+        if event.is_private and not viewer_guest:
+            return HTMLResponse(_invite_status_page(
+                "This invite is private",
+                "It's only visible to the person it was sent to."
+            ))
+
         accepted_guests = [gu for gu in guests if gu.status == "accepted"]
 
         return templates.TemplateResponse(
@@ -3714,10 +3747,13 @@ def respond_event(
                 session.add(guest)
                 session.commit()
                 return RedirectResponse(url=f"/events/{share_token}?g={accept_token}", status_code=303)
-        elif email and email.strip():
+        elif email and email.strip() and not event.is_private:
             # Reached via the plain public link (no personal invite token) and self-adding -
             # submitting this form IS the RSVP, so this lands straight on "accepted" rather than a
-            # separate invited-then-accept step.
+            # separate invited-then-accept step. Disabled entirely for a private event (see
+            # Event.is_private) - that self-add path is exactly the backdoor that would let
+            # anyone with the bare link grant themselves access regardless of view_event's own
+            # gate on GET requests.
             clean_email = email.strip().lower()
             existing = session.exec(
                 select(EventGuest).where(EventGuest.event_id == event.id, EventGuest.email == clean_email)
