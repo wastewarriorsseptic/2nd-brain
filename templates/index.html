@@ -994,7 +994,7 @@
         <div id="event-universe-cards-wrap" class="absolute inset-x-0 top-[13%] bottom-[14%] overflow-y-auto pointer-events-none px-4 md:px-10"></div>
 
         <div id="event-quick-create-modal" class="hidden absolute inset-0 z-30 flex items-center justify-center px-4" style="background: rgba(2, 6, 23, 0.55);" onclick="if (event.target === this) closeEventQuickCreateModal();">
-            <form action="/events/quick" method="POST"
+            <form action="/events/quick" method="POST" id="event-quick-create-form"
                   class="relative w-full max-w-sm bg-slate-900/95 border border-indigo-500/40 rounded-3xl p-6 shadow-2xl backdrop-blur-md overflow-hidden">
                 <input type="hidden" name="universe_id" value="{{ active_universe.id if active_universe else '' }}">
 
@@ -1038,13 +1038,19 @@
                         {% endif %}
                     </div>
 
-                    <input type="text" name="guest_emails" placeholder="Invite by email (optional, comma-separated)"
+                    <input type="text" name="guest_emails" id="event-quick-guest-emails" placeholder="Invite by email (optional, comma-separated)"
                            class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
 
                     <label class="flex items-center gap-2.5 cursor-pointer pt-0.5">
                         <input type="checkbox" name="requires_rsvp" value="true" checked
                                class="w-4 h-4 rounded border-slate-600 bg-slate-950 text-indigo-500 focus:ring-indigo-500">
                         <span class="text-xs text-slate-300">Ask guests to RSVP <span class="text-slate-500">(off = just a heads up, e.g. an appointment)</span></span>
+                    </label>
+
+                    <label class="flex items-center gap-2.5 cursor-pointer pt-0.5">
+                        <input type="checkbox" name="is_private" value="true" id="event-quick-is-private"
+                               class="w-4 h-4 rounded border-slate-600 bg-slate-950 text-indigo-500 focus:ring-indigo-500">
+                        <span class="text-xs text-slate-300">🔒 Private <span class="text-slate-500">(only the people I invite can open it)</span></span>
                     </label>
 
                     <label class="flex items-center gap-2.5 cursor-pointer pt-0.5">
@@ -6586,6 +6592,24 @@
             }
         })();
 
+        // Same "private with no one invited yet" guard as the full /events/new form - a Private
+        // event (see the 🔒 checkbox above) is only ever viewable via a specific guest's own
+        // personal link, so creating one with nobody invited means nobody, not even the creator
+        // on the invite link itself, could ever open it.
+        (function setupEventQuickPrivateGuard() {
+            const form = document.getElementById('event-quick-create-form');
+            const isPrivateCheckbox = document.getElementById('event-quick-is-private');
+            const guestEmailsField = document.getElementById('event-quick-guest-emails');
+            if (!form || !isPrivateCheckbox || !guestEmailsField) return;
+            form.addEventListener('submit', (e) => {
+                if (isPrivateCheckbox.checked && !guestEmailsField.value.trim()) {
+                    if (!confirm("This is set to Private with no one invited yet - nobody (not even you, on the invite link itself) will be able to open it until you add at least one guest email. Create it anyway?")) {
+                        e.preventDefault();
+                    }
+                }
+            });
+        })();
+
         // Same accent palette as Space View's own distant-star field (SPACE_STAR_PALETTE) - each
         // card picks one for its border glow, purely decorative, keeping this floating deck's
         // color language consistent with the rest of the "outer space" theme rather than
@@ -6617,14 +6641,13 @@
 
             eventUniverseCards.forEach((ev, idx) => {
                 const glow = EVENT_CARD_GLOWS[idx % EVENT_CARD_GLOWS.length];
-                // A draft (see Event.is_draft) hasn't been sent to anyone yet - its card renders
-                // as a <div> with its own explicit Preview/Send actions instead of the plain
-                // whole-card link every other event uses (a <button>/<form> nested inside an <a>
-                // is invalid HTML and unreliable to click), so there's no ambiguity about whether
-                // tapping it does anything guest-facing.
-                const card = document.createElement(ev.isDraft ? 'div' : 'a');
-                if (!ev.isDraft) card.href = `/events/${encodeURIComponent(ev.shareToken)}`;
-                card.className = 'universe-card-float pointer-events-auto w-32 md:w-40 rounded-2xl border bg-slate-900/90 backdrop-blur-md flex flex-col items-center text-center gap-1 py-4 px-2.5 shadow-xl transition-transform' + (ev.isDraft ? '' : ' hover:scale-105') + (ev.isPast ? ' opacity-50 grayscale' : '');
+                const shareToken = encodeURIComponent(ev.shareToken);
+                // Always a <div> wrapper now, never a top-level <a> - reported directly there was
+                // no way to edit an event (draft or already-sent) from Space View at all, so
+                // every card needs its own actions row below the content, and a <button>/<form>
+                // nested inside an <a> is invalid HTML/unreliable to click.
+                const card = document.createElement('div');
+                card.className = 'universe-card-float pointer-events-auto w-32 md:w-40 rounded-2xl border bg-slate-900/90 backdrop-blur-md flex flex-col items-center text-center gap-1 py-4 px-2.5 shadow-xl' + (ev.isPast ? ' opacity-50 grayscale' : '');
                 card.style.borderColor = ev.isDraft ? 'rgba(148, 163, 184, 0.4)' : (glow + '66');
                 card.style.boxShadow = ev.isDraft ? 'none' : `0 0 18px ${glow}22`;
                 card.style.setProperty('--float-delay', `${(idx % 6) * 0.5}s`);
@@ -6636,7 +6659,12 @@
                         ? `<span class="text-[10px] font-bold text-emerald-300">${ev.acceptedCount}/${ev.invitedCount || ev.acceptedCount} going</span>`
                         : (ev.invitedCount ? '<span class="text-[10px] font-bold text-slate-400">Sent</span>' : ''));
 
-                card.innerHTML = `
+                // A draft's own content block goes straight to Edit (the primary thing to do with
+                // an unsent draft); a live event's goes to the public invite page, same as before.
+                const content = document.createElement('a');
+                content.href = ev.isDraft ? `/events/${shareToken}/edit` : `/events/${shareToken}`;
+                content.className = 'flex flex-col items-center gap-1 w-full' + (ev.isDraft ? '' : ' transition-transform hover:scale-105');
+                content.innerHTML = `
                     <span class="text-3xl">${escapeHtml(ev.emoji)}</span>
                     ${ev.isPrivate ? '<span class="text-[9px] font-bold text-slate-500">🔒 Private</span>' : ''}
                     <span class="text-xs font-bold text-white leading-snug line-clamp-2">${escapeHtml(ev.title)}</span>
@@ -6644,17 +6672,20 @@
                     ${ev.location ? `<span class="text-[9px] text-slate-500 truncate max-w-full">📍 ${escapeHtml(ev.location)}</span>` : ''}
                     ${rsvpBadge}
                 `;
+                card.appendChild(content);
+
+                const actions = document.createElement('div');
+                actions.className = 'flex items-center gap-1.5 mt-1.5 w-full';
+                const editLink = document.createElement('a');
+                editLink.href = `/events/${shareToken}/edit`;
+                editLink.className = 'flex-1 text-center text-[10px] font-bold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg py-1.5 transition-colors';
+                editLink.textContent = '✏️ Edit';
+                actions.appendChild(editLink);
 
                 if (ev.isDraft) {
-                    const actions = document.createElement('div');
-                    actions.className = 'flex items-center gap-1.5 mt-1.5 w-full';
-                    const previewLink = document.createElement('a');
-                    previewLink.href = `/events/${encodeURIComponent(ev.shareToken)}`;
-                    previewLink.className = 'flex-1 text-center text-[10px] font-bold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg py-1.5 transition-colors';
-                    previewLink.textContent = '👀 Preview';
                     const sendForm = document.createElement('form');
                     sendForm.method = 'POST';
-                    sendForm.action = `/events/${encodeURIComponent(ev.shareToken)}/send`;
+                    sendForm.action = `/events/${shareToken}/send`;
                     sendForm.className = 'flex-1';
                     sendForm.onsubmit = () => confirm(`Send this invite to everyone on the guest list now? This can't be undone.`);
                     const sendBtn = document.createElement('button');
@@ -6662,10 +6693,9 @@
                     sendBtn.className = 'w-full text-[10px] font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg py-1.5 transition-colors';
                     sendBtn.textContent = '📤 Send';
                     sendForm.appendChild(sendBtn);
-                    actions.appendChild(previewLink);
                     actions.appendChild(sendForm);
-                    card.appendChild(actions);
                 }
+                card.appendChild(actions);
 
                 inner.appendChild(card);
             });

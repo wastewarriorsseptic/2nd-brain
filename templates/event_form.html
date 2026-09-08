@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>New Event - TaskMonster</title>
+    <title>{{ 'Edit Event' if is_edit else 'New Event' }} - TaskMonster</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         /* Google Places' own autocomplete dropdown ships with light-mode styling that doesn't
@@ -22,14 +22,15 @@
 
         <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-6 md:p-8 shadow-2xl">
             <h1 class="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2 mb-1">
-                🎉 New Event
+                {{ '✏️ Edit Event' if is_edit else '🎉 New Event' }}
             </h1>
             <p class="text-slate-400 text-sm mb-6">Send a cool, shareable invite for a specific day - with or without RSVPs.</p>
 
-            <form action="/events/" method="POST" class="space-y-5" id="event-create-form">
+            <form action="{{ ('/events/' + event.share_token + '/edit') if is_edit else '/events/' }}" method="POST" class="space-y-5" id="event-create-form">
                 <div>
                     <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Title</label>
                     <input type="text" name="title" required placeholder="e.g. Sarah's Birthday Dinner"
+                           value="{{ item.title if is_edit else '' }}"
                            class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
                 </div>
 
@@ -37,6 +38,7 @@
                     <div>
                         <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Date</label>
                         <input type="date" name="due_date" required
+                               value="{{ item.due_date.strftime('%Y-%m-%d') if is_edit else '' }}"
                                class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
                     </div>
                     <div>
@@ -48,13 +50,14 @@
 
                 <div>
                     <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Emoji</label>
-                    <input type="text" name="emoji" value="🎉" maxlength="8"
+                    <input type="text" name="emoji" value="{{ event.emoji if is_edit else '🎉' }}" maxlength="8"
                            class="w-16 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-lg text-center focus:outline-none focus:border-indigo-500">
                 </div>
 
                 <div class="relative">
                     <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Where (optional)</label>
                     <input type="text" name="location" id="event-location-input" autocomplete="off"
+                           value="{{ event.location or '' if is_edit else '' }}"
                            placeholder="Start typing an address or place…"
                            class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-ellipsis">
                     {% if not google_places_enabled %}
@@ -98,24 +101,24 @@
                 <div>
                     <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Note (optional)</label>
                     <textarea name="description" rows="2" placeholder="Anything guests should know"
-                              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"></textarea>
+                              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none">{{ item.description or '' if is_edit else '' }}</textarea>
                 </div>
 
                 <div class="border-t border-slate-700/80 pt-5 space-y-4">
                     <label class="flex items-center gap-2.5 cursor-pointer">
-                        <input type="checkbox" name="requires_rsvp" value="true" checked
+                        <input type="checkbox" name="requires_rsvp" value="true" {{ 'checked' if (not is_edit) or event.requires_rsvp else '' }}
                                class="w-4 h-4 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
                         <span class="text-sm text-slate-200">Ask guests to RSVP <span class="text-slate-500">(turn off for a plain confirmation, e.g. an appointment)</span></span>
                     </label>
 
                     <label class="flex items-center gap-2.5 cursor-pointer">
-                        <input type="checkbox" name="is_private" value="true" id="event-is-private"
+                        <input type="checkbox" name="is_private" value="true" id="event-is-private" {{ 'checked' if is_edit and event.is_private else '' }}
                                class="w-4 h-4 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
                         <span class="text-sm text-slate-200">🔒 Private - only the people I invite can open it <span class="text-slate-500">(the link itself won't work for anyone else, and can't be shared onward)</span></span>
                     </label>
 
                     <label class="flex items-center gap-2.5 cursor-pointer">
-                        <input type="checkbox" name="is_draft" value="true" id="event-is-draft"
+                        <input type="checkbox" name="is_draft" value="true" id="event-is-draft" {{ 'checked' if is_edit and event.is_draft else '' }}
                                class="w-4 h-4 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
                         <span class="text-sm text-slate-200">📝 Save as draft <span class="text-slate-500">(nothing sends yet - no invite emails, no reminders - until you send it yourself)</span></span>
                     </label>
@@ -123,21 +126,21 @@
                     <div>
                         <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Invite people (emails, one per line or comma-separated)</label>
                         <textarea name="guest_emails" rows="3" placeholder="friend@example.com, another@example.com"
-                                  class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"></textarea>
-                        <p class="text-[11px] text-slate-500 mt-1" id="event-guest-emails-hint">You'll also get a shareable link on the next page, so this is optional.</p>
+                                  class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none">{{ existing_guest_emails if is_edit else '' }}</textarea>
+                        <p class="text-[11px] text-slate-500 mt-1" id="event-guest-emails-hint">{{ 'Anyone already on the list stays even if removed from here - deleting a guest isn\'t supported yet. New emails get invited when you save.' if is_edit else "You'll also get a shareable link on the next page, so this is optional." }}</p>
                     </div>
                 </div>
 
                 <div class="border-t border-slate-700/80 pt-5 space-y-4">
                     <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">Reminders</p>
                     <label class="flex items-center gap-2.5 cursor-pointer">
-                        <input type="checkbox" name="remind_day_before" value="true" checked
+                        <input type="checkbox" name="remind_day_before" value="true" {{ 'checked' if (not is_edit) or event.remind_day_before else '' }}
                                class="w-4 h-4 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
                         <span class="text-sm text-slate-200">Remind the day before</span>
                     </label>
                     <div class="flex items-center gap-2.5">
                         <span class="text-sm text-slate-200">Remind</span>
-                        <input type="number" name="reminder_minutes_before" value="60" min="0" step="5"
+                        <input type="number" name="reminder_minutes_before" value="{{ event.reminder_minutes_before if (is_edit and event.reminder_minutes_before is not none) else 60 }}" min="0" step="5"
                                class="w-24 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500">
                         <span class="text-sm text-slate-200">minutes before (0 = right at the moment)</span>
                     </div>
@@ -145,7 +148,7 @@
 
                 <button type="submit" id="event-form-submit-btn"
                         class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-indigo-600/30 transition-all">
-                    Create & Get Invite Link
+                    {% if is_edit %}{{ '📝 Save as Draft' if event.is_draft else '💾 Save Changes' }}{% else %}Create & Get Invite Link{% endif %}
                 </button>
             </form>
         </div>
@@ -181,7 +184,11 @@
             select.innerHTML = html;
             if (currentValue) select.value = currentValue;
         }
-        populateTimeSelect(document.getElementById('event-form-due-time-select'));
+        const isEditMode = {{ 'true' if is_edit else 'false' }};
+        populateTimeSelect(
+            document.getElementById('event-form-due-time-select'),
+            {{ (item.due_date.strftime('%H:%M')|tojson) if is_edit else 'null' }}
+        );
 
         function toggleEventOrganize() {
             const body = document.getElementById('event-organize-body');
@@ -214,7 +221,9 @@
         const submitBtn = document.getElementById('event-form-submit-btn');
         if (isDraftCheckbox && submitBtn) {
             isDraftCheckbox.addEventListener('change', () => {
-                submitBtn.textContent = isDraftCheckbox.checked ? '📝 Save as Draft' : 'Create & Get Invite Link';
+                submitBtn.textContent = isDraftCheckbox.checked
+                    ? '📝 Save as Draft'
+                    : (isEditMode ? '💾 Save Changes' : 'Create & Get Invite Link');
             });
         }
 

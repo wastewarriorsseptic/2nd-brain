@@ -3246,6 +3246,169 @@ def new_event_form(request: Request):
             }
         )
 
+@app.get("/events/{share_token}/edit", response_class=HTMLResponse)
+def edit_event_form(request: Request, share_token: str):
+    """Same event_form.html template as new_event_form, just pre-filled and posting to
+    edit_event below instead - reported directly there was no way to edit an event (draft or
+    already-sent) at all, from Space View or anywhere else. Only the owner can reach this (a
+    session login check, not the share_token alone - that token is meant to be handed to guests,
+    who must never land on an editable form)."""
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+
+        event = session.exec(select(Event).where(Event.share_token == share_token)).first()
+        if not event or event.user_id != user.id:
+            return RedirectResponse(url="/", status_code=303)
+        item = session.get(Item, event.item_id)
+        guests = session.exec(select(EventGuest).where(EventGuest.event_id == event.id)).all()
+
+        task_bearing_universes = session.exec(
+            select(Universe).where(Universe.user_id == user.id, Universe.kind.in_(["task", "event"])).order_by(Universe.sort_order)
+        ).all()
+        universe_ids = [u.id for u in task_bearing_universes]
+        realms = session.exec(
+            select(Realm).where(Realm.user_id == user.id, Realm.universe_id.in_(universe_ids)).order_by(Realm.sort_order)
+        ).all() if universe_ids else []
+        realm_ids = [r.id for r in realms]
+        buckets = session.exec(
+            select(Bucket).where(Bucket.realm_id.in_(realm_ids)).order_by(Bucket.sort_order)
+        ).all() if realm_ids else []
+        buckets_by_realm = {}
+        for b in buckets:
+            buckets_by_realm.setdefault(b.realm_id, []).append(b)
+        universe_by_id = {u.id: u for u in task_bearing_universes}
+
+        return templates.TemplateResponse(
+            request=request,
+            name="event_form.html",
+            context={
+                "user": user,
+                "realms": realms,
+                "buckets_by_realm": buckets_by_realm,
+                "universe_by_id": universe_by_id,
+                "default_bucket_id": item.bucket_id,
+                "google_places_enabled": GOOGLE_PLACES_ENABLED,
+                "google_maps_api_key": GOOGLE_MAPS_API_KEY,
+                "is_edit": True,
+                "event": event,
+                "item": item,
+                "existing_guest_emails": ", ".join(g.email for g in guests),
+            }
+        )
+
+@app.post("/events/{share_token}/edit")
+def edit_event(
+    request: Request,
+    share_token: str,
+    title: str = Form(...),
+    bucket_id: int = Form(...),
+    due_date: str = Form(...),
+    due_time: Optional[str] = Form(None),
+    emoji: str = Form("🎉"),
+    description: Optional[str] = Form(None),
+    location: Optional[str] = Form(None),
+    requires_rsvp: Optional[str] = Form(None),
+    reminder_minutes_before: Optional[int] = Form(60),
+    remind_day_before: Optional[str] = Form(None),
+    guest_emails: Optional[str] = Form(""),
+    is_private: Optional[str] = Form(None),
+    is_draft: Optional[str] = Form(None),
+):
+    """Saves changes from edit_event_form. A still-draft event that stays a draft here just
+    updates silently (same as creating one); unchecking "Save as draft" on this same submit
+    publishes it (_send_draft_event, full first-send framing). An already-live event always
+    notifies on save - existing guests get the "updated" framing, any newly-added email gets a
+    real first invite instead, and reminders are rescheduled - there's no silent-edit option here
+    (that's what the external API's own notify:false is for)."""
+    requires_rsvp_flag = requires_rsvp is not None and requires_rsvp.strip().lower() in ("true", "on", "1", "yes")
+    remind_day_before_flag = remind_day_before is not None and remind_day_before.strip().lower() in ("true", "on", "1", "yes")
+    is_private_flag = is_private is not None and is_private.strip().lower() in ("true", "on", "1", "yes")
+    is_draft_flag = is_draft is not None and is_draft.strip().lower() in ("true", "on", "1", "yes")
+
+    hour, minute = 9, 0
+    if due_time and due_time.strip():
+        try:
+            time_obj = datetime.strptime(due_time.strip(), "%H:%M")
+            hour, minute = time_obj.hour, time_obj.minute
+        except ValueError:
+            pass
+    base_due_date = datetime.strptime(due_date, "%Y-%m-%d").replace(hour=hour, minute=minute, second=0)
+
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+
+        event = session.exec(select(Event).where(Event.share_token == share_token)).first()
+        if not event or event.user_id != user.id:
+            return RedirectResponse(url="/", status_code=303)
+        if not user_can_access_bucket(session, user, bucket_id):
+            return RedirectResponse(url=f"/events/{share_token}/edit", status_code=303)
+
+        item = session.get(Item, event.item_id)
+        was_draft = event.is_draft
+
+        item.title = title
+        item.bucket_id = bucket_id
+        item.due_date = base_due_date
+        item.description = description
+        session.add(item)
+
+        event.emoji = (emoji or "🎉").strip() or "🎉"
+        event.location = (location or "").strip() or None
+        event.requires_rsvp = requires_rsvp_flag
+        event.is_private = is_private_flag
+        event.reminder_minutes_before = reminder_minutes_before
+        event.remind_day_before = remind_day_before_flag
+        event.is_draft = is_draft_flag
+        session.add(event)
+        session.commit()
+        session.refresh(item)
+        session.refresh(event)
+
+        # New emails only ever get ADDED here, never removed - deleting a guest isn't supported
+        # yet, so accidentally trimming this textarea can't silently drop someone already invited
+        # (possibly already responded).
+        existing_emails = {g.email for g in session.exec(select(EventGuest).where(EventGuest.event_id == event.id)).all()}
+        new_emails = [e.strip().lower() for e in re.split(r"[,\n]+", guest_emails or "") if e.strip()]
+        added_guests = []
+        for email in new_emails:
+            if email in existing_emails:
+                continue
+            guest = EventGuest(
+                event_id=event.id,
+                email=email,
+                status="invited" if (requires_rsvp_flag or is_draft_flag) else "accepted",
+            )
+            session.add(guest)
+            session.commit()
+            session.refresh(guest)
+            added_guests.append(guest)
+            existing_emails.add(email)
+
+        publishing_draft = was_draft and not event.is_draft
+        if publishing_draft:
+            _send_draft_event(session, user, event, item)
+        elif not event.is_draft:
+            event.ics_sequence += 1
+            session.add(event)
+            session.commit()
+            added_ids = {g.id for g in added_guests}
+            all_guests = session.exec(select(EventGuest).where(EventGuest.event_id == event.id)).all()
+            for guest in all_guests:
+                _send_event_guest_email(
+                    user, event, item.title, item.due_date, item.description, guest.email, guest.accept_token,
+                    is_update=(guest.id not in added_ids), location=event.location, guest_name=guest.name,
+                )
+            _schedule_event_reminders(event.id, item.due_date, event.remind_day_before, event.reminder_minutes_before)
+        # else: still a draft, wasn't just published - nothing to send, matching draft semantics.
+
+        final_is_draft = event.is_draft
+
+    return RedirectResponse(url=f"/events/{share_token}?{'draft=1' if final_is_draft else 'sent=1'}", status_code=303)
+
 def _schedule_event_reminders(event_id: int, base_due_date: datetime, remind_day_before: bool, reminder_minutes_before: Optional[int]):
     """Explicit, deterministic job ids (not APScheduler's auto-generated ones) + replace_existing
     are what let _update_event_core reschedule cleanly on a date change - calling this again with
@@ -3486,6 +3649,7 @@ def create_event_quick(
     location: Optional[str] = Form(None),
     requires_rsvp: Optional[str] = Form(None),
     guest_emails: Optional[str] = Form(""),
+    is_private: Optional[str] = Form(None),
     is_draft: Optional[str] = Form(None),
 ):
     """Space View's always-available fun quick-create form (opened from the "+ New Event" tile in
@@ -3494,6 +3658,7 @@ def create_event_quick(
     resolved from whichever Universe was on screen when the form was submitted (see
     get_or_create_default_event_bucket's target_universe param) so the event lands right there."""
     requires_rsvp_flag = requires_rsvp is not None and requires_rsvp.strip().lower() in ("true", "on", "1", "yes")
+    is_private_flag = is_private is not None and is_private.strip().lower() in ("true", "on", "1", "yes")
     is_draft_flag = is_draft is not None and is_draft.strip().lower() in ("true", "on", "1", "yes")
 
     hour, minute = 9, 0
@@ -3526,6 +3691,7 @@ def create_event_quick(
             location=location,
             requires_rsvp=requires_rsvp_flag,
             guest_emails=emails,
+            is_private=is_private_flag,
             is_draft=is_draft_flag,
         )
         share_token = new_event.share_token
