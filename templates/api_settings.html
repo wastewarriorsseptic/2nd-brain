@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Keys - TaskMonster</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen p-4 md:p-10 font-sans">
+    <div class="max-w-xl mx-auto">
+        <a href="/" class="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors mb-4 inline-block">← Back to TaskMonster</a>
+
+        <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-6 md:p-8 shadow-2xl">
+            <h1 class="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2 mb-1">
+                🔑 API Keys
+            </h1>
+            <p class="text-slate-400 text-sm mb-6">Create Events from your own apps - e.g. confirming an appointment straight to a client.</p>
+
+            {% if new_key %}
+            <div class="bg-emerald-950/40 border border-emerald-500/40 rounded-2xl p-4 mb-6">
+                <p class="text-emerald-300 text-xs font-bold uppercase tracking-wide mb-2">✅ New key created - copy it now, it won't be shown again</p>
+                <code class="block bg-slate-950 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-emerald-200 break-all select-all">{{ new_key }}</code>
+            </div>
+            {% endif %}
+
+            <div class="bg-slate-900/60 border border-slate-700/60 rounded-2xl p-4 mb-6 text-xs text-slate-400 leading-relaxed">
+                <p class="font-bold text-slate-300 mb-1.5">Usage</p>
+                <p class="mb-2">POST to <code class="text-indigo-300">https://usetaskmonster.app/api/events/</code> with header <code class="text-indigo-300">Authorization: Bearer &lt;your key&gt;</code> and a JSON body:</p>
+                <pre class="bg-slate-950 border border-slate-700 rounded-lg p-3 overflow-x-auto text-slate-300">{
+  "title": "Septic Pumping Appointment",
+  "due_at": "2026-09-15T10:00:00",
+  "emoji": "🚛",
+  "requires_rsvp": false,
+  "guest_emails": ["client@example.com"]
+}</pre>
+                <p class="mt-2">Only <code class="text-indigo-300">title</code> and <code class="text-indigo-300">due_at</code> are required - everything else has a sensible default, including which Realm/Bucket it lands in. Add your own <code class="text-indigo-300">external_id</code> (e.g. an order number) so you can update it later without storing TaskMonster's own event id anywhere.</p>
+
+                <p class="font-bold text-slate-300 mb-1.5 mt-4">Updating an event</p>
+                <p class="mb-2">PATCH the same URL with <code class="text-indigo-300">event_id</code> or <code class="text-indigo-300">external_id</code>, plus whichever fields changed:</p>
+                <pre class="bg-slate-950 border border-slate-700 rounded-lg p-3 overflow-x-auto text-slate-300">{
+  "external_id": "WW-0869",
+  "due_at": "2026-09-16T09:00:00",
+  "notify": false
+}</pre>
+                <p class="mt-2"><code class="text-indigo-300">notify</code> defaults to <code class="text-indigo-300">true</code> - every guest gets an updated email (this doubles as a plain "resend the invite" if you PATCH with no other fields changed). Set it to <code class="text-indigo-300">false</code> to update silently, with no email sent.</p>
+            </div>
+
+            <form action="/settings/api/generate" method="POST" class="flex gap-2 mb-6">
+                <input type="text" name="label" placeholder="Label (e.g. Pumping Business App)"
+                       class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                <button type="submit"
+                        class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-indigo-600/30 transition-all whitespace-nowrap">
+                    + Generate Key
+                </button>
+            </form>
+
+            <div class="space-y-2">
+                {% for key in keys %}
+                <div class="flex items-center justify-between bg-slate-900/60 border border-slate-700/60 rounded-xl px-4 py-3">
+                    <div class="min-w-0">
+                        <p class="text-sm font-bold text-white truncate">{{ key.label }}</p>
+                        <p class="text-[11px] text-slate-500 font-mono">{{ key.key_prefix }}… · created {{ key.created_at.strftime('%b %d, %Y') }}{% if key.last_used_at %} · last used {{ key.last_used_at.strftime('%b %d, %Y') }}{% endif %}</p>
+                    </div>
+                    <form action="/settings/api/revoke" method="POST" onsubmit="return confirm('Revoke this key? Anything using it will stop working immediately.');">
+                        <input type="hidden" name="key_id" value="{{ key.id }}">
+                        <button type="submit" class="text-slate-500 hover:text-rose-400 text-xs font-bold px-2 py-1 transition-colors">Revoke</button>
+                    </form>
+                </div>
+                {% else %}
+                <p class="text-slate-500 text-sm text-center py-4">No API keys yet.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -646,9 +646,14 @@
              to help with; it's just an account escape hatch now. -->
         <div class="pt-2 flex items-center justify-between text-[10px] text-slate-500 mt-auto">
             <span class="truncate max-w-[140px]">👤 {{ user.name }}</span>
-            <a href="/logout" class="hover:text-rose-400 transition-colors">
-                Sign Out
-            </a>
+            <div class="flex items-center gap-2.5 shrink-0">
+                <a href="/settings/api" class="hover:text-indigo-400 transition-colors" title="API Keys - create Events from your own apps">
+                    🔑 API
+                </a>
+                <a href="/logout" class="hover:text-rose-400 transition-colors">
+                    Sign Out
+                </a>
+            </div>
         </div>
         {% else %}
         <div></div>

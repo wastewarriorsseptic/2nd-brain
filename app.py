@@ -3,6 +3,7 @@ import shutil
 import uuid
 import sqlite3
 import secrets
+import hashlib
 import time
 import json as _json
 import re
@@ -181,6 +182,10 @@ def safe_apply_migrations():
             conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;'))
             conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS is_shoppable BOOLEAN DEFAULT FALSE;'))
             conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS is_event BOOLEAN DEFAULT FALSE;'))
+            # "IF EXISTS" here since Event itself may not have deployed yet on some environments -
+            # if it hasn't, create_all() right after this creates the whole table (external_id
+            # included) fresh, and this line is a harmless no-op.
+            conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS external_id VARCHAR;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT \'UTC\';'))
             conn.execute(text('ALTER TABLE realm ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
             # "IF EXISTS" on the table guards the case where this runs before create_all() has
@@ -221,6 +226,13 @@ def safe_apply_migrations():
                 cursor.execute('ALTER TABLE item ADD COLUMN "is_shoppable" BOOLEAN DEFAULT 0;')
             if 'is_event' not in item_cols:
                 cursor.execute('ALTER TABLE item ADD COLUMN "is_event" BOOLEAN DEFAULT 0;')
+
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='event';")
+            if cursor.fetchone():
+                cursor.execute("PRAGMA table_info(event);")
+                event_cols = [col[1] for col in cursor.fetchall()]
+                if 'external_id' not in event_cols:
+                    cursor.execute('ALTER TABLE event ADD COLUMN "external_id" VARCHAR;')
 
             cursor.execute("PRAGMA table_info(users);")
             user_cols = [col[1] for col in cursor.fetchall()]
@@ -342,6 +354,12 @@ class Event(SQLModel, table=True):
     reminder_minutes_before: Optional[int] = Field(default=60)
     remind_day_before: bool = Field(default=True)
     share_token: str = Field(default_factory=lambda: secrets.token_urlsafe(16), unique=True, index=True)
+    # Lets an external system (see POST/PATCH /api/events/) reference this Event by its OWN id -
+    # e.g. an order/appointment number like "WW-0869" - instead of needing to store TaskMonster's
+    # internal event_id in its own database just to look the event back up for an update/resend
+    # later. Scoped per-user (not globally unique) since two different accounts' external systems
+    # could reasonably reuse the same id scheme.
+    external_id: Optional[str] = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class EventGuest(SQLModel, table=True):
@@ -358,6 +376,22 @@ class EventGuest(SQLModel, table=True):
     accept_token: str = Field(default_factory=lambda: secrets.token_urlsafe(16), unique=True, index=True)
     responded_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class ApiKey(SQLModel, table=True):
+    """A per-account key for creating Events from OUTSIDE TaskMonster entirely - e.g. a separate
+    business app confirming an appointment straight to a client (see POST /api/events/ and
+    get_user_from_api_key). Only the SHA-256 hash is ever stored; the raw key is shown to the user
+    exactly once, right after generation (see generate_api_key), the same way GitHub/Stripe keys
+    work - losing it means generating a new one, not recovering the old one. key_prefix is just the
+    first few characters of the raw key, kept in the clear so a key stays identifiable in the
+    settings list ("tm_a1b2c3...") without ever storing enough of it to be useful on its own."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    label: str = Field(default="API Key")
+    key_hash: str = Field(unique=True, index=True)
+    key_prefix: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    last_used_at: Optional[datetime] = None
 
 class Person(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -3071,6 +3105,116 @@ def new_event_form(request: Request):
             }
         )
 
+def _schedule_event_reminders(event_id: int, base_due_date: datetime, remind_day_before: bool, reminder_minutes_before: Optional[int]):
+    """Explicit, deterministic job ids (not APScheduler's auto-generated ones) + replace_existing
+    are what let _update_event_core reschedule cleanly on a date change - calling this again with
+    the SAME event_id replaces whatever was scheduled before instead of leaving a stale job behind
+    that would otherwise still fire at the old time (or not fire at the new one). A job whose
+    computed time has already passed is removed outright rather than left in place with a past
+    run_date, which APScheduler would just fire immediately."""
+    def _schedule_or_clear(job_id: str, enabled: bool, remind_time: Optional[datetime], reminder_kind: str):
+        if enabled and remind_time and remind_time > datetime.now():
+            scheduler.add_job(send_event_reminder_email, 'date', run_date=remind_time, args=[event_id, reminder_kind], id=job_id, replace_existing=True)
+        elif scheduler.get_job(job_id):
+            scheduler.remove_job(job_id)
+
+    _schedule_or_clear(f"event-{event_id}-day-before", remind_day_before, base_due_date - timedelta(days=1), 'day_before')
+    _schedule_or_clear(
+        f"event-{event_id}-minutes-before",
+        reminder_minutes_before is not None,
+        base_due_date - timedelta(minutes=reminder_minutes_before) if reminder_minutes_before is not None else None,
+        'minutes_before'
+    )
+
+def _send_event_guest_email(user: "User", new_event: "Event", title: str, base_due_date: datetime, description: Optional[str], guest_email: str, accept_token: str, is_update: bool = False):
+    """Shared HTML/subject for both a brand-new invite and a resend/update notification - the only
+    difference is the framing ("invited you to" vs "updated:") since an update might just be a
+    changed time, not a whole new event."""
+    resend_key = os.getenv("RESEND_API_KEY")
+    if not resend_key:
+        return
+    resend.api_key = resend_key
+    invite_url = f"https://usetaskmonster.app/events/{new_event.share_token}?g={accept_token}"
+    verb = "updated" if is_update else "invited you to"
+    subject = f"{new_event.emoji} Updated: {title}" if is_update else f"{new_event.emoji} You're invited: {title}"
+    try:
+        resend.Emails.send({
+            "from": "TaskMonster <notifications@usetaskmonster.app>",
+            "to": [guest_email],
+            "subject": subject,
+            "html": f"""
+            <h3>{new_event.emoji} {user.name} {verb} {title}</h3>
+            <p><strong>When:</strong> {base_due_date.strftime('%A, %B %d, %Y at %I:%M %p')}</p>
+            {f'<p>{description}</p>' if description else ''}
+            <p><a href="{invite_url}" style="background-color:#6366f1;color:#ffffff;padding:10px 20px;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;display:inline-block;">View invite{' &amp; RSVP' if new_event.requires_rsvp else ''}</a></p>
+            """,
+        })
+    except (ResendError, Exception) as e:
+        print(f"Event invite email error (non-fatal): {e}", flush=True)
+
+def _create_event_core(
+    session: Session,
+    user: "User",
+    title: str,
+    bucket_id: int,
+    base_due_date: datetime,
+    emoji: str = "🎉",
+    description: Optional[str] = None,
+    requires_rsvp: bool = True,
+    reminder_minutes_before: Optional[int] = 60,
+    remind_day_before: bool = True,
+    guest_emails: Optional[List[str]] = None,
+    external_id: Optional[str] = None,
+) -> "Event":
+    """Shared by BOTH the in-app creation form (create_event) and the external API
+    (api_create_event) - the one place that actually builds the Item+Event+EventGuest rows, sends
+    invite emails, and schedules reminders, so the two entry points can never quietly drift apart
+    from each other. Callers are responsible for their own auth/validation and turning whatever
+    request shape they received (form fields, JSON body) into these plain arguments first."""
+    new_item = Item(
+        title=title,
+        bucket_id=bucket_id,
+        due_date=base_due_date,
+        description=description,
+        is_event=True,
+    )
+    session.add(new_item)
+    session.commit()
+    session.refresh(new_item)
+
+    new_event = Event(
+        item_id=new_item.id,
+        user_id=user.id,
+        emoji=(emoji or "🎉").strip() or "🎉",
+        requires_rsvp=requires_rsvp,
+        reminder_minutes_before=reminder_minutes_before,
+        remind_day_before=remind_day_before,
+        external_id=(external_id or "").strip() or None,
+    )
+    session.add(new_event)
+    session.commit()
+    session.refresh(new_event)
+
+    for guest_email in (guest_emails or []):
+        guest_email = guest_email.strip().lower()
+        if not guest_email:
+            continue
+        guest = EventGuest(
+            event_id=new_event.id,
+            email=guest_email,
+            # A non-RSVP event has nothing for a guest to confirm - they're notified, not
+            # asked - so they start (and stay) "accepted" for reminder-email purposes.
+            status="invited" if requires_rsvp else "accepted",
+        )
+        session.add(guest)
+        session.commit()
+        session.refresh(guest)
+        _send_event_guest_email(user, new_event, title, base_due_date, description, guest_email, guest.accept_token)
+
+    _schedule_event_reminders(new_event.id, base_due_date, remind_day_before, reminder_minutes_before)
+
+    return new_event
+
 @app.post("/events/")
 def create_event(
     request: Request,
@@ -3104,78 +3248,268 @@ def create_event(
         if not user or not user_can_access_bucket(session, user, bucket_id):
             return RedirectResponse(url="/login", status_code=303)
 
-        new_item = Item(
+        emails = [e.strip().lower() for e in re.split(r"[,\n]+", guest_emails or "") if e.strip()]
+        new_event = _create_event_core(
+            session, user,
             title=title,
             bucket_id=bucket_id,
-            due_date=base_due_date,
+            base_due_date=base_due_date,
+            emoji=emoji,
             description=description,
-            is_event=True,
-        )
-        session.add(new_item)
-        session.commit()
-        session.refresh(new_item)
-
-        new_event = Event(
-            item_id=new_item.id,
-            user_id=user.id,
-            emoji=(emoji or "🎉").strip() or "🎉",
             requires_rsvp=requires_rsvp_flag,
             reminder_minutes_before=reminder_minutes_before,
             remind_day_before=remind_day_before_flag,
+            guest_emails=emails,
         )
-        session.add(new_event)
-        session.commit()
-        session.refresh(new_event)
-
-        api_key = os.getenv("RESEND_API_KEY")
-        if api_key:
-            resend.api_key = api_key
-
-        emails = [e.strip().lower() for e in re.split(r"[,\n]+", guest_emails or "") if e.strip()]
-        for guest_email in emails:
-            guest = EventGuest(
-                event_id=new_event.id,
-                email=guest_email,
-                # A non-RSVP event has nothing for a guest to confirm - they're notified, not
-                # asked - so they start (and stay) "accepted" for reminder-email purposes.
-                status="invited" if requires_rsvp_flag else "accepted",
-            )
-            session.add(guest)
-            session.commit()
-            session.refresh(guest)
-
-            if api_key:
-                invite_url = f"https://usetaskmonster.app/events/{new_event.share_token}?g={guest.accept_token}"
-                try:
-                    resend.Emails.send({
-                        "from": "TaskMonster <notifications@usetaskmonster.app>",
-                        "to": [guest_email],
-                        "subject": f"{new_event.emoji} You're invited: {title}",
-                        "html": f"""
-                        <h3>{new_event.emoji} {user.name} invited you to {title}</h3>
-                        <p><strong>When:</strong> {base_due_date.strftime('%A, %B %d, %Y at %I:%M %p')}</p>
-                        {f'<p>{description}</p>' if description else ''}
-                        <p><a href="{invite_url}" style="background-color:#6366f1;color:#ffffff;padding:10px 20px;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;display:inline-block;">View invite{' &amp; RSVP' if requires_rsvp_flag else ''}</a></p>
-                        """,
-                    })
-                except (ResendError, Exception) as e:
-                    print(f"Event invite email error (non-fatal): {e}", flush=True)
-
-        # Reminders - scheduled as one-off jobs exactly like a normal task's (see create_item), but
-        # calling send_event_reminder_email (which resolves the CURRENT guest list at fire time)
-        # instead of send_email_alert directly with a recipient list frozen at creation.
-        if remind_day_before_flag:
-            remind_time = base_due_date - timedelta(days=1)
-            if remind_time > datetime.now():
-                scheduler.add_job(send_event_reminder_email, 'date', run_date=remind_time, args=[new_event.id, 'day_before'])
-        if reminder_minutes_before is not None:
-            remind_time = base_due_date - timedelta(minutes=reminder_minutes_before)
-            if remind_time > datetime.now():
-                scheduler.add_job(send_event_reminder_email, 'date', run_date=remind_time, args=[new_event.id, 'minutes_before'])
-
         share_token = new_event.share_token
 
     return RedirectResponse(url=f"/events/{share_token}", status_code=303)
+
+# --- Event API (for external apps - e.g. confirming an appointment straight from a separate
+# business system) and its API key management ---
+
+def _hash_api_key(raw_key: str) -> str:
+    return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+def get_user_from_api_key(session: Session, request: Request) -> Optional["User"]:
+    """Looks for `Authorization: Bearer <key>` - the one auth path in this whole app that's
+    deliberately NOT cookie/session-based, since the caller here is another program, not a
+    browser. Touches last_used_at on every successful call so the settings page can show "last
+    used" without needing a separate request log."""
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return None
+    raw_key = auth[7:].strip()
+    if not raw_key:
+        return None
+    api_key = session.exec(select(ApiKey).where(ApiKey.key_hash == _hash_api_key(raw_key))).first()
+    if not api_key:
+        return None
+    api_key.last_used_at = datetime.utcnow()
+    session.add(api_key)
+    session.commit()
+    return session.get(User, api_key.user_id)
+
+@app.post("/api/events/")
+def api_create_event(request: Request, payload: dict = Body(...)):
+    """POST with `Authorization: Bearer <key>` and a JSON body:
+        {"title": "...", "due_at": "2026-09-15T10:00:00", "emoji": "🚛",
+         "description": "...", "requires_rsvp": false, "reminder_minutes_before": 60,
+         "remind_day_before": true, "guest_emails": ["client@example.com"], "bucket_id": null}
+    Only title and due_at are required. requires_rsvp defaults to False here (unlike the in-app
+    form's True) since the motivating use case - "your appointment is confirmed" - is a
+    notification, not an invite; bucket_id defaults to the account's auto-provisioned Events
+    bucket (see get_or_create_default_event_bucket) if omitted, so a calling system never needs to
+    know anything about this account's Universe/Realm/Bucket structure."""
+    with Session(engine) as session:
+        user = get_user_from_api_key(session, request)
+        if not user:
+            return JSONResponse(
+                {"ok": False, "error": "Invalid or missing API key - pass it as 'Authorization: Bearer <key>'."},
+                status_code=401
+            )
+
+        title = (payload.get("title") or "").strip()
+        due_at_raw = payload.get("due_at")
+        if not title or not due_at_raw:
+            return JSONResponse({"ok": False, "error": "'title' and 'due_at' are required."}, status_code=400)
+
+        try:
+            base_due_date = datetime.fromisoformat(str(due_at_raw))
+        except ValueError:
+            return JSONResponse(
+                {"ok": False, "error": "'due_at' must be an ISO-8601 datetime, e.g. '2026-09-15T10:00:00'."},
+                status_code=400
+            )
+
+        bucket_id = payload.get("bucket_id")
+        if bucket_id:
+            if not user_can_access_bucket(session, user, bucket_id):
+                return JSONResponse({"ok": False, "error": "You don't have access to that bucket_id."}, status_code=403)
+        else:
+            bucket_id = get_or_create_default_event_bucket(session, user.id).id
+
+        guest_emails = payload.get("guest_emails") or []
+        if isinstance(guest_emails, str):
+            guest_emails = [e.strip() for e in re.split(r"[,\n]+", guest_emails) if e.strip()]
+
+        external_id = payload.get("external_id")
+        if external_id:
+            existing = session.exec(
+                select(Event).where(Event.user_id == user.id, Event.external_id == str(external_id).strip())
+            ).first()
+            if existing:
+                return JSONResponse(
+                    {"ok": False, "error": f"An event with external_id '{external_id}' already exists (event_id {existing.id}) - use PATCH /api/events/ to update it instead."},
+                    status_code=409
+                )
+
+        new_event = _create_event_core(
+            session, user,
+            title=title,
+            bucket_id=bucket_id,
+            base_due_date=base_due_date,
+            emoji=payload.get("emoji", "🎉"),
+            description=payload.get("description"),
+            requires_rsvp=bool(payload.get("requires_rsvp", False)),
+            reminder_minutes_before=payload.get("reminder_minutes_before", 60),
+            remind_day_before=bool(payload.get("remind_day_before", True)),
+            guest_emails=guest_emails,
+            external_id=external_id,
+        )
+        share_token = new_event.share_token
+        event_id = new_event.id
+
+    return JSONResponse({
+        "ok": True,
+        "event_id": event_id,
+        "external_id": external_id,
+        "share_url": f"https://usetaskmonster.app/events/{share_token}",
+        "ics_url": f"https://usetaskmonster.app/events/{share_token}.ics",
+    })
+
+@app.patch("/api/events/")
+def api_update_event(request: Request, payload: dict = Body(...)):
+    """Update an existing Event by `event_id` or `external_id` (exactly one required) - built
+    directly around two real buttons in an external dispatch/scheduling system: "RESEND INVITE"
+    (PATCH with no field changes, notify defaults True - re-sends the current details to every
+    guest) and "SAVE DATE SILENTLY" (PATCH with `notify: false` - updates the record, reschedules
+    reminders, tells no one). Any of title/due_at/emoji/description/requires_rsvp/
+    reminder_minutes_before/remind_day_before may be included - only the fields actually present
+    in the payload change, everything else is left as-is."""
+    with Session(engine) as session:
+        user = get_user_from_api_key(session, request)
+        if not user:
+            return JSONResponse(
+                {"ok": False, "error": "Invalid or missing API key - pass it as 'Authorization: Bearer <key>'."},
+                status_code=401
+            )
+
+        event_id = payload.get("event_id")
+        external_id = payload.get("external_id")
+        if not event_id and not external_id:
+            return JSONResponse({"ok": False, "error": "Provide 'event_id' or 'external_id' to identify the event."}, status_code=400)
+
+        event = None
+        if event_id:
+            event = session.get(Event, event_id)
+        elif external_id:
+            event = session.exec(
+                select(Event).where(Event.user_id == user.id, Event.external_id == str(external_id).strip())
+            ).first()
+
+        if not event or event.user_id != user.id:
+            return JSONResponse({"ok": False, "error": "No event found matching that id."}, status_code=404)
+
+        item = session.get(Item, event.item_id)
+
+        due_changed = False
+        if "due_at" in payload:
+            try:
+                item.due_date = datetime.fromisoformat(str(payload["due_at"]))
+                due_changed = True
+            except ValueError:
+                return JSONResponse(
+                    {"ok": False, "error": "'due_at' must be an ISO-8601 datetime, e.g. '2026-09-15T10:00:00'."},
+                    status_code=400
+                )
+        if "title" in payload:
+            item.title = (payload["title"] or "").strip() or item.title
+        if "description" in payload:
+            item.description = payload["description"]
+        if "emoji" in payload:
+            event.emoji = (payload["emoji"] or "🎉").strip() or "🎉"
+        if "requires_rsvp" in payload:
+            event.requires_rsvp = bool(payload["requires_rsvp"])
+        if "reminder_minutes_before" in payload:
+            event.reminder_minutes_before = payload["reminder_minutes_before"]
+        if "remind_day_before" in payload:
+            event.remind_day_before = bool(payload["remind_day_before"])
+
+        session.add(item)
+        session.add(event)
+        session.commit()
+        session.refresh(item)
+        session.refresh(event)
+
+        # Reminders are always re-derived from whatever the settings are NOW (even if this call
+        # didn't touch due_at) - cheap to redo, and guarantees a stale job never lingers from
+        # before an earlier update.
+        _schedule_event_reminders(event.id, item.due_date, event.remind_day_before, event.reminder_minutes_before)
+
+        # "RESEND INVITE" is just this: notify (the default) with no fields changed at all - the
+        # same guest email, re-sent with whatever the current details are. "SAVE DATE SILENTLY"
+        # is notify=false - the update happens, nobody hears about it.
+        if bool(payload.get("notify", True)):
+            guests = session.exec(select(EventGuest).where(EventGuest.event_id == event.id)).all()
+            for guest in guests:
+                _send_event_guest_email(user, event, item.title, item.due_date, item.description, guest.email, guest.accept_token, is_update=True)
+
+        # Captured into plain locals before the session closes below - matching api_create_event's
+        # own pattern, since an attribute the session never got a chance to (re-)load before close
+        # would raise DetachedInstanceError the moment it's touched afterward.
+        share_token = event.share_token
+        event_id = event.id
+        response_external_id = event.external_id
+
+    return JSONResponse({
+        "ok": True,
+        "event_id": event_id,
+        "external_id": response_external_id,
+        "due_at_changed": due_changed,
+        "share_url": f"https://usetaskmonster.app/events/{share_token}",
+        "ics_url": f"https://usetaskmonster.app/events/{share_token}.ics",
+    })
+
+@app.get("/settings/api", response_class=HTMLResponse)
+def api_settings_page(request: Request):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+        keys = session.exec(
+            select(ApiKey).where(ApiKey.user_id == user.id).order_by(ApiKey.created_at.desc())
+        ).all()
+
+    # Stashed in the session by generate_api_key, one request ago, and popped (not just read) here
+    # so it can never be shown again after this single page load - a raw key only ever exists in
+    # the client's hands for this one render, matching how GitHub/Stripe show a new key exactly
+    # once. Deliberately NOT passed as a URL query param, which would leave it sitting in browser
+    # history and server access logs.
+    new_key = request.session.pop("just_created_api_key", None)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="api_settings.html",
+        context={"user": user, "keys": keys, "new_key": new_key}
+    )
+
+@app.post("/settings/api/generate")
+def generate_api_key(request: Request, label: str = Form("API Key")):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+        raw_key = f"tm_{secrets.token_urlsafe(32)}"
+        session.add(ApiKey(
+            user_id=user.id,
+            label=(label or "API Key").strip() or "API Key",
+            key_hash=_hash_api_key(raw_key),
+            key_prefix=raw_key[:10],
+        ))
+        session.commit()
+    request.session["just_created_api_key"] = raw_key
+    return RedirectResponse(url="/settings/api", status_code=303)
+
+@app.post("/settings/api/revoke")
+def revoke_api_key(request: Request, key_id: int = Form(...)):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        api_key = session.get(ApiKey, key_id)
+        if user and api_key and api_key.user_id == user.id:
+            session.delete(api_key)
+            session.commit()
+    return RedirectResponse(url="/settings/api", status_code=303)
 
 def _event_context(session: Session, share_token: str):
     """Shared lookup for every route keyed by an event's public share_token - returns None if the
