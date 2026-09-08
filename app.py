@@ -8,6 +8,7 @@ import time
 import json as _json
 import re
 import difflib
+import httpx
 from urllib.parse import quote
 from datetime import datetime, timedelta, timezone
 from calendar import monthrange
@@ -198,6 +199,7 @@ def safe_apply_migrations():
             conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS location VARCHAR;'))
             conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT FALSE;'))
             conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS is_draft BOOLEAN DEFAULT FALSE;'))
+            conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS ics_sequence INTEGER DEFAULT 0;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT \'UTC\';'))
             conn.execute(text('ALTER TABLE realm ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
             # "IF EXISTS" on the table guards the case where this runs before create_all() has
@@ -251,6 +253,8 @@ def safe_apply_migrations():
                     cursor.execute('ALTER TABLE event ADD COLUMN "is_private" BOOLEAN DEFAULT 0;')
                 if 'is_draft' not in event_cols:
                     cursor.execute('ALTER TABLE event ADD COLUMN "is_draft" BOOLEAN DEFAULT 0;')
+                if 'ics_sequence' not in event_cols:
+                    cursor.execute('ALTER TABLE event ADD COLUMN "ics_sequence" INTEGER DEFAULT 0;')
 
             cursor.execute("PRAGMA table_info(users);")
             user_cols = [col[1] for col in cursor.fetchall()]
@@ -398,6 +402,11 @@ class Event(SQLModel, table=True):
     # to /api/events/ that flips it false), which is what actually sends the invites and schedules
     # reminders for the first time.
     is_draft: bool = Field(default=False)
+    # iCalendar SEQUENCE (RFC 5545) for the REQUEST .ics attached to invite emails (see
+    # _build_event_ics/_send_event_guest_email) - bumped each time a real revision goes out (a
+    # "RESEND INVITE"-style update), never for the very first send. Calendar apps use this to
+    # recognize a later email as an update to the SAME invite (same UID) rather than a duplicate.
+    ics_sequence: int = Field(default=0)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class EventGuest(SQLModel, table=True):
@@ -3141,6 +3150,40 @@ def send_event_reminder_email(event_id: int, kind: str):
         title = f"⏰ Tomorrow: {item.title}" if kind == "day_before" else f"🔔 Starting soon: {item.title}"
         send_email_alert(title, due_str, None, item.description or "", recipients=recipients)
 
+@app.get("/api/places/search")
+def places_search(request: Request, q: str = ""):
+    """Free, no-API-key location autocomplete for the Event "Where" field, used automatically
+    whenever GOOGLE_PLACES_ENABLED is False (no GOOGLE_MAPS_API_KEY configured - see
+    setupFreeLocationAutocomplete in the templates) - reported directly that the field should
+    predict addresses even without a Google Maps key. Proxies OpenStreetMap's free Nominatim
+    search (https://nominatim.org) rather than calling it directly from the browser, both to
+    attach the identifying User-Agent its usage policy requires
+    (https://operations.osmfoundation.org/policies/nominatim/) and to keep it behind a login check
+    like every other Event-creation surface, instead of leaving an open proxy anyone could hit."""
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return JSONResponse({"results": []}, status_code=401)
+
+    query = (q or "").strip()
+    if len(query) < 3:
+        return JSONResponse({"results": []})
+
+    results = []
+    try:
+        resp = httpx.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": query, "format": "jsonv2", "addressdetails": 0, "limit": 5},
+            headers={"User-Agent": "TaskMonster/1.0 (https://usetaskmonster.app)"},
+            timeout=4.0,
+        )
+        resp.raise_for_status()
+        results = [{"description": row["display_name"]} for row in resp.json()]
+    except Exception as e:
+        print(f"Places search error (non-fatal): {e}", flush=True)
+
+    return JSONResponse({"results": results})
+
 @app.get("/events/new", response_class=HTMLResponse)
 def new_event_form(request: Request):
     with Session(engine) as session:
@@ -3210,10 +3253,14 @@ def _schedule_event_reminders(event_id: int, base_due_date: datetime, remind_day
         'minutes_before'
     )
 
-def _send_event_guest_email(user: "User", new_event: "Event", title: str, base_due_date: datetime, description: Optional[str], guest_email: str, accept_token: str, is_update: bool = False, location: Optional[str] = None):
+def _send_event_guest_email(user: "User", new_event: "Event", title: str, base_due_date: datetime, description: Optional[str], guest_email: str, accept_token: str, is_update: bool = False, location: Optional[str] = None, guest_name: Optional[str] = None):
     """Shared HTML/subject for both a brand-new invite and a resend/update notification - the only
     difference is the framing ("invited you to" vs "updated:") since an update might just be a
-    changed time, not a whole new event."""
+    changed time, not a whole new event. Also attaches a real .ics invite (METHOD:REQUEST, this
+    guest as the ATTENDEE) - reported directly that the email itself needs an actual calendar
+    invite attached, not just a link out to the web page. SEQUENCE (event.ics_sequence) is bumped
+    by the caller before a genuine resend/update, never for the first send - see
+    _build_event_ics's own docstring for why that matters."""
     resend_key = os.getenv("RESEND_API_KEY")
     if not resend_key:
         return
@@ -3221,6 +3268,19 @@ def _send_event_guest_email(user: "User", new_event: "Event", title: str, base_d
     invite_url = f"https://usetaskmonster.app/events/{new_event.share_token}?g={accept_token}"
     verb = "updated" if is_update else "invited you to"
     subject = f"{new_event.emoji} Updated: {title}" if is_update else f"{new_event.emoji} You're invited: {title}"
+
+    ics_content = _build_event_ics(
+        new_event.id, new_event.emoji, title, base_due_date, description, location,
+        sequence=new_event.ics_sequence,
+        method="REQUEST",
+        organizer_email=user.email,
+        organizer_name=user.name,
+        attendee_email=guest_email,
+        attendee_name=guest_name,
+        rsvp=new_event.requires_rsvp,
+    )
+    ics_filename = re.sub(r'[^A-Za-z0-9 _-]', '', title).strip() or "event"
+
     try:
         resend.Emails.send({
             "from": "TaskMonster <notifications@usetaskmonster.app>",
@@ -3232,7 +3292,13 @@ def _send_event_guest_email(user: "User", new_event: "Event", title: str, base_d
             {f'<p><strong>Where:</strong> {location}</p>' if location else ''}
             {f'<p>{description}</p>' if description else ''}
             <p><a href="{invite_url}" style="background-color:#6366f1;color:#ffffff;padding:10px 20px;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;display:inline-block;">View invite{' &amp; RSVP' if new_event.requires_rsvp else ''}</a></p>
+            <p style="color:#94a3b8;font-size:12px;">📎 A calendar invite is attached - open it to add this straight to your calendar.</p>
             """,
+            "attachments": [{
+                "filename": f"{ics_filename}.ics",
+                "content": ics_content,
+                "content_type": f"text/calendar; charset=utf-8; method=REQUEST",
+            }],
         })
     except (ResendError, Exception) as e:
         print(f"Event invite email error (non-fatal): {e}", flush=True)
@@ -3304,7 +3370,7 @@ def _create_event_core(
         session.commit()
         session.refresh(guest)
         if not is_draft:
-            _send_event_guest_email(user, new_event, title, base_due_date, description, guest_email, guest.accept_token, location=new_event.location)
+            _send_event_guest_email(user, new_event, title, base_due_date, description, guest_email, guest.accept_token, location=new_event.location, guest_name=guest.name)
 
     # A draft schedules nothing until it's actually sent - reported directly: reminders firing
     # for an event nobody's been invited to yet would be nonsensical.
@@ -3326,7 +3392,7 @@ def _send_draft_event(session: Session, user: "User", event: "Event", item: "Ite
         session.commit()
 
     for guest in guests:
-        _send_event_guest_email(user, event, item.title, item.due_date, item.description, guest.email, guest.accept_token, location=event.location)
+        _send_event_guest_email(user, event, item.title, item.due_date, item.description, guest.email, guest.accept_token, location=event.location, guest_name=guest.name)
 
     _schedule_event_reminders(event.id, item.due_date, event.remind_day_before, event.reminder_minutes_before)
 
@@ -3656,9 +3722,15 @@ def api_update_event(request: Request, payload: dict = Body(...)):
             # the same guest email, re-sent with whatever the current details are.
             # "SAVE DATE SILENTLY" is notify=false - the update happens, nobody hears about it.
             if bool(payload.get("notify", True)):
+                # Bumped once per actual resend (not on the very first send - see
+                # _build_event_ics) so the attached .ics reads as a revision of the same invite
+                # (same UID) to calendar apps, not a duplicate.
+                event.ics_sequence += 1
+                session.add(event)
+                session.commit()
                 guests = session.exec(select(EventGuest).where(EventGuest.event_id == event.id)).all()
                 for guest in guests:
-                    _send_event_guest_email(user, event, item.title, item.due_date, item.description, guest.email, guest.accept_token, is_update=True, location=event.location)
+                    _send_event_guest_email(user, event, item.title, item.due_date, item.description, guest.email, guest.accept_token, is_update=True, location=event.location, guest_name=guest.name)
 
         # Captured into plain locals before the session closes below - matching api_create_event's
         # own pattern, since an attribute the session never got a chance to (re-)load before close
@@ -3741,6 +3813,60 @@ def _event_context(session: Session, share_token: str):
 # routes in registration order, and {share_token} greedily matches any string with no '/' in it,
 # dots included, so ".ics" would otherwise be swallowed into share_token itself (share_token ends
 # up literally "<token>.ics", matching no real Event) instead of ever reaching this route.
+def _build_event_ics(
+    event_id: int,
+    emoji: str,
+    title: str,
+    due_date: datetime,
+    description: Optional[str],
+    location: Optional[str],
+    sequence: int = 0,
+    method: str = "PUBLISH",
+    organizer_email: Optional[str] = None,
+    organizer_name: Optional[str] = None,
+    attendee_email: Optional[str] = None,
+    attendee_name: Optional[str] = None,
+    rsvp: bool = False,
+) -> str:
+    """Builds the raw .ics text for one Event - shared by the public .ics download link
+    (METHOD:PUBLISH, no ORGANIZER/ATTENDEE - a generic "add this to my calendar" file anyone with
+    the link can grab) and the invite email's own attached copy (METHOD:REQUEST with a real
+    ORGANIZER/ATTENDEE for that specific guest - see _send_event_guest_email), which is what makes
+    calendar apps treat it as an actual invite to respond to, not just an event to import.
+    UID is stable across every version of this Event (same event_id) so a later, higher-SEQUENCE
+    REQUEST reads as an update to the same invite rather than a duplicate."""
+    dtstart = due_date.strftime("%Y%m%dT%H%M%S")
+    dtend = (due_date + timedelta(hours=1)).strftime("%Y%m%dT%H%M%S")
+    dtstamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    description_line = (description or "").replace("\n", " ").replace(",", "\\,")
+    location_line = (location or "").replace("\n", " ").replace(",", "\\,")
+
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//TaskMonster//Event//EN",
+        f"METHOD:{method}",
+        "BEGIN:VEVENT",
+        f"UID:event-{event_id}@usetaskmonster.app",
+        f"DTSTAMP:{dtstamp}",
+        f"DTSTART:{dtstart}",
+        f"DTEND:{dtend}",
+        f"SEQUENCE:{sequence}",
+        "STATUS:CONFIRMED",
+        f"SUMMARY:{emoji} {title}",
+        f"DESCRIPTION:{description_line}",
+    ]
+    if location_line:
+        lines.append(f"LOCATION:{location_line}")
+    if organizer_email:
+        cn = f";CN={organizer_name}" if organizer_name else ""
+        lines.append(f"ORGANIZER{cn}:mailto:{organizer_email}")
+    if attendee_email:
+        cn = f";CN={attendee_name}" if attendee_name else ""
+        lines.append(f"ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP={'TRUE' if rsvp else 'FALSE'}{cn}:mailto:{attendee_email}")
+    lines += ["END:VEVENT", "END:VCALENDAR"]
+    return "\r\n".join(lines)
+
 @app.get("/events/{share_token}.ics")
 def event_ics(share_token: str):
     """A plain, dependency-free .ics file - works with Apple Calendar/Google Calendar/Outlook
@@ -3752,25 +3878,10 @@ def event_ics(share_token: str):
             return HTMLResponse("Not found", status_code=404)
         event, item, creator, guests = ctx
 
-        dtstart = item.due_date.strftime("%Y%m%dT%H%M%S")
-        dtend = (item.due_date + timedelta(hours=1)).strftime("%Y%m%dT%H%M%S")
-        description_line = (item.description or "").replace("\n", " ").replace(",", "\\,")
-        location_line = (event.location or "").replace("\n", " ").replace(",", "\\,")
-        ics_lines = [
-            "BEGIN:VCALENDAR",
-            "VERSION:2.0",
-            "PRODID:-//TaskMonster//Event//EN",
-            "BEGIN:VEVENT",
-            f"UID:event-{event.id}@usetaskmonster.app",
-            f"DTSTART:{dtstart}",
-            f"DTEND:{dtend}",
-            f"SUMMARY:{event.emoji} {item.title}",
-            f"DESCRIPTION:{description_line}",
-        ]
-        if location_line:
-            ics_lines.append(f"LOCATION:{location_line}")
-        ics_lines += ["END:VEVENT", "END:VCALENDAR"]
-        ics = "\r\n".join(ics_lines)
+        ics = _build_event_ics(
+            event.id, event.emoji, item.title, item.due_date, item.description, event.location,
+            sequence=event.ics_sequence,
+        )
         filename = re.sub(r'[^A-Za-z0-9 _-]', '', item.title).strip() or "event"
 
     return Response(content=ics, media_type="text/calendar", headers={

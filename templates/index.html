@@ -1029,9 +1029,14 @@
                                class="w-12 bg-slate-950/80 border border-slate-700 rounded-xl px-2 py-2.5 text-lg text-center focus:outline-none focus:border-indigo-500">
                     </div>
 
-                    <input type="text" name="location" id="event-quick-location-input" autocomplete="off"
-                           placeholder="{{ 'Where? Start typing an address or place…' if google_places_enabled else 'Where? (optional - address, place, or \"Zoom\")' }}"
-                           class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                    <div class="relative">
+                        <input type="text" name="location" id="event-quick-location-input" autocomplete="off"
+                               placeholder="Where? Start typing an address or place…"
+                               class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                        {% if not google_places_enabled %}
+                        <div id="event-quick-location-suggestions" class="hidden absolute z-20 left-0 right-0 mt-1 bg-slate-950 border border-slate-700 rounded-xl shadow-2xl overflow-hidden"></div>
+                        {% endif %}
+                    </div>
 
                     <input type="text" name="guest_emails" placeholder="Invite by email (optional, comma-separated)"
                            class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
@@ -1076,6 +1081,67 @@
             }
         </script>
         <script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=places&callback=initEventQuickLocationAutocomplete" async defer></script>
+        {% else %}
+        <script>
+            // No Google Maps key configured - free fallback via /api/places/search (OpenStreetMap
+            // Nominatim, proxied server-side - see that route's own docstring). Self-contained
+            // (its own escape helper, not this page's later-defined escapeHtml) since this script
+            // tag runs near the top of <body>, well before that one - a global defined later is
+            // fine to call from an event handler that only fires after the whole page has loaded,
+            // but not worth relying on when a two-line local copy removes the ordering risk
+            // entirely. Debounced so typing doesn't fire a request per keystroke.
+            (function setupEventQuickFreeLocationAutocomplete() {
+                const input = document.getElementById('event-quick-location-input');
+                const box = document.getElementById('event-quick-location-suggestions');
+                if (!input || !box) return;
+                let debounceTimer = null;
+                let activeController = null;
+
+                function hideSuggestions() {
+                    box.classList.add('hidden');
+                    box.innerHTML = '';
+                }
+                function escapeHtmlLocal(str) {
+                    const div = document.createElement('div');
+                    div.innerText = str == null ? '' : String(str);
+                    return div.innerHTML;
+                }
+
+                input.addEventListener('input', () => {
+                    clearTimeout(debounceTimer);
+                    const query = input.value.trim();
+                    if (query.length < 3) { hideSuggestions(); return; }
+                    debounceTimer = setTimeout(async () => {
+                        if (activeController) activeController.abort();
+                        activeController = new AbortController();
+                        try {
+                            const res = await fetch(`/api/places/search?q=${encodeURIComponent(query)}`, { signal: activeController.signal });
+                            const data = await res.json();
+                            const results = (data && data.results) || [];
+                            if (!results.length) { hideSuggestions(); return; }
+                            box.innerHTML = results.map(r =>
+                                `<button type="button" class="block w-full text-left px-3.5 py-2.5 text-sm text-slate-200 hover:bg-slate-800 transition-colors border-b border-slate-800 last:border-b-0">${escapeHtmlLocal(r.description)}</button>`
+                            ).join('');
+                            box.classList.remove('hidden');
+                            Array.from(box.children).forEach((btn, i) => {
+                                btn.addEventListener('click', () => {
+                                    input.value = results[i].description;
+                                    hideSuggestions();
+                                });
+                            });
+                        } catch (e) {
+                            // Aborted or network hiccup - leave whatever's on screen, not fatal.
+                        }
+                    }, 350);
+                });
+
+                input.addEventListener('blur', () => {
+                    // Slight delay so a click on a suggestion registers before the box
+                    // disappears - blur fires before click otherwise.
+                    setTimeout(hideSuggestions, 150);
+                });
+            })();
+        </script>
         {% endif %}
         {% endif %}
 

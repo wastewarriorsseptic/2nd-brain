@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ event.emoji }} {{ item.title }} - TaskMonster</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen p-4 md:p-10 font-sans flex items-center justify-center">
     <div class="max-w-lg w-full">
@@ -64,7 +65,7 @@
                     <div class="mb-4 py-2.5 px-4 rounded-xl text-sm font-bold {{ 'bg-emerald-950/60 border border-emerald-500/50 text-emerald-200' if viewer_guest.status == 'accepted' else 'bg-slate-900/60 border border-slate-700 text-slate-400' }}">
                         {{ "✅ You're in!" if viewer_guest.status == 'accepted' else "You declined this invite." }}
                     </div>
-                    <form action="/events/{{ event.share_token }}/respond" method="POST" class="flex gap-2 mb-4">
+                    <form action="/events/{{ event.share_token }}/respond" method="POST" class="flex gap-2 mb-4" onsubmit="return handleRsvpConfetti(event, this)">
                         <input type="hidden" name="accept_token" value="{{ viewer_guest.accept_token }}">
                         <button type="submit" name="action" value="accept"
                                 class="flex-1 py-2 rounded-xl text-sm font-bold transition-all {{ 'bg-emerald-600 text-white' if viewer_guest.status == 'accepted' else 'bg-slate-700 hover:bg-slate-600 text-slate-200' }}">
@@ -76,7 +77,7 @@
                         </button>
                     </form>
                 {% elif viewer_guest %}
-                    <form action="/events/{{ event.share_token }}/respond" method="POST" class="flex gap-2 mb-4">
+                    <form action="/events/{{ event.share_token }}/respond" method="POST" class="flex gap-2 mb-4" onsubmit="return handleRsvpConfetti(event, this)">
                         <input type="hidden" name="accept_token" value="{{ viewer_guest.accept_token }}">
                         <button type="submit" name="action" value="accept"
                                 class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm rounded-xl transition-all">
@@ -88,7 +89,7 @@
                         </button>
                     </form>
                 {% else %}
-                    <form action="/events/{{ event.share_token }}/respond" method="POST" class="space-y-2 mb-4 text-left">
+                    <form action="/events/{{ event.share_token }}/respond" method="POST" class="space-y-2 mb-4 text-left" onsubmit="return handleRsvpConfetti(event, this)">
                         <input type="text" name="name" placeholder="Your name"
                                class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
                         <input type="email" name="email" required placeholder="Your email"
@@ -127,6 +128,29 @@
     </div>
 
     <script>
+        // Same confetti burst as completing a task in the main app (canvas-confetti, loaded in
+        // <head>) - fired from wherever the "Going"/"I'm in!" button actually is on screen, then
+        // the real form submit follows a beat later so the burst is visible first. Only for the
+        // accept action - declining, or a plain re-render of an already-answered form, shouldn't
+        // celebrate. event.submitter identifies which button was actually clicked; the self-add
+        // form has no named action at all (submitting it IS accepting), so it always celebrates.
+        function handleRsvpConfetti(evt, formEl) {
+            const submitter = evt.submitter;
+            if (submitter && submitter.value === 'decline') return true;
+
+            evt.preventDefault();
+            const rect = (submitter || formEl).getBoundingClientRect();
+            confetti({
+                particleCount: 65,
+                spread: 80,
+                origin: { x: (rect.left + rect.width / 2) / window.innerWidth, y: (rect.top + rect.height / 2) / window.innerHeight },
+                colors: ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#3b82f6'],
+                disableForReducedMotion: true
+            });
+            setTimeout(() => formEl.submit(), 320);
+            return false;
+        }
+
         // Deliberately origin+pathname, NOT window.location.href - dropping any query string
         // strips the viewer's own personal ?g=<accept_token> (if they arrived via their invite
         // email) before it's shared onward. Forwarding that as-is would let anyone with the

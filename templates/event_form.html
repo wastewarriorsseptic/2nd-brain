@@ -52,11 +52,14 @@
                            class="w-16 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-lg text-center focus:outline-none focus:border-indigo-500">
                 </div>
 
-                <div>
+                <div class="relative">
                     <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Where (optional)</label>
                     <input type="text" name="location" id="event-location-input" autocomplete="off"
-                           placeholder="{{ 'Start typing an address or place…' if google_places_enabled else 'Address, place name, or "Zoom" / "TBD"' }}"
+                           placeholder="Start typing an address or place…"
                            class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                    {% if not google_places_enabled %}
+                    <div id="event-location-suggestions" class="hidden absolute z-20 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden"></div>
+                    {% endif %}
                 </div>
 
                 <!-- Collapsed by default - most events need no organizing decision at all, they
@@ -238,6 +241,67 @@
             if (!input || !window.google || !window.google.maps || !window.google.maps.places) return;
             new google.maps.places.Autocomplete(input, { fields: ['formatted_address', 'name'] });
         }
+        {% else %}
+        // No Google Maps key configured - free fallback via /api/places/search (OpenStreetMap
+        // Nominatim, proxied server-side - see that route's own docstring). Debounced so typing
+        // doesn't fire a request per keystroke; upgrades automatically to the Google widget above
+        // the moment a GOOGLE_MAPS_API_KEY is added, no template change needed either way.
+        function setupFreeLocationAutocomplete(inputId, suggestionsId) {
+            const input = document.getElementById(inputId);
+            const box = document.getElementById(suggestionsId);
+            if (!input || !box) return;
+            let debounceTimer = null;
+            let activeController = null;
+
+            function hideSuggestions() {
+                box.classList.add('hidden');
+                box.innerHTML = '';
+            }
+
+            input.addEventListener('input', () => {
+                clearTimeout(debounceTimer);
+                const query = input.value.trim();
+                if (query.length < 3) {
+                    hideSuggestions();
+                    return;
+                }
+                debounceTimer = setTimeout(async () => {
+                    if (activeController) activeController.abort();
+                    activeController = new AbortController();
+                    try {
+                        const res = await fetch(`/api/places/search?q=${encodeURIComponent(query)}`, { signal: activeController.signal });
+                        const data = await res.json();
+                        const results = (data && data.results) || [];
+                        if (!results.length) { hideSuggestions(); return; }
+                        box.innerHTML = results.map(r =>
+                            `<button type="button" class="block w-full text-left px-3.5 py-2.5 text-sm text-slate-200 hover:bg-slate-800 transition-colors border-b border-slate-800 last:border-b-0">${escapeHtmlLocal(r.description)}</button>`
+                        ).join('');
+                        box.classList.remove('hidden');
+                        Array.from(box.children).forEach((btn, i) => {
+                            btn.addEventListener('click', () => {
+                                input.value = results[i].description;
+                                hideSuggestions();
+                            });
+                        });
+                    } catch (e) {
+                        // Aborted or network hiccup - just leave whatever's on screen, not fatal.
+                    }
+                }, 350);
+            });
+
+            input.addEventListener('blur', () => {
+                // Slight delay so a click on a suggestion registers before the box disappears -
+                // blur fires before click otherwise.
+                setTimeout(hideSuggestions, 150);
+            });
+
+            function escapeHtmlLocal(str) {
+                const div = document.createElement('div');
+                div.innerText = str == null ? '' : String(str);
+                return div.innerHTML;
+            }
+        }
+        setupFreeLocationAutocomplete('event-location-input', 'event-location-suggestions');
         {% endif %}
     </script>
     {% if google_places_enabled %}
