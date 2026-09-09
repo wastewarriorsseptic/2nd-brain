@@ -1673,10 +1673,13 @@ def dashboard(
         # depend on. Already sorted soonest-first; only ever built for an Event-kind Universe.
         event_universe_cards = []
         if is_event_universe:
+            realm_by_id_for_events = {r.id: r for r in realms}
+            realm_by_bucket_id = {b.id: realm_by_id_for_events.get(b.realm_id) for b in buckets}
             for it in sorted((it for it in items if it.is_event), key=lambda it: it.due_date):
                 info = events_by_item_id.get(it.id)
                 if not info:
                     continue
+                realm = realm_by_bucket_id.get(it.bucket_id)
                 event_universe_cards.append({
                     "itemId": it.id,
                     "title": it.title,
@@ -1692,6 +1695,9 @@ def dashboard(
                     "isPrivate": info["is_private"],
                     "isDraft": info["is_draft"],
                     "isPast": it.due_date < datetime.utcnow(),
+                    "realmId": realm.id if realm else None,
+                    "realmName": realm.name if realm else None,
+                    "realmIcon": (realm.icon or "🔮") if realm else None,
                 })
 
         # Full tree of every Universe/Realm/Bucket the user OWNS (not shared-with-them realms -

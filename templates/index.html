@@ -1439,15 +1439,16 @@
                             </div>
                         </div>
                         <span class="text-xs font-bold text-white text-center truncate max-w-full">{{ u.name }}</span>
-                        {% if u.kind == 'contact' %}
-                        <!-- No badge at all for a plain task Universe (the overwhelming majority
-                             of them) - "Tasks" on every single tile was pure noise, reported
-                             directly. Contacts still gets one since it's a genuinely different kind
-                             of Universe (People, not date-bearing tasks) worth knowing at a glance. -->
-                        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                            👥 Contacts
+                        <!-- "Tasks" badge restored - reported directly - now that Event-kind
+                             Universes are hidden from this grid entirely (see above), Events isn't
+                             visually represented here as its own category anymore, so Tasks vs.
+                             Contacts is worth spelling out again for a quick glance, especially once
+                             individual Events start showing up mixed into a plain Tasks Universe's
+                             own Realms (via "Organize this" - they still count as that Universe's
+                             kind, "task", not "event"). -->
+                        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full {% if u.kind == 'contact' %}bg-emerald-500/15 text-emerald-300 border border-emerald-500/30{% else %}bg-indigo-500/15 text-indigo-300 border border-indigo-500/30{% endif %}">
+                            {% if u.kind == 'contact' %}👥 Contacts{% else %}😈 Tasks{% endif %}
                         </span>
-                        {% endif %}
                         {% if u.user_id != user.id %}
                         <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700" title="Shared with you by {{ u.user.name if u.user else 'another owner' }}">👥 Shared by {{ u.user.name if u.user else 'owner' }}</span>
                         {% endif %}
@@ -3699,7 +3700,12 @@
             if (completedBadge) completedBadge.innerText = completedCount;
 
             if (emptyState) {
-                if (visibleCount === 0) {
+                // Reported directly - a screenshot showing "Load More Tasks" sitting right on top of
+                // "No active tasks found". When nothing's visible ONLY because everything that matches
+                // is further out than the current horizon, "no active tasks" is actually wrong (there
+                // are some, just hidden) - show nothing here and let the Load More button (below) be
+                // the only affordance, instead of two conflicting messages stacked on each other.
+                if (visibleCount === 0 && hiddenFutureCount === 0) {
                     emptyState.classList.remove('hidden');
                     if (currentFilterMode === 'active') {
                         emptyText.innerText = "🎉 All caught up! No active tasks found.";
@@ -3716,6 +3722,8 @@
             }
 
             if (loadMoreBtnContainer) {
+                // Only ever shown when there's actually something further out to reveal - never
+                // shown at all once loading more wouldn't surface anything new.
                 if (hiddenFutureCount > 0) {
                     loadMoreBtnContainer.classList.remove('hidden');
                 } else {
