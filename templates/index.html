@@ -1282,6 +1282,19 @@
                 </div>
             </div>
 
+            <!-- Shown only while one Realm Timeline lane is zoomed-in-on (see
+                 focusRealmTimelineLane) - the deliberate escape hatch out of Space View's
+                 look-don't-touch snapshot into Card View's full task editing, for whichever Realm
+                 is currently focused. prepareRealmTimelineCardViewNav flips active_dashboard_view
+                 to 'timeline' before the plain navigation below actually fires, so the next page
+                 load lands on Card View instead of bouncing straight back into Space View. -->
+            <div id="realm-timeline-card-view-pill" class="hidden pointer-events-auto">
+                <a id="realm-timeline-card-view-link" href="#" onclick="prepareRealmTimelineCardViewNav()"
+                   class="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-2xl transition-all">
+                    🃏 Open in Card View →
+                </a>
+            </div>
+
             <!-- Bottom Touch & Zoom Controls HUD - desktop-only now that the Multiverse Timeline
                  button that used to live here (mobile's only reason to render this row at all, since
                  the zoom buttons themselves are desktop-only - no pinch-zoom there) moved to the
@@ -5300,6 +5313,13 @@
         // this (see recenterSpace).
         let isRealmTimelineView = false;
         let realmLanes = [];
+        // Which lane (if any) is currently zoomed-in-on within the Realm Timeline - see
+        // focusRealmTimelineLane/unfocusRealmTimelineLane. Tapping a lane's hub a second time, or
+        // tapping blank canvas space, zooms back out (see handleRealmTimelineClick) rather than
+        // navigating anywhere - Space View stays a snapshot; "Open in Card View" (the pill this
+        // also shows/hides) is the deliberate escape hatch for anyone who wants to actually act on
+        // a task.
+        let realmTimelineFocusedLaneId = null;
         let initialPinchDistance = null;
         let frameCount = 0;
         // Purely decorative starfield (see generateSpaceStars/drawSpaceStars) - screen-space, not
@@ -6813,25 +6833,15 @@
             if (!isContactUniverse && !isEventUniverse) {
                 isRealmTimelineView = true;
                 realmLanes = buildRealmLanes();
-
-                const isMobileRT = window.innerWidth < 768;
-                const laneCountRT = Math.max(realmLanes.length, 1);
-                const laneSpacingRT = isMobileRT ? 460 : 400;
-                const totalHeightRT = (laneCountRT - 1) * laneSpacingRT;
-                const zoomValRT = isMobileRT ? 0.22 : 0.32;
-                const topChromeRT = isMobileRT ? 0 : 60;
-
-                targetCameraZoom = zoomValRT;
-                targetCameraOffset = {
-                    x: window.innerWidth * 0.5,
-                    y: isMobileRT
-                        ? ((window.innerHeight / 2) - ((totalHeightRT / 2) * zoomValRT))
-                        : (topChromeRT + 40)
-                };
+                realmTimelineFocusedLaneId = null;
+                hideRealmTimelineOpenCardViewPill();
+                frameAllRealmLanes();
                 updateDailyDigestVisibility();
                 return;
             }
             isRealmTimelineView = false;
+            realmTimelineFocusedLaneId = null;
+            hideRealmTimelineOpenCardViewPill();
 
             if (spaceRealms.length === 0) {
                 targetCameraOffset = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
@@ -7299,6 +7309,13 @@
             activeSelectedRealm = null;
             activeSelectedBucket = null;
             multiverseActiveLaneId = null;
+            // Reachable from the launcher cluster's own 🌀 badge from anywhere, not just from
+            // inside an already-open Realm Timeline - if a lane there was zoomed-in-on (see
+            // focusRealmTimelineLane) when this fires, clean that state up too rather than leaving
+            // its "Open in Card View" pill stuck on screen.
+            isRealmTimelineView = false;
+            realmTimelineFocusedLaneId = null;
+            hideRealmTimelineOpenCardViewPill();
             hideHudCard();
             deselectBucketSwipeDock();
             // isMultiverseStackedView must already be true before this runs, so
@@ -7630,23 +7647,102 @@
             if (targetCard) targetCard.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'center' });
         }
 
+        // Cameras onto ALL Realm lanes at once - the Realm Timeline's own "recentered" state, used
+        // both when the view first opens (recenterSpace) and when zooming back out of a single
+        // focused lane (unfocusRealmTimelineLane). Kept as its own function purely so those two
+        // callers can't drift apart from each other.
+        function frameAllRealmLanes() {
+            const isMobileRT = window.innerWidth < 768;
+            const laneCountRT = Math.max(realmLanes.length, 1);
+            const laneSpacingRT = isMobileRT ? 460 : 400;
+            const totalHeightRT = (laneCountRT - 1) * laneSpacingRT;
+            const zoomValRT = isMobileRT ? 0.22 : 0.32;
+            const topChromeRT = isMobileRT ? 0 : 60;
+
+            targetCameraZoom = zoomValRT;
+            targetCameraOffset = {
+                x: window.innerWidth * 0.5,
+                y: isMobileRT
+                    ? ((window.innerHeight / 2) - ((totalHeightRT / 2) * zoomValRT))
+                    : (topChromeRT + 40)
+            };
+        }
+
+        function showRealmTimelineOpenCardViewPill(lane) {
+            const pill = document.getElementById('realm-timeline-card-view-pill');
+            const link = document.getElementById('realm-timeline-card-view-link');
+            if (!pill || !link) return;
+            link.href = '/?realm_id=' + lane.id;
+            pill.classList.remove('hidden');
+        }
+
+        function hideRealmTimelineOpenCardViewPill() {
+            const pill = document.getElementById('realm-timeline-card-view-pill');
+            if (pill) pill.classList.add('hidden');
+        }
+
+        // Space View stays look-don't-touch by design here - this is the one deliberate way out of
+        // it into Card View (the normal Timeline List), where full task editing already lives.
+        // active_dashboard_view is what every page load checks to decide which view to open in
+        // (see the DOMContentLoaded handler and the inline <head> script) - overriding it to
+        // 'timeline' here (even though Space View is still active right up until this navigation)
+        // is what makes the link actually land on Card View instead of bouncing straight back into
+        // Space View on the other end.
+        function prepareRealmTimelineCardViewNav() {
+            try { localStorage.setItem('active_dashboard_view', 'timeline'); } catch (e) {}
+        }
+
+        // Zooms the camera onto just this one lane's task extent - tapping its hub a second time,
+        // or blank canvas space, zooms back out (see handleRealmTimelineClick/
+        // unfocusRealmTimelineLane) rather than navigating anywhere; "Open in Card View" (shown
+        // alongside) is the deliberate escape hatch for anyone who wants to actually act on a task.
+        function focusRealmTimelineLane(lane) {
+            realmTimelineFocusedLaneId = lane.id;
+
+            const leftX = lane.leftmostTaskX !== null ? lane.leftmostTaskX : lane.x - lane.hubRadius;
+            const rightX = lane.rightmostTaskX !== null ? lane.rightmostTaskX : lane.x + lane.hubRadius;
+            const padding = 220;
+            const boundingWidth = (rightX - leftX) + (padding * 2);
+
+            // No height-fit needed (a single lane's own vertical footprint - hub + its name pill -
+            // is short and constant) - just capped so a lane with few/no tasks doesn't zoom in
+            // absurdly far, and a lane with a long chain doesn't zoom out past legibility.
+            const fitZoomX = window.innerWidth / boundingWidth;
+            const zoom = Math.min(Math.max(fitZoomX, 0.3), 0.9);
+
+            targetCameraZoom = zoom;
+            targetCameraOffset = {
+                x: (window.innerWidth / 2) - (lane.x * zoom),
+                y: (window.innerHeight / 2) - (lane.y * zoom)
+            };
+
+            showRealmTimelineOpenCardViewPill(lane);
+        }
+
+        function unfocusRealmTimelineLane() {
+            realmTimelineFocusedLaneId = null;
+            hideRealmTimelineOpenCardViewPill();
+            frameAllRealmLanes();
+        }
+
         // Click handling for the per-Universe Realm Timeline (isRealmTimelineView) - deliberately
         // its own function rather than folding into handleMultiverseStackedClick above, since a
-        // lane hub here does something different (jump into that one Realm's normal bucket-cluster
-        // view, not navigate to a different Universe) and there's no drag-to-reorder for Realm
-        // lanes to worry about. The task-hit-testing below mirrors handleMultiverseStackedClick's
-        // own exactly (same task/label rect shapes, same swipe-dock behavior) since realmLanes are
-        // built with that identical shape - see buildRealmLanes.
+        // lane hub here does something different (zoom in on just that lane in place - see
+        // focusRealmTimelineLane - not navigate to a different Universe) and there's no
+        // drag-to-reorder for Realm lanes to worry about. The task-hit-testing below mirrors
+        // handleMultiverseStackedClick's own exactly (same task/label rect shapes, same swipe-dock
+        // behavior) since realmLanes are built with that identical shape - see buildRealmLanes.
         function handleRealmTimelineClick(worldX, worldY) {
             for (const lane of realmLanes) {
                 const distToHub = Math.hypot(worldX - lane.x, worldY - lane.y);
                 const r = lane._namePillRect;
                 const hitPill = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
                 if (distToHub <= lane.hubRadius + 10 || hitPill) {
-                    // Same destination a click on this Realm's sidebar row already uses - lands back
-                    // here on load via restoreOrRecenterSpace -> focusAndRepelRealms, same as any
-                    // other "drill into a Realm" entry point.
-                    window.location.href = '/?realm_id=' + lane.id;
+                    if (realmTimelineFocusedLaneId === lane.id) {
+                        unfocusRealmTimelineLane();
+                    } else {
+                        focusRealmTimelineLane(lane);
+                    }
                     return;
                 }
             }
@@ -7668,7 +7764,12 @@
                 if (clickedTask) break;
             }
 
-            if (!clickedTask) return;
+            if (!clickedTask) {
+                // Tapping blank canvas space while a lane is zoomed-in-on zooms back out - same
+                // "tap outside to dismiss" convention the rest of Space View already uses.
+                if (realmTimelineFocusedLaneId !== null) unfocusRealmTimelineLane();
+                return;
+            }
 
             if (String(activeSwipeTaskId) === String(clickedTask.id)) {
                 deselectBucketSwipeDock();
@@ -9899,6 +10000,8 @@
             // its lanes and this focused bucket-cluster view use completely different world
             // coordinates.
             isRealmTimelineView = false;
+            realmTimelineFocusedLaneId = null;
+            hideRealmTimelineOpenCardViewPill();
 
             const isMobile = window.innerWidth < 768;
 
