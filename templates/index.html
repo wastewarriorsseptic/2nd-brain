@@ -7367,7 +7367,14 @@
         // isMultiverseStackedView or isRealmTimelineView is true, in place of (not in addition to)
         // the normal realm/bucket render pipeline.
         function renderMultiverseStackedLanes() {
-            const lanes = isRealmTimelineView ? realmLanes : multiverseLanes;
+            let lanes = isRealmTimelineView ? realmLanes : multiverseLanes;
+            // Zoomed in on one Realm's lane (see focusRealmTimelineLane) - the other lanes are
+            // dropped from this frame entirely rather than just left to fall outside the zoomed
+            // camera's own edges, which (with enough of them, or a wide screen) could still leave
+            // several visible at once. Reported directly.
+            if (isRealmTimelineView && realmTimelineFocusedLaneId !== null) {
+                lanes = lanes.filter(l => l.id === realmTimelineFocusedLaneId);
+            }
             lanes.forEach(lane => {
                 if (lane.tasks.length === 0) return;
 
@@ -7705,10 +7712,14 @@
             const boundingWidth = (rightX - leftX) + (padding * 2);
 
             // No height-fit needed (a single lane's own vertical footprint - hub + its name pill -
-            // is short and constant) - just capped so a lane with few/no tasks doesn't zoom in
-            // absurdly far, and a lane with a long chain doesn't zoom out past legibility.
+            // is short and constant), and no other lane is drawn to compete for room while this one
+            // is focused (see renderMultiverseStackedLanes) - free to zoom in noticeably further
+            // than the old cap allowed, reported directly as wanting the focused lane genuinely
+            // bigger and easier to read, not just decluttered. Still capped so a lane with few/no
+            // tasks doesn't zoom in absurdly far, and a lane with a long chain doesn't zoom out past
+            // legibility (a long chain can still be panned horizontally to see the rest).
             const fitZoomX = window.innerWidth / boundingWidth;
-            const zoom = Math.min(Math.max(fitZoomX, 0.3), 0.9);
+            const zoom = Math.min(Math.max(fitZoomX, 0.5), 1.5);
 
             targetCameraZoom = zoom;
             targetCameraOffset = {
@@ -7733,7 +7744,14 @@
         // handleMultiverseStackedClick's own exactly (same task/label rect shapes, same swipe-dock
         // behavior) since realmLanes are built with that identical shape - see buildRealmLanes.
         function handleRealmTimelineClick(worldX, worldY) {
-            for (const lane of realmLanes) {
+            // Other lanes aren't drawn at all while one is focused (see renderMultiverseStackedLanes)
+            // - restricting hit-testing to match means an invisible lane's hub/tasks (still sitting
+            // at their normal world coordinates) can never be tapped by accident underneath it.
+            const hitTestLanes = realmTimelineFocusedLaneId !== null
+                ? realmLanes.filter(l => l.id === realmTimelineFocusedLaneId)
+                : realmLanes;
+
+            for (const lane of hitTestLanes) {
                 const distToHub = Math.hypot(worldX - lane.x, worldY - lane.y);
                 const r = lane._namePillRect;
                 const hitPill = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
@@ -7749,7 +7767,7 @@
 
             let clickedTask = null;
             let clickedLane = null;
-            for (const lane of realmLanes) {
+            for (const lane of hitTestLanes) {
                 for (const task of lane.tasks) {
                     const dist = Math.hypot(worldX - task.x, worldY - task.y);
                     const hitNode = dist <= task.radius + 18;
