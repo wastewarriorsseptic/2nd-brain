@@ -5928,14 +5928,15 @@
         // Deep-link into the Multiverse picker overlay from a plain page elsewhere (e.g. the
         // standalone Notes page's own static "🏡 Universes Home" link, which has no access to this
         // page's JS to call openMultiverseView() directly) - same query-param-flag pattern
-        // open_multiverse_timeline above already established for the Multiverse Timeline.
+        // open_multiverse_timeline above already established for the Multiverse Timeline. Unlike
+        // that one, this flag is deliberately left in the URL (openMultiverseView() itself now sets
+        // it too - see there) rather than stripped after use, so refreshing the page while the
+        // picker is open reopens it instead of silently dropping back to whatever Universe was
+        // underneath - reported directly.
         document.addEventListener('DOMContentLoaded', () => {
             const params = new URLSearchParams(window.location.search);
             if (params.get('open_multiverse') !== '1') return;
             openMultiverseView();
-            const cleanUrl = new URL(window.location.href);
-            cleanUrl.searchParams.delete('open_multiverse');
-            history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
         });
 
 
@@ -6095,6 +6096,14 @@
             document.getElementById('multiverse-view-overlay').classList.remove('hidden');
             generateMultiversePickerStars();
             renderMultiversePickerDigest();
+
+            // Stamp this into the URL (reusing the same open_multiverse=1 flag the standalone Notes
+            // page's deep link already sets) so a manual refresh reopens the picker instead of
+            // silently dropping back to whatever Universe happened to be underneath - reported
+            // directly ("ill tap into home and hit refresh and it takes me back to the url slug").
+            const url = new URL(window.location.href);
+            url.searchParams.set('open_multiverse', '1');
+            history.replaceState({}, '', url.pathname + url.search);
         }
 
         function closeMultiverseView() {
@@ -6103,6 +6112,10 @@
             if (isSpaceViewActive) {
                 document.getElementById('space-view-overlay').classList.remove('hidden');
             }
+
+            const url = new URL(window.location.href);
+            url.searchParams.delete('open_multiverse');
+            history.replaceState({}, '', url.pathname + url.search);
         }
 
         // Starts collapsed, deliberately NOT persisted across reloads - same reasoning as
