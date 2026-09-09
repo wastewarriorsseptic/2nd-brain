@@ -10,12 +10,52 @@
            "the note just grows" feel rather than a fixed scrollable box. */
         #note-content-input { resize: none; overflow: hidden; }
         #note-title-input::placeholder, #note-content-input::placeholder { color: #475569; }
+
+        /* Same floating launcher cluster as the main app (index.html) - reported directly as
+           wanting it back on this standalone page too. This is a static replica: no AI chat panel
+           to toggle here, so the devil/+/🏡/⏳ buttons are plain links back into the main app
+           instead of the JS handlers their index.html counterparts use - 🏡/⏳ reuse the
+           open_multiverse / open_multiverse_timeline query-param flags index.html's own
+           DOMContentLoaded handlers already watch for, so they land exactly where their index.html
+           twins would. Same keyframes/timing/positioning as the original, copied verbatim so the
+           cluster reads as identical rather than a rough approximation. */
+        @keyframes ai-chat-launcher-float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-6px); }
+        }
+        @keyframes ai-chat-quick-task-float-breathe {
+            0%, 100% { transform: translateY(0) scale(1); }
+            50% { transform: translateY(-3px) scale(1.06); }
+        }
+        @keyframes ai-chat-plus-repel-breathe {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(7px, -3px) scale(1.06); }
+        }
+        @keyframes ai-chat-multiverse-repel-breathe {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(-7px, -3px) scale(1.06); }
+        }
+        @keyframes ai-chat-timeline-repel-breathe {
+            0%, 100% { transform: translateX(-50%) translateY(0) scale(1); }
+            50% { transform: translateX(-50%) translateY(4px) scale(1.06); }
+        }
+        #ai-chat-launcher { animation: ai-chat-quick-task-float-breathe 3.2s ease-in-out infinite; }
+        #ai-chat-quick-task-btn { animation: ai-chat-plus-repel-breathe 3.2s ease-in-out infinite; }
+        #multiverse-quick-btn { animation: ai-chat-multiverse-repel-breathe 3.2s ease-in-out infinite; }
+        #multiverse-timeline-quick-btn { animation: ai-chat-timeline-repel-breathe 3.2s ease-in-out infinite; }
+        #notes-quick-btn { animation: ai-chat-launcher-float 3.2s ease-in-out infinite; }
+        #ai-chat-launcher:hover,
+        #ai-chat-quick-task-btn:hover,
+        #multiverse-quick-btn:hover,
+        #multiverse-timeline-quick-btn:hover,
+        #notes-quick-btn:hover {
+            animation-play-state: paused;
+        }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
     <div class="max-w-5xl mx-auto p-4 md:p-6">
-        <div class="flex items-center justify-between mb-4">
-            <a href="/" class="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors">← Back to TaskMonster</a>
+        <div class="flex items-center justify-end mb-4">
             <h1 class="text-sm font-extrabold text-white tracking-tight flex items-center gap-1.5">📝 Notes</h1>
         </div>
 
@@ -168,5 +208,34 @@
         });
     </script>
     {% endif %}
+
+    <!-- Same floating launcher cluster as the main app - see the <style> block above for why
+         these are plain links instead of the JS-driven buttons index.html itself uses. -->
+    <div id="ai-chat-launcher-wrapper" class="fixed bottom-[71px] right-[50px] z-[70] flex items-center gap-2">
+        <div class="relative">
+            <a href="/" id="ai-chat-launcher" title="Back to TaskMonster"
+               class="relative -top-1 w-14 h-14 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border border-indigo-400/30 shadow-2xl flex items-center justify-center text-2xl transition">
+                😈
+            </a>
+            <a href="/" id="ai-chat-quick-task-btn" title="Add a new task"
+               class="absolute -bottom-6 -right-9 w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 border-2 border-slate-950 text-white text-2xl font-extrabold flex items-center justify-center shadow-lg transition">
+                +
+            </a>
+            <a href="/?open_multiverse=1" id="multiverse-quick-btn" title="Universes Home"
+               class="absolute -bottom-6 -left-9 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 border-2 border-slate-950 text-white text-xl flex items-center justify-center shadow-lg transition">
+                🏡
+            </a>
+            <a href="/?open_multiverse_timeline=1" id="multiverse-timeline-quick-btn" title="Multiverse Timeline"
+               class="absolute -bottom-11 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full bg-amber-500 hover:bg-amber-400 border-2 border-slate-950 text-white text-xl flex items-center justify-center shadow-lg transition">
+                ⏳
+            </a>
+        </div>
+    </div>
+
+    <!-- Already on the Notes page - just a quiet "you are here" marker, not a link to itself. -->
+    <div id="notes-quick-btn" title="Notes"
+         class="fixed bottom-[71px] left-[50px] z-[70] w-14 h-14 rounded-full bg-yellow-500 border border-yellow-300/40 shadow-2xl flex items-center justify-center text-2xl">
+        📝
+    </div>
 </body>
 </html>

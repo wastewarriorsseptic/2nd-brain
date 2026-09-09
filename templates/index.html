@@ -5890,6 +5890,19 @@
             history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
         });
 
+        // Deep-link into the Multiverse picker overlay from a plain page elsewhere (e.g. the
+        // standalone Notes page's own static "🏡 Universes Home" link, which has no access to this
+        // page's JS to call openMultiverseView() directly) - same query-param-flag pattern
+        // open_multiverse_timeline above already established for the Multiverse Timeline.
+        document.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('open_multiverse') !== '1') return;
+            openMultiverseView();
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete('open_multiverse');
+            history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
+        });
+
 
         // The Space View top-left pill shows "TaskMonster / {active Universe name}" (its
         // server-rendered default, stashed in data-default-label so JS can restore it exactly)
