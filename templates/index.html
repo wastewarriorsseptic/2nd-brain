@@ -3214,6 +3214,21 @@
         // just the container) - lets a caller offer Undo by simply pushing the exact same object
         // straight back in, instead of having to refetch or reconstruct it from scratch.
         function removeTaskFromSpaceData(itemId) {
+            // multiverseLanes/realmLanes below are DERIVED - openMultiverseTimeline and
+            // recenterSpace's Realm Timeline branch both rebuild them fresh from multiverseTasksData
+            // every time that view is (re)opened. Patching only the already-built lanes (as this
+            // function used to) left multiverseTasksData itself stale, so a task completed from a
+            // deeper single-bucket view (spaceRealms) came back to life the next time the Multiverse
+            // or Realm Timeline was opened and rebuilt from it - reported directly. Marking it
+            // completed here too, the same way handleMultiverseDigestCompleteToggle already does,
+            // means every future rebuild (and any other view still reading multiverseTasksData
+            // directly) sees the same up-to-date state without a full page reload.
+            const sourceTask = multiverseTasksData.find(t => String(t.id) === String(itemId));
+            if (sourceTask) {
+                sourceTask.isCompleted = true;
+                sourceTask.completedAt = new Date().toISOString();
+            }
+
             let bucketMatch = null;
             let laneMatch = null;
             let removedFromBucket = null;
@@ -3352,6 +3367,11 @@
             if (removed && removed.task) {
                 showUndoCompleteToast(itemId, removed.task.title, () => {
                     if (wrapper) wrapper.setAttribute('data-completed', 'false');
+                    const sourceTask = multiverseTasksData.find(t => String(t.id) === String(itemId));
+                    if (sourceTask) {
+                        sourceTask.isCompleted = false;
+                        sourceTask.completedAt = null;
+                    }
                     if (removed.bucket) {
                         removed.bucket.tasks.push(removed.task);
                         renderBucketTaskSwipeDock(removed.bucket, { focusFirst: false });
@@ -3389,6 +3409,11 @@
             if (removed && removed.task) {
                 showUndoCompleteToast(itemId, removed.task.title, () => {
                     if (wrapper) wrapper.setAttribute('data-completed', 'false');
+                    const sourceTask = multiverseTasksData.find(t => String(t.id) === String(itemId));
+                    if (sourceTask) {
+                        sourceTask.isCompleted = false;
+                        sourceTask.completedAt = null;
+                    }
                     if (removed.bucket) removed.bucket.tasks.push(removed.task);
                     else if (removed.lane) removed.lane.tasks.push(removed.task);
                 });
@@ -5715,6 +5740,11 @@
             if (removed && removed.task) {
                 showUndoCompleteToast(itemId, removed.task.title, () => {
                     if (wrapper) wrapper.setAttribute('data-completed', 'false');
+                    const sourceTask = multiverseTasksData.find(t => String(t.id) === String(itemId));
+                    if (sourceTask) {
+                        sourceTask.isCompleted = false;
+                        sourceTask.completedAt = null;
+                    }
                     if (removed.bucket) removed.bucket.tasks.push(removed.task);
                     else if (removed.lane) removed.lane.tasks.push(removed.task);
                     renderDailyDigest();
