@@ -1053,7 +1053,7 @@ def get_or_create_important_dates_universe(session: Session, user_id: int) -> "U
 
     return universe
 
-def get_or_create_default_event_bucket(session: Session, user_id: int, target_universe: Optional["Universe"] = None) -> "Bucket":
+def get_or_create_default_event_bucket(session: Session, user_id: int, target_universe: Optional["Universe"] = None, target_realm: Optional["Realm"] = None) -> "Bucket":
     """Reported directly: picking a Universe/Realm/Bucket up front made creating a quick event
     feel like more organizational overhead than it should - most events don't need a decision
     about where they live at all. Every account gets one default Events Universe -> General Realm
@@ -1066,27 +1066,35 @@ def get_or_create_default_event_bucket(session: Session, user_id: int, target_un
     Pass target_universe to provision this same General Realm -> Events Bucket pair inside an
     ALREADY-CHOSEN Universe instead - used by Space View's inline quick-create card (reported
     directly: an event created while looking at e.g. "Life Events" should land right there, not
-    always get shunted off to the separate auto-provisioned Events Universe)."""
-    universe = target_universe
-    if universe is None:
-        universe = session.exec(
-            select(Universe).where(Universe.user_id == user_id, Universe.name == "Events", Universe.kind == "event")
-        ).first()
-        if not universe:
-            max_order = len(session.exec(select(Universe).where(Universe.user_id == user_id)).all())
-            universe = Universe(name="Events", icon="🎉", kind="event", sort_order=max_order, user_id=user_id)
-            session.add(universe)
-            session.commit()
-            session.refresh(universe)
+    always get shunted off to the separate auto-provisioned Events Universe).
 
-    realm = session.exec(
-        select(Realm).where(Realm.universe_id == universe.id, Realm.name == "General")
-    ).first()
-    if not realm:
-        realm = Realm(name="General", icon="🎉", sort_order=0, user_id=user_id, universe_id=universe.id)
-        session.add(realm)
-        session.commit()
-        session.refresh(realm)
+    Pass target_realm to skip General entirely and land inside a Realm the user picked explicitly
+    - the same quick-create form now offers an optional Realm dropdown so a one-off event can still
+    be organized the same way Notes and Tasks are, reported directly. target_realm wins over
+    target_universe when both are given (a chosen Realm already implies its own Universe)."""
+    if target_realm is not None:
+        realm = target_realm
+    else:
+        universe = target_universe
+        if universe is None:
+            universe = session.exec(
+                select(Universe).where(Universe.user_id == user_id, Universe.name == "Events", Universe.kind == "event")
+            ).first()
+            if not universe:
+                max_order = len(session.exec(select(Universe).where(Universe.user_id == user_id)).all())
+                universe = Universe(name="Events", icon="🎉", kind="event", sort_order=max_order, user_id=user_id)
+                session.add(universe)
+                session.commit()
+                session.refresh(universe)
+
+        realm = session.exec(
+            select(Realm).where(Realm.universe_id == universe.id, Realm.name == "General")
+        ).first()
+        if not realm:
+            realm = Realm(name="General", icon="🎉", sort_order=0, user_id=user_id, universe_id=universe.id)
+            session.add(realm)
+            session.commit()
+            session.refresh(realm)
 
     bucket = session.exec(
         select(Bucket).where(Bucket.realm_id == realm.id, Bucket.name == "Events")
@@ -2756,6 +2764,19 @@ def create_item(
         )
     return RedirectResponse(url=redirect_url, status_code=303)
 
+def _delete_event_for_item(session: Session, item_id: int) -> None:
+    """An event-kind Item has an Event row pointing back at it (Event.item_id, NOT NULL FK) - the
+    plain delete_item route below never knew about that until now, so deleting any event through
+    the ordinary Timeline trash icon 500'd on a foreign key violation every time. Same
+    guest-rows-then-event-row order _delete_user_account already uses elsewhere; a no-op for a
+    plain task Item (no matching Event)."""
+    event = session.exec(select(Event).where(Event.item_id == item_id)).first()
+    if not event:
+        return
+    for guest in session.exec(select(EventGuest).where(EventGuest.event_id == event.id)).all():
+        session.delete(guest)
+    session.delete(event)
+
 @app.post("/items/delete/")
 def delete_item(request: Request, item_id: int = Form(...), delete_series: bool = Form(False)):
     with Session(engine) as session:
@@ -2768,10 +2789,12 @@ def delete_item(request: Request, item_id: int = Form(...), delete_series: bool 
             if delete_series and item.recurring_group_id:
                 series_items = session.exec(select(Item).where(Item.recurring_group_id == item.recurring_group_id)).all()
                 for series_item in series_items:
+                    _delete_event_for_item(session, series_item.id)
                     for reminder in series_item.reminders:
                         session.delete(reminder)
                     session.delete(series_item)
             else:
+                _delete_event_for_item(session, item.id)
                 for reminder in item.reminders:
                     session.delete(reminder)
                 session.delete(item)
@@ -3706,12 +3729,16 @@ def create_event_quick(
     guest_emails: Optional[str] = Form(""),
     is_private: Optional[str] = Form(None),
     is_draft: Optional[str] = Form(None),
+    realm_id: Optional[int] = Form(None),
 ):
     """Space View's always-available fun quick-create form (opened from the "+ New Event" tile in
     the floating card deck - see renderEventUniverseCards in index.html) posts here instead of the
     full /events/ form: no bucket picker, no description, default reminders. The bucket is
     resolved from whichever Universe was on screen when the form was submitted (see
-    get_or_create_default_event_bucket's target_universe param) so the event lands right there."""
+    get_or_create_default_event_bucket's target_universe param) so the event lands right there.
+    realm_id is the form's optional Realm dropdown (blank = the auto-provisioned General Realm,
+    same as before) - lets a one-off event still get filed under real structure without leaving
+    Space View, reported directly."""
     requires_rsvp_flag = requires_rsvp is not None and requires_rsvp.strip().lower() in ("true", "on", "1", "yes")
     is_private_flag = is_private is not None and is_private.strip().lower() in ("true", "on", "1", "yes")
     is_draft_flag = is_draft is not None and is_draft.strip().lower() in ("true", "on", "1", "yes")
@@ -3734,7 +3761,13 @@ def create_event_quick(
         if not universe or universe.user_id != user.id:
             return RedirectResponse(url="/", status_code=303)
 
-        bucket = get_or_create_default_event_bucket(session, user.id, target_universe=universe)
+        target_realm = None
+        if realm_id:
+            candidate_realm = session.get(Realm, realm_id)
+            if candidate_realm and candidate_realm.universe_id == universe.id and candidate_realm.user_id == user.id:
+                target_realm = candidate_realm
+
+        bucket = get_or_create_default_event_bucket(session, user.id, target_universe=universe, target_realm=target_realm)
 
         emails = [e.strip().lower() for e in re.split(r"[,\n]+", guest_emails or "") if e.strip()]
         new_event = _create_event_core(

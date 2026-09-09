@@ -1056,6 +1056,19 @@
                     <input type="text" name="title" id="event-quick-title-input" required placeholder="e.g. Sarah's Birthday Dinner"
                            class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
 
+                    <!-- Optional Realm pin - blank still lands in the auto-provisioned General
+                         Realm exactly as before (a true one-off event needs zero decisions here),
+                         but picking one groups this event the same way Space View now organizes
+                         the whole floating deck by Realm (see renderEventUniverseCards) - reported
+                         directly that Events should "follow the same rules like notes and tasks". -->
+                    <select name="realm_id" id="event-quick-realm-select"
+                            class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                        <option value="">🔮 General (no Realm)</option>
+                        {% for r in realms %}
+                        <option value="{{ r.id }}">{{ r.icon or '🔮' }} {{ r.name }}</option>
+                        {% endfor %}
+                    </select>
+
                     <div class="grid grid-cols-[1fr_1fr_auto] gap-2">
                         <input type="date" name="due_date" required
                                class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-2.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
@@ -6696,6 +6709,14 @@
             const modal = document.getElementById('event-quick-create-modal');
             if (!modal) return;
             modal.classList.remove('hidden');
+            // Pre-pin to whichever Realm filter chip is currently active (see
+            // renderEventUniverseCards/eventCardsRealmFilter) - tapping "+ New Event" while looking
+            // at one Realm's section should default there instead of always falling back to
+            // General, same as creating a Task from inside an already-selected Realm does.
+            const realmSelect = document.getElementById('event-quick-realm-select');
+            if (realmSelect) {
+                realmSelect.value = (eventCardsRealmFilter && eventCardsRealmFilter !== 'uncategorized') ? eventCardsRealmFilter : '';
+            }
             const titleInput = document.getElementById('event-quick-title-input');
             if (titleInput) setTimeout(() => titleInput.focus(), 50);
         }
@@ -6743,89 +6764,192 @@
         // introducing a separate scheme just for these cards.
         const EVENT_CARD_GLOWS = ['#6366f1', '#8b5cf6', '#0ea5e9', '#f43f5e', '#f59e0b'];
 
+        // Which Realm section is isolated right now (null = show every Realm's section) - set by
+        // the filter chip row built in renderEventUniverseCards, same "All" + per-Realm-icon-chip
+        // pattern the standalone Notes page already uses for its own Realm filter. Deliberately a
+        // plain JS variable, not the URL/localStorage - this is a transient view of an in-memory
+        // canvas overlay, not a distinct page state worth remembering across visits.
+        let eventCardsRealmFilter = null;
+
+        function setEventCardsRealmFilter(realmKey) {
+            eventCardsRealmFilter = realmKey;
+            renderEventUniverseCards();
+        }
+
+        // Builds one floating card for a single event - pulled out of renderEventUniverseCards so
+        // it can be called once per Realm group instead of once for a single flat deck.
+        function buildEventUniverseCard(ev, glowIdx) {
+            const glow = EVENT_CARD_GLOWS[glowIdx % EVENT_CARD_GLOWS.length];
+            const shareToken = encodeURIComponent(ev.shareToken);
+            // Always a <div> wrapper now, never a top-level <a> - reported directly there was
+            // no way to edit an event (draft or already-sent) from Space View at all, so
+            // every card needs its own actions row below the content, and a <button>/<form>
+            // nested inside an <a> is invalid HTML/unreliable to click.
+            const card = document.createElement('div');
+            card.className = 'universe-card-float pointer-events-auto w-32 md:w-40 rounded-2xl border bg-slate-900/90 backdrop-blur-md flex flex-col items-center text-center gap-1 py-4 px-2.5 shadow-xl' + (ev.isPast ? ' opacity-50 grayscale' : '');
+            card.style.borderColor = ev.isDraft ? 'rgba(148, 163, 184, 0.4)' : (glow + '66');
+            card.style.boxShadow = ev.isDraft ? 'none' : `0 0 18px ${glow}22`;
+            card.style.setProperty('--float-delay', `${(glowIdx % 6) * 0.5}s`);
+            card.style.borderStyle = ev.isDraft ? 'dashed' : 'solid';
+
+            const rsvpBadge = ev.isDraft
+                ? '<span class="text-[10px] font-bold text-amber-300">📝 Draft</span>'
+                : (ev.requiresRsvp
+                    ? `<span class="text-[10px] font-bold text-emerald-300">${ev.acceptedCount}/${ev.invitedCount || ev.acceptedCount} going</span>`
+                    : (ev.invitedCount ? '<span class="text-[10px] font-bold text-slate-400">Sent</span>' : ''));
+
+            // A draft's own content block goes straight to Edit (the primary thing to do with
+            // an unsent draft); a live event's goes to the public invite page, same as before.
+            const content = document.createElement('a');
+            content.href = ev.isDraft ? `/events/${shareToken}/edit` : `/events/${shareToken}`;
+            content.className = 'flex flex-col items-center gap-1 w-full' + (ev.isDraft ? '' : ' transition-transform hover:scale-105');
+            content.innerHTML = `
+                <span class="text-3xl">${escapeHtml(ev.emoji)}</span>
+                ${ev.isPrivate ? '<span class="text-[9px] font-bold text-slate-500">🔒 Private</span>' : ''}
+                <span class="text-xs font-bold text-white leading-snug line-clamp-2">${escapeHtml(ev.title)}</span>
+                <span class="text-[10px] font-semibold" style="color: ${ev.isDraft ? '#94a3b8' : glow}">${escapeHtml(ev.dueDateFormatted)}${ev.dueTimeFormatted ? ' · ' + escapeHtml(ev.dueTimeFormatted) : ''}</span>
+                ${ev.location ? `<span class="text-[9px] text-slate-500 truncate max-w-full">📍 ${escapeHtml(ev.location)}</span>` : ''}
+                ${rsvpBadge}
+            `;
+            card.appendChild(content);
+
+            const actions = document.createElement('div');
+            actions.className = 'flex items-center gap-1.5 mt-1.5 w-full';
+            const editLink = document.createElement('a');
+            editLink.href = `/events/${shareToken}/edit`;
+            editLink.className = 'flex-1 text-center text-[10px] font-bold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg py-1.5 transition-colors';
+            editLink.textContent = '✏️ Edit';
+            actions.appendChild(editLink);
+
+            if (ev.isDraft) {
+                const sendForm = document.createElement('form');
+                sendForm.method = 'POST';
+                sendForm.action = `/events/${shareToken}/send`;
+                sendForm.className = 'flex-1';
+                sendForm.onsubmit = () => confirm(`Send this invite to everyone on the guest list now? This can't be undone.`);
+                const sendBtn = document.createElement('button');
+                sendBtn.type = 'submit';
+                sendBtn.className = 'w-full text-[10px] font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg py-1.5 transition-colors';
+                sendBtn.textContent = '📤 Send';
+                sendForm.appendChild(sendBtn);
+                actions.appendChild(sendForm);
+            }
+            card.appendChild(actions);
+
+            return card;
+        }
+
         // Space View's own layout for an Event Universe: no realm/bucket/task orbit ring at all
-        // (see the isEventUniverse branch in initSpaceCanvas) - instead, one floating card per
-        // event (soonest first, per eventUniverseCards - see dashboard()) plus a permanent
-        // "+ New Event" tile, all gently bobbing via the same .universe-card-float the Multiverse
-        // picker's own Universe cards use. Tapping an event card jumps straight to its shareable
-        // invite page - full editing still happens through the normal Timeline (Card View), this
-        // is meant to be the fun, visual, browsing/sharing surface, not a second editor.
+        // (see the isEventUniverse branch in initSpaceCanvas) - instead, events are grouped into
+        // one section per Realm (same organizing structure Notes and Tasks already use - reported
+        // directly this deck was "too simple" as one flat unsorted pile), each section a row of
+        // floating cards sorted soonest-first, plus a permanent "+ New Event" tile so the fun
+        // creator stays reachable at all times. A Realm filter chip row (only shown once there's
+        // more than one Realm to choose between) mirrors the exact "All" + per-Realm-icon-chip
+        // pattern the standalone Notes page already uses. Tapping an event card jumps straight to
+        // its shareable invite page - full editing still happens through the normal Timeline (Card
+        // View), this is meant to be the fun, visual, browsing/sharing surface, not a second editor.
         function renderEventUniverseCards() {
             const wrap = document.getElementById('event-universe-cards-wrap');
             if (!wrap) return;
             wrap.innerHTML = '';
 
             const inner = document.createElement('div');
-            inner.className = 'flex flex-wrap items-start justify-center gap-4 md:gap-5 max-w-4xl mx-auto py-2 pointer-events-none';
+            inner.className = 'max-w-4xl mx-auto py-2';
 
+            const addTileRow = document.createElement('div');
+            addTileRow.className = 'flex justify-center pointer-events-none mb-4';
             const addTile = document.createElement('button');
             addTile.type = 'button';
             addTile.onclick = openEventQuickCreateModal;
             addTile.style.setProperty('--float-delay', '0s');
             addTile.className = 'universe-card-float pointer-events-auto w-32 md:w-40 rounded-2xl border-2 border-dashed border-indigo-400/50 bg-indigo-500/10 hover:bg-indigo-500/20 hover:border-indigo-400/80 text-indigo-200 flex flex-col items-center justify-center gap-1.5 py-6 transition-colors';
             addTile.innerHTML = '<span class="text-3xl">✨</span><span class="text-xs font-bold">New Event</span>';
-            inner.appendChild(addTile);
+            addTileRow.appendChild(addTile);
+            inner.appendChild(addTileRow);
 
-            eventUniverseCards.forEach((ev, idx) => {
-                const glow = EVENT_CARD_GLOWS[idx % EVENT_CARD_GLOWS.length];
-                const shareToken = encodeURIComponent(ev.shareToken);
-                // Always a <div> wrapper now, never a top-level <a> - reported directly there was
-                // no way to edit an event (draft or already-sent) from Space View at all, so
-                // every card needs its own actions row below the content, and a <button>/<form>
-                // nested inside an <a> is invalid HTML/unreliable to click.
-                const card = document.createElement('div');
-                card.className = 'universe-card-float pointer-events-auto w-32 md:w-40 rounded-2xl border bg-slate-900/90 backdrop-blur-md flex flex-col items-center text-center gap-1 py-4 px-2.5 shadow-xl' + (ev.isPast ? ' opacity-50 grayscale' : '');
-                card.style.borderColor = ev.isDraft ? 'rgba(148, 163, 184, 0.4)' : (glow + '66');
-                card.style.boxShadow = ev.isDraft ? 'none' : `0 0 18px ${glow}22`;
-                card.style.setProperty('--float-delay', `${(idx % 6) * 0.5}s`);
-                card.style.borderStyle = ev.isDraft ? 'dashed' : 'solid';
-
-                const rsvpBadge = ev.isDraft
-                    ? '<span class="text-[10px] font-bold text-amber-300">📝 Draft</span>'
-                    : (ev.requiresRsvp
-                        ? `<span class="text-[10px] font-bold text-emerald-300">${ev.acceptedCount}/${ev.invitedCount || ev.acceptedCount} going</span>`
-                        : (ev.invitedCount ? '<span class="text-[10px] font-bold text-slate-400">Sent</span>' : ''));
-
-                // A draft's own content block goes straight to Edit (the primary thing to do with
-                // an unsent draft); a live event's goes to the public invite page, same as before.
-                const content = document.createElement('a');
-                content.href = ev.isDraft ? `/events/${shareToken}/edit` : `/events/${shareToken}`;
-                content.className = 'flex flex-col items-center gap-1 w-full' + (ev.isDraft ? '' : ' transition-transform hover:scale-105');
-                content.innerHTML = `
-                    <span class="text-3xl">${escapeHtml(ev.emoji)}</span>
-                    ${ev.isPrivate ? '<span class="text-[9px] font-bold text-slate-500">🔒 Private</span>' : ''}
-                    <span class="text-xs font-bold text-white leading-snug line-clamp-2">${escapeHtml(ev.title)}</span>
-                    <span class="text-[10px] font-semibold" style="color: ${ev.isDraft ? '#94a3b8' : glow}">${escapeHtml(ev.dueDateFormatted)}${ev.dueTimeFormatted ? ' · ' + escapeHtml(ev.dueTimeFormatted) : ''}</span>
-                    ${ev.location ? `<span class="text-[9px] text-slate-500 truncate max-w-full">📍 ${escapeHtml(ev.location)}</span>` : ''}
-                    ${rsvpBadge}
-                `;
-                card.appendChild(content);
-
-                const actions = document.createElement('div');
-                actions.className = 'flex items-center gap-1.5 mt-1.5 w-full';
-                const editLink = document.createElement('a');
-                editLink.href = `/events/${shareToken}/edit`;
-                editLink.className = 'flex-1 text-center text-[10px] font-bold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg py-1.5 transition-colors';
-                editLink.textContent = '✏️ Edit';
-                actions.appendChild(editLink);
-
-                if (ev.isDraft) {
-                    const sendForm = document.createElement('form');
-                    sendForm.method = 'POST';
-                    sendForm.action = `/events/${shareToken}/send`;
-                    sendForm.className = 'flex-1';
-                    sendForm.onsubmit = () => confirm(`Send this invite to everyone on the guest list now? This can't be undone.`);
-                    const sendBtn = document.createElement('button');
-                    sendBtn.type = 'submit';
-                    sendBtn.className = 'w-full text-[10px] font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg py-1.5 transition-colors';
-                    sendBtn.textContent = '📤 Send';
-                    sendForm.appendChild(sendBtn);
-                    actions.appendChild(sendForm);
+            // Group into one bucket per Realm (realmId null/undefined -> "Uncategorized", for any
+            // event whose bucket genuinely has no Realm at all - the quick-create form itself
+            // always lands in a real Realm, General by default, so this is mostly a safety net for
+            // older data or events organized via the full form some other way).
+            const groups = new Map();
+            eventUniverseCards.forEach((ev) => {
+                const key = ev.realmId != null ? String(ev.realmId) : 'uncategorized';
+                if (!groups.has(key)) {
+                    groups.set(key, {
+                        key,
+                        name: ev.realmId != null ? ev.realmName : 'Uncategorized',
+                        icon: ev.realmId != null ? (ev.realmIcon || '🔮') : '🔮',
+                        cards: [],
+                    });
                 }
-                card.appendChild(actions);
-
-                inner.appendChild(card);
+                groups.get(key).cards.push(ev);
             });
+
+            const groupList = Array.from(groups.values());
+            // Soonest-upcoming Realm first; a Realm with nothing left upcoming sinks below every
+            // Realm that still has something coming, ordered by how recently its last event passed.
+            groupList.sort((a, b) => {
+                const upcomingA = a.cards.find(c => !c.isPast);
+                const upcomingB = b.cards.find(c => !c.isPast);
+                if (upcomingA && upcomingB) return upcomingA.dueDate < upcomingB.dueDate ? -1 : (upcomingA.dueDate > upcomingB.dueDate ? 1 : 0);
+                if (upcomingA) return -1;
+                if (upcomingB) return 1;
+                const lastA = a.cards[a.cards.length - 1];
+                const lastB = b.cards[b.cards.length - 1];
+                return (lastB ? lastB.dueDate : '') < (lastA ? lastA.dueDate : '') ? -1 : 1;
+            });
+
+            if (groupList.length > 1) {
+                const chipRow = document.createElement('div');
+                chipRow.className = 'sticky top-0 z-10 flex items-center gap-1.5 overflow-x-auto pb-2 mb-3 pointer-events-auto bg-slate-950/70 backdrop-blur-sm rounded-full px-1';
+
+                const allChip = document.createElement('button');
+                allChip.type = 'button';
+                allChip.onclick = () => setEventCardsRealmFilter(null);
+                allChip.className = 'shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full transition-colors ' + (eventCardsRealmFilter === null ? 'bg-indigo-600 text-white' : 'bg-slate-900/80 text-slate-400 hover:text-white');
+                allChip.textContent = 'All';
+                chipRow.appendChild(allChip);
+
+                groupList.forEach((group) => {
+                    const chip = document.createElement('button');
+                    chip.type = 'button';
+                    chip.title = group.name;
+                    chip.onclick = () => setEventCardsRealmFilter(group.key);
+                    chip.className = 'shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm transition-colors border ' + (eventCardsRealmFilter === group.key ? 'bg-indigo-600 border-indigo-400' : 'bg-slate-900/80 border-slate-700 hover:border-indigo-500/60');
+                    chip.textContent = group.icon;
+                    chipRow.appendChild(chip);
+                });
+
+                inner.appendChild(chipRow);
+            }
+
+            let glowIdx = 0;
+            groupList
+                .filter(group => eventCardsRealmFilter === null || eventCardsRealmFilter === group.key)
+                .forEach((group) => {
+                    const section = document.createElement('div');
+                    section.className = 'mb-5';
+
+                    const header = document.createElement('div');
+                    header.className = 'flex items-center gap-1.5 mb-2 pointer-events-none';
+                    header.innerHTML = `
+                        <span class="text-base">${escapeHtml(group.icon)}</span>
+                        <span class="text-xs font-bold text-slate-300">${escapeHtml(group.name)}</span>
+                        <span class="text-[10px] text-slate-500">${group.cards.length}</span>
+                    `;
+                    section.appendChild(header);
+
+                    const cardsRow = document.createElement('div');
+                    cardsRow.className = 'flex flex-wrap items-start gap-4 md:gap-5 pointer-events-none';
+                    group.cards.forEach((ev) => {
+                        cardsRow.appendChild(buildEventUniverseCard(ev, glowIdx));
+                        glowIdx++;
+                    });
+                    section.appendChild(cardsRow);
+
+                    inner.appendChild(section);
+                });
 
             wrap.appendChild(inner);
         }
@@ -7121,6 +7245,41 @@
             updateDailyDigestVisibility();
         }
 
+        // Shared by buildMultiverseLanes and buildRealmLanes - a "+" between every adjacent pair of
+        // tasks in the lane's combined left-to-right chain (oldest overdue ... newest overdue, then
+        // the hub, then soonest ... latest upcoming), plus one more past the very last task, same
+        // "extend the chain forward" affordance the single-bucket linear view's own midAddButtons
+        // already gives (see the isSelectedBucket branch of renderSpaceFrame's per-bucket pass).
+        // Reported directly as having "gone away" - these stacked lanes replaced the old ring/hub
+        // view but never got this ported over. Each button defaults to whichever task it's
+        // immediately right of (or the trailing task itself for the one past the end) - only ever a
+        // starting point, since the Add Task modal it opens (openGlobalAddTaskModal) still shows its
+        // own Realm/Bucket picker.
+        function computeLaneMidAddButtons(lane, overdueTasks, upcomingTasks, stepSpacing, isMobile) {
+            const chain = overdueTasks.slice().reverse().concat(upcomingTasks);
+            const midAddButtons = [];
+            for (let i = 0; i < chain.length - 1; i++) {
+                midAddButtons.push({
+                    x: (chain[i].x + chain[i + 1].x) / 2,
+                    y: lane.y,
+                    bucketId: chain[i + 1].bucketId,
+                    realmId: chain[i + 1].realmId,
+                    radius: isMobile ? 22 : 19,
+                });
+            }
+            if (chain.length > 0) {
+                const lastTask = chain[chain.length - 1];
+                midAddButtons.push({
+                    x: lastTask.x + stepSpacing,
+                    y: lane.y,
+                    bucketId: lastTask.bucketId,
+                    realmId: lastTask.realmId,
+                    radius: isMobile ? 22 : 19,
+                });
+            }
+            return midAddButtons;
+        }
+
         // Groups multiverseTasksData into one lane per Task-kind Universe, applying the exact same
         // recurring dedup/lookahead-window/completed-exclusion rules used everywhere else in Space
         // View. Unlike the old single-merged-hub approach, tasks from different Universes never
@@ -7244,6 +7403,7 @@
 
                 lane.leftmostTaskX = overdueTasks.length ? overdueTasks[overdueTasks.length - 1].x : null;
                 lane.rightmostTaskX = upcomingTasks.length ? upcomingTasks[upcomingTasks.length - 1].x : null;
+                lane.midAddButtons = computeLaneMidAddButtons(lane, overdueTasks, upcomingTasks, stepSpacing, isMobile);
             });
 
             return lanes;
@@ -7366,6 +7526,7 @@
 
                 lane.leftmostTaskX = overdueTasks.length ? overdueTasks[overdueTasks.length - 1].x : null;
                 lane.rightmostTaskX = upcomingTasks.length ? upcomingTasks[upcomingTasks.length - 1].x : null;
+                lane.midAddButtons = computeLaneMidAddButtons(lane, overdueTasks, upcomingTasks, stepSpacing, isMobile);
             });
 
             return lanes;
@@ -7381,6 +7542,16 @@
         // the existing (already fragile) realm/bucket rendering used everywhere else.
         function openMultiverseTimeline() {
             closeMultiverseView();
+
+            // Reported directly as "ghost graphics": opening this from inside an Event Universe's
+            // own Space View (see event-universe-cards-wrap in initSpaceCanvas) left that floating
+            // card deck's DOM untouched underneath - nothing else ever clears it except
+            // renderEventUniverseCards itself, which only runs again for an event Universe, so the
+            // stale cards kept floating on top of the cross-Universe lanes drawn below them.
+            if (isEventUniverse) {
+                const eventCardsWrap = document.getElementById('event-universe-cards-wrap');
+                if (eventCardsWrap) eventCardsWrap.innerHTML = '';
+            }
 
             if (!isSpaceViewActive) {
                 isSpaceViewActive = true;
@@ -7641,6 +7812,34 @@
                 });
             });
 
+            // Same dashed-emerald "+" the single-bucket linear view draws for its own midAddButtons
+            // (see the isSelectedBucket branch of renderSpaceFrame) - see computeLaneMidAddButtons
+            // for why these exist here at all.
+            lanes.forEach(lane => {
+                (lane.midAddButtons || []).forEach(mab => {
+                    spaceCtx.save();
+                    spaceCtx.beginPath();
+                    spaceCtx.arc(mab.x, mab.y, mab.radius, 0, Math.PI * 2);
+                    spaceCtx.fillStyle = 'rgba(20, 40, 34, 0.9)';
+                    spaceCtx.strokeStyle = '#34d399';
+                    spaceCtx.lineWidth = 2;
+                    spaceCtx.shadowColor = '#34d399';
+                    spaceCtx.shadowBlur = 16;
+                    spaceCtx.setLineDash([6, 5]);
+                    spaceCtx.fill();
+                    spaceCtx.stroke();
+                    spaceCtx.setLineDash([]);
+
+                    spaceCtx.shadowBlur = 0;
+                    spaceCtx.textAlign = 'center';
+                    spaceCtx.textBaseline = 'middle';
+                    spaceCtx.font = `${Math.round(mab.radius * 1.1)}px sans-serif`;
+                    spaceCtx.fillStyle = '#34d399';
+                    spaceCtx.fillText('+', mab.x, mab.y + 1);
+                    spaceCtx.restore();
+                });
+            });
+
             if (longPressTaskForDelete) {
                 drawTaskDeleteIcon(longPressTaskForDelete);
                 drawTaskEditIcon(longPressTaskForDelete);
@@ -7694,6 +7893,21 @@
                 if (distToHub <= lane.hubRadius + 10 || hitPill) {
                     window.location.href = '/?universe_id=' + lane.id;
                     return;
+                }
+            }
+
+            // Same "+" hit-test the single-bucket linear view already does for its own
+            // midAddButtons (see detectClickNode's bucket.midAddButtons check) - see
+            // computeLaneMidAddButtons for why these exist on a lane at all.
+            for (const lane of multiverseLanes) {
+                for (const mab of (lane.midAddButtons || [])) {
+                    const distMab = Math.hypot(worldX - mab.x, worldY - mab.y);
+                    if (distMab <= mab.radius + 14) {
+                        currentSelectedRealmId = mab.realmId;
+                        currentSelectedBucketId = mab.bucketId;
+                        openGlobalAddTaskModal();
+                        return;
+                    }
                 }
             }
 
@@ -7847,6 +8061,20 @@
                         focusRealmTimelineLane(lane);
                     }
                     return;
+                }
+            }
+
+            // Same "+" hit-test handleMultiverseStackedClick does for its own lanes - see
+            // computeLaneMidAddButtons for why these exist on a lane at all.
+            for (const lane of hitTestLanes) {
+                for (const mab of (lane.midAddButtons || [])) {
+                    const distMab = Math.hypot(worldX - mab.x, worldY - mab.y);
+                    if (distMab <= mab.radius + 14) {
+                        currentSelectedRealmId = mab.realmId;
+                        currentSelectedBucketId = mab.bucketId;
+                        openGlobalAddTaskModal();
+                        return;
+                    }
                 }
             }
 
