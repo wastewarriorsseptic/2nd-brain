@@ -3982,6 +3982,146 @@ def revoke_api_key(request: Request, key_id: int = Form(...)):
             session.commit()
     return RedirectResponse(url="/settings/api", status_code=303)
 
+@app.get("/settings/account", response_class=HTMLResponse)
+def account_settings_page(request: Request):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+        return templates.TemplateResponse(
+            request=request,
+            name="account_settings.html",
+            context={"user": user}
+        )
+
+def _delete_user_account(session: Session, user_id: int):
+    """Full, permanent account deletion for Apple App Review Guideline 5.1.1(v) ("apps that
+    support account creation must also offer account deletion") - a real delete, not just
+    deactivation, reachable in-app with no customer-service step required. Deletes everything this
+    user owns, in dependency order (children before parents - Postgres enforces real FK
+    constraints, unlike SQLite's default) so nothing here needs an ON DELETE CASCADE defined on the
+    models themselves. Two separate ownership paths matter: (1) Realms this user owns (Realm.
+    user_id) and everything nested under them, and (2) Events this user created (Event.user_id)
+    that live in someone ELSE's shared Realm - the Realm/Bucket stays (not theirs to delete), but
+    their own Event/Item/guests under it do not."""
+    owned_realm_ids = [r.id for r in session.exec(select(Realm).where(Realm.user_id == user_id)).all()]
+    owned_bucket_ids = [b.id for b in session.exec(select(Bucket).where(Bucket.realm_id.in_(owned_realm_ids))).all()] if owned_realm_ids else []
+    owned_item_ids = [i.id for i in session.exec(select(Item).where(Item.bucket_id.in_(owned_bucket_ids))).all()] if owned_bucket_ids else []
+
+    # Events either living under an owned bucket, OR created by this user anywhere (e.g. inside a
+    # Realm someone else shared with them) - the union of both, deduplicated by id.
+    events_by_id = {}
+    if owned_item_ids:
+        for e in session.exec(select(Event).where(Event.item_id.in_(owned_item_ids))).all():
+            events_by_id[e.id] = e
+    for e in session.exec(select(Event).where(Event.user_id == user_id)).all():
+        events_by_id[e.id] = e
+    event_ids = list(events_by_id.keys())
+    foreign_event_item_ids = [e.item_id for e in events_by_id.values() if e.item_id not in owned_item_ids]
+
+    if event_ids:
+        for guest in session.exec(select(EventGuest).where(EventGuest.event_id.in_(event_ids))).all():
+            session.delete(guest)
+        session.commit()
+        for event in events_by_id.values():
+            session.delete(event)
+        session.commit()
+
+    all_item_ids = owned_item_ids + foreign_event_item_ids
+    if all_item_ids:
+        for reminder in session.exec(select(Reminder).where(Reminder.item_id.in_(all_item_ids))).all():
+            session.delete(reminder)
+        session.commit()
+
+    if owned_bucket_ids:
+        for person in session.exec(select(Person).where(Person.bucket_id.in_(owned_bucket_ids))).all():
+            session.delete(person)
+        session.commit()
+
+    # foreign_event_item_ids' Items (this user's own Event, someone else's Realm) get deleted here
+    # too - all_item_ids covers both groups, owned_item_ids is a subset of it.
+    if all_item_ids:
+        for item in session.exec(select(Item).where(Item.id.in_(all_item_ids))).all():
+            session.delete(item)
+        session.commit()
+
+    if owned_realm_ids:
+        for invite in session.exec(select(PendingInvite).where(PendingInvite.realm_id.in_(owned_realm_ids))).all():
+            session.delete(invite)
+        for share in session.exec(select(RealmShare).where(RealmShare.realm_id.in_(owned_realm_ids))).all():
+            session.delete(share)
+        session.commit()
+
+    if owned_bucket_ids:
+        for bucket in session.exec(select(Bucket).where(Bucket.id.in_(owned_bucket_ids))).all():
+            session.delete(bucket)
+        session.commit()
+
+    if owned_realm_ids:
+        for realm in session.exec(select(Realm).where(Realm.id.in_(owned_realm_ids))).all():
+            session.delete(realm)
+        session.commit()
+
+    # This user's own membership in realms/universes THEY don't own (someone else's Realm/Universe
+    # shared with them) - only their own access-grant row, never the realm/universe itself.
+    for share in session.exec(select(RealmShare).where(RealmShare.user_id == user_id)).all():
+        session.delete(share)
+    session.commit()
+
+    owned_universe_ids = [u.id for u in session.exec(select(Universe).where(Universe.user_id == user_id)).all()]
+    if owned_universe_ids:
+        for invite in session.exec(select(PendingUniverseInvite).where(PendingUniverseInvite.universe_id.in_(owned_universe_ids))).all():
+            session.delete(invite)
+        for share in session.exec(select(UniverseShare).where(UniverseShare.universe_id.in_(owned_universe_ids))).all():
+            session.delete(share)
+        session.commit()
+        for universe in session.exec(select(Universe).where(Universe.id.in_(owned_universe_ids))).all():
+            session.delete(universe)
+        session.commit()
+
+    for share in session.exec(select(UniverseShare).where(UniverseShare.user_id == user_id)).all():
+        session.delete(share)
+    session.commit()
+
+    for key in session.exec(select(ApiKey).where(ApiKey.user_id == user_id)).all():
+        session.delete(key)
+    for msg in session.exec(select(AiChatMessage).where(AiChatMessage.user_id == user_id)).all():
+        session.delete(msg)
+    for log in session.exec(select(AiChatUsageLog).where(AiChatUsageLog.user_id == user_id)).all():
+        session.delete(log)
+    session.commit()
+
+    user = session.get(User, user_id)
+    if user:
+        session.delete(user)
+        session.commit()
+
+@app.post("/settings/account/delete")
+def delete_account(request: Request, confirm: str = Form("")):
+    if (confirm or "").strip().upper() != "DELETE":
+        return RedirectResponse(url="/settings/account", status_code=303)
+
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+
+        # Any reminder jobs already scheduled for this user's Events would otherwise keep firing
+        # (against rows that no longer exist) after the account itself is gone.
+        event_ids = [e.id for e in session.exec(select(Event).where(Event.user_id == user.id)).all()]
+        for event_id in event_ids:
+            for job_id in (f"event-{event_id}-day-before", f"event-{event_id}-minutes-before"):
+                if scheduler.get_job(job_id):
+                    scheduler.remove_job(job_id)
+
+        _delete_user_account(session, user.id)
+
+    request.session.clear()
+    return HTMLResponse(_invite_status_page(
+        "Your account has been deleted",
+        "Everything associated with it is gone, permanently. Thanks for trying TaskMonster."
+    ))
+
 def _event_context(session: Session, share_token: str):
     """Shared lookup for every route keyed by an event's public share_token - returns None if the
     token doesn't match anything, so callers can render one consistent "invalid link" page."""

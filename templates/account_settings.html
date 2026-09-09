@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Account - TaskMonster</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen p-4 md:p-10 font-sans">
+    <div class="max-w-xl mx-auto">
+        <a href="/" class="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors mb-4 inline-block">← Back to TaskMonster</a>
+
+        <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-6 md:p-8 shadow-2xl mb-5">
+            <h1 class="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2 mb-1">
+                ⚙️ Account
+            </h1>
+            <p class="text-slate-400 text-sm mb-6">{{ user.name }} · {{ user.email }}</p>
+
+            <div class="bg-slate-900/60 border border-slate-700/60 rounded-2xl p-4 text-xs text-slate-400 leading-relaxed">
+                Manage your API keys under <a href="/settings/api" class="text-indigo-300 hover:text-indigo-200 font-semibold">🔑 API</a>. There's nothing else to configure here yet - this page is mostly for the option below.
+            </div>
+        </div>
+
+        <div class="bg-rose-950/20 border border-rose-500/30 rounded-3xl p-6 md:p-8 shadow-2xl">
+            <h2 class="text-lg font-extrabold text-rose-300 tracking-tight flex items-center gap-2 mb-1">
+                ⚠️ Delete Account
+            </h2>
+            <p class="text-slate-400 text-xs mb-4 leading-relaxed">
+                This permanently deletes your account and everything in it: every Universe, Realm, Bucket, task, Event and its guest list, Person, API key, and chat history - not just a deactivation. Anyone you'd shared a Universe or Realm with loses access immediately. Anything you organized for someone else (that they still own) is unaffected.
+            </p>
+            <p class="text-rose-300/90 text-xs font-bold mb-4">This can't be undone.</p>
+
+            <form action="/settings/account/delete" method="POST" id="delete-account-form" class="space-y-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Type DELETE to confirm</label>
+                    <input type="text" name="confirm" id="delete-account-confirm-input" autocomplete="off" placeholder="DELETE"
+                           class="w-full bg-slate-900 border border-rose-500/40 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-rose-400">
+                </div>
+                <button type="submit" id="delete-account-submit-btn" disabled
+                        class="w-full py-3 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-700 disabled:cursor-not-allowed disabled:text-slate-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-rose-600/20 disabled:shadow-none transition-all">
+                    Permanently Delete My Account
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Disabled until the exact word is typed - the button itself staying inert is a clearer
+        // guard against a stray click than only catching it after submit.
+        const confirmInput = document.getElementById('delete-account-confirm-input');
+        const submitBtn = document.getElementById('delete-account-submit-btn');
+        confirmInput.addEventListener('input', () => {
+            submitBtn.disabled = confirmInput.value.trim().toUpperCase() !== 'DELETE';
+        });
+        document.getElementById('delete-account-form').addEventListener('submit', (e) => {
+            if (!confirm('This permanently deletes your TaskMonster account and everything in it. This cannot be undone. Continue?')) {
+                e.preventDefault();
+            }
+        });
+    </script>
+</body>
+</html>
