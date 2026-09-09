@@ -200,6 +200,10 @@ def safe_apply_migrations():
             conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT FALSE;'))
             conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS is_draft BOOLEAN DEFAULT FALSE;'))
             conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS ics_sequence INTEGER DEFAULT 0;'))
+            # "IF EXISTS" here since the note table itself was only added in a previous deploy -
+            # a brand-new environment with no note table yet still gets it (realm_id included)
+            # straight from create_all() below, making this a harmless no-op there.
+            conn.execute(text('ALTER TABLE IF EXISTS note ADD COLUMN IF NOT EXISTS realm_id INTEGER;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT \'UTC\';'))
             conn.execute(text('ALTER TABLE realm ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
             # "IF EXISTS" on the table guards the case where this runs before create_all() has
@@ -255,6 +259,13 @@ def safe_apply_migrations():
                     cursor.execute('ALTER TABLE event ADD COLUMN "is_draft" BOOLEAN DEFAULT 0;')
                 if 'ics_sequence' not in event_cols:
                     cursor.execute('ALTER TABLE event ADD COLUMN "ics_sequence" INTEGER DEFAULT 0;')
+
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='note';")
+            if cursor.fetchone():
+                cursor.execute("PRAGMA table_info(note);")
+                note_cols = [col[1] for col in cursor.fetchall()]
+                if 'realm_id' not in note_cols:
+                    cursor.execute('ALTER TABLE note ADD COLUMN "realm_id" INTEGER;')
 
             cursor.execute("PRAGMA table_info(users);")
             user_cols = [col[1] for col in cursor.fetchall()]
