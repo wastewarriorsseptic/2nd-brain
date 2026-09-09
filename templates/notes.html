@@ -44,11 +44,13 @@
         #multiverse-quick-btn { animation: ai-chat-multiverse-repel-breathe 3.2s ease-in-out infinite; }
         #multiverse-timeline-quick-btn { animation: ai-chat-timeline-repel-breathe 3.2s ease-in-out infinite; }
         #notes-quick-btn { animation: ai-chat-launcher-float 3.2s ease-in-out infinite; }
+        #events-quick-btn { animation: ai-chat-launcher-float 3.2s ease-in-out infinite; animation-delay: -1.6s; }
         #ai-chat-launcher:hover,
         #ai-chat-quick-task-btn:hover,
         #multiverse-quick-btn:hover,
         #multiverse-timeline-quick-btn:hover,
-        #notes-quick-btn:hover {
+        #notes-quick-btn:hover,
+        #events-quick-btn:hover {
             animation-play-state: paused;
         }
     </style>
@@ -316,10 +318,17 @@
         </div>
     </div>
 
-    <!-- Already on the Notes page - just a quiet "you are here" marker, not a link to itself. -->
-    <div id="notes-quick-btn" title="Notes"
-         class="fixed bottom-[71px] left-[50px] z-[70] w-14 h-14 rounded-full bg-yellow-500 border border-yellow-300/40 shadow-2xl flex items-center justify-center text-2xl">
-        📝
+    <!-- Notes + Events, paired - Notes is just a quiet "you are here" marker on this page (not a
+         link to itself); Events links out since it isn't. -->
+    <div class="fixed bottom-[71px] left-[50px] z-[70] flex items-center gap-2">
+        <div id="notes-quick-btn" title="Notes"
+             class="w-14 h-14 rounded-full bg-yellow-500 border border-yellow-300/40 shadow-2xl flex items-center justify-center text-2xl">
+            📝
+        </div>
+        <a href="{{ events_universe_href }}" id="events-quick-btn" title="Events"
+           class="w-14 h-14 rounded-full bg-fuchsia-500 hover:bg-fuchsia-400 border border-fuchsia-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
+            🎉
+        </a>
     </div>
 </body>
 </html>

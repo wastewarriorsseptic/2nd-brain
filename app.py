@@ -1099,6 +1099,23 @@ def get_or_create_default_event_bucket(session: Session, user_id: int, target_un
 
     return bucket
 
+def get_events_universe_href(session: Session, user_id: int) -> str:
+    """Where the standalone "🎉 Events" launcher button (paired next to 📝 Notes - see
+    events_universe_href in dashboard()/notes_page()) actually goes. Event-kind Universes are
+    excluded from the Multiverse picker grid entirely now (reported directly - "pull the events
+    section out of the universe home"), so this is their only way back in. Deliberately does NOT
+    eagerly provision one via get_or_create_default_event_bucket (that would silently create an
+    empty Events Universe just from loading the dashboard, before anyone's actually made an event) -
+    a user with no Event Universe yet instead goes straight to /events/new, which auto-provisions
+    the default one on demand exactly the same way every other Events entry point already does. A
+    user with more than one (e.g. separate Event Universes for different purposes) lands on
+    whichever sorts first - a second one is still reachable via its own Realm-Timeline links,
+    events, or the mini-map, just not from this one shortcut."""
+    event_universe = session.exec(
+        select(Universe).where(Universe.user_id == user_id, Universe.kind == "event").order_by(Universe.sort_order)
+    ).first()
+    return f"/?universe_id={event_universe.id}" if event_universe else "/events/new"
+
 def backfill_important_dates_universes():
     """One-time-per-user migration companion to get_or_create_important_dates_universe - brand-new
     signups already get this Universe/Realm via find_or_create_user_and_log_in's starter set, but
@@ -1769,6 +1786,7 @@ def dashboard(
                 "is_event_universe": is_event_universe,
                 "events_by_item_id": events_by_item_id,
                 "event_universe_cards": event_universe_cards,
+                "events_universe_href": get_events_universe_href(session, user.id),
                 "google_places_enabled": GOOGLE_PLACES_ENABLED,
                 "google_maps_api_key": GOOGLE_MAPS_API_KEY,
                 "selected_realm_id": realm_id,
@@ -4434,6 +4452,7 @@ def notes_page(request: Request, note_id: Optional[int] = None, universe_id: Opt
                 "selected_note": selected_note,
                 "selected_universe_id": universe_id,
                 "selected_realm_id": realm_id,
+                "events_universe_href": get_events_universe_href(session, user.id),
             }
         )
 
