@@ -5952,6 +5952,25 @@
             openMultiverseView();
         });
 
+        // Keeps the Multiverse Timeline itself open across a refresh - reported directly ("when i
+        // refresh on that main timeline it takes me to events"). Same left-in-the-URL pattern
+        // open_multiverse above uses for the Universes Home picker. Distinct from
+        // open_multiverse_timeline further up (a genuine one-shot deep link set by update_item's own
+        // redirect, which deliberately still strips itself so it doesn't re-fire the same camera
+        // jump on every future refresh) - this one is "I am looking at this view right now" and must
+        // NOT strip. Runs after the earlier DOMContentLoaded block that opens Space View from
+        // localStorage, so by the time this fires isSpaceViewActive already reflects that - the
+        // isSpaceViewActive check here only matters for a page that loaded with Space View off.
+        document.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('mv_timeline') !== '1') return;
+            if (!isSpaceViewActive) {
+                toggleSpaceView();
+                document.documentElement.classList.remove('preload-space-view');
+            }
+            openMultiverseTimeline();
+        });
+
         // Lands here after tapping a "+" on a Multiverse Timeline lane belonging to a DIFFERENT
         // Universe than whatever page was loaded (see the midAddButtons branch of
         // handleMultiverseStackedClick for why that has to navigate here instead of opening the
@@ -6083,6 +6102,10 @@
                 isMultiverseStackedView = false;
                 multiverseActiveLaneId = null;
                 if (multiverseReorderMode) exitMultiverseTimelineReorderMode();
+
+                const url = new URL(window.location.href);
+                url.searchParams.delete('mv_timeline');
+                history.replaceState({}, '', url.pathname + url.search);
             }
         }
 
@@ -7584,6 +7607,16 @@
         // the existing (already fragile) realm/bucket rendering used everywhere else.
         function openMultiverseTimeline() {
             closeMultiverseView();
+
+            // Stamped into the URL (left in place, not stripped - see the mv_timeline
+            // DOMContentLoaded handler below) so refreshing while this view is open reopens it
+            // instead of dropping back to whatever single Universe the page happened to load for -
+            // reported directly ("when i refresh on that main timeline it takes me to events").
+            // Cleared again in toggleSpaceView's close branch, same pairing openMultiverseView/
+            // closeMultiverseView already use for open_multiverse.
+            const mvTimelineUrl = new URL(window.location.href);
+            mvTimelineUrl.searchParams.set('mv_timeline', '1');
+            history.replaceState({}, '', mvTimelineUrl.pathname + mvTimelineUrl.search);
 
             // Reported directly as "ghost graphics": opening this from inside an Event Universe's
             // own Space View (see event-universe-cards-wrap in initSpaceCanvas) left that floating
