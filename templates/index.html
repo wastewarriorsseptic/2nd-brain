@@ -6958,8 +6958,12 @@
         // Tapping a card jumps straight to its shareable invite page - full editing still happens
         // through the normal Timeline (Card View), this is meant to be the fun, visual, at-a-glance
         // surface, not a second editor.
-        const EVENT_TIMELINE_HORIZON_DAYS = 60;
-        const EVENT_TIMELINE_MIN_DAYS = 13;
+        // A fixed "month and a half" forward window, always shown regardless of where any actual
+        // events fall - reported directly. The first version's horizon shrank to fit the furthest
+        // real event (or a bare two-week fallback with none at all), so two events both due today
+        // rendered a timeline that was just a single Today column and nothing else. Any event
+        // beyond this window still isn't lost - it folds into the trailing "Later" column.
+        const EVENT_TIMELINE_HORIZON_DAYS = 45;
 
         function renderEventUniverseCards() {
             const wrap = document.getElementById('event-universe-cards-wrap');
@@ -7035,7 +7039,6 @@
             // which day-bucket it lands in.
             const pastCards = [];
             const futureCards = [];
-            let maxFutureDate = null;
             visibleCards.forEach((ev) => {
                 const d = parseYMDLocal(ev.dueDate);
                 if (d && d < today) {
@@ -7043,24 +7046,14 @@
                     return;
                 }
                 futureCards.push(ev);
-                if (d && (!maxFutureDate || d > maxFutureDate)) maxFutureDate = d;
             });
             pastCards.sort((a, b) => (a.dueDate < b.dueDate ? 1 : -1));
 
-            let horizonDate;
-            let overflowCards = [];
-            if (maxFutureDate && maxFutureDate > capDate) {
-                horizonDate = capDate;
-                overflowCards = futureCards.filter(ev => {
-                    const d = parseYMDLocal(ev.dueDate);
-                    return d && d > capDate;
-                });
-            } else if (maxFutureDate) {
-                horizonDate = maxFutureDate;
-            } else {
-                horizonDate = new Date(today);
-                horizonDate.setDate(horizonDate.getDate() + EVENT_TIMELINE_MIN_DAYS);
-            }
+            const horizonDate = capDate;
+            const overflowCards = futureCards.filter(ev => {
+                const d = parseYMDLocal(ev.dueDate);
+                return d && d > capDate;
+            });
 
             const timelineRow = document.createElement('div');
             timelineRow.className = 'flex-1 min-h-0 overflow-x-auto overflow-y-auto pointer-events-auto';
@@ -7110,14 +7103,17 @@
                 buildColumn('Past', `${pastCards.length}`, pastCards, { headerColorClass: 'text-slate-500', emptyDotClass: 'bg-slate-800' });
             }
 
+            // Today gets the special-cased label; every column after it shows the full weekday
+            // name (Monday, Tuesday, ...) instead of "Tomorrow"/an abbreviation - reported directly
+            // wanting each day spelled out plainly, not just Today/Tomorrow then a guessing game.
             const cursor = new Date(today);
             while (cursor <= horizonDate) {
                 const cursorStr = formatYMDLocal(cursor);
                 const dayCards = futureCards.filter(ev => ev.dueDate === cursorStr);
                 const isToday = cursorStr === formatYMDLocal(today);
-                const label = getRelativeDateLabel(cursorStr, cursor.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-                const sublabel = (label === 'Today' || label === 'Tomorrow') ? cursor.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : cursor.toLocaleDateString('en-US', { weekday: 'short' });
-                buildColumn(label, sublabel, dayCards, { headerColorClass: isToday ? 'text-emerald-300' : 'text-slate-400' });
+                const dateLabel = cursor.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                const label = isToday ? 'Today' : cursor.toLocaleDateString('en-US', { weekday: 'long' });
+                buildColumn(label, dateLabel, dayCards, { headerColorClass: isToday ? 'text-emerald-300' : 'text-slate-400' });
                 cursor.setDate(cursor.getDate() + 1);
             }
 
