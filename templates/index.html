@@ -1215,6 +1215,23 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Realm Timeline mini-map: a small "where am I" snapshot of this Universe's Realms,
+                 shown only while isRealmTimelineView is the default top-level view (see
+                 recenterSpace/updateRealmMiniMap) - the ring itself still exists underneath but
+                 isn't the main view anymore ("tucked away", per direct feedback: "I like the idea
+                 of having the universe have the realms around them... but to have it be smaller
+                 and a little more tucked away"). Each chip is a plain link to the same destination
+                 the sidebar's own Realm row already uses, rather than custom JS click handling, so
+                 it behaves identically to every other "jump to a Realm" entry point. -->
+            <div id="realm-mini-map" class="hidden pointer-events-auto mt-2 flex items-center gap-1.5 overflow-x-auto max-w-[92vw] pb-1">
+                {% for r in realms %}
+                <a href="/?realm_id={{ r.id }}" title="{{ r.name }}"
+                   class="shrink-0 w-9 h-9 rounded-full bg-slate-900/90 border border-indigo-500/40 flex items-center justify-center text-base shadow-lg hover:border-indigo-400 hover:scale-105 transition-all backdrop-blur-md">
+                    {{ r.icon or '🔮' }}
+                </a>
+                {% endfor %}
+            </div>
         </div>
 
         <!-- Bottom Layout HUD Inspection Card & Controls Wrapper -->
@@ -3120,6 +3137,7 @@
                 };
                 spaceRealms.forEach(realm => (realm.buckets || []).forEach(bucket => (bucket.tasks || []).forEach(patchTask)));
                 multiverseLanes.forEach(lane => (lane.tasks || []).forEach(patchTask));
+                realmLanes.forEach(lane => (lane.tasks || []).forEach(patchTask));
             }
             if (result.reorder_suggestion) {
                 showReorderSuggestion(result.reorder_suggestion);
@@ -3162,8 +3180,16 @@
                     laneMatch = lane;
                 }
             }
+            for (const lane of realmLanes) {
+                const idx = (lane.tasks || []).findIndex(t => String(t.id) === String(itemId));
+                if (idx !== -1) {
+                    removedFromLane = lane.tasks[idx];
+                    lane.tasks.splice(idx, 1);
+                    laneMatch = lane;
+                }
+            }
 
-            if (isMultiverseStackedView) {
+            if (isMultiverseStackedView || isRealmTimelineView) {
                 return laneMatch ? { lane: laneMatch, task: removedFromLane } : (bucketMatch ? { bucket: bucketMatch, task: removedFromBucket } : null);
             }
             return bucketMatch ? { bucket: bucketMatch, task: removedFromBucket } : (laneMatch ? { lane: laneMatch, task: removedFromLane } : null);
@@ -5281,6 +5307,15 @@
         let isMultiverseStackedView = false;
         let multiverseLanes = [];
         let multiverseActiveLaneId = null;
+        // Per-Universe Realm Timeline (see buildRealmLanes/renderMultiverseStackedLanes/
+        // handleRealmTimelineClick) - the DEFAULT top-level view for a task-bearing Universe now,
+        // in place of the plain realm ring ("staring at a folder of useless things" reported
+        // directly - a ring of nav-only nodes with no actual task info on screen). The ring itself
+        // (spaceRealms) is still built and still backs the small "where am I" mini-map plus
+        // drilling into one Realm (focusAndRepelRealms clears this flag) - only the DEFAULT view
+        // changes. Contact and Event Universes don't use this (see recenterSpace).
+        let isRealmTimelineView = false;
+        let realmLanes = [];
         let initialPinchDistance = null;
         let frameCount = 0;
         // Purely decorative starfield (see generateSpaceStars/drawSpaceStars) - screen-space, not
@@ -5861,6 +5896,14 @@
                 if (cardViewBtn) cardViewBtn.classList.remove('hidden');
                 if (digestAlign) digestAlign.classList.remove('justify-center');
             }
+        }
+
+        // Shows/hides the small Realm chip row under the top pills - see isRealmTimelineView and
+        // the #realm-mini-map element itself for why it exists. Called from every place that flag
+        // flips (recenterSpace, focusAndRepelRealms), same pattern as updateSpaceTopPillLabel.
+        function updateRealmMiniMap() {
+            const el = document.getElementById('realm-mini-map');
+            if (el) el.classList.toggle('hidden', !isRealmTimelineView);
         }
 
         // Tapping the top-left pill steps OUT one level of the Universe/Realm/Bucket hierarchy
@@ -6783,6 +6826,39 @@
             deselectBucketSwipeDock();
             persistSpaceSelection();
 
+            // Task-kind Universes default to the per-Realm Timeline here instead of the plain
+            // realm ring - reported directly ("staring at a folder of useless things" from a
+            // utility standpoint - a ring of nav-only nodes with no actual task info on screen).
+            // The ring (spaceRealms, already built by initSpaceCanvas before this runs) still
+            // backs the small "where am I" mini-map below and drilling into one Realm
+            // (focusAndRepelRealms clears isRealmTimelineView) - only the DEFAULT top-level view
+            // changes. Contact Universes (People, no due dates) and Event Universes (their own
+            // floating-card layout) keep the plain ring as their only top-level view.
+            if (!isContactUniverse && !isEventUniverse) {
+                isRealmTimelineView = true;
+                realmLanes = buildRealmLanes();
+                updateRealmMiniMap();
+
+                const isMobileRT = window.innerWidth < 768;
+                const laneCountRT = Math.max(realmLanes.length, 1);
+                const laneSpacingRT = isMobileRT ? 460 : 400;
+                const totalHeightRT = (laneCountRT - 1) * laneSpacingRT;
+                const zoomValRT = isMobileRT ? 0.22 : 0.32;
+                const topChromeRT = isMobileRT ? 0 : 60;
+
+                targetCameraZoom = zoomValRT;
+                targetCameraOffset = {
+                    x: window.innerWidth * 0.5,
+                    y: isMobileRT
+                        ? ((window.innerHeight / 2) - ((totalHeightRT / 2) * zoomValRT))
+                        : (topChromeRT + 40)
+                };
+                updateDailyDigestVisibility();
+                return;
+            }
+            isRealmTimelineView = false;
+            updateRealmMiniMap();
+
             if (spaceRealms.length === 0) {
                 targetCameraOffset = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
                 targetCameraZoom = 0.85;
@@ -7104,6 +7180,128 @@
             return lanes;
         }
 
+        // Same shape/positioning math as buildMultiverseLanes, but scoped to the ACTIVE Universe
+        // only and grouped by Realm instead of by Universe - the per-Universe Realm Timeline (see
+        // isRealmTimelineView), replacing the old "ring of nav-only nodes" as the default top-level
+        // view. Kept as its own function (some duplication vs. generalizing buildMultiverseLanes)
+        // rather than risking destabilizing the working Multiverse Timeline by over-abstracting it -
+        // same reasoning openMultiverseTimeline's own comment gives for being a separate path.
+        // multiverseTasksData already carries realmId/realmName for every task (built once,
+        // spanning every Universe) - filtering it client-side here needs no new backend data.
+        // realmsData (server-rendered, already scoped to the active Universe) supplies each Realm's
+        // own icon/sort order, including Realms with zero tasks (still get an empty lane, so the
+        // view reads as a genuine snapshot of every Realm here, not just the ones with due dates).
+        function buildRealmLanes() {
+            const processedGroupIds = new Map();
+            const RECURRING_LOOKAHEAD_MONTHS = 6;
+            const RECURRING_LOOKAHEAD_MONTHS_YEARLY = 13;
+            const RECURRING_MAX_VISIBLE = 30;
+            const recurringHorizonDate = new Date();
+            recurringHorizonDate.setMonth(recurringHorizonDate.getMonth() + RECURRING_LOOKAHEAD_MONTHS);
+            const recurringHorizonDateYearly = new Date();
+            recurringHorizonDateYearly.setMonth(recurringHorizonDateYearly.getMonth() + RECURRING_LOOKAHEAD_MONTHS_YEARLY);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const byRealm = new Map();
+            const realmIconById = new Map(realmsData.map(r => [String(r.id), r.icon || '🔮']));
+
+            const sortedTasksData = multiverseTasksData
+                .filter(t => String(t.universeId) === String(activeUniverseId))
+                .slice()
+                .sort((a, b) => (a.dueDate || '9999-12-31').localeCompare(b.dueDate || '9999-12-31'));
+
+            sortedTasksData.forEach(t => {
+                if (t.isCompleted) return;
+
+                if (t.isRecurring) {
+                    const seriesKey = `${t.bucketId}-${t.title}`;
+                    const seenCount = processedGroupIds.get(seriesKey) || 0;
+                    if (seenCount >= RECURRING_MAX_VISIBLE) return;
+
+                    const seriesDueDate = t.dueDate ? new Date(t.dueDate + 'T00:00:00') : null;
+                    const seriesHorizon = t.recurrenceType === 'yearly' ? recurringHorizonDateYearly : recurringHorizonDate;
+                    if (seriesDueDate && seriesDueDate > seriesHorizon) return;
+
+                    processedGroupIds.set(seriesKey, seenCount + 1);
+                }
+
+                const key = String(t.realmId);
+                if (!byRealm.has(key)) {
+                    byRealm.set(key, { id: t.realmId, name: t.realmName || 'Realm', icon: realmIconById.get(key) || '🔮', tasks: [] });
+                }
+
+                const dueDate = t.dueDate ? new Date(t.dueDate + 'T00:00:00') : null;
+                byRealm.get(key).tasks.push({
+                    id: t.id,
+                    title: t.title,
+                    dueDate: t.dueDate || '9999-12-31',
+                    dueTime: t.dueTime || '',
+                    dueDateFormatted: t.dueDateFormatted || '',
+                    amount: t.amount || '',
+                    isShoppable: !!t.isShoppable,
+                    description: t.description || '',
+                    recurrenceType: t.recurrenceType || 'none',
+                    bucketId: t.bucketId,
+                    realmId: t.realmId,
+                    realmName: t.realmName,
+                    bucketName: t.bucketName,
+                    universeId: t.universeId,
+                    universeName: t.universeName || '',
+                    universeIcon: t.universeIcon || '',
+                    isOverdue: !!(dueDate && dueDate < today),
+                    isRecurring: !!t.isRecurring,
+                    radius: 18,
+                    floatOffset: Math.random() * Math.PI * 2
+                });
+            });
+
+            const lanes = Array.from(byRealm.values());
+            lanes.forEach(lane => lane.tasks.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)));
+
+            const existingIds = new Set(lanes.map(l => String(l.id)));
+            realmsData.forEach(r => {
+                if (!existingIds.has(String(r.id))) {
+                    lanes.push({ id: r.id, name: r.name, icon: r.icon || '🔮', tasks: [] });
+                }
+            });
+
+            // Matches realmsData's own order - already server-sorted by sort_order, the same order
+            // the sidebar list uses, rather than any auto-sort here that could feel arbitrary or
+            // shuffle every time the view rebuilds.
+            const realmOrderById = new Map(realmsData.map((r, idx) => [String(r.id), idx]));
+            lanes.sort((a, b) => (realmOrderById.get(String(a.id)) ?? 0) - (realmOrderById.get(String(b.id)) ?? 0));
+
+            const isMobile = window.innerWidth < 768;
+            const laneSpacing = isMobile ? 460 : 400;
+            const hubRadius = isMobile ? 90 : 70;
+            const stepSpacing = 420;
+            const startGap = 300;
+
+            lanes.forEach((lane, laneIdx) => {
+                lane.hubRadius = hubRadius;
+                lane.x = 0;
+                lane.y = laneIdx * laneSpacing;
+
+                const upcomingTasks = lane.tasks.filter(t => !t.isOverdue);
+                const overdueTasks = lane.tasks.filter(t => t.isOverdue).reverse();
+
+                overdueTasks.forEach((task, idx) => {
+                    task.x = lane.x - hubRadius - startGap - (idx * stepSpacing);
+                    task.y = lane.y;
+                });
+                upcomingTasks.forEach((task, idx) => {
+                    task.x = lane.x + hubRadius + startGap + (idx * stepSpacing);
+                    task.y = lane.y;
+                });
+
+                lane.leftmostTaskX = overdueTasks.length ? overdueTasks[overdueTasks.length - 1].x : null;
+                lane.rightmostTaskX = upcomingTasks.length ? upcomingTasks[upcomingTasks.length - 1].x : null;
+            });
+
+            return lanes;
+        }
+
         // Every task across every Task-kind Universe, opened from the Multiverse picker. Builds one
         // lane per Universe (see buildMultiverseLanes) and hands off to a dedicated render/click path
         // (renderMultiverseStackedLanes / handleMultiverseStackedClick, gated by isMultiverseStackedView)
@@ -7168,14 +7366,18 @@
             };
         }
 
-        // Dedicated renderer for the stacked Multiverse Timeline view - one row per Universe, each
-        // with its own hub circle and its own horizontal chain of tasks extending to the right.
-        // Deliberately does NOT reuse the per-bucket rendering block below (that block only ever
-        // draws whichever ONE bucket is activeSelectedBucket); this instead draws every lane's chain
-        // simultaneously every frame. Called from renderSpaceFrame while isMultiverseStackedView is
-        // true, in place of (not in addition to) the normal realm/bucket render pipeline.
+        // Dedicated renderer for BOTH stacked-lane views - the Multiverse Timeline (one row per
+        // Universe) and the per-Universe Realm Timeline (one row per Realm - see buildRealmLanes/
+        // isRealmTimelineView), which share this exact same hub+horizontal-chain visual language on
+        // purpose. `lanes` picks whichever data source is currently active; everything else in here
+        // is grouping-agnostic. Deliberately does NOT reuse the per-bucket rendering block below
+        // (that block only ever draws whichever ONE bucket is activeSelectedBucket); this instead
+        // draws every lane's chain simultaneously every frame. Called from renderSpaceFrame while
+        // isMultiverseStackedView or isRealmTimelineView is true, in place of (not in addition to)
+        // the normal realm/bucket render pipeline.
         function renderMultiverseStackedLanes() {
-            multiverseLanes.forEach(lane => {
+            const lanes = isRealmTimelineView ? realmLanes : multiverseLanes;
+            lanes.forEach(lane => {
                 if (lane.tasks.length === 0) return;
 
                 // Two independent segments radiating from the hub - overdue tasks sit to its left,
@@ -7208,7 +7410,7 @@
                 }
             });
 
-            multiverseLanes.forEach((lane, laneIdx) => {
+            lanes.forEach((lane, laneIdx) => {
                 spaceCtx.save();
 
                 const isDraggedLane = lane === multiverseDraggingLane;
@@ -7271,7 +7473,7 @@
                 lane._namePillRect = { x: lane.x - nameWidth / 2, y: pillY, w: nameWidth, h: pillHeight };
             });
 
-            multiverseLanes.forEach(lane => {
+            lanes.forEach(lane => {
                 lane.tasks.forEach(task => {
                     const isActiveSwipeNode = activeSwipeTaskId && String(task.id) === String(activeSwipeTaskId);
 
@@ -7454,6 +7656,66 @@
             if (targetCard) targetCard.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'center' });
         }
 
+        // Click handling for the per-Universe Realm Timeline (isRealmTimelineView) - deliberately
+        // its own function rather than folding into handleMultiverseStackedClick above, since a
+        // lane hub here does something different (jump into that one Realm's normal bucket-cluster
+        // view, not navigate to a different Universe) and there's no drag-to-reorder for Realm
+        // lanes to worry about. The task-hit-testing below mirrors handleMultiverseStackedClick's
+        // own exactly (same task/label rect shapes, same swipe-dock behavior) since realmLanes are
+        // built with that identical shape - see buildRealmLanes.
+        function handleRealmTimelineClick(worldX, worldY) {
+            for (const lane of realmLanes) {
+                const distToHub = Math.hypot(worldX - lane.x, worldY - lane.y);
+                const r = lane._namePillRect;
+                const hitPill = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
+                if (distToHub <= lane.hubRadius + 10 || hitPill) {
+                    // Same destination a click on this Realm's sidebar row already uses - lands back
+                    // here on load via restoreOrRecenterSpace -> focusAndRepelRealms, same as any
+                    // other "drill into a Realm" entry point.
+                    window.location.href = '/?realm_id=' + lane.id;
+                    return;
+                }
+            }
+
+            let clickedTask = null;
+            let clickedLane = null;
+            for (const lane of realmLanes) {
+                for (const task of lane.tasks) {
+                    const dist = Math.hypot(worldX - task.x, worldY - task.y);
+                    const hitNode = dist <= task.radius + 18;
+                    const r = task._labelRect;
+                    const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
+                    if (hitNode || hitLabel) {
+                        clickedTask = task;
+                        clickedLane = lane;
+                        break;
+                    }
+                }
+                if (clickedTask) break;
+            }
+
+            if (!clickedTask) return;
+
+            if (String(activeSwipeTaskId) === String(clickedTask.id)) {
+                deselectBucketSwipeDock();
+                multiverseActiveLaneId = null;
+                return;
+            }
+
+            if (multiverseActiveLaneId !== clickedLane.id) {
+                multiverseActiveLaneId = clickedLane.id;
+                renderBucketTaskSwipeDock({ id: `__realm_lane_${clickedLane.id}__`, name: clickedLane.name, tasks: clickedLane.tasks }, { focusFirst: false });
+            }
+            activeSwipeTaskId = clickedTask.id;
+            focusCameraOnTask(clickedTask);
+
+            const dock = document.getElementById('bucket-task-swipe-dock');
+            if (dock) dock.classList.remove('hidden');
+            const wrapper = document.getElementById('swipe-dock-cards-wrapper');
+            const targetCard = wrapper ? wrapper.querySelector(`[data-swipe-task-id="${clickedTask.id}"]`) : null;
+            if (targetCard) targetCard.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'center' });
+        }
+
         function zoomSpace(factor) {
             const oldZoom = targetCameraZoom;
             const newZoom = Math.min(Math.max(0.2, oldZoom * factor), 2.5);
@@ -7579,6 +7841,12 @@
             spaceCtx.scale(cameraZoom, cameraZoom);
 
             if (isMultiverseStackedView) {
+                renderMultiverseStackedLanes();
+                spaceCtx.restore();
+                return;
+            }
+
+            if (isRealmTimelineView) {
                 renderMultiverseStackedLanes();
                 spaceCtx.restore();
                 return;
@@ -8632,7 +8900,13 @@
                     }
 
                     let pressedRealm = null;
-                    if (!pressedBucket && !isMultiverseStackedView) {
+                    // spaceRealms still holds the ring's own (x,y) positions even while the ring
+                    // itself isn't the view on screen (isRealmTimelineView's lanes use a completely
+                    // different coordinate layout) - without this guard, a long-press could
+                    // coincidentally land on one of those invisible, off-screen-context ring
+                    // coordinates and arm "delete this Realm" for a Realm the user never actually
+                    // saw or touched.
+                    if (!pressedBucket && !isMultiverseStackedView && !isRealmTimelineView) {
                         spaceRealms.forEach(realm => {
                             if (realm.isAddButton) return;
                             const dist = Math.hypot(worldX - realm.x, worldY - realm.y);
@@ -9219,6 +9493,11 @@
                 return;
             }
 
+            if (isRealmTimelineView) {
+                handleRealmTimelineClick(worldX, worldY);
+                return;
+            }
+
             // DEVIL CORE (0,0) - only active in the full-universe overview; not drawn (or tappable)
             // while a realm is focused, so there's no invisible hit-area left behind at the origin.
             // Same for an Event Universe (see the matching guard in renderSpaceFrameInner) - it's
@@ -9642,6 +9921,12 @@
 
         function focusAndRepelRealms(selectedRealm) {
             activeSelectedRealm = selectedRealm;
+            // Drilling into one Realm always leaves the Realm Timeline (see isRealmTimelineView) -
+            // its lanes and this focused bucket-cluster view use completely different world
+            // coordinates, and the mini-map (a stand-in for the Timeline while it's up) has nothing
+            // left to summarize once a single Realm is the whole screen.
+            isRealmTimelineView = false;
+            updateRealmMiniMap();
 
             const isMobile = window.innerWidth < 768;
 
