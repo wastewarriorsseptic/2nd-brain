@@ -1216,22 +1216,6 @@
                 </div>
             </div>
 
-            <!-- Realm Timeline mini-map: a small "where am I" snapshot of this Universe's Realms,
-                 shown only while isRealmTimelineView is the default top-level view (see
-                 recenterSpace/updateRealmMiniMap) - the ring itself still exists underneath but
-                 isn't the main view anymore ("tucked away", per direct feedback: "I like the idea
-                 of having the universe have the realms around them... but to have it be smaller
-                 and a little more tucked away"). Each chip is a plain link to the same destination
-                 the sidebar's own Realm row already uses, rather than custom JS click handling, so
-                 it behaves identically to every other "jump to a Realm" entry point. -->
-            <div id="realm-mini-map" class="hidden pointer-events-auto mt-2 flex items-center gap-1.5 overflow-x-auto max-w-[92vw] pb-1">
-                {% for r in realms %}
-                <a href="/?realm_id={{ r.id }}" title="{{ r.name }}"
-                   class="shrink-0 w-9 h-9 rounded-full bg-slate-900/90 border border-indigo-500/40 flex items-center justify-center text-base shadow-lg hover:border-indigo-400 hover:scale-105 transition-all backdrop-blur-md">
-                    {{ r.icon or '🔮' }}
-                </a>
-                {% endfor %}
-            </div>
         </div>
 
         <!-- Bottom Layout HUD Inspection Card & Controls Wrapper -->
@@ -5311,9 +5295,9 @@
         // handleRealmTimelineClick) - the DEFAULT top-level view for a task-bearing Universe now,
         // in place of the plain realm ring ("staring at a folder of useless things" reported
         // directly - a ring of nav-only nodes with no actual task info on screen). The ring itself
-        // (spaceRealms) is still built and still backs the small "where am I" mini-map plus
-        // drilling into one Realm (focusAndRepelRealms clears this flag) - only the DEFAULT view
-        // changes. Contact and Event Universes don't use this (see recenterSpace).
+        // (spaceRealms) is still built and still backs drilling into one Realm (focusAndRepelRealms
+        // clears this flag) - only the DEFAULT view changes. Contact and Event Universes don't use
+        // this (see recenterSpace).
         let isRealmTimelineView = false;
         let realmLanes = [];
         let initialPinchDistance = null;
@@ -5896,14 +5880,6 @@
                 if (cardViewBtn) cardViewBtn.classList.remove('hidden');
                 if (digestAlign) digestAlign.classList.remove('justify-center');
             }
-        }
-
-        // Shows/hides the small Realm chip row under the top pills - see isRealmTimelineView and
-        // the #realm-mini-map element itself for why it exists. Called from every place that flag
-        // flips (recenterSpace, focusAndRepelRealms), same pattern as updateSpaceTopPillLabel.
-        function updateRealmMiniMap() {
-            const el = document.getElementById('realm-mini-map');
-            if (el) el.classList.toggle('hidden', !isRealmTimelineView);
         }
 
         // Tapping the top-left pill steps OUT one level of the Universe/Realm/Bucket hierarchy
@@ -6830,14 +6806,13 @@
             // realm ring - reported directly ("staring at a folder of useless things" from a
             // utility standpoint - a ring of nav-only nodes with no actual task info on screen).
             // The ring (spaceRealms, already built by initSpaceCanvas before this runs) still
-            // backs the small "where am I" mini-map below and drilling into one Realm
-            // (focusAndRepelRealms clears isRealmTimelineView) - only the DEFAULT top-level view
-            // changes. Contact Universes (People, no due dates) and Event Universes (their own
-            // floating-card layout) keep the plain ring as their only top-level view.
+            // backs drilling into one Realm (focusAndRepelRealms clears isRealmTimelineView) - only
+            // the DEFAULT top-level view changes. Contact Universes (People, no due dates) and
+            // Event Universes (their own floating-card layout) keep the plain ring as their only
+            // top-level view.
             if (!isContactUniverse && !isEventUniverse) {
                 isRealmTimelineView = true;
                 realmLanes = buildRealmLanes();
-                updateRealmMiniMap();
 
                 const isMobileRT = window.innerWidth < 768;
                 const laneCountRT = Math.max(realmLanes.length, 1);
@@ -6857,7 +6832,6 @@
                 return;
             }
             isRealmTimelineView = false;
-            updateRealmMiniMap();
 
             if (spaceRealms.length === 0) {
                 targetCameraOffset = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
@@ -9923,10 +9897,8 @@
             activeSelectedRealm = selectedRealm;
             // Drilling into one Realm always leaves the Realm Timeline (see isRealmTimelineView) -
             // its lanes and this focused bucket-cluster view use completely different world
-            // coordinates, and the mini-map (a stand-in for the Timeline while it's up) has nothing
-            // left to summarize once a single Realm is the whole screen.
+            // coordinates.
             isRealmTimelineView = false;
-            updateRealmMiniMap();
 
             const isMobile = window.innerWidth < 768;
 
