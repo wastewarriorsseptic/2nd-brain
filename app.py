@@ -525,6 +525,21 @@ class AiChatUsageLog(SQLModel, table=True):
     thoughts_tokens: int = 0
     total_tokens: int = 0
 
+class Note(SQLModel, table=True):
+    """A simple, undated note - explicitly NOT a task: no due_date, no Realm/Bucket, never shows up
+    on any Timeline or in Space View. universe_id is an optional "pin" purely for organizing/
+    filtering the Notes list itself (see notes_page) - a note pinned to a Universe still isn't
+    inside that Universe's Realm/Bucket hierarchy, since that hierarchy exists to organize dated
+    tasks, which a note by definition isn't. updated_at (not created_at) drives the list's own
+    sort order, matching Apple Notes' own "most recently edited first" ordering."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    title: str = Field(default="")
+    content: str = Field(default="")
+    universe_id: Optional[int] = Field(default=None, foreign_key="universe.id", index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
 # --- FastAPI & Middleware Setup ---
 app = FastAPI()
 app.add_middleware(
@@ -4004,6 +4019,13 @@ def _delete_user_account(session: Session, user_id: int):
     user_id) and everything nested under them, and (2) Events this user created (Event.user_id)
     that live in someone ELSE's shared Realm - the Realm/Bucket stays (not theirs to delete), but
     their own Event/Item/guests under it do not."""
+    # Deleted first, ahead of anything universe-related below - every Note is this user's own
+    # regardless of which Universe (if any) it's pinned to, and getting it out of the way up front
+    # means the Universe deletion later never has to worry about a Note's universe_id FK dangling.
+    for note in session.exec(select(Note).where(Note.user_id == user_id)).all():
+        session.delete(note)
+    session.commit()
+
     owned_realm_ids = [r.id for r in session.exec(select(Realm).where(Realm.user_id == user_id)).all()]
     owned_bucket_ids = [b.id for b in session.exec(select(Bucket).where(Bucket.realm_id.in_(owned_realm_ids))).all()] if owned_realm_ids else []
     owned_item_ids = [i.id for i in session.exec(select(Item).where(Item.bucket_id.in_(owned_bucket_ids))).all()] if owned_bucket_ids else []
@@ -4338,6 +4360,121 @@ def send_draft_event(request: Request, share_token: str):
             _send_draft_event(session, user, event, item)
 
     return RedirectResponse(url=f"/events/{share_token}?sent=1", status_code=303)
+
+# --- Notes (Apple-Notes-style, deliberately undated) ---
+
+@app.get("/notes", response_class=HTMLResponse)
+def notes_page(request: Request, note_id: Optional[int] = None, universe_id: Optional[int] = None):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+
+        notes_query = select(Note).where(Note.user_id == user.id)
+        if universe_id:
+            notes_query = notes_query.where(Note.universe_id == universe_id)
+        notes = session.exec(notes_query.order_by(Note.updated_at.desc())).all()
+
+        # Only Universes this user owns outright - pinning is a personal organizing tool, not
+        # something to extend to a Universe someone else merely shared with them.
+        universes = session.exec(
+            select(Universe).where(Universe.user_id == user.id).order_by(Universe.sort_order)
+        ).all()
+        universe_by_id = {u.id: u for u in universes}
+
+        selected_note = None
+        if note_id:
+            candidate = session.get(Note, note_id)
+            if candidate and candidate.user_id == user.id:
+                selected_note = candidate
+        if not selected_note and notes:
+            selected_note = notes[0]
+
+        return templates.TemplateResponse(
+            request=request,
+            name="notes.html",
+            context={
+                "user": user,
+                "notes": notes,
+                "universes": universes,
+                "universe_by_id": universe_by_id,
+                "selected_note": selected_note,
+                "selected_universe_id": universe_id,
+            }
+        )
+
+@app.post("/notes/")
+def create_note(request: Request, universe_id: Optional[int] = Form(None)):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+
+        if universe_id and not session.exec(
+            select(Universe).where(Universe.id == universe_id, Universe.user_id == user.id)
+        ).first():
+            universe_id = None
+
+        note = Note(user_id=user.id, title="", content="", universe_id=universe_id)
+        session.add(note)
+        session.commit()
+        session.refresh(note)
+        note_id = note.id
+
+    redirect_url = f"/notes?note_id={note_id}"
+    if universe_id:
+        redirect_url += f"&universe_id={universe_id}"
+    return RedirectResponse(url=redirect_url, status_code=303)
+
+@app.post("/notes/{note_id}/update")
+def update_note(request: Request, note_id: int, payload: dict = Body(...)):
+    """Autosave endpoint (fetch, debounced client-side - see notes.html) rather than a form submit -
+    a note is meant to behave like Apple Notes, saving quietly as you type, not requiring an
+    explicit "Save" action."""
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return JSONResponse({"ok": False, "error": "Not logged in."}, status_code=401)
+
+        note = session.get(Note, note_id)
+        if not note or note.user_id != user.id:
+            return JSONResponse({"ok": False, "error": "Note not found."}, status_code=404)
+
+        if "title" in payload:
+            note.title = (payload["title"] or "").strip()
+        if "content" in payload:
+            note.content = payload["content"] or ""
+        if "universe_id" in payload:
+            new_universe_id = payload["universe_id"] or None
+            if new_universe_id and not session.exec(
+                select(Universe).where(Universe.id == new_universe_id, Universe.user_id == user.id)
+            ).first():
+                new_universe_id = None
+            note.universe_id = new_universe_id
+
+        note.updated_at = datetime.utcnow()
+        session.add(note)
+        session.commit()
+        session.refresh(note)
+
+        return JSONResponse({
+            "ok": True,
+            "updated_at": note.updated_at.strftime("%b %d, %Y at %I:%M %p"),
+        })
+
+@app.post("/notes/{note_id}/delete")
+def delete_note(request: Request, note_id: int):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+
+        note = session.get(Note, note_id)
+        if note and note.user_id == user.id:
+            session.delete(note)
+            session.commit()
+
+    return RedirectResponse(url="/notes", status_code=303)
 
 # --- AI Chat Assistant (Gemini) ---
 # Task-focused v1: the assistant can create/update/find/navigate-to tasks and answer questions

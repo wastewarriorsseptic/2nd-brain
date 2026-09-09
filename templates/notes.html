@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ (selected_note.title or 'Notes') if selected_note else 'Notes' }} - TaskMonster</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Auto-expanding content textarea, no manual resize handle - matches Apple Notes' own
+           "the note just grows" feel rather than a fixed scrollable box. */
+        #note-content-input { resize: none; overflow: hidden; }
+        #note-title-input::placeholder, #note-content-input::placeholder { color: #475569; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
+    <div class="max-w-5xl mx-auto p-4 md:p-6">
+        <div class="flex items-center justify-between mb-4">
+            <a href="/" class="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors">← Back to TaskMonster</a>
+            <h1 class="text-sm font-extrabold text-white tracking-tight flex items-center gap-1.5">📝 Notes</h1>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-4 md:h-[calc(100vh-90px)]">
+            <!-- Note list - collapses above the editor on mobile (order-1), sits as a fixed-width
+                 sidebar on desktop (md:order-none, its own scroll region so a long list never
+                 pushes the editor off-screen). -->
+            <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-3 flex flex-col md:overflow-hidden">
+                <form action="/notes/" method="POST" class="mb-2.5">
+                    {% if selected_universe_id %}<input type="hidden" name="universe_id" value="{{ selected_universe_id }}">{% endif %}
+                    <button type="submit" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/20 transition-all">
+                        + New Note
+                    </button>
+                </form>
+
+                {% if universes %}
+                <div class="flex items-center gap-1.5 overflow-x-auto pb-2 mb-1.5 border-b border-slate-700/60">
+                    <a href="/notes" title="All Notes"
+                       class="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full transition-colors {{ 'bg-indigo-600 text-white' if not selected_universe_id else 'bg-slate-900/80 text-slate-400 hover:text-white' }}">
+                        All
+                    </a>
+                    {% for u in universes %}
+                    <a href="/notes?universe_id={{ u.id }}" title="{{ u.name }}"
+                       class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm transition-colors border {{ 'bg-indigo-600 border-indigo-400' if selected_universe_id == u.id else 'bg-slate-900/80 border-slate-700 hover:border-indigo-500/60' }}">
+                        {{ u.icon or '😈' }}
+                    </a>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <div class="flex-1 overflow-y-auto space-y-1 -mx-1 px-1">
+                    {% for n in notes %}
+                    <a href="/notes?note_id={{ n.id }}{% if selected_universe_id %}&universe_id={{ selected_universe_id }}{% endif %}"
+                       class="block px-2.5 py-2 rounded-xl transition-colors {{ 'bg-indigo-600/90' if selected_note and n.id == selected_note.id else 'hover:bg-slate-700/60' }}">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                            {% if n.universe_id and universe_by_id.get(n.universe_id) %}
+                            <span class="shrink-0 text-xs">{{ universe_by_id.get(n.universe_id).icon or '😈' }}</span>
+                            {% endif %}
+                            <p class="text-xs font-bold truncate {{ 'text-white' if selected_note and n.id == selected_note.id else 'text-slate-200' }}">{{ n.title or 'New Note' }}</p>
+                        </div>
+                        <p class="text-[11px] mt-0.5 truncate {{ 'text-indigo-200' if selected_note and n.id == selected_note.id else 'text-slate-500' }}">
+                            {{ n.updated_at.strftime('%b %d, %Y') }}{% if n.content.strip() %} · {{ n.content.strip()[:60] }}{% endif %}
+                        </p>
+                    </a>
+                    {% else %}
+                    <p class="text-slate-500 text-xs text-center py-6">No notes yet.</p>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Editor -->
+            <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-5 md:p-6 flex flex-col md:overflow-hidden">
+                {% if selected_note %}
+                <div class="flex items-center justify-between gap-2 mb-3">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wide shrink-0">📌 Pin to</label>
+                        <select id="note-universe-select" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 min-w-0">
+                            <option value="">No Universe</option>
+                            {% for u in universes %}
+                            <option value="{{ u.id }}" {{ 'selected' if selected_note.universe_id == u.id else '' }}>{{ u.icon or '😈' }} {{ u.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="flex items-center gap-2.5 shrink-0">
+                        <span id="note-save-indicator" class="text-[10px] text-slate-500 opacity-0 transition-opacity">Saved</span>
+                        <form action="/notes/{{ selected_note.id }}/delete" method="POST" onsubmit="return confirm('Delete this note? This cannot be undone.');">
+                            <button type="submit" class="text-slate-500 hover:text-rose-400 text-xs font-bold transition-colors">🗑 Delete</button>
+                        </form>
+                    </div>
+                </div>
+
+                <input type="text" id="note-title-input" placeholder="Title" autocomplete="off"
+                       value="{{ selected_note.title }}"
+                       class="w-full bg-transparent border-none text-xl font-extrabold text-white placeholder-slate-600 focus:outline-none mb-2">
+                <textarea id="note-content-input" placeholder="Start typing…"
+                          class="w-full flex-1 bg-transparent border-none text-sm text-slate-200 placeholder-slate-600 focus:outline-none leading-relaxed md:overflow-y-auto">{{ selected_note.content }}</textarea>
+                {% else %}
+                <div class="flex-1 flex flex-col items-center justify-center text-center gap-3 py-16">
+                    <div class="text-4xl">📝</div>
+                    <p class="text-slate-400 text-sm">No note selected yet.</p>
+                    <form action="/notes/" method="POST">
+                        {% if selected_universe_id %}<input type="hidden" name="universe_id" value="{{ selected_universe_id }}">{% endif %}
+                        <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/20 transition-all">
+                            + New Note
+                        </button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    {% if selected_note %}
+    <script>
+        const NOTE_ID = {{ selected_note.id }};
+        const titleInput = document.getElementById('note-title-input');
+        const contentInput = document.getElementById('note-content-input');
+        const universeSelect = document.getElementById('note-universe-select');
+        const saveIndicator = document.getElementById('note-save-indicator');
+
+        function autoGrow() {
+            contentInput.style.height = 'auto';
+            contentInput.style.height = contentInput.scrollHeight + 'px';
+        }
+        autoGrow();
+        contentInput.addEventListener('input', autoGrow);
+
+        let saveTimer = null;
+        let saveIndicatorTimer = null;
+
+        // Debounced autosave (Apple Notes-style - no explicit Save button, it just quietly saves
+        // itself a beat after typing stops) rather than saving on every single keystroke.
+        function scheduleSave(fields) {
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(() => saveNote(fields), 600);
+        }
+
+        async function saveNote(fields) {
+            try {
+                const res = await fetch(`/notes/${NOTE_ID}/update`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(fields),
+                });
+                if (!res.ok) return;
+                clearTimeout(saveIndicatorTimer);
+                saveIndicator.style.opacity = '1';
+                saveIndicatorTimer = setTimeout(() => { saveIndicator.style.opacity = '0'; }, 1500);
+            } catch (e) {
+                // Offline or a network hiccup - not fatal, the next successful edit will retry.
+            }
+        }
+
+        titleInput.addEventListener('input', () => scheduleSave({ title: titleInput.value }));
+        contentInput.addEventListener('input', () => scheduleSave({ content: contentInput.value }));
+        if (universeSelect) {
+            universeSelect.addEventListener('change', () => {
+                saveNote({ universe_id: universeSelect.value ? parseInt(universeSelect.value, 10) : null });
+            });
+        }
+
+        // Save-on-navigate-away, in case someone clicks a different note (or leaves the page)
+        // inside the 600ms debounce window - otherwise that last unsaved keystroke could be lost.
+        window.addEventListener('beforeunload', () => {
+            clearTimeout(saveTimer);
+            navigator.sendBeacon(
+                `/notes/${NOTE_ID}/update`,
+                new Blob([JSON.stringify({ title: titleInput.value, content: contentInput.value })], { type: 'application/json' })
+            );
+        });
+    </script>
+    {% endif %}
+</body>
+</html>

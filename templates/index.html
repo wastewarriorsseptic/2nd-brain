@@ -225,6 +225,13 @@
             0%, 100% { transform: translateX(-50%) translateY(0) scale(1); }
             50% { transform: translateX(-50%) translateY(4px) scale(1.06); }
         }
+        /* Fifth tangent circle, centered ABOVE the devil (the only side not already taken by "+"
+           bottom-right, 🏡 bottom-left, or ⏳ bottom-center) - same centered-pill trick as the ⏳
+           keyframe above, just pushing up instead of down. */
+        @keyframes ai-chat-notes-repel-breathe {
+            0%, 100% { transform: translateX(-50%) translateY(0) scale(1); }
+            50% { transform: translateX(-50%) translateY(-4px) scale(1.06); }
+        }
         #ai-chat-launcher {
             animation: ai-chat-quick-task-float-breathe 3.2s ease-in-out infinite;
         }
@@ -237,10 +244,14 @@
         #multiverse-timeline-quick-btn {
             animation: ai-chat-timeline-repel-breathe 3.2s ease-in-out infinite;
         }
+        #notes-quick-btn {
+            animation: ai-chat-notes-repel-breathe 3.2s ease-in-out infinite;
+        }
         #ai-chat-launcher:hover,
         #ai-chat-quick-task-btn:hover,
         #multiverse-quick-btn:hover,
-        #multiverse-timeline-quick-btn:hover {
+        #multiverse-timeline-quick-btn:hover,
+        #notes-quick-btn:hover {
             animation-play-state: paused;
         }
         /* iOS home-screen-style jiggle while reordering Universe cards (see
@@ -430,6 +441,13 @@
                     class="absolute -bottom-11 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full bg-amber-500 hover:bg-amber-400 border-2 border-slate-950 text-white text-xl flex items-center justify-center shadow-lg transition">
                 ⏳
             </button>
+            <!-- Fifth tangent circle, centered ABOVE the devil - the one side not already taken.
+                 Plain full-page link (not a JS handler like its siblings) straight to the
+                 dedicated Notes page, same "reachable from anywhere" idea as the other badges. -->
+            <a href="/notes" id="notes-quick-btn" title="Notes"
+               class="absolute -top-9 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full bg-yellow-500 hover:bg-yellow-400 border-2 border-slate-950 text-white text-xl flex items-center justify-center shadow-lg transition">
+                📝
+            </a>
             {% endif %}
         </div>
     </div>
