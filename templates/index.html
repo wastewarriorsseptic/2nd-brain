@@ -1027,11 +1027,11 @@
              look at. Sits above the canvas but below the top/bottom HUD bars (no z-index of its
              own - an absolute box with z-index:auto here paints above the plain canvas behind it
              in DOM order, while the bars keep their own explicit z-10/z-20 above it). -->
-        <div id="event-universe-cards-wrap" class="absolute inset-x-0 top-[13%] bottom-[14%] overflow-y-auto pointer-events-none px-4 md:px-10"></div>
+        <div id="event-universe-cards-wrap" class="absolute inset-x-0 top-[21%] bottom-[14%] overflow-y-auto pointer-events-none px-4 md:px-10"></div>
 
-        <div id="event-quick-create-modal" class="hidden absolute inset-0 z-30 flex items-center justify-center px-4" style="background: rgba(2, 6, 23, 0.55);" onclick="if (event.target === this) closeEventQuickCreateModal();">
+        <div id="event-quick-create-modal" class="hidden absolute inset-0 z-30 flex items-center justify-center px-4 py-8 overflow-y-auto" style="background: rgba(2, 6, 23, 0.55);" onclick="if (event.target === this) closeEventQuickCreateModal();">
             <form action="/events/quick" method="POST" id="event-quick-create-form"
-                  class="relative w-full max-w-sm bg-slate-900/95 border border-indigo-500/40 rounded-3xl p-6 shadow-2xl backdrop-blur-md overflow-hidden">
+                  class="relative w-full max-w-sm my-auto bg-slate-900/95 border border-indigo-500/40 rounded-3xl p-6 shadow-2xl backdrop-blur-md overflow-hidden">
                 <input type="hidden" name="universe_id" value="{{ active_universe.id if active_universe else '' }}">
 
                 <button type="button" onclick="closeEventQuickCreateModal()" aria-label="Close"
@@ -4503,7 +4503,11 @@
             // can cover that corner too, so they hide alongside the main launcher rather than
             // being left sitting on top of the same Save/Cancel buttons.
             const notesEventsWrapper = document.getElementById('notes-events-wrapper');
-            const bigTaskModals = ['add-item-modal', 'edit-item-modal']
+            // event-quick-create-modal joined this list - reported directly, a screenshot showing
+            // its own Private/Draft checkboxes and Create button sitting behind the launcher circles
+            // on mobile (that modal's z-30 is BELOW the launcher wrapper's z-[70], so it was never
+            // just a spacing issue - the launcher was actually rendering on top of it the whole time).
+            const bigTaskModals = ['add-item-modal', 'edit-item-modal', 'event-quick-create-modal']
                 .map(id => document.getElementById(id))
                 .filter(Boolean);
             if (!launcherWrapper || !bigTaskModals.length) return;
