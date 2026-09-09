@@ -3611,17 +3611,22 @@
 
             if (container) {
                 wrappers.sort((a, b) => {
-                    const isCompletedA = a.getAttribute('data-completed') === 'true';
-                    const isCompletedB = b.getAttribute('data-completed') === 'true';
                     const dateA = new Date(a.getAttribute('data-due-date') + 'T00:00:00');
                     const dateB = new Date(b.getAttribute('data-due-date') + 'T00:00:00');
                     const idA = parseInt(a.getAttribute('data-item-id') || '0');
                     const idB = parseInt(b.getAttribute('data-item-id') || '0');
 
-                    if (currentFilterMode === 'completed' && isCompletedA && isCompletedB) {
+                    // Gated on currentFilterMode alone now, not also requiring both sides of THIS
+                    // particular pair to be completed - the array being sorted is every item on the
+                    // page, not just completed ones (non-completed rows just get hidden afterward by
+                    // the visibility pass below), so a comparator that switches criteria per-pair
+                    // depending on each side's own completed flag isn't a consistent ordering at all
+                    // and produced a scrambled, close-to-random order on the Completed tab - reported
+                    // directly ("most recent completed tasks should not be at the bottom").
+                    if (currentFilterMode === 'completed') {
                         const timeA = a.getAttribute('data-completed-at') ? new Date(a.getAttribute('data-completed-at')) : new Date(0);
                         const timeB = b.getAttribute('data-completed-at') ? new Date(b.getAttribute('data-completed-at')) : new Date(0);
-                        
+
                         if (timeB - timeA !== 0) return timeB - timeA;
                         if (idB - idA !== 0) return idB - idA;
                         return dateB - dateA;
