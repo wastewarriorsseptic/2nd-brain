@@ -225,13 +225,6 @@
             0%, 100% { transform: translateX(-50%) translateY(0) scale(1); }
             50% { transform: translateX(-50%) translateY(4px) scale(1.06); }
         }
-        /* Fifth tangent circle, centered ABOVE the devil (the only side not already taken by "+"
-           bottom-right, 🏡 bottom-left, or ⏳ bottom-center) - same centered-pill trick as the ⏳
-           keyframe above, just pushing up instead of down. */
-        @keyframes ai-chat-notes-repel-breathe {
-            0%, 100% { transform: translateX(-50%) translateY(0) scale(1); }
-            50% { transform: translateX(-50%) translateY(-4px) scale(1.06); }
-        }
         #ai-chat-launcher {
             animation: ai-chat-quick-task-float-breathe 3.2s ease-in-out infinite;
         }
@@ -244,13 +237,18 @@
         #multiverse-timeline-quick-btn {
             animation: ai-chat-timeline-repel-breathe 3.2s ease-in-out infinite;
         }
-        #notes-quick-btn {
-            animation: ai-chat-notes-repel-breathe 3.2s ease-in-out infinite;
-        }
         #ai-chat-launcher:hover,
         #ai-chat-quick-task-btn:hover,
         #multiverse-quick-btn:hover,
-        #multiverse-timeline-quick-btn:hover,
+        #multiverse-timeline-quick-btn:hover {
+            animation-play-state: paused;
+        }
+        /* Standalone Notes shortcut, opposite corner from the main launcher cluster - just a plain
+           idle float (the shared ai-chat-launcher-float keyframe), not the cluster's own
+           repel-from-devil choreography, since this isn't tangent to anything. */
+        #notes-quick-btn {
+            animation: ai-chat-launcher-float 3.2s ease-in-out infinite;
+        }
         #notes-quick-btn:hover {
             animation-play-state: paused;
         }
@@ -441,16 +439,19 @@
                     class="absolute -bottom-11 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full bg-amber-500 hover:bg-amber-400 border-2 border-slate-950 text-white text-xl flex items-center justify-center shadow-lg transition">
                 ⏳
             </button>
-            <!-- Fifth tangent circle, centered ABOVE the devil - the one side not already taken.
-                 Plain full-page link (not a JS handler like its siblings) straight to the
-                 dedicated Notes page, same "reachable from anywhere" idea as the other badges. -->
-            <a href="/notes" id="notes-quick-btn" title="Notes"
-               class="absolute -top-9 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full bg-yellow-500 hover:bg-yellow-400 border-2 border-slate-950 text-white text-xl flex items-center justify-center shadow-lg transition">
-                📝
-            </a>
             {% endif %}
         </div>
     </div>
+
+    {% if user %}
+    <!-- Standalone Notes shortcut - opposite corner from the main launcher cluster (which stays
+         bottom-right), reported directly as wanting it there rather than folded into the cluster's
+         own tangent-circle choreography. -->
+    <a href="/notes" id="notes-quick-btn" title="Notes"
+       class="fixed bottom-[71px] left-[50px] z-[70] w-14 h-14 rounded-full bg-yellow-500 hover:bg-yellow-400 border border-yellow-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
+        📝
+    </a>
+    {% endif %}
 
     <!-- Mobile: a compact strip - about a quarter of the screen's height, bottom-anchored above
          the launcher - rather than the near-fullscreen layout this used to have, so the app
@@ -4420,6 +4421,10 @@
         // them in one place instead of having to update every call site individually).
         document.addEventListener('DOMContentLoaded', () => {
             const launcherWrapper = document.getElementById('ai-chat-launcher-wrapper');
+            // Standalone Notes shortcut (opposite corner) - a full-width modal on mobile can cover
+            // that corner too, so it hides alongside the main launcher rather than being left
+            // sitting on top of the same Save/Cancel buttons.
+            const notesBtn = document.getElementById('notes-quick-btn');
             const bigTaskModals = ['add-item-modal', 'edit-item-modal']
                 .map(id => document.getElementById(id))
                 .filter(Boolean);
@@ -4428,6 +4433,7 @@
             const updateLauncherVisibility = () => {
                 const anyOpen = bigTaskModals.some(m => !m.classList.contains('hidden'));
                 launcherWrapper.classList.toggle('hidden', anyOpen);
+                if (notesBtn) notesBtn.classList.toggle('hidden', anyOpen);
             };
 
             bigTaskModals.forEach(modal => {
