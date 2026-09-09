@@ -6865,20 +6865,22 @@
             renderEventUniverseCards();
         }
 
-        // Builds one floating card for a single event - pulled out of renderEventUniverseCards so
-        // it can be called once per Realm group instead of once for a single flat deck.
+        // Builds one floating card for a single event - a compact variant of the old flat-deck
+        // card. No date line anymore: the column this card sits IN (see renderEventUniverseCards)
+        // already says what day it is, so repeating the full date on every card was redundant once
+        // cards stack inside a day instead of a Realm section. Time-of-day stays, since same-day
+        // cards in the same column still need to tell apart.
         function buildEventUniverseCard(ev, glowIdx) {
             const glow = EVENT_CARD_GLOWS[glowIdx % EVENT_CARD_GLOWS.length];
             const shareToken = encodeURIComponent(ev.shareToken);
-            // Always a <div> wrapper now, never a top-level <a> - reported directly there was
-            // no way to edit an event (draft or already-sent) from Space View at all, so
-            // every card needs its own actions row below the content, and a <button>/<form>
-            // nested inside an <a> is invalid HTML/unreliable to click.
+            // Always a <div> wrapper, never a top-level <a> - reported directly there was no way
+            // to edit an event (draft or already-sent) from Space View at all, so every card needs
+            // its own actions row below the content, and a <button>/<form> nested inside an <a> is
+            // invalid HTML/unreliable to click.
             const card = document.createElement('div');
-            card.className = 'universe-card-float pointer-events-auto w-32 md:w-40 rounded-2xl border bg-slate-900/90 backdrop-blur-md flex flex-col items-center text-center gap-1 py-4 px-2.5 shadow-xl' + (ev.isPast ? ' opacity-50 grayscale' : '');
+            card.className = 'pointer-events-auto w-full rounded-2xl border bg-slate-900/90 backdrop-blur-md flex flex-col items-center text-center gap-1 py-3 px-2.5 shadow-xl' + (ev.isPast ? ' opacity-50 grayscale' : '');
             card.style.borderColor = ev.isDraft ? 'rgba(148, 163, 184, 0.4)' : (glow + '66');
-            card.style.boxShadow = ev.isDraft ? 'none' : `0 0 18px ${glow}22`;
-            card.style.setProperty('--float-delay', `${(glowIdx % 6) * 0.5}s`);
+            card.style.boxShadow = ev.isDraft ? 'none' : `0 0 14px ${glow}22`;
             card.style.borderStyle = ev.isDraft ? 'dashed' : 'solid';
 
             const rsvpBadge = ev.isDraft
@@ -6893,10 +6895,10 @@
             content.href = ev.isDraft ? `/events/${shareToken}/edit` : `/events/${shareToken}`;
             content.className = 'flex flex-col items-center gap-1 w-full' + (ev.isDraft ? '' : ' transition-transform hover:scale-105');
             content.innerHTML = `
-                <span class="text-3xl">${escapeHtml(ev.emoji)}</span>
+                <span class="text-2xl">${escapeHtml(ev.emoji)}</span>
                 ${ev.isPrivate ? '<span class="text-[9px] font-bold text-slate-500">🔒 Private</span>' : ''}
                 <span class="text-xs font-bold text-white leading-snug line-clamp-2">${escapeHtml(ev.title)}</span>
-                <span class="text-[10px] font-semibold" style="color: ${ev.isDraft ? '#94a3b8' : glow}">${escapeHtml(ev.dueDateFormatted)}${ev.dueTimeFormatted ? ' · ' + escapeHtml(ev.dueTimeFormatted) : ''}</span>
+                <span class="text-[10px] font-semibold" style="color: ${ev.isDraft ? '#94a3b8' : glow}">${escapeHtml(ev.dueTimeFormatted || 'All day')}</span>
                 ${ev.location ? `<span class="text-[9px] text-slate-500 truncate max-w-full">📍 ${escapeHtml(ev.location)}</span>` : ''}
                 ${rsvpBadge}
             `;
@@ -6928,70 +6930,74 @@
             return card;
         }
 
+        // "YYYY-MM-DD" -> a local-midnight Date, matching getRelativeDateLabel's own parsing -
+        // new Date("YYYY-MM-DD") parses as UTC midnight, which can land on the wrong calendar day
+        // once compared against a local "today" in a negative UTC-offset timezone.
+        function parseYMDLocal(str) {
+            const parts = (str || '').split('-');
+            if (parts.length !== 3) return null;
+            return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        }
+        function formatYMDLocal(date) {
+            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        }
+
         // Space View's own layout for an Event Universe: no realm/bucket/task orbit ring at all
-        // (see the isEventUniverse branch in initSpaceCanvas) - instead, events are grouped into
-        // one section per Realm (same organizing structure Notes and Tasks already use - reported
-        // directly this deck was "too simple" as one flat unsorted pile), each section a row of
-        // floating cards sorted soonest-first, plus a permanent "+ New Event" tile so the fun
-        // creator stays reachable at all times. A Realm filter chip row (only shown once there's
-        // more than one Realm to choose between) mirrors the exact "All" + per-Realm-icon-chip
-        // pattern the standalone Notes page already uses. Tapping an event card jumps straight to
-        // its shareable invite page - full editing still happens through the normal Timeline (Card
-        // View), this is meant to be the fun, visual, browsing/sharing surface, not a second editor.
+        // (see the isEventUniverse branch in initSpaceCanvas) - instead, a Left-to-Right timeline,
+        // one column per calendar day from today out to the furthest scheduled event (capped, with
+        // any outlier past that folded into a trailing "Later" column), whether or not that day has
+        // anything in it - reported directly: grouping by Realm alone gave no visual sense of WHEN
+        // things are, and the ask was specifically to see that "whether there is [an event] there
+        // or not". A day with nothing shows as a thin marker; a busy day's cards stack up and the
+        // column grows taller, so density reads as a skyline across the timeline. Any already-past
+        // event (still useful to keep reachable, e.g. an old draft) collapses into one "Past" column
+        // at the far left instead of one column per past day, since the future is what this view is
+        // actually about. The Realm filter chip row (only shown once there's more than one Realm to
+        // choose between) now filters WHICH cards populate the columns rather than switching
+        // sections - same "All" + per-Realm-icon-chip pattern the standalone Notes page uses.
+        // Tapping a card jumps straight to its shareable invite page - full editing still happens
+        // through the normal Timeline (Card View), this is meant to be the fun, visual, at-a-glance
+        // surface, not a second editor.
+        const EVENT_TIMELINE_HORIZON_DAYS = 60;
+        const EVENT_TIMELINE_MIN_DAYS = 13;
+
         function renderEventUniverseCards() {
             const wrap = document.getElementById('event-universe-cards-wrap');
             if (!wrap) return;
             wrap.innerHTML = '';
 
             const inner = document.createElement('div');
-            inner.className = 'max-w-4xl mx-auto py-2';
+            inner.className = 'h-full flex flex-col';
 
-            const addTileRow = document.createElement('div');
-            addTileRow.className = 'flex justify-center pointer-events-none mb-4';
-            const addTile = document.createElement('button');
-            addTile.type = 'button';
-            addTile.onclick = openEventQuickCreateModal;
-            addTile.style.setProperty('--float-delay', '0s');
-            addTile.className = 'universe-card-float pointer-events-auto w-32 md:w-40 rounded-2xl border-2 border-dashed border-indigo-400/50 bg-indigo-500/10 hover:bg-indigo-500/20 hover:border-indigo-400/80 text-indigo-200 flex flex-col items-center justify-center gap-1.5 py-6 transition-colors';
-            addTile.innerHTML = '<span class="text-3xl">✨</span><span class="text-xs font-bold">New Event</span>';
-            addTileRow.appendChild(addTile);
-            inner.appendChild(addTileRow);
-
-            // Group into one bucket per Realm (realmId null/undefined -> "Uncategorized", for any
-            // event whose bucket genuinely has no Realm at all - the quick-create form itself
-            // always lands in a real Realm, General by default, so this is mostly a safety net for
-            // older data or events organized via the full form some other way).
-            const groups = new Map();
+            // Realm chips (built from every card, unaffected by the filter itself) + the "+ New
+            // Event" shortcut share one sticky header row so both stay reachable no matter how far
+            // the timeline below has been scrolled.
+            const realmsById = new Map();
             eventUniverseCards.forEach((ev) => {
                 const key = ev.realmId != null ? String(ev.realmId) : 'uncategorized';
-                if (!groups.has(key)) {
-                    groups.set(key, {
+                if (!realmsById.has(key)) {
+                    realmsById.set(key, {
                         key,
                         name: ev.realmId != null ? ev.realmName : 'Uncategorized',
                         icon: ev.realmId != null ? (ev.realmIcon || '🔮') : '🔮',
-                        cards: [],
                     });
                 }
-                groups.get(key).cards.push(ev);
             });
+            const realmList = Array.from(realmsById.values());
 
-            const groupList = Array.from(groups.values());
-            // Soonest-upcoming Realm first; a Realm with nothing left upcoming sinks below every
-            // Realm that still has something coming, ordered by how recently its last event passed.
-            groupList.sort((a, b) => {
-                const upcomingA = a.cards.find(c => !c.isPast);
-                const upcomingB = b.cards.find(c => !c.isPast);
-                if (upcomingA && upcomingB) return upcomingA.dueDate < upcomingB.dueDate ? -1 : (upcomingA.dueDate > upcomingB.dueDate ? 1 : 0);
-                if (upcomingA) return -1;
-                if (upcomingB) return 1;
-                const lastA = a.cards[a.cards.length - 1];
-                const lastB = b.cards[b.cards.length - 1];
-                return (lastB ? lastB.dueDate : '') < (lastA ? lastA.dueDate : '') ? -1 : 1;
-            });
+            const headerRow = document.createElement('div');
+            headerRow.className = 'shrink-0 flex items-center gap-2 pointer-events-none mb-3 flex-wrap';
 
-            if (groupList.length > 1) {
+            const addTile = document.createElement('button');
+            addTile.type = 'button';
+            addTile.onclick = openEventQuickCreateModal;
+            addTile.className = 'pointer-events-auto shrink-0 flex items-center gap-1.5 rounded-full border-2 border-dashed border-indigo-400/50 bg-indigo-500/10 hover:bg-indigo-500/20 hover:border-indigo-400/80 text-indigo-200 text-xs font-bold px-3 py-1.5 transition-colors';
+            addTile.innerHTML = '<span>✨</span><span>New Event</span>';
+            headerRow.appendChild(addTile);
+
+            if (realmList.length > 1) {
                 const chipRow = document.createElement('div');
-                chipRow.className = 'sticky top-0 z-10 flex items-center gap-1.5 overflow-x-auto pb-2 mb-3 pointer-events-auto bg-slate-950/70 backdrop-blur-sm rounded-full px-1';
+                chipRow.className = 'flex items-center gap-1.5 overflow-x-auto pointer-events-auto';
 
                 const allChip = document.createElement('button');
                 allChip.type = 'button';
@@ -7000,46 +7006,128 @@
                 allChip.textContent = 'All';
                 chipRow.appendChild(allChip);
 
-                groupList.forEach((group) => {
+                realmList.forEach((realm) => {
                     const chip = document.createElement('button');
                     chip.type = 'button';
-                    chip.title = group.name;
-                    chip.onclick = () => setEventCardsRealmFilter(group.key);
-                    chip.className = 'shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm transition-colors border ' + (eventCardsRealmFilter === group.key ? 'bg-indigo-600 border-indigo-400' : 'bg-slate-900/80 border-slate-700 hover:border-indigo-500/60');
-                    chip.textContent = group.icon;
+                    chip.title = realm.name;
+                    chip.onclick = () => setEventCardsRealmFilter(realm.key);
+                    chip.className = 'shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm transition-colors border ' + (eventCardsRealmFilter === realm.key ? 'bg-indigo-600 border-indigo-400' : 'bg-slate-900/80 border-slate-700 hover:border-indigo-500/60');
+                    chip.textContent = realm.icon;
                     chipRow.appendChild(chip);
                 });
 
-                inner.appendChild(chipRow);
+                headerRow.appendChild(chipRow);
+            }
+            inner.appendChild(headerRow);
+
+            const visibleCards = eventUniverseCards.filter(ev => eventCardsRealmFilter === null || (ev.realmId != null ? String(ev.realmId) : 'uncategorized') === eventCardsRealmFilter);
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const capDate = new Date(today);
+            capDate.setDate(capDate.getDate() + EVENT_TIMELINE_HORIZON_DAYS);
+
+            // Bucketed by CALENDAR DAY (the date part of dueDate), not by ev.isPast - isPast is a
+            // full timestamp comparison against right-now, so an event at 1am today would already
+            // read as "past" by that measure and get pulled out of the Today column entirely even
+            // though it's still very much today's event. isPast is still exactly what should drive
+            // each card's own grayscale/opacity styling (see buildEventUniverseCard) - just not
+            // which day-bucket it lands in.
+            const pastCards = [];
+            const futureCards = [];
+            let maxFutureDate = null;
+            visibleCards.forEach((ev) => {
+                const d = parseYMDLocal(ev.dueDate);
+                if (d && d < today) {
+                    pastCards.push(ev);
+                    return;
+                }
+                futureCards.push(ev);
+                if (d && (!maxFutureDate || d > maxFutureDate)) maxFutureDate = d;
+            });
+            pastCards.sort((a, b) => (a.dueDate < b.dueDate ? 1 : -1));
+
+            let horizonDate;
+            let overflowCards = [];
+            if (maxFutureDate && maxFutureDate > capDate) {
+                horizonDate = capDate;
+                overflowCards = futureCards.filter(ev => {
+                    const d = parseYMDLocal(ev.dueDate);
+                    return d && d > capDate;
+                });
+            } else if (maxFutureDate) {
+                horizonDate = maxFutureDate;
+            } else {
+                horizonDate = new Date(today);
+                horizonDate.setDate(horizonDate.getDate() + EVENT_TIMELINE_MIN_DAYS);
             }
 
+            const timelineRow = document.createElement('div');
+            timelineRow.className = 'flex-1 min-h-0 overflow-x-auto overflow-y-auto pointer-events-auto';
+            const columnsWrap = document.createElement('div');
+            // Left-to-right day COLUMNS on desktop (md+); on mobile there's no room for 60+
+            // side-scrolling columns, so the same one-slot-per-day data instead stacks into day
+            // ROWS read top-to-bottom - reported directly ("everything would have to stack down but
+            // do so with spaces inbetween where dates would be filled"). Each row still gets a
+            // divider even when empty, so the vertical stack keeps the same "you can see the gaps
+            // between events" feel the horizontal version has, just rotated 90 degrees.
+            columnsWrap.className = 'flex flex-col md:flex-row md:items-start gap-0 md:gap-2.5 pb-4 px-1';
+
             let glowIdx = 0;
-            groupList
-                .filter(group => eventCardsRealmFilter === null || eventCardsRealmFilter === group.key)
-                .forEach((group) => {
-                    const section = document.createElement('div');
-                    section.className = 'mb-5';
+            const buildColumn = (label, sublabel, cards, opts) => {
+                opts = opts || {};
+                const col = document.createElement('div');
+                col.className = 'w-full md:w-28 lg:w-32 md:shrink-0 flex flex-row md:flex-col items-start md:items-center gap-3 md:gap-0 py-2.5 md:py-0 border-b border-slate-800/50 md:border-b-0 last:border-b-0 min-w-0';
 
-                    const header = document.createElement('div');
-                    header.className = 'flex items-center gap-1.5 mb-2 pointer-events-none';
-                    header.innerHTML = `
-                        <span class="text-base">${escapeHtml(group.icon)}</span>
-                        <span class="text-xs font-bold text-slate-300">${escapeHtml(group.name)}</span>
-                        <span class="text-[10px] text-slate-500">${group.cards.length}</span>
-                    `;
-                    section.appendChild(header);
+                const header = document.createElement('div');
+                header.className = 'w-16 md:w-full shrink-0 text-right md:text-center md:mb-2 pointer-events-none';
+                header.innerHTML = `
+                    <div class="text-[11px] font-bold ${opts.headerColorClass || 'text-slate-400'}">${escapeHtml(label)}</div>
+                    ${sublabel ? `<div class="text-[9px] text-slate-500">${escapeHtml(sublabel)}</div>` : ''}
+                `;
+                col.appendChild(header);
 
-                    const cardsRow = document.createElement('div');
-                    cardsRow.className = 'flex flex-wrap items-start gap-4 md:gap-5 pointer-events-none';
-                    group.cards.forEach((ev) => {
-                        cardsRow.appendChild(buildEventUniverseCard(ev, glowIdx));
-                        glowIdx++;
-                    });
-                    section.appendChild(cardsRow);
+                if (cards.length === 0) {
+                    const emptyMarker = document.createElement('div');
+                    emptyMarker.className = 'flex-1 md:flex-none md:w-full flex items-center md:flex-col pointer-events-none md:pt-2';
+                    emptyMarker.innerHTML = `<span class="w-1.5 h-1.5 rounded-full ${opts.emptyDotClass || 'bg-slate-700'}"></span>`;
+                    col.appendChild(emptyMarker);
+                    columnsWrap.appendChild(col);
+                    return;
+                }
 
-                    inner.appendChild(section);
+                const stack = document.createElement('div');
+                stack.className = 'flex-1 md:flex-none min-w-0 flex flex-col gap-2 md:w-full';
+                cards.forEach((ev) => {
+                    stack.appendChild(buildEventUniverseCard(ev, glowIdx));
+                    glowIdx++;
                 });
+                col.appendChild(stack);
+                columnsWrap.appendChild(col);
+            };
 
+            if (pastCards.length > 0) {
+                buildColumn('Past', `${pastCards.length}`, pastCards, { headerColorClass: 'text-slate-500', emptyDotClass: 'bg-slate-800' });
+            }
+
+            const cursor = new Date(today);
+            while (cursor <= horizonDate) {
+                const cursorStr = formatYMDLocal(cursor);
+                const dayCards = futureCards.filter(ev => ev.dueDate === cursorStr);
+                const isToday = cursorStr === formatYMDLocal(today);
+                const label = getRelativeDateLabel(cursorStr, cursor.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+                const sublabel = (label === 'Today' || label === 'Tomorrow') ? cursor.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : cursor.toLocaleDateString('en-US', { weekday: 'short' });
+                buildColumn(label, sublabel, dayCards, { headerColorClass: isToday ? 'text-emerald-300' : 'text-slate-400' });
+                cursor.setDate(cursor.getDate() + 1);
+            }
+
+            if (overflowCards.length > 0) {
+                overflowCards.sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1));
+                buildColumn('Later', `${overflowCards.length}`, overflowCards, { headerColorClass: 'text-indigo-300' });
+            }
+
+            timelineRow.appendChild(columnsWrap);
+            inner.appendChild(timelineRow);
             wrap.appendChild(inner);
         }
 
