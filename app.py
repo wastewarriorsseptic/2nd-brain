@@ -3727,7 +3727,7 @@ def get_user_from_api_key(session: Session, request: Request) -> Optional["User"
 @app.post("/api/events/")
 def api_create_event(request: Request, payload: dict = Body(...)):
     """POST with `Authorization: Bearer <key>` and a JSON body:
-        {"title": "...", "due_at": "2026-09-15T10:00:00", "emoji": "🚛",
+        {"title": "...", "due_at": "2026-09-15T10:00:00", "emoji": "📅",
          "description": "...", "location": "123 Main St", "is_private": true, "is_draft": false,
          "requires_rsvp": false, "reminder_minutes_before": 60, "remind_day_before": true,
          "guest_emails": ["client@example.com"], "bucket_id": null}

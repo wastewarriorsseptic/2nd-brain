@@ -27,9 +27,9 @@
                 <p class="font-bold text-slate-300 mb-1.5">Usage</p>
                 <p class="mb-2">POST to <code class="text-indigo-300">https://usetaskmonster.app/api/events/</code> with header <code class="text-indigo-300">Authorization: Bearer &lt;your key&gt;</code> and a JSON body:</p>
                 <pre class="bg-slate-950 border border-slate-700 rounded-lg p-3 overflow-x-auto text-slate-300">{
-  "title": "Septic Pumping Appointment",
+  "title": "Client Appointment",
   "due_at": "2026-09-15T10:00:00",
-  "emoji": "🚛",
+  "emoji": "📅",
   "requires_rsvp": false,
   "guest_emails": ["client@example.com"]
 }</pre>
@@ -38,7 +38,7 @@
                 <p class="font-bold text-slate-300 mb-1.5 mt-4">Updating an event</p>
                 <p class="mb-2">PATCH the same URL with <code class="text-indigo-300">event_id</code> or <code class="text-indigo-300">external_id</code>, plus whichever fields changed:</p>
                 <pre class="bg-slate-950 border border-slate-700 rounded-lg p-3 overflow-x-auto text-slate-300">{
-  "external_id": "WW-0869",
+  "external_id": "ORDER-1234",
   "due_at": "2026-09-16T09:00:00",
   "notify": false
 }</pre>
@@ -46,7 +46,7 @@
             </div>
 
             <form action="/settings/api/generate" method="POST" class="flex gap-2 mb-6">
-                <input type="text" name="label" placeholder="Label (e.g. Pumping Business App)"
+                <input type="text" name="label" placeholder="Label (e.g. My Business App)"
                        class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
                 <button type="submit"
                         class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-indigo-600/30 transition-all whitespace-nowrap">
