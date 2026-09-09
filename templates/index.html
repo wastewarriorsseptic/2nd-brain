@@ -5952,6 +5952,33 @@
             openMultiverseView();
         });
 
+        // Lands here after tapping a "+" on a Multiverse Timeline lane belonging to a DIFFERENT
+        // Universe than whatever page was loaded (see the midAddButtons branch of
+        // handleMultiverseStackedClick for why that has to navigate here instead of opening the
+        // modal in place). One-shot, unlike open_multiverse above - stripped after use, since
+        // there's nothing useful about reopening an empty Add Task modal on every future refresh of
+        // this URL.
+        document.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('open_add_task') !== '1') return;
+
+            const realmId = params.get('add_task_realm_id');
+            const bucketId = params.get('add_task_bucket_id');
+            if (realmId) currentSelectedRealmId = parseInt(realmId, 10);
+            if (bucketId) currentSelectedBucketId = parseInt(bucketId, 10);
+            if (isContactUniverse) {
+                openGlobalAddPersonModal();
+            } else {
+                openGlobalAddTaskModal();
+            }
+
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete('open_add_task');
+            cleanUrl.searchParams.delete('add_task_realm_id');
+            cleanUrl.searchParams.delete('add_task_bucket_id');
+            history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
+        });
+
 
         // The Space View top-left pill shows "TaskMonster / {active Universe name}" (its
         // server-rendered default, stashed in data-default-label so JS can restore it exactly)
@@ -7246,37 +7273,52 @@
         }
 
         // Shared by buildMultiverseLanes and buildRealmLanes - a "+" between every adjacent pair of
-        // tasks in the lane's combined left-to-right chain (oldest overdue ... newest overdue, then
-        // the hub, then soonest ... latest upcoming), plus one more past the very last task, same
-        // "extend the chain forward" affordance the single-bucket linear view's own midAddButtons
-        // already gives (see the isSelectedBucket branch of renderSpaceFrame's per-bucket pass).
-        // Reported directly as having "gone away" - these stacked lanes replaced the old ring/hub
-        // view but never got this ported over. Each button defaults to whichever task it's
-        // immediately right of (or the trailing task itself for the one past the end) - only ever a
+        // UPCOMING tasks, one right after the hub before the first upcoming task (the "start of
+        // chain" affordance the single-bucket linear view's own addTaskButton gives - see
+        // detectClickNode - translated to sit after the hub here instead of at the chain's own left
+        // edge), and one more past the very last task. Deliberately excludes the overdue side
+        // entirely, and never straddles the hub itself - an earlier version built one combined chain
+        // across both sides, which put a "+" for the overdue/upcoming boundary pair exactly at the
+        // hub's own position (that boundary gap is wider than a normal step, its midpoint lands
+        // right on x=0) and let "+"s show up among overdue tasks too; both reported directly. Each
+        // button defaults to whichever upcoming task it's immediately left or right of - only ever a
         // starting point, since the Add Task modal it opens (openGlobalAddTaskModal) still shows its
         // own Realm/Bucket picker.
-        function computeLaneMidAddButtons(lane, overdueTasks, upcomingTasks, stepSpacing, isMobile) {
-            const chain = overdueTasks.slice().reverse().concat(upcomingTasks);
+        function computeLaneMidAddButtons(lane, upcomingTasks, hubRadius, startGap, stepSpacing, isMobile) {
             const midAddButtons = [];
-            for (let i = 0; i < chain.length - 1; i++) {
+            if (upcomingTasks.length === 0) return midAddButtons;
+            const radius = isMobile ? 22 : 19;
+
+            midAddButtons.push({
+                x: lane.x + hubRadius + (startGap / 2),
+                y: lane.y,
+                bucketId: upcomingTasks[0].bucketId,
+                realmId: upcomingTasks[0].realmId,
+                universeId: upcomingTasks[0].universeId,
+                radius,
+            });
+
+            for (let i = 0; i < upcomingTasks.length - 1; i++) {
                 midAddButtons.push({
-                    x: (chain[i].x + chain[i + 1].x) / 2,
+                    x: (upcomingTasks[i].x + upcomingTasks[i + 1].x) / 2,
                     y: lane.y,
-                    bucketId: chain[i + 1].bucketId,
-                    realmId: chain[i + 1].realmId,
-                    radius: isMobile ? 22 : 19,
+                    bucketId: upcomingTasks[i + 1].bucketId,
+                    realmId: upcomingTasks[i + 1].realmId,
+                    universeId: upcomingTasks[i + 1].universeId,
+                    radius,
                 });
             }
-            if (chain.length > 0) {
-                const lastTask = chain[chain.length - 1];
-                midAddButtons.push({
-                    x: lastTask.x + stepSpacing,
-                    y: lane.y,
-                    bucketId: lastTask.bucketId,
-                    realmId: lastTask.realmId,
-                    radius: isMobile ? 22 : 19,
-                });
-            }
+
+            const lastTask = upcomingTasks[upcomingTasks.length - 1];
+            midAddButtons.push({
+                x: lastTask.x + stepSpacing,
+                y: lane.y,
+                bucketId: lastTask.bucketId,
+                realmId: lastTask.realmId,
+                universeId: lastTask.universeId,
+                radius,
+            });
+
             return midAddButtons;
         }
 
@@ -7403,7 +7445,7 @@
 
                 lane.leftmostTaskX = overdueTasks.length ? overdueTasks[overdueTasks.length - 1].x : null;
                 lane.rightmostTaskX = upcomingTasks.length ? upcomingTasks[upcomingTasks.length - 1].x : null;
-                lane.midAddButtons = computeLaneMidAddButtons(lane, overdueTasks, upcomingTasks, stepSpacing, isMobile);
+                lane.midAddButtons = computeLaneMidAddButtons(lane, upcomingTasks, hubRadius, startGap, stepSpacing, isMobile);
             });
 
             return lanes;
@@ -7526,7 +7568,7 @@
 
                 lane.leftmostTaskX = overdueTasks.length ? overdueTasks[overdueTasks.length - 1].x : null;
                 lane.rightmostTaskX = upcomingTasks.length ? upcomingTasks[upcomingTasks.length - 1].x : null;
-                lane.midAddButtons = computeLaneMidAddButtons(lane, overdueTasks, upcomingTasks, stepSpacing, isMobile);
+                lane.midAddButtons = computeLaneMidAddButtons(lane, upcomingTasks, hubRadius, startGap, stepSpacing, isMobile);
             });
 
             return lanes;
@@ -7896,16 +7938,27 @@
                 }
             }
 
-            // Same "+" hit-test the single-bucket linear view already does for its own
-            // midAddButtons (see detectClickNode's bucket.midAddButtons check) - see
-            // computeLaneMidAddButtons for why these exist on a lane at all.
+            // Same "+" the Realm Timeline hit-tests below, but this view spans every Universe at
+            // once while the Realm/Bucket picker inside the Add Task modal is only ever rendered
+            // (server-side, from the `realms` context var) for whichever ONE Universe the current
+            // page itself loaded for - opening the modal in place here showed only that Universe's
+            // Realms (just "General" on the Events Universe, say) no matter which lane's "+" was
+            // actually tapped, reported directly ("it doesnt recognise what universe or realm it
+            // just says General"). So a tap here instead navigates to the tapped task's own
+            // Universe first (open_add_task query-param flag below opens the modal, correctly
+            // pre-filled, once that fresh page load has ITS OWN Realms available) - same "leave this
+            // view for that Universe" pattern the hub click above already uses.
             for (const lane of multiverseLanes) {
                 for (const mab of (lane.midAddButtons || [])) {
                     const distMab = Math.hypot(worldX - mab.x, worldY - mab.y);
                     if (distMab <= mab.radius + 14) {
-                        currentSelectedRealmId = mab.realmId;
-                        currentSelectedBucketId = mab.bucketId;
-                        openGlobalAddTaskModal();
+                        const params = new URLSearchParams({
+                            universe_id: mab.universeId,
+                            open_add_task: '1',
+                            add_task_realm_id: mab.realmId,
+                            add_task_bucket_id: mab.bucketId,
+                        });
+                        window.location.href = '/?' + params.toString();
                         return;
                     }
                 }
