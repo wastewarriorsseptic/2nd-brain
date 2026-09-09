@@ -538,14 +538,17 @@ class AiChatUsageLog(SQLModel, table=True):
 
 class Note(SQLModel, table=True):
     """A simple, undated note - explicitly NOT a task: no due_date, no Bucket, never shows up on any
-    Timeline or in Space View. universe_id/realm_id are an optional "pin" purely for organizing/
-    filtering the Notes list itself (see notes_page) - a note pinned to a Realm still isn't INSIDE
-    that Realm's own Bucket hierarchy the way a task is, since that hierarchy exists to organize
-    dated tasks, which a note by definition isn't. realm_id is a further-narrowed sub-pin within
-    universe_id (not independent of it) - see create_note/update_note, which always keep the two in
-    sync (a realm_id whose own universe_id doesn't match the note's universe_id is rejected).
-    updated_at (not created_at) drives the list's own sort order, matching Apple Notes' own "most
-    recently edited first" ordering."""
+    Timeline or in Space View. universe_id is an optional "pin" purely for organizing/filtering the
+    Notes list itself (see notes_page) - a note pinned to a Universe still isn't INSIDE that
+    Universe's own Realm/Bucket hierarchy the way a task is, since that hierarchy exists to organize
+    dated tasks, which a note by definition isn't. updated_at (not created_at) drives the list's own
+    sort order, matching Apple Notes' own "most recently edited first" ordering.
+
+    realm_id is a deprecated, no-longer-surfaced sub-pin - Notes pinning was scoped down to
+    Universe-only (reported directly: per-Realm pinning was "too micro focused", and the tiny
+    icon-only indicator made it unclear at a glance which Universe a note even belonged to).
+    Left in place on any note that already had one rather than migrated away, since nothing reads
+    it anymore; new/updated notes never set it."""
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id", index=True)
     title: str = Field(default="")
@@ -4436,39 +4439,23 @@ def send_draft_event(request: Request, share_token: str):
 # --- Notes (Apple-Notes-style, deliberately undated) ---
 
 @app.get("/notes", response_class=HTMLResponse)
-def notes_page(request: Request, note_id: Optional[int] = None, universe_id: Optional[int] = None, realm_id: Optional[int] = None):
+def notes_page(request: Request, note_id: Optional[int] = None, universe_id: Optional[int] = None):
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user:
             return RedirectResponse(url="/login", status_code=303)
 
-        # A realm_id with no universe_id in the URL (e.g. a bookmarked/shared link) still resolves
-        # the right Universe chip as "active" and shows that Universe's own Realm sub-row - the two
-        # filters are meant to always agree with each other in the UI, not just independently work.
-        if realm_id and not universe_id:
-            owning_realm = session.exec(
-                select(Realm).where(Realm.id == realm_id, Realm.user_id == user.id)
-            ).first()
-            if owning_realm:
-                universe_id = owning_realm.universe_id
-
         notes_query = select(Note).where(Note.user_id == user.id)
-        if realm_id:
-            notes_query = notes_query.where(Note.realm_id == realm_id)
-        elif universe_id:
+        if universe_id:
             notes_query = notes_query.where(Note.universe_id == universe_id)
         notes = session.exec(notes_query.order_by(Note.updated_at.desc())).all()
 
-        # Only Universes/Realms this user owns outright - pinning is a personal organizing tool,
-        # not something to extend to a Universe/Realm someone else merely shared with them.
+        # Only Universes this user owns outright - pinning is a personal organizing tool, not
+        # something to extend to a Universe someone else merely shared with them.
         universes = session.exec(
             select(Universe).where(Universe.user_id == user.id).order_by(Universe.sort_order)
         ).all()
         universe_by_id = {u.id: u for u in universes}
-        realms = session.exec(
-            select(Realm).where(Realm.user_id == user.id).order_by(Realm.sort_order)
-        ).all()
-        realm_by_id = {r.id: r for r in realms}
 
         selected_note = None
         if note_id:
@@ -4486,17 +4473,14 @@ def notes_page(request: Request, note_id: Optional[int] = None, universe_id: Opt
                 "notes": notes,
                 "universes": universes,
                 "universe_by_id": universe_by_id,
-                "realms": realms,
-                "realm_by_id": realm_by_id,
                 "selected_note": selected_note,
                 "selected_universe_id": universe_id,
-                "selected_realm_id": realm_id,
                 "events_universe_href": get_events_universe_href(session, user.id),
             }
         )
 
 @app.post("/notes/")
-def create_note(request: Request, universe_id: Optional[int] = Form(None), realm_id: Optional[int] = Form(None)):
+def create_note(request: Request, universe_id: Optional[int] = Form(None)):
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user:
@@ -4507,25 +4491,14 @@ def create_note(request: Request, universe_id: Optional[int] = Form(None), realm
         ).first():
             universe_id = None
 
-        # A realm_id only sticks if it's both owned by this user AND actually belongs to the
-        # universe_id being pinned - a sub-pin can never point somewhere its own parent pin doesn't.
-        if realm_id:
-            realm = session.exec(select(Realm).where(Realm.id == realm_id, Realm.user_id == user.id)).first()
-            if not realm or (universe_id and realm.universe_id != universe_id):
-                realm_id = None
-            elif not universe_id:
-                universe_id = realm.universe_id
-
-        note = Note(user_id=user.id, title="", content="", universe_id=universe_id, realm_id=realm_id)
+        note = Note(user_id=user.id, title="", content="", universe_id=universe_id)
         session.add(note)
         session.commit()
         session.refresh(note)
         note_id = note.id
 
     redirect_url = f"/notes?note_id={note_id}"
-    if realm_id:
-        redirect_url += f"&realm_id={realm_id}"
-    elif universe_id:
+    if universe_id:
         redirect_url += f"&universe_id={universe_id}"
     return RedirectResponse(url=redirect_url, status_code=303)
 
@@ -4554,26 +4527,6 @@ def update_note(request: Request, note_id: int, payload: dict = Body(...)):
             ).first():
                 new_universe_id = None
             note.universe_id = new_universe_id
-            # Changing the Universe pin invalidates any Realm sub-pin that no longer belongs to
-            # it - a leftover realm_id from before this change would otherwise silently point
-            # outside the new universe_id, something create_note's own validation would never
-            # have allowed in the first place.
-            if note.realm_id:
-                current_realm = session.get(Realm, note.realm_id)
-                if not current_realm or current_realm.universe_id != new_universe_id:
-                    note.realm_id = None
-        if "realm_id" in payload:
-            new_realm_id = payload["realm_id"] or None
-            if new_realm_id:
-                realm = session.exec(select(Realm).where(Realm.id == new_realm_id, Realm.user_id == user.id)).first()
-                if not realm:
-                    new_realm_id = None
-                else:
-                    # A Realm pin always carries its own Universe along with it - picking a Realm
-                    # directly (without touching the Universe dropdown first) still promotes the
-                    # note's universe_id to match, so the two never drift apart.
-                    note.universe_id = realm.universe_id
-            note.realm_id = new_realm_id
 
         note.updated_at = datetime.utcnow()
         session.add(note)

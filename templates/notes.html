@@ -67,8 +67,7 @@
                  pushes the editor off-screen). -->
             <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-3 flex flex-col md:overflow-hidden">
                 <form action="/notes/" method="POST" class="mb-2.5">
-                    {% if selected_realm_id %}<input type="hidden" name="realm_id" value="{{ selected_realm_id }}">
-                    {% elif selected_universe_id %}<input type="hidden" name="universe_id" value="{{ selected_universe_id }}">{% endif %}
+                    {% if selected_universe_id %}<input type="hidden" name="universe_id" value="{{ selected_universe_id }}">{% endif %}
                     <button type="submit" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/20 transition-all">
                         + New Note
                     </button>
@@ -89,38 +88,22 @@
                 </div>
                 {% endif %}
 
-                {% set universe_realms = realms|selectattr('universe_id', 'equalto', selected_universe_id)|list if selected_universe_id else [] %}
-                {% if universe_realms %}
-                <!-- Realm sub-row - only ever shown once a Universe chip above is active, so this
-                     always reads as "narrow further within X" rather than a second unrelated
-                     filter row. -->
-                <div class="flex items-center gap-1.5 overflow-x-auto pb-2 mb-1.5 border-b border-slate-700/60">
-                    <a href="/notes?universe_id={{ selected_universe_id }}" title="All in this Universe"
-                       class="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full transition-colors {{ 'bg-indigo-600 text-white' if not selected_realm_id else 'bg-slate-900/80 text-slate-400 hover:text-white' }}">
-                        All
-                    </a>
-                    {% for r in universe_realms %}
-                    <a href="/notes?realm_id={{ r.id }}" title="{{ r.name }}"
-                       class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs transition-colors border {{ 'bg-indigo-600 border-indigo-400' if selected_realm_id == r.id else 'bg-slate-900/80 border-slate-700 hover:border-indigo-500/60' }}">
-                        {{ r.icon or '🔮' }}
-                    </a>
-                    {% endfor %}
-                </div>
-                {% endif %}
-
                 <div class="flex-1 overflow-y-auto space-y-1 -mx-1 px-1">
                     {% for n in notes %}
-                    <a href="/notes?note_id={{ n.id }}{% if selected_realm_id %}&realm_id={{ selected_realm_id }}{% elif selected_universe_id %}&universe_id={{ selected_universe_id }}{% endif %}"
+                    <a href="/notes?note_id={{ n.id }}{% if selected_universe_id %}&universe_id={{ selected_universe_id }}{% endif %}"
                        class="block px-2.5 py-2 rounded-xl transition-colors {{ 'bg-indigo-600/90' if selected_note and n.id == selected_note.id else 'hover:bg-slate-700/60' }}">
-                        <div class="flex items-center gap-1.5 min-w-0">
-                            {% if n.universe_id and universe_by_id.get(n.universe_id) %}
-                            <span class="shrink-0 text-xs">{{ universe_by_id.get(n.universe_id).icon or '😈' }}</span>
-                            {% endif %}
-                            {% if n.realm_id and realm_by_id.get(n.realm_id) %}
-                            <span class="shrink-0 text-xs" title="{{ realm_by_id.get(n.realm_id).name }}">{{ realm_by_id.get(n.realm_id).icon or '🔮' }}</span>
-                            {% endif %}
-                            <p class="text-xs font-bold truncate {{ 'text-white' if selected_note and n.id == selected_note.id else 'text-slate-200' }}">{{ n.title or 'New Note' }}</p>
-                        </div>
+                        <!-- A note's Universe pin used to be just a small unlabeled emoji next to the
+                             title - reported directly as too easy to forget the meaning of at a
+                             glance. Now a proper labeled badge (icon + full name), same visual
+                             pattern the main app uses for its own Realm/Bucket badges, so which
+                             Universe a note belongs to (or that it isn't pinned to one at all) is
+                             obvious without hovering for a tooltip. -->
+                        {% if n.universe_id and universe_by_id.get(n.universe_id) %}
+                        <span class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 mb-1">
+                            {{ universe_by_id.get(n.universe_id).icon or '😈' }} {{ universe_by_id.get(n.universe_id).name }}
+                        </span>
+                        {% endif %}
+                        <p class="text-xs font-bold truncate {{ 'text-white' if selected_note and n.id == selected_note.id else 'text-slate-200' }}">{{ n.title or 'New Note' }}</p>
                         <p class="text-[11px] mt-0.5 truncate {{ 'text-indigo-200' if selected_note and n.id == selected_note.id else 'text-slate-500' }}">
                             {{ n.updated_at.strftime('%b %d, %Y') }}{% if n.content.strip() %} · {{ n.content.strip()[:60] }}{% endif %}
                         </p>
@@ -143,13 +126,6 @@
                             <option value="{{ u.id }}" {{ 'selected' if selected_note.universe_id == u.id else '' }}>{{ u.icon or '😈' }} {{ u.name }}</option>
                             {% endfor %}
                         </select>
-                        <!-- Options are populated/filtered by JS (see REALMS_DATA below) to just
-                             whichever Realms belong to the Universe currently selected above -
-                             hidden entirely until a Universe is picked, since a Realm sub-pin makes
-                             no sense without one. -->
-                        <select id="note-realm-select" class="hidden bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 min-w-0">
-                            <option value="">No Realm</option>
-                        </select>
                     </div>
                     <div class="flex items-center gap-2.5 shrink-0">
                         <span id="note-save-indicator" class="text-[10px] text-slate-500 opacity-0 transition-opacity">Saved</span>
@@ -169,8 +145,7 @@
                     <div class="text-4xl">📝</div>
                     <p class="text-slate-400 text-sm">No note selected yet.</p>
                     <form action="/notes/" method="POST">
-                        {% if selected_realm_id %}<input type="hidden" name="realm_id" value="{{ selected_realm_id }}">
-                        {% elif selected_universe_id %}<input type="hidden" name="universe_id" value="{{ selected_universe_id }}">{% endif %}
+                        {% if selected_universe_id %}<input type="hidden" name="universe_id" value="{{ selected_universe_id }}">{% endif %}
                         <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/20 transition-all">
                             + New Note
                         </button>
@@ -187,49 +162,7 @@
         const titleInput = document.getElementById('note-title-input');
         const contentInput = document.getElementById('note-content-input');
         const universeSelect = document.getElementById('note-universe-select');
-        const realmSelect = document.getElementById('note-realm-select');
         const saveIndicator = document.getElementById('note-save-indicator');
-
-        // Every Realm this user owns, everywhere - not just the active Universe's - so the Realm
-        // dropdown can be rebuilt on the fly whenever the Universe dropdown changes, with no extra
-        // round-trip to the server.
-        const REALMS_DATA = [
-            {% for r in realms %}
-            { id: {{ r.id }}, name: {{ r.name|tojson }}, icon: {{ (r.icon or '🔮')|tojson }}, universeId: {{ r.universe_id }} },
-            {% endfor %}
-        ];
-        const INITIAL_REALM_ID = {{ selected_note.realm_id or 'null' }};
-
-        // Rebuilds the Realm <select>'s own options to just whichever Realms belong to
-        // `universeId` - called on load (so a note's existing Realm pin shows correctly) and every
-        // time the Universe dropdown changes (so stale options from a DIFFERENT Universe can never
-        // linger). preselectRealmId is only ever passed on that initial load; every later rebuild
-        // (the user actively switching Universes) intentionally resets to "No Realm" instead, since
-        // whatever Realm was picked before almost certainly doesn't belong to the new Universe.
-        function rebuildRealmOptions(universeId, preselectRealmId) {
-            if (!realmSelect) return;
-            realmSelect.innerHTML = '';
-            const noneOpt = document.createElement('option');
-            noneOpt.value = '';
-            noneOpt.textContent = 'No Realm';
-            realmSelect.appendChild(noneOpt);
-
-            if (!universeId) {
-                realmSelect.classList.add('hidden');
-                return;
-            }
-            REALMS_DATA
-                .filter(r => String(r.universeId) === String(universeId))
-                .forEach(r => {
-                    const opt = document.createElement('option');
-                    opt.value = r.id;
-                    opt.textContent = `${r.icon} ${r.name}`;
-                    if (preselectRealmId && String(preselectRealmId) === String(r.id)) opt.selected = true;
-                    realmSelect.appendChild(opt);
-                });
-            realmSelect.classList.remove('hidden');
-        }
-        rebuildRealmOptions(universeSelect ? universeSelect.value : null, INITIAL_REALM_ID);
 
         function autoGrow() {
             contentInput.style.height = 'auto';
@@ -269,17 +202,7 @@
         if (universeSelect) {
             universeSelect.addEventListener('change', () => {
                 const newUniverseId = universeSelect.value ? parseInt(universeSelect.value, 10) : null;
-                // Switching Universe always drops whatever Realm was picked (it almost certainly
-                // doesn't belong to the new Universe) - rebuilding the dropdown with no
-                // preselection, then saving both fields together, keeps the client and server in
-                // sync in one round-trip rather than two.
-                rebuildRealmOptions(newUniverseId, null);
-                saveNote({ universe_id: newUniverseId, realm_id: null });
-            });
-        }
-        if (realmSelect) {
-            realmSelect.addEventListener('change', () => {
-                saveNote({ realm_id: realmSelect.value ? parseInt(realmSelect.value, 10) : null });
+                saveNote({ universe_id: newUniverseId });
             });
         }
 
