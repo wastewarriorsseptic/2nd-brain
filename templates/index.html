@@ -7037,28 +7037,37 @@
             const inner = document.createElement('div');
             inner.className = 'h-full flex flex-col';
 
-            // Realm/Bucket options built from every card (unaffected by the filters themselves).
+            // Realm/Bucket options built from realmsData - the real structure of the active
+            // Universe (same server-rendered data Card View's own sidebar uses) - rather than from
+            // eventUniverseCards. A brand-new Realm/Bucket with zero events in it yet still needs
+            // to show up here to be selectable at all (that's the whole point of letting someone
+            // route an event straight into a specific truck/bucket); building the list purely from
+            // existing events made an empty Realm/Bucket invisible until something was already
+            // filed into it. An "Uncategorized" entry is still added on top, but only when at least
+            // one event actually has no realm/bucket pin, since realmsData has no such row itself.
             const realmsById = new Map();
-            eventUniverseCards.forEach((ev) => {
-                const key = ev.realmId != null ? String(ev.realmId) : 'uncategorized';
-                if (!realmsById.has(key)) {
-                    realmsById.set(key, {
-                        key,
-                        name: ev.realmId != null ? ev.realmName : 'Uncategorized',
-                        icon: ev.realmId != null ? (ev.realmIcon || '🔮') : '🔮',
-                    });
-                }
+            realmsData.forEach((r) => {
+                realmsById.set(String(r.id), { key: String(r.id), name: r.name, icon: r.icon || '🔮' });
             });
+            if (eventUniverseCards.some((ev) => ev.realmId == null)) {
+                realmsById.set('uncategorized', { key: 'uncategorized', name: 'Uncategorized', icon: '🔮' });
+            }
             const realmList = Array.from(realmsById.values());
 
             const bucketsById = new Map();
-            eventUniverseCards.forEach((ev) => {
-                if (eventCardsRealmFilter !== null && (ev.realmId != null ? String(ev.realmId) : 'uncategorized') !== eventCardsRealmFilter) return;
-                const key = ev.bucketId != null ? String(ev.bucketId) : 'uncategorized';
-                if (!bucketsById.has(key)) {
-                    bucketsById.set(key, { key, name: ev.bucketId != null ? ev.bucketName : 'Uncategorized' });
-                }
+            realmsData.forEach((r) => {
+                if (eventCardsRealmFilter !== null && String(r.id) !== eventCardsRealmFilter) return;
+                (r.buckets || []).forEach((b) => {
+                    bucketsById.set(String(b.id), { key: String(b.id), name: b.name });
+                });
             });
+            const hasUncategorizedBucket = eventUniverseCards.some((ev) => {
+                if (eventCardsRealmFilter !== null && (ev.realmId != null ? String(ev.realmId) : 'uncategorized') !== eventCardsRealmFilter) return false;
+                return ev.bucketId == null;
+            });
+            if (hasUncategorizedBucket) {
+                bucketsById.set('uncategorized', { key: 'uncategorized', name: 'Uncategorized' });
+            }
             const bucketList = Array.from(bucketsById.values());
 
             const headerRow = document.createElement('div');
