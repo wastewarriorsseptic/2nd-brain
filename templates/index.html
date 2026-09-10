@@ -1069,13 +1069,27 @@
                         {% endfor %}
                     </select>
 
-                    <div class="grid grid-cols-[1fr_1fr_auto] gap-2">
-                        <input type="date" name="due_date" required
-                               class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-2.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
-                        <select name="due_time" id="event-quick-due-time-select"
-                               class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-2.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"></select>
+                    <!-- Reported directly as too cluttered - the raw mm/dd/yyyy segments and the
+                         truncated "Time (optiona..." select ate most of the row just showing
+                         emptiness. Both fields are still the real native inputs (so the OS/browser
+                         date and time pickers still do the actual picking), just made invisible and
+                         layered over a small icon button that shows 📅/🕐 until something's chosen,
+                         then swaps to the compact chosen value - see syncEventQuickDateTimeDisplay. -->
+                    <div class="flex items-center gap-2">
+                        <div class="relative w-12 h-11 shrink-0">
+                            <input type="date" name="due_date" id="event-quick-due-date-input" required
+                                   class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                            <div id="event-quick-due-date-display"
+                                 class="absolute inset-0 pointer-events-none bg-slate-950/80 border border-slate-700 rounded-xl flex items-center justify-center text-sm text-white">📅</div>
+                        </div>
+                        <div class="relative w-12 h-11 shrink-0">
+                            <select name="due_time" id="event-quick-due-time-select"
+                                   class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"></select>
+                            <div id="event-quick-due-time-display"
+                                 class="absolute inset-0 pointer-events-none bg-slate-950/80 border border-slate-700 rounded-xl flex items-center justify-center text-sm text-white">🕐</div>
+                        </div>
                         <input type="text" name="emoji" value="🎉" maxlength="8"
-                               class="w-12 bg-slate-950/80 border border-slate-700 rounded-xl px-2 py-2.5 text-lg text-center focus:outline-none focus:border-indigo-500">
+                               class="w-12 h-11 shrink-0 bg-slate-950/80 border border-slate-700 rounded-xl px-2 text-lg text-center focus:outline-none focus:border-indigo-500">
                     </div>
 
                     <div class="relative">
@@ -5504,6 +5518,28 @@
         }
         populateTimeSelect(document.getElementById('add-item-due-time-select'));
         populateTimeSelect(document.getElementById('event-quick-due-time-select'));
+
+        // Keeps the icon-only date/time buttons on the New Event quick-create modal in sync with
+        // their real (invisible, layered-on-top) native inputs - 📅/🕐 until something's actually
+        // chosen, then the compact picked value, so the row never shows raw empty mm/dd/yyyy
+        // segments or a truncated "Time (optiona..." select.
+        (function setupEventQuickDateTimeDisplay() {
+            const dateInput = document.getElementById('event-quick-due-date-input');
+            const dateDisplay = document.getElementById('event-quick-due-date-display');
+            if (dateInput && dateDisplay) {
+                dateInput.addEventListener('change', () => {
+                    const d = dateInput.value ? parseYMDLocal(dateInput.value) : null;
+                    dateDisplay.textContent = d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '📅';
+                });
+            }
+            const timeSelect = document.getElementById('event-quick-due-time-select');
+            const timeDisplay = document.getElementById('event-quick-due-time-display');
+            if (timeSelect && timeDisplay) {
+                timeSelect.addEventListener('change', () => {
+                    timeDisplay.textContent = timeSelect.value ? timeSelect.options[timeSelect.selectedIndex].textContent : '🕐';
+                });
+            }
+        })();
 
         // Mirrors send_daily_snapshot_emails()'s categorization exactly (overdue / due today / due
         // tomorrow / completed yesterday), but computed client-side from the same data-* attributes
