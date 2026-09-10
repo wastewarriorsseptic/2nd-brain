@@ -1085,10 +1085,10 @@
                                lands on its own small built-in icon glyph - stretching it invisibly
                                over this whole button means most clicks just silently focus it
                                instead (reported directly - "the date doesn't drop down to
-                               select"). Forcing it open via showPicker() on any click sidesteps
-                               that click-region guesswork entirely. -->
+                               select"). Forced open/closed via showPicker()/blur() instead - see
+                               the toggle in setupEventQuickDateTimeDisplay - which sidesteps that
+                               click-region guesswork entirely. -->
                             <input type="date" name="due_date" id="event-quick-due-date-input" required
-                                   onclick="this.showPicker && this.showPicker()"
                                    class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
                             <div id="event-quick-due-date-display"
                                  class="absolute inset-0 pointer-events-none bg-slate-950/80 border border-slate-700 rounded-xl flex items-center justify-center text-sm text-white">📅</div>
@@ -2766,6 +2766,11 @@
             { id: {{ u.id }}, name: {{ u.name|tojson }}, icon: {{ (u.icon or '🎉')|tojson }} },
             {% endif %}{% endfor %}
         ];
+        // Realm/Bucket options grouped per Universe (see event_universe_realms_data's own
+        // docstring in app.py) - eventUniverseCards now spans every Event Universe at once (the
+        // "All Universes" default), so the Realm/Bucket dropdowns need every Universe's own
+        // structure available, not just the active one's realmsData.
+        const eventUniverseRealmsData = {{ (event_universe_realms_data|default([]))|tojson }};
         // Space View's own core hub (see renderSpaceFrame) draws this instead of a hardcoded 😈 -
         // the devil is TaskMonster's own mascot/brand, not a stand-in for whatever Universe you're
         // actually looking at, and showing it regardless of Universe read as not making sense once
@@ -5540,6 +5545,24 @@
                     const d = dateInput.value ? parseYMDLocal(dateInput.value) : null;
                     dateDisplay.textContent = d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '📅';
                 });
+                // Tapping the icon again while the calendar is already open used to just
+                // silently re-issue showPicker() (a no-op while it's already showing) instead of
+                // closing it - reported directly. There's no standard "is the native picker
+                // currently open" signal to check, so a plain flag tracks it - flipped on click,
+                // and also cleared on blur/change so picking a date or clicking away doesn't
+                // desync it (leaving the NEXT tap needing two clicks to reopen).
+                let datePickerOpen = false;
+                dateInput.addEventListener('click', () => {
+                    if (datePickerOpen) {
+                        dateInput.blur();
+                        datePickerOpen = false;
+                    } else if (dateInput.showPicker) {
+                        dateInput.showPicker();
+                        datePickerOpen = true;
+                    }
+                });
+                dateInput.addEventListener('blur', () => { datePickerOpen = false; });
+                dateInput.addEventListener('change', () => { datePickerOpen = false; });
             }
             const timeSelect = document.getElementById('event-quick-due-time-select');
             const timeDisplay = document.getElementById('event-quick-due-time-display');
@@ -6933,12 +6956,22 @@
         // introducing a separate scheme just for these cards.
         const EVENT_CARD_GLOWS = ['#6366f1', '#8b5cf6', '#0ea5e9', '#f43f5e', '#f59e0b'];
 
-        // Which Realm/Bucket is isolated right now (null = show everything) - set by the dropdowns
-        // built in renderEventUniverseCards's header row. Deliberately plain JS variables, not the
-        // URL/localStorage - this is a transient view of an in-memory canvas overlay, not a
-        // distinct page state worth remembering across visits.
+        // Which Universe/Realm/Bucket is isolated right now (null = show everything) - set by the
+        // dropdowns built in renderEventUniverseCards's header row. Deliberately plain JS
+        // variables, not the URL/localStorage - this is a transient view of an in-memory canvas
+        // overlay, not a distinct page state worth remembering across visits. Universe defaults to
+        // null ("✨ All Universes") - reported directly, wanting that to be the default view rather
+        // than always narrowed to whichever Universe happened to be active on page load.
+        let eventCardsUniverseFilter = null;
         let eventCardsRealmFilter = null;
         let eventCardsBucketFilter = null;
+
+        function setEventCardsUniverseFilter(universeKey) {
+            eventCardsUniverseFilter = universeKey;
+            eventCardsRealmFilter = null;
+            eventCardsBucketFilter = null;
+            renderEventUniverseCards();
+        }
 
         function setEventCardsRealmFilter(realmKey) {
             eventCardsRealmFilter = realmKey;
@@ -6995,8 +7028,16 @@
             const content = document.createElement('a');
             content.href = ev.isDraft ? `/events/${shareToken}/edit` : `/events/${shareToken}`;
             content.className = 'flex flex-col items-center gap-1 w-full transition-transform hover:scale-105';
+            // Only shown once there's actually more than one Event Universe to tell apart - with
+            // "All Universes" now the default view (see eventCardsUniverseFilter), cards from
+            // different Universes land mixed together on one timeline, so each needs its own
+            // small label to say which Universe it's actually in.
+            const universeBadge = (eventUniversesData.length > 1 && ev.universeName)
+                ? `<span class="text-[9px] font-semibold text-slate-500">${escapeHtml(ev.universeIcon || '🎉')} ${escapeHtml(ev.universeName)}</span>`
+                : '';
             content.innerHTML = `
                 <span class="text-2xl">${escapeHtml(ev.emoji)}</span>
+                ${universeBadge}
                 ${ev.isPrivate ? '<span class="text-[9px] font-bold text-slate-500">🔒 Private</span>' : ''}
                 <span class="text-xs font-bold text-white leading-snug line-clamp-2">${escapeHtml(ev.title)}</span>
                 <span class="text-[10px] font-semibold" style="color: ${ev.isDraft ? '#fbbf24' : glow}">${escapeHtml(ev.dueTimeFormatted || 'All day')}</span>
@@ -7074,31 +7115,43 @@
             const inner = document.createElement('div');
             inner.className = 'h-full flex flex-col';
 
-            // Realm/Bucket options built from realmsData - the real structure of the active
-            // Universe (same server-rendered data Card View's own sidebar uses) - rather than from
-            // eventUniverseCards. A brand-new Realm/Bucket with zero events in it yet still needs
+            // Realm/Bucket options built from eventUniverseRealmsData - the real structure of
+            // every Event Universe the user owns (same server-rendered shape realmsData uses for
+            // the single active Universe elsewhere), scoped down to whichever Universe(s) are
+            // currently selected. A brand-new Realm/Bucket with zero events in it yet still needs
             // to show up here to be selectable at all (that's the whole point of letting someone
             // route an event straight into a specific truck/bucket); building the list purely from
             // existing events made an empty Realm/Bucket invisible until something was already
             // filed into it. An "Uncategorized" entry is still added on top, but only when at least
-            // one event actually has no realm/bucket pin, since realmsData has no such row itself.
+            // one event actually has no realm/bucket pin, since eventUniverseRealmsData has no such
+            // row itself.
+            const relevantUniverseEntries = eventUniverseRealmsData.filter((u) =>
+                eventCardsUniverseFilter === null || String(u.universeId) === eventCardsUniverseFilter
+            );
             const realmsById = new Map();
-            realmsData.forEach((r) => {
-                realmsById.set(String(r.id), { key: String(r.id), name: r.name, icon: r.icon || '🔮' });
+            relevantUniverseEntries.forEach((u) => {
+                (u.realms || []).forEach((r) => {
+                    realmsById.set(String(r.id), { key: String(r.id), name: r.name, icon: r.icon || '🔮' });
+                });
             });
-            if (eventUniverseCards.some((ev) => ev.realmId == null)) {
+            if (eventUniverseCards.some((ev) =>
+                ev.realmId == null && (eventCardsUniverseFilter === null || String(ev.universeId) === eventCardsUniverseFilter)
+            )) {
                 realmsById.set('uncategorized', { key: 'uncategorized', name: 'Uncategorized', icon: '🔮' });
             }
             const realmList = Array.from(realmsById.values());
 
             const bucketsById = new Map();
-            realmsData.forEach((r) => {
-                if (eventCardsRealmFilter !== null && String(r.id) !== eventCardsRealmFilter) return;
-                (r.buckets || []).forEach((b) => {
-                    bucketsById.set(String(b.id), { key: String(b.id), name: b.name });
+            relevantUniverseEntries.forEach((u) => {
+                (u.realms || []).forEach((r) => {
+                    if (eventCardsRealmFilter !== null && String(r.id) !== eventCardsRealmFilter) return;
+                    (r.buckets || []).forEach((b) => {
+                        bucketsById.set(String(b.id), { key: String(b.id), name: b.name });
+                    });
                 });
             });
             const hasUncategorizedBucket = eventUniverseCards.some((ev) => {
+                if (eventCardsUniverseFilter !== null && String(ev.universeId) !== eventCardsUniverseFilter) return false;
                 if (eventCardsRealmFilter !== null && (ev.realmId != null ? String(ev.realmId) : 'uncategorized') !== eventCardsRealmFilter) return false;
                 return ev.bucketId == null;
             });
@@ -7137,20 +7190,30 @@
                 return select;
             }
 
-            // This is also what actually FIXES a second Event Universe (e.g. a dedicated
-            // "Dispatch" alongside a personal "Events") being completely unreachable: Event
-            // Universes are excluded from the Multiverse picker grid entirely, and the standalone
-            // "🎉 Events" launcher only ever points at the first one by sort_order.
+            // "✨ All Universes" (the default - eventCardsUniverseFilter starts null) shows every
+            // Event Universe's cards combined on one timeline, same "All X" pattern as the Realm/
+            // Bucket dropdowns right below - reported directly, wanting that same behavior here
+            // too. This also is what actually FIXES a second Event Universe (e.g. a dedicated
+            // "Dispatch" alongside a personal "Events") being reachable at all - previously the
+            // standalone "🎉 Events" launcher only ever landed on the first one by sort_order, and
+            // there was no way to see the other's events without a full page switch. Purely a
+            // client-side filter now (no navigation) - eventUniverseCards already spans every
+            // Universe at once (see the dashboard route).
             if (eventUniversesData.length > 0) {
                 const universeSelect = buildLabeledSelect('Universe');
+                const allOpt = document.createElement('option');
+                allOpt.value = '';
+                allOpt.textContent = '✨ All Universes';
+                if (eventCardsUniverseFilter === null) allOpt.selected = true;
+                universeSelect.appendChild(allOpt);
                 eventUniversesData.forEach((u) => {
                     const opt = document.createElement('option');
                     opt.value = u.id;
                     opt.textContent = `${u.icon} ${u.name}`;
-                    if (u.id === activeUniverseId) opt.selected = true;
+                    if (eventCardsUniverseFilter === String(u.id)) opt.selected = true;
                     universeSelect.appendChild(opt);
                 });
-                universeSelect.onchange = () => { window.location.href = '/?universe_id=' + universeSelect.value; };
+                universeSelect.onchange = () => setEventCardsUniverseFilter(universeSelect.value || null);
             }
 
             if (realmList.length > 0) {
@@ -7189,6 +7252,7 @@
             inner.appendChild(headerRow);
 
             const visibleCards = eventUniverseCards.filter((ev) => {
+                if (eventCardsUniverseFilter !== null && String(ev.universeId) !== eventCardsUniverseFilter) return false;
                 if (eventCardsRealmFilter !== null && (ev.realmId != null ? String(ev.realmId) : 'uncategorized') !== eventCardsRealmFilter) return false;
                 if (eventCardsBucketFilter !== null && (ev.bucketId != null ? String(ev.bucketId) : 'uncategorized') !== eventCardsBucketFilter) return false;
                 return true;

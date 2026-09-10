@@ -1694,17 +1694,65 @@ def dashboard(
         # it can go straight through |tojson, same pattern as multiverseTasksData - the ring's own
         # DOM-scraping approach is Task-Universe-specific machinery this view has no reason to
         # depend on. Already sorted soonest-first; only ever built for an Event-kind Universe.
+        #
+        # Spans EVERY Event-kind Universe the user owns, not just the active one - reported
+        # directly, wanting an "All Universes" option in the dropdown (same pattern as the
+        # existing "All Realms"/"All Buckets" ones there) that's also the default. This is its own
+        # independent query rather than reusing `items`/`realms`/`buckets` above, which stay
+        # scoped to just active_universe for the rest of the page (sidebar, Card View) - the
+        # events deck is the one surface meant to span every Event Universe at once.
         event_universe_cards = []
+        event_universe_realms_data = []
         if is_event_universe:
-            realm_by_id_for_events = {r.id: r for r in realms}
-            bucket_by_id_for_events = {b.id: b for b in buckets}
-            realm_by_bucket_id = {b.id: realm_by_id_for_events.get(b.realm_id) for b in buckets}
-            for it in sorted((it for it in items if it.is_event), key=lambda it: it.due_date):
-                info = events_by_item_id.get(it.id)
+            event_universes_owned = [u for u in universes if u.kind == "event" and u.user_id == user.id]
+            event_universe_ids = [u.id for u in event_universes_owned]
+            event_universe_by_id = {u.id: u for u in event_universes_owned}
+
+            all_event_realms = session.exec(select(Realm).where(Realm.universe_id.in_(event_universe_ids))).all() if event_universe_ids else []
+            all_event_realm_ids = [r.id for r in all_event_realms]
+            all_event_buckets = session.exec(select(Bucket).where(Bucket.realm_id.in_(all_event_realm_ids))).all() if all_event_realm_ids else []
+            realm_by_id_for_events = {r.id: r for r in all_event_realms}
+            bucket_by_id_for_events = {b.id: b for b in all_event_buckets}
+            realm_by_bucket_id = {b.id: realm_by_id_for_events.get(b.realm_id) for b in all_event_buckets}
+            universe_by_bucket_id = {
+                b.id: event_universe_by_id.get(realm_by_id_for_events[b.realm_id].universe_id)
+                for b in all_event_buckets if b.realm_id in realm_by_id_for_events
+            }
+
+            all_event_bucket_ids = [b.id for b in all_event_buckets]
+            all_event_items = session.exec(
+                select(Item).where(Item.bucket_id.in_(all_event_bucket_ids), Item.is_event == True)
+            ).all() if all_event_bucket_ids else []
+
+            events_by_item_id_all = {}
+            event_item_ids_all = [it.id for it in all_event_items]
+            if event_item_ids_all:
+                event_rows_all = session.exec(select(Event).where(Event.item_id.in_(event_item_ids_all))).all()
+                event_ids_all = [e.id for e in event_rows_all]
+                guest_rows_all = session.exec(select(EventGuest).where(EventGuest.event_id.in_(event_ids_all))).all() if event_ids_all else []
+                guests_by_event_id_all = {}
+                for g in guest_rows_all:
+                    guests_by_event_id_all.setdefault(g.event_id, []).append(g)
+                for e in event_rows_all:
+                    event_guests = guests_by_event_id_all.get(e.id, [])
+                    events_by_item_id_all[e.item_id] = {
+                        "emoji": e.emoji,
+                        "share_token": e.share_token,
+                        "requires_rsvp": e.requires_rsvp,
+                        "accepted_count": sum(1 for g in event_guests if g.status == "accepted"),
+                        "invited_count": len(event_guests),
+                        "location": e.location,
+                        "is_private": e.is_private,
+                        "is_draft": e.is_draft,
+                    }
+
+            for it in sorted(all_event_items, key=lambda it: it.due_date):
+                info = events_by_item_id_all.get(it.id)
                 if not info:
                     continue
                 realm = realm_by_bucket_id.get(it.bucket_id)
                 bucket = bucket_by_id_for_events.get(it.bucket_id)
+                universe = universe_by_bucket_id.get(it.bucket_id)
                 event_universe_cards.append({
                     "itemId": it.id,
                     "title": it.title,
@@ -1725,6 +1773,28 @@ def dashboard(
                     "realmIcon": (realm.icon or "🔮") if realm else None,
                     "bucketId": bucket.id if bucket else None,
                     "bucketName": bucket.name if bucket else None,
+                    "universeId": universe.id if universe else None,
+                    "universeName": universe.name if universe else None,
+                    "universeIcon": (universe.icon or "🎉") if universe else None,
+                })
+
+            # Realm/Bucket dropdown OPTIONS, grouped per Universe - realmsData (used for every
+            # other Universe kind's own dropdowns) only ever covers the single active_universe, so
+            # it can't supply Realm/Bucket options once the events deck spans every Universe at
+            # once. Mirrors realmsData's own {id, name, icon, buckets: [{id, name}]} shape per
+            # Realm, just grouped one level up by universeId.
+            for u in event_universes_owned:
+                event_universe_realms_data.append({
+                    "universeId": u.id,
+                    "realms": [
+                        {
+                            "id": r.id,
+                            "name": r.name,
+                            "icon": r.icon or "🔮",
+                            "buckets": [{"id": b.id, "name": b.name} for b in all_event_buckets if b.realm_id == r.id],
+                        }
+                        for r in all_event_realms if r.universe_id == u.id
+                    ],
                 })
 
         # Full tree of every Universe/Realm/Bucket the user OWNS (not shared-with-them realms -
@@ -1819,6 +1889,7 @@ def dashboard(
                 "is_event_universe": is_event_universe,
                 "events_by_item_id": events_by_item_id,
                 "event_universe_cards": event_universe_cards,
+                "event_universe_realms_data": event_universe_realms_data,
                 "events_universe_href": get_events_universe_href(session, user.id),
                 "google_places_enabled": GOOGLE_PLACES_ENABLED,
                 "google_maps_api_key": GOOGLE_MAPS_API_KEY,
