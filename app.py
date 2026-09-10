@@ -200,6 +200,7 @@ def safe_apply_migrations():
             conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT FALSE;'))
             conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS is_draft BOOLEAN DEFAULT FALSE;'))
             conn.execute(text('ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS ics_sequence INTEGER DEFAULT 0;'))
+            conn.execute(text('ALTER TABLE IF EXISTS eventguest ADD COLUMN IF NOT EXISTS invited_at TIMESTAMP;'))
             # "IF EXISTS" here since the note table itself was only added in a previous deploy -
             # a brand-new environment with no note table yet still gets it (realm_id included)
             # straight from create_all() below, making this a harmless no-op there.
@@ -259,6 +260,13 @@ def safe_apply_migrations():
                     cursor.execute('ALTER TABLE event ADD COLUMN "is_draft" BOOLEAN DEFAULT 0;')
                 if 'ics_sequence' not in event_cols:
                     cursor.execute('ALTER TABLE event ADD COLUMN "ics_sequence" INTEGER DEFAULT 0;')
+
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='eventguest';")
+            if cursor.fetchone():
+                cursor.execute("PRAGMA table_info(eventguest);")
+                eventguest_cols = [col[1] for col in cursor.fetchall()]
+                if 'invited_at' not in eventguest_cols:
+                    cursor.execute('ALTER TABLE eventguest ADD COLUMN "invited_at" TIMESTAMP;')
 
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='note';")
             if cursor.fetchone():
@@ -434,6 +442,10 @@ class EventGuest(SQLModel, table=True):
     accept_token: str = Field(default_factory=lambda: secrets.token_urlsafe(16), unique=True, index=True)
     responded_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    # When their invite email actually went out - distinct from created_at, which for a draft's
+    # guest can be days earlier than the actual send (see _send_draft_event). RSVP reminder timing
+    # (_schedule_rsvp_reminders) needs the real send moment, not the row's creation time.
+    invited_at: Optional[datetime] = None
 
 class ApiKey(SQLModel, table=True):
     """A per-account key for creating Events from OUTSIDE TaskMonster entirely - e.g. a separate
@@ -2392,15 +2404,27 @@ def accept_universe_invite(request: Request, token: str):
         status_code=303
     )
 
-def _invite_status_page(heading: str, body: str, show_logout: bool = False) -> str:
+def _invite_status_page(heading: str, body: str, show_logout: bool = False, redirect_url: Optional[str] = None, redirect_label: str = "Go to TaskMonster") -> str:
     """Minimal standalone page for the accept-invite link's non-success outcomes (invalid,
     expired, wrong-account) - deliberately not the full app shell, since the visitor may not even
-    have an account yet."""
+    have an account yet.
+
+    redirect_url is optional and only meaningful for outcomes tied to a specific place to go back
+    to (currently just the "this invite is private" case, pointed at the event's own Universe via
+    _event_back_url) - reported directly, wanting to land back where they came from instead of a
+    dead end, whether they tap the link or not. When set, the link navigates there immediately on
+    click, and a 5-second timer does the same automatically if they never tap it at all."""
     logout_link = (
         '<a href="/logout" style="color: #6366f1; font-weight: 600;">Sign out</a> and then '
         '<a href="/login" style="color: #6366f1; font-weight: 600;">sign back in</a> with the right address.'
         if show_logout else
+        f'<a href="{redirect_url}" style="color: #6366f1; font-weight: 600;">{redirect_label}</a>'
+        if redirect_url else
         '<a href="https://usetaskmonster.app" style="color: #6366f1; font-weight: 600;">Go to TaskMonster</a>'
+    )
+    redirect_script = (
+        f"""<script>setTimeout(function() {{ window.location.href = {_json.dumps(redirect_url)}; }}, 5000);</script>"""
+        if redirect_url else ""
     )
     return f"""
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 480px; margin: 80px auto; padding: 28px; border: 1px solid #e5e7eb; border-radius: 12px; text-align: center;">
@@ -2409,6 +2433,7 @@ def _invite_status_page(heading: str, body: str, show_logout: bool = False) -> s
         <p style="color: #4b5563;">{body}</p>
         <p style="margin-top: 24px;">{logout_link}</p>
     </div>
+    {redirect_script}
     """
 
 @app.post("/buckets/")
@@ -2805,6 +2830,7 @@ def _delete_event_for_item(session: Session, item_id: int) -> None:
         return
     guests = session.exec(select(EventGuest).where(EventGuest.event_id == event.id)).all()
     for guest in guests:
+        _cancel_rsvp_reminders(guest.id)
         session.delete(guest)
     if guests:
         # Event and EventGuest are only linked by a plain FK column, not a declared ORM
@@ -3269,6 +3295,93 @@ def send_event_reminder_email(event_id: int, kind: str):
         title = f"⏰ Tomorrow: {item.title}" if kind == "day_before" else f"🔔 Starting soon: {item.title}"
         send_email_alert(title, due_str, None, item.description or "", recipients=recipients)
 
+def _cancel_rsvp_reminders(guest_id: int):
+    """Removes both of a guest's pending RSVP reminder jobs, if scheduled - shared by
+    _schedule_rsvp_reminders' own no-longer-applicable branch and respond_event (once a guest
+    actually answers, nagging them further would be pointless, even though send_rsvp_reminder_email
+    would also just silently no-op on a stale status if this were skipped)."""
+    for job_id in (f"guest-{guest_id}-rsvp-first", f"guest-{guest_id}-rsvp-final"):
+        if scheduler.get_job(job_id):
+            scheduler.remove_job(job_id)
+
+def _schedule_rsvp_reminders(guest: "EventGuest", event: "Event", due_date: datetime):
+    """Two-stage nudge for a guest who hasn't RSVP'd yet, timed off when THIS guest's own invite
+    actually went out (guest.invited_at) rather than the event as a whole - different guests can be
+    invited (or re-invited, on an edit/resend) at different times and respond independently.
+    Reported directly, with this exact timing: a friendly reminder 6 hours after the invite, then a
+    final one timed to when only 25% of the original invite-to-event lead time remains. Guest-level
+    job ids + replace_existing let a resend cleanly restart the clock instead of leaving a stale job
+    behind. A no-op (clearing anything already scheduled) once the event doesn't require RSVP or
+    this guest has already responded."""
+    first_job_id = f"guest-{guest.id}-rsvp-first"
+    final_job_id = f"guest-{guest.id}-rsvp-final"
+
+    def _schedule_or_clear(job_id: str, remind_time: Optional[datetime], kind: str):
+        if remind_time and remind_time > datetime.now():
+            scheduler.add_job(send_rsvp_reminder_email, 'date', run_date=remind_time, args=[guest.id, kind], id=job_id, replace_existing=True)
+        elif scheduler.get_job(job_id):
+            scheduler.remove_job(job_id)
+
+    if not event.requires_rsvp or guest.status != "invited" or not guest.invited_at:
+        _cancel_rsvp_reminders(guest.id)
+        return
+
+    lead = due_date - guest.invited_at
+    final_time = due_date - (lead * 0.25) if lead.total_seconds() > 0 else None
+    first_time = guest.invited_at + timedelta(hours=6)
+    # A short-notice invite (under ~8 hours to the event) can put the ordinary 6-hour reminder
+    # AFTER the 25%-of-lead-time final one - skip the ordinary one there so "final reminder" is
+    # still actually the last email sent, not a confusing one sandwiched after it.
+    if final_time and first_time >= final_time:
+        first_time = None
+
+    _schedule_or_clear(first_job_id, first_time, 'first')
+    _schedule_or_clear(final_job_id, final_time, 'final')
+
+def send_rsvp_reminder_email(guest_id: int, kind: str):
+    """Fired by the scheduler at exactly the reminder time (see _schedule_rsvp_reminders). Re-checks
+    the guest's CURRENT status rather than trusting whatever it was when the job was scheduled -
+    they may well have RSVP'd in the meantime, which should silently skip the send rather than nag
+    someone who already answered."""
+    with Session(engine) as session:
+        guest = session.get(EventGuest, guest_id)
+        if not guest or guest.status != "invited":
+            return
+        event = session.get(Event, guest.event_id)
+        if not event or not event.requires_rsvp or event.is_draft:
+            return
+        item = session.get(Item, event.item_id)
+        if not item or item.is_completed:
+            return
+        user = session.get(User, event.user_id)
+        if not user:
+            return
+
+        api_key = os.getenv("RESEND_API_KEY")
+        if not api_key:
+            return
+        resend.api_key = api_key
+
+        invite_url = f"https://usetaskmonster.app/events/{event.share_token}?g={guest.accept_token}"
+        due_str = item.due_date.strftime("%A, %B %d, %Y at %I:%M %p")
+        is_final = kind == "final"
+        subject = f"{event.emoji} {'Final reminder' if is_final else 'Reminder'} to RSVP: {item.title}"
+        heading = "Final reminder to RSVP" if is_final else "Just a friendly reminder to RSVP"
+
+        try:
+            resend.Emails.send({
+                "from": "TaskMonster <notifications@usetaskmonster.app>",
+                "to": [guest.email],
+                "subject": subject,
+                "html": f"""
+                <h3>{event.emoji} {heading}</h3>
+                <p>{user.name} invited you to <strong>{item.title}</strong> on {due_str}{f' at {event.location}' if event.location else ''}, and hasn't heard back from you yet.</p>
+                {_email_cta_button_html(invite_url, "✨ RSVP Now →")}
+                """,
+            })
+        except (ResendError, Exception) as e:
+            print(f"RSVP reminder email error (non-fatal): {e}", flush=True)
+
 def _format_nominatim_result(row: dict) -> str:
     """Nominatim's own `display_name` is a full administrative breakdown (county, state, postal
     code, country all spelled out) - reported directly as reading as "cut off" once dropped into
@@ -3522,7 +3635,12 @@ def edit_event(
                     user, event, item.title, item.due_date, item.description, guest.email, guest.accept_token,
                     is_update=(guest.id not in added_ids), location=event.location, guest_name=guest.name,
                 )
+                guest.invited_at = datetime.utcnow()
+                session.add(guest)
+                session.commit()
+                _schedule_rsvp_reminders(guest, event, item.due_date)
             _schedule_event_reminders(event.id, item.due_date, event.remind_day_before, event.reminder_minutes_before)
+            _send_event_creator_confirmation(user, event, item, [g.email for g in all_guests], is_resend=True)
         # else: still a draft, wasn't just published - nothing to send, matching draft semantics.
 
         final_is_draft = event.is_draft
@@ -3549,6 +3667,18 @@ def _schedule_event_reminders(event_id: int, base_due_date: datetime, remind_day
         base_due_date - timedelta(minutes=reminder_minutes_before) if reminder_minutes_before is not None else None,
         'minutes_before'
     )
+
+def _email_cta_button_html(url: str, label: str) -> str:
+    """Big, centered, solid-color call-to-action button for invite/RSVP emails - reported directly
+    as needing to be much bigger and more inviting to actually get tapped, not a small inline link
+    easy to miss. Solid color (not a gradient) is deliberate - gradients are unreliable across
+    email clients (Outlook desktop in particular strips them), where a plain background-color
+    always renders."""
+    return f"""
+    <p style="text-align:center;margin:28px 0;">
+        <a href="{url}" style="background-color:#4f46e5;color:#ffffff;padding:18px 44px;text-decoration:none;border-radius:14px;font-weight:800;font-size:19px;display:inline-block;box-shadow:0 6px 16px rgba(79,70,229,0.45);">{label}</a>
+    </p>
+    """
 
 def _send_event_guest_email(user: "User", new_event: "Event", title: str, base_due_date: datetime, description: Optional[str], guest_email: str, accept_token: str, is_update: bool = False, location: Optional[str] = None, guest_name: Optional[str] = None):
     """Shared HTML/subject for both a brand-new invite and a resend/update notification - the only
@@ -3588,8 +3718,8 @@ def _send_event_guest_email(user: "User", new_event: "Event", title: str, base_d
             <p><strong>When:</strong> {base_due_date.strftime('%A, %B %d, %Y at %I:%M %p')}</p>
             {f'<p><strong>Where:</strong> {location}</p>' if location else ''}
             {f'<p>{description}</p>' if description else ''}
-            <p><a href="{invite_url}" style="background-color:#6366f1;color:#ffffff;padding:10px 20px;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;display:inline-block;">View invite{' &amp; RSVP' if new_event.requires_rsvp else ''}</a></p>
-            <p style="color:#94a3b8;font-size:12px;">📎 A calendar invite is attached - open it to add this straight to your calendar.</p>
+            {_email_cta_button_html(invite_url, "✨ View Invite &amp; RSVP →" if new_event.requires_rsvp else "✨ View Invite →")}
+            <p style="color:#94a3b8;font-size:12px;text-align:center;">📎 A calendar invite is attached - open it to add this straight to your calendar.</p>
             """,
             "attachments": [{
                 "filename": f"{ics_filename}.ics",
@@ -3599,6 +3729,79 @@ def _send_event_guest_email(user: "User", new_event: "Event", title: str, base_d
         })
     except (ResendError, Exception) as e:
         print(f"Event invite email error (non-fatal): {e}", flush=True)
+
+def _send_event_creator_confirmation(user: "User", event: "Event", item: "Item", recipient_emails: List[str], is_resend: bool = False):
+    """Recap email to the CREATOR themselves confirming an invite actually went out and exactly
+    who it went to - reported directly ("I should get an email of the instance and where it was
+    sent / who sent to"). Fired once per send action (not once per guest, unlike
+    _send_event_guest_email) from every place that actually sends invites: initial creation,
+    publishing a draft, and a resend/update. Silently skipped with no guests at all - "sent to
+    nobody" isn't worth an email."""
+    if not user.email or not recipient_emails:
+        return
+    api_key = os.getenv("RESEND_API_KEY")
+    if not api_key:
+        return
+    resend.api_key = api_key
+
+    due_str = item.due_date.strftime("%A, %B %d, %Y at %I:%M %p")
+    verb = "resent" if is_resend else "sent"
+    recipients_html = "".join(f"<p style='margin:2px 0;'>{email}</p>" for email in recipient_emails)
+
+    try:
+        resend.Emails.send({
+            "from": "TaskMonster <notifications@usetaskmonster.app>",
+            "to": [user.email],
+            "subject": f"{event.emoji} You {verb} an invite: {item.title}",
+            "html": f"""
+            <h3>{event.emoji} Your invite to "{item.title}" went out</h3>
+            <p><strong>When:</strong> {due_str}</p>
+            {f'<p><strong>Where:</strong> {event.location}</p>' if event.location else ''}
+            <p style="margin-top:16px;"><strong>{verb.capitalize()} to ({len(recipient_emails)}):</strong></p>
+            {recipients_html}
+            """,
+        })
+    except (ResendError, Exception) as e:
+        print(f"Event creator confirmation email error (non-fatal): {e}", flush=True)
+
+def _send_rsvp_accept_emails(user: Optional["User"], event: "Event", item: "Item", guest: "EventGuest"):
+    """Fired once a guest actually accepts (respond_event, both the accept_token path and the
+    self-add-by-email path) - reported directly, wanting BOTH sides notified: the creator hears
+    someone said yes, and the guest gets their own confirmation rather than just a silent status
+    flip on a page they may have already closed."""
+    api_key = os.getenv("RESEND_API_KEY")
+    if not api_key:
+        return
+    resend.api_key = api_key
+    due_str = item.due_date.strftime("%A, %B %d, %Y at %I:%M %p")
+    who = guest.name or guest.email
+
+    if user and user.email:
+        try:
+            resend.Emails.send({
+                "from": "TaskMonster <notifications@usetaskmonster.app>",
+                "to": [user.email],
+                "subject": f"{event.emoji} {who} accepted: {item.title}",
+                "html": f"""
+                <h3>{event.emoji} {who} is in!</h3>
+                <p>They accepted your invite to <strong>{item.title}</strong> on {due_str}.</p>
+                """,
+            })
+        except (ResendError, Exception) as e:
+            print(f"RSVP accept notification email error (non-fatal): {e}", flush=True)
+
+    try:
+        resend.Emails.send({
+            "from": "TaskMonster <notifications@usetaskmonster.app>",
+            "to": [guest.email],
+            "subject": f"{event.emoji} You're confirmed: {item.title}",
+            "html": f"""
+            <h3>{event.emoji} You're confirmed!</h3>
+            <p>You're all set for <strong>{item.title}</strong> on {due_str}{f' at {event.location}' if event.location else ''}.</p>
+            """,
+        })
+    except (ResendError, Exception) as e:
+        print(f"RSVP guest confirmation email error (non-fatal): {e}", flush=True)
 
 def _create_event_core(
     session: Session,
@@ -3649,6 +3852,7 @@ def _create_event_core(
     session.commit()
     session.refresh(new_event)
 
+    sent_to_emails = []
     for guest_email in (guest_emails or []):
         guest_email = guest_email.strip().lower()
         if not guest_email:
@@ -3668,11 +3872,17 @@ def _create_event_core(
         session.refresh(guest)
         if not is_draft:
             _send_event_guest_email(user, new_event, title, base_due_date, description, guest_email, guest.accept_token, location=new_event.location, guest_name=guest.name)
+            guest.invited_at = datetime.utcnow()
+            session.add(guest)
+            session.commit()
+            _schedule_rsvp_reminders(guest, new_event, base_due_date)
+            sent_to_emails.append(guest_email)
 
     # A draft schedules nothing until it's actually sent - reported directly: reminders firing
     # for an event nobody's been invited to yet would be nonsensical.
     if not is_draft:
         _schedule_event_reminders(new_event.id, base_due_date, remind_day_before, reminder_minutes_before)
+        _send_event_creator_confirmation(user, new_event, new_item, sent_to_emails)
 
     return new_event
 
@@ -3690,8 +3900,13 @@ def _send_draft_event(session: Session, user: "User", event: "Event", item: "Ite
 
     for guest in guests:
         _send_event_guest_email(user, event, item.title, item.due_date, item.description, guest.email, guest.accept_token, location=event.location, guest_name=guest.name)
+        guest.invited_at = datetime.utcnow()
+        session.add(guest)
+        session.commit()
+        _schedule_rsvp_reminders(guest, event, item.due_date)
 
     _schedule_event_reminders(event.id, item.due_date, event.remind_day_before, event.reminder_minutes_before)
+    _send_event_creator_confirmation(user, event, item, [g.email for g in guests])
 
     event.is_draft = False
     session.add(event)
@@ -4044,6 +4259,11 @@ def api_update_event(request: Request, payload: dict = Body(...)):
                 guests = session.exec(select(EventGuest).where(EventGuest.event_id == event.id)).all()
                 for guest in guests:
                     _send_event_guest_email(user, event, item.title, item.due_date, item.description, guest.email, guest.accept_token, is_update=True, location=event.location, guest_name=guest.name)
+                    guest.invited_at = datetime.utcnow()
+                    session.add(guest)
+                    session.commit()
+                    _schedule_rsvp_reminders(guest, event, item.due_date)
+                _send_event_creator_confirmation(user, event, item, [g.email for g in guests], is_resend=True)
 
         # Captured into plain locals before the session closes below - matching api_create_event's
         # own pattern, since an attribute the session never got a chance to (re-)load before close
@@ -4408,15 +4628,22 @@ def view_event(request: Request, share_token: str, g: Optional[str] = None):
             ))
         event, item, creator, guests = ctx
         viewer_guest = next((gu for gu in guests if gu.accept_token == g), None) if g else None
+        current_user = get_current_user(request, session)
+        is_owner = bool(current_user and current_user.id == event.user_id)
 
         # A private event (see Event.is_private) is only viewable via a specific guest's own
         # accept_token - the bare share_token link (no g=, or a g= that doesn't match any invited
         # guest) gets the same "not valid" treatment as a made-up token, rather than falling
-        # through to the normal self-add-a-stranger page.
-        if event.is_private and not viewer_guest:
+        # through to the normal self-add-a-stranger page. The creator is the one exception -
+        # reported directly, tapping their own event's card (which links straight here, same as it
+        # would for anyone else - see renderEventUniverseCards) was walling THEM out of their own
+        # private event with no way back in short of the raw DB.
+        if event.is_private and not viewer_guest and not is_owner:
             return HTMLResponse(_invite_status_page(
                 "This invite is private",
-                "It's only visible to the person it was sent to."
+                "It's only visible to the person it was sent to.",
+                redirect_url=_event_back_url(session, item),
+                redirect_label="Go to Events",
             ))
 
         accepted_guests = [gu for gu in guests if gu.status == "accepted"]
@@ -4433,6 +4660,7 @@ def view_event(request: Request, share_token: str, g: Optional[str] = None):
                 "viewer_guest": viewer_guest,
                 "guest_count": len(guests),
                 "back_url": back_url,
+                "is_owner": is_owner,
             }
         )
 
@@ -4462,6 +4690,12 @@ def respond_event(
                 guest.responded_at = datetime.utcnow()
                 session.add(guest)
                 session.commit()
+                _cancel_rsvp_reminders(guest.id)
+                if action == "accept":
+                    item = session.get(Item, event.item_id)
+                    creator = session.get(User, event.user_id)
+                    if item:
+                        _send_rsvp_accept_emails(creator, event, item, guest)
                 return RedirectResponse(url=f"/events/{share_token}?g={accept_token}", status_code=303)
         elif email and email.strip() and not event.is_private:
             # Reached via the plain public link (no personal invite token) and self-adding -
@@ -4481,6 +4715,11 @@ def respond_event(
             session.add(guest)
             session.commit()
             session.refresh(guest)
+            _cancel_rsvp_reminders(guest.id)
+            item = session.get(Item, event.item_id)
+            creator = session.get(User, event.user_id)
+            if item:
+                _send_rsvp_accept_emails(creator, event, item, guest)
             return RedirectResponse(url=f"/events/{share_token}?g={guest.accept_token}", status_code=303)
 
     return RedirectResponse(url=f"/events/{share_token}", status_code=303)
