@@ -6878,9 +6878,19 @@
             // its own actions row below the content, and a <button>/<form> nested inside an <a> is
             // invalid HTML/unreliable to click.
             const card = document.createElement('div');
-            card.className = 'pointer-events-auto w-full rounded-2xl border bg-slate-900/90 backdrop-blur-md flex flex-col items-center text-center gap-1 py-3 px-2.5 shadow-xl' + (ev.isPast ? ' opacity-50 grayscale' : '');
-            card.style.borderColor = ev.isDraft ? 'rgba(148, 163, 184, 0.4)' : (glow + '66');
-            card.style.boxShadow = ev.isDraft ? 'none' : `0 0 14px ${glow}22`;
+            // A draft's own due date passing doesn't mean much - it was never actually sent or
+            // confirmed, so "past" isn't really a meaningful state for it the way it is for a live
+            // event. Exempting drafts from the past dimming here is what actually fixes a draft
+            // "looking dead" for one sitting on an already-passed date - the grayscale filter was
+            // washing out the amber border/glow above regardless of how colorful they were.
+            card.className = 'pointer-events-auto w-full rounded-2xl border bg-slate-900/90 backdrop-blur-md flex flex-col items-center text-center gap-1 py-3 px-2.5 shadow-xl' + (ev.isPast && !ev.isDraft ? ' opacity-50 grayscale' : '');
+            // Drafts used to get a flat, colorless slate border and no glow at all - reported
+            // directly as reading "dead" next to a live event's own colored glow. Still dashed (a
+            // real, useful "not sent yet" signal) but now in the same warm amber the 📝 Draft badge
+            // below already uses, with its own real glow instead of none - a draft should look like
+            // an event waiting to happen, not a disabled one.
+            card.style.borderColor = ev.isDraft ? '#f59e0b88' : (glow + '66');
+            card.style.boxShadow = ev.isDraft ? '0 0 14px #f59e0b26' : `0 0 14px ${glow}22`;
             card.style.borderStyle = ev.isDraft ? 'dashed' : 'solid';
 
             const rsvpBadge = ev.isDraft
@@ -6898,7 +6908,7 @@
                 <span class="text-2xl">${escapeHtml(ev.emoji)}</span>
                 ${ev.isPrivate ? '<span class="text-[9px] font-bold text-slate-500">🔒 Private</span>' : ''}
                 <span class="text-xs font-bold text-white leading-snug line-clamp-2">${escapeHtml(ev.title)}</span>
-                <span class="text-[10px] font-semibold" style="color: ${ev.isDraft ? '#94a3b8' : glow}">${escapeHtml(ev.dueTimeFormatted || 'All day')}</span>
+                <span class="text-[10px] font-semibold" style="color: ${ev.isDraft ? '#fbbf24' : glow}">${escapeHtml(ev.dueTimeFormatted || 'All day')}</span>
                 ${ev.location ? `<span class="text-[9px] text-slate-500 truncate max-w-full">📍 ${escapeHtml(ev.location)}</span>` : ''}
                 ${rsvpBadge}
             `;
@@ -7075,8 +7085,8 @@
                 const header = document.createElement('div');
                 header.className = 'w-16 md:w-full shrink-0 text-right md:text-center md:mb-2 pointer-events-none';
                 header.innerHTML = `
-                    <div class="text-[11px] font-bold ${opts.headerColorClass || 'text-slate-400'}">${escapeHtml(label)}</div>
-                    ${sublabel ? `<div class="text-[9px] text-slate-500">${escapeHtml(sublabel)}</div>` : ''}
+                    <div class="text-[11px] font-bold ${opts.headerColorClass || 'text-white'}">${escapeHtml(label)}</div>
+                    ${sublabel ? `<div class="text-[9px] text-slate-300">${escapeHtml(sublabel)}</div>` : ''}
                 `;
                 col.appendChild(header);
 
@@ -7100,7 +7110,7 @@
             };
 
             if (pastCards.length > 0) {
-                buildColumn('Past', `${pastCards.length}`, pastCards, { headerColorClass: 'text-slate-500', emptyDotClass: 'bg-slate-800' });
+                buildColumn('Past', `${pastCards.length}`, pastCards, { headerColorClass: 'text-slate-300', emptyDotClass: 'bg-slate-800' });
             }
 
             // Today gets the special-cased label; every column after it shows the full weekday
@@ -7113,7 +7123,7 @@
                 const isToday = cursorStr === formatYMDLocal(today);
                 const dateLabel = cursor.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
                 const label = isToday ? 'Today' : cursor.toLocaleDateString('en-US', { weekday: 'long' });
-                buildColumn(label, dateLabel, dayCards, { headerColorClass: isToday ? 'text-emerald-300' : 'text-slate-400' });
+                buildColumn(label, dateLabel, dayCards, { headerColorClass: isToday ? 'text-emerald-300' : 'text-white' });
                 cursor.setDate(cursor.getDate() + 1);
             }
 
