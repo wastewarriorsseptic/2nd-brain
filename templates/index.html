@@ -2746,6 +2746,17 @@
         // machinery. Already sorted soonest-first.
         const eventUniverseCards = {{ (event_universe_cards|default([]))|tojson }};
         const activeUniverseId = {{ active_universe.id if active_universe else 'null' }};
+        // Every Event-kind Universe this user owns - Event Universes are deliberately excluded
+        // from the Multiverse picker grid entirely (see events_universe_href's own docstring), and
+        // the single standalone "🎉 Events" launcher button only ever points at the FIRST one - so
+        // with more than one (e.g. a dedicated "Dispatch" Universe alongside a personal "Events"
+        // one), the others had no way to be reached from the UI at all. Reported directly. Drives
+        // the Universe switcher in renderEventUniverseCards's header row.
+        const eventUniversesData = [
+            {% for u in universes %}{% if u.kind == 'event' %}
+            { id: {{ u.id }}, name: {{ u.name|tojson }}, icon: {{ (u.icon or '🎉')|tojson }} },
+            {% endif %}{% endfor %}
+        ];
         // Space View's own core hub (see renderSpaceFrame) draws this instead of a hardcoded 😈 -
         // the devil is TaskMonster's own mascot/brand, not a stand-in for whatever Universe you're
         // actually looking at, and showing it regardless of Universe read as not making sense once
@@ -6853,15 +6864,21 @@
         // introducing a separate scheme just for these cards.
         const EVENT_CARD_GLOWS = ['#6366f1', '#8b5cf6', '#0ea5e9', '#f43f5e', '#f59e0b'];
 
-        // Which Realm section is isolated right now (null = show every Realm's section) - set by
-        // the filter chip row built in renderEventUniverseCards, same "All" + per-Realm-icon-chip
-        // pattern the standalone Notes page already uses for its own Realm filter. Deliberately a
-        // plain JS variable, not the URL/localStorage - this is a transient view of an in-memory
-        // canvas overlay, not a distinct page state worth remembering across visits.
+        // Which Realm/Bucket is isolated right now (null = show everything) - set by the dropdowns
+        // built in renderEventUniverseCards's header row. Deliberately plain JS variables, not the
+        // URL/localStorage - this is a transient view of an in-memory canvas overlay, not a
+        // distinct page state worth remembering across visits.
         let eventCardsRealmFilter = null;
+        let eventCardsBucketFilter = null;
 
         function setEventCardsRealmFilter(realmKey) {
             eventCardsRealmFilter = realmKey;
+            eventCardsBucketFilter = null;
+            renderEventUniverseCards();
+        }
+
+        function setEventCardsBucketFilter(bucketKey) {
+            eventCardsBucketFilter = bucketKey;
             renderEventUniverseCards();
         }
 
@@ -6883,14 +6900,19 @@
             // event. Exempting drafts from the past dimming here is what actually fixes a draft
             // "looking dead" for one sitting on an already-passed date - the grayscale filter was
             // washing out the amber border/glow above regardless of how colorful they were.
-            card.className = 'pointer-events-auto w-full rounded-2xl border bg-slate-900/90 backdrop-blur-md flex flex-col items-center text-center gap-1 py-3 px-2.5 shadow-xl' + (ev.isPast && !ev.isDraft ? ' opacity-50 grayscale' : '');
-            // Drafts used to get a flat, colorless slate border and no glow at all - reported
-            // directly as reading "dead" next to a live event's own colored glow. Still dashed (a
-            // real, useful "not sent yet" signal) but now in the same warm amber the 📝 Draft badge
-            // below already uses, with its own real glow instead of none - a draft should look like
-            // an event waiting to happen, not a disabled one.
-            card.style.borderColor = ev.isDraft ? '#f59e0b88' : (glow + '66');
-            card.style.boxShadow = ev.isDraft ? '0 0 14px #f59e0b26' : `0 0 14px ${glow}22`;
+            // Drafts used to get a flat, colorless slate border/background and no glow at all -
+            // reported directly, twice, as reading "dead" next to a live event's own colored glow.
+            // A real warm wash now, not just a tinted border: the background itself carries an
+            // amber gradient, the glow is as strong as a live card's own, and it gets the same
+            // hover lift too - a draft should feel like an event waiting to happen, not a disabled
+            // one. Still dashed (a real, useful "not sent yet" signal) and still exempt from the
+            // past-day grayscale below (a draft's own due date passing doesn't mean much - it was
+            // never actually sent or confirmed).
+            card.className = 'pointer-events-auto w-full rounded-2xl border backdrop-blur-md flex flex-col items-center text-center gap-1 py-3 px-2.5 shadow-xl'
+                + (ev.isDraft ? ' bg-gradient-to-b from-amber-500/15 to-slate-900/90' : ' bg-slate-900/90')
+                + (ev.isPast && !ev.isDraft ? ' opacity-50 grayscale' : '');
+            card.style.borderColor = ev.isDraft ? '#f59e0bcc' : (glow + '66');
+            card.style.boxShadow = ev.isDraft ? '0 0 20px #f59e0b40' : `0 0 14px ${glow}22`;
             card.style.borderStyle = ev.isDraft ? 'dashed' : 'solid';
 
             const rsvpBadge = ev.isDraft
@@ -6903,7 +6925,7 @@
             // an unsent draft); a live event's goes to the public invite page, same as before.
             const content = document.createElement('a');
             content.href = ev.isDraft ? `/events/${shareToken}/edit` : `/events/${shareToken}`;
-            content.className = 'flex flex-col items-center gap-1 w-full' + (ev.isDraft ? '' : ' transition-transform hover:scale-105');
+            content.className = 'flex flex-col items-center gap-1 w-full transition-transform hover:scale-105';
             content.innerHTML = `
                 <span class="text-2xl">${escapeHtml(ev.emoji)}</span>
                 ${ev.isPrivate ? '<span class="text-[9px] font-bold text-slate-500">🔒 Private</span>' : ''}
@@ -6983,9 +7005,7 @@
             const inner = document.createElement('div');
             inner.className = 'h-full flex flex-col';
 
-            // Realm chips (built from every card, unaffected by the filter itself) + the "+ New
-            // Event" shortcut share one sticky header row so both stay reachable no matter how far
-            // the timeline below has been scrolled.
+            // Realm/Bucket options built from every card (unaffected by the filters themselves).
             const realmsById = new Map();
             eventUniverseCards.forEach((ev) => {
                 const key = ev.realmId != null ? String(ev.realmId) : 'uncategorized';
@@ -6999,6 +7019,16 @@
             });
             const realmList = Array.from(realmsById.values());
 
+            const bucketsById = new Map();
+            eventUniverseCards.forEach((ev) => {
+                if (eventCardsRealmFilter !== null && (ev.realmId != null ? String(ev.realmId) : 'uncategorized') !== eventCardsRealmFilter) return;
+                const key = ev.bucketId != null ? String(ev.bucketId) : 'uncategorized';
+                if (!bucketsById.has(key)) {
+                    bucketsById.set(key, { key, name: ev.bucketId != null ? ev.bucketName : 'Uncategorized' });
+                }
+            });
+            const bucketList = Array.from(bucketsById.values());
+
             const headerRow = document.createElement('div');
             headerRow.className = 'shrink-0 flex items-center gap-2 pointer-events-none mb-3 flex-wrap';
 
@@ -7009,32 +7039,69 @@
             addTile.innerHTML = '<span>✨</span><span>New Event</span>';
             headerRow.appendChild(addTile);
 
-            if (realmList.length > 1) {
-                const chipRow = document.createElement('div');
-                chipRow.className = 'flex items-center gap-1.5 overflow-x-auto pointer-events-auto';
-
-                const allChip = document.createElement('button');
-                allChip.type = 'button';
-                allChip.onclick = () => setEventCardsRealmFilter(null);
-                allChip.className = 'shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full transition-colors ' + (eventCardsRealmFilter === null ? 'bg-indigo-600 text-white' : 'bg-slate-900/80 text-slate-400 hover:text-white');
-                allChip.textContent = 'All';
-                chipRow.appendChild(allChip);
-
-                realmList.forEach((realm) => {
-                    const chip = document.createElement('button');
-                    chip.type = 'button';
-                    chip.title = realm.name;
-                    chip.onclick = () => setEventCardsRealmFilter(realm.key);
-                    chip.className = 'shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm transition-colors border ' + (eventCardsRealmFilter === realm.key ? 'bg-indigo-600 border-indigo-400' : 'bg-slate-900/80 border-slate-700 hover:border-indigo-500/60');
-                    chip.textContent = realm.icon;
-                    chipRow.appendChild(chip);
+            // Only shown once there's actually more than one Event Universe to switch between -
+            // reported directly, this is what actually FIXES a second Event Universe (e.g. a
+            // dedicated "Dispatch" alongside a personal "Events") being completely unreachable:
+            // Event Universes are excluded from the Multiverse picker grid entirely, and the
+            // standalone "🎉 Events" launcher only ever points at the first one by sort_order.
+            if (eventUniversesData.length > 1) {
+                const universeSelect = document.createElement('select');
+                universeSelect.className = 'pointer-events-auto shrink-0 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500';
+                eventUniversesData.forEach((u) => {
+                    const opt = document.createElement('option');
+                    opt.value = u.id;
+                    opt.textContent = `${u.icon} ${u.name}`;
+                    if (u.id === activeUniverseId) opt.selected = true;
+                    universeSelect.appendChild(opt);
                 });
+                universeSelect.onchange = () => { window.location.href = '/?universe_id=' + universeSelect.value; };
+                headerRow.appendChild(universeSelect);
+            }
 
-                headerRow.appendChild(chipRow);
+            if (realmList.length > 1) {
+                const realmSelect = document.createElement('select');
+                realmSelect.className = 'pointer-events-auto shrink-0 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500';
+                const allOpt = document.createElement('option');
+                allOpt.value = '';
+                allOpt.textContent = 'All Realms';
+                if (eventCardsRealmFilter === null) allOpt.selected = true;
+                realmSelect.appendChild(allOpt);
+                realmList.forEach((realm) => {
+                    const opt = document.createElement('option');
+                    opt.value = realm.key;
+                    opt.textContent = `${realm.icon} ${realm.name}`;
+                    if (eventCardsRealmFilter === realm.key) opt.selected = true;
+                    realmSelect.appendChild(opt);
+                });
+                realmSelect.onchange = () => setEventCardsRealmFilter(realmSelect.value || null);
+                headerRow.appendChild(realmSelect);
+            }
+
+            if (bucketList.length > 1) {
+                const bucketSelect = document.createElement('select');
+                bucketSelect.className = 'pointer-events-auto shrink-0 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500';
+                const allOpt = document.createElement('option');
+                allOpt.value = '';
+                allOpt.textContent = 'All Buckets';
+                if (eventCardsBucketFilter === null) allOpt.selected = true;
+                bucketSelect.appendChild(allOpt);
+                bucketList.forEach((bucket) => {
+                    const opt = document.createElement('option');
+                    opt.value = bucket.key;
+                    opt.textContent = bucket.name;
+                    if (eventCardsBucketFilter === bucket.key) opt.selected = true;
+                    bucketSelect.appendChild(opt);
+                });
+                bucketSelect.onchange = () => setEventCardsBucketFilter(bucketSelect.value || null);
+                headerRow.appendChild(bucketSelect);
             }
             inner.appendChild(headerRow);
 
-            const visibleCards = eventUniverseCards.filter(ev => eventCardsRealmFilter === null || (ev.realmId != null ? String(ev.realmId) : 'uncategorized') === eventCardsRealmFilter);
+            const visibleCards = eventUniverseCards.filter((ev) => {
+                if (eventCardsRealmFilter !== null && (ev.realmId != null ? String(ev.realmId) : 'uncategorized') !== eventCardsRealmFilter) return false;
+                if (eventCardsBucketFilter !== null && (ev.bucketId != null ? String(ev.bucketId) : 'uncategorized') !== eventCardsBucketFilter) return false;
+                return true;
+            });
 
             const today = new Date();
             today.setHours(0, 0, 0, 0);
