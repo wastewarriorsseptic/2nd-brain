@@ -1400,15 +1400,16 @@
             <p class="text-slate-400 text-sm mb-8 text-center">Your life, on track.</p>
             <div id="multiverse-grid" class="flex flex-wrap items-start justify-center gap-5">
                 {% for u in universes %}
-                {% if u.kind != 'event' %}
                 {% set pending_for_u = universe_pending_invites_map.get(u.id, []) if universe_pending_invites_map else [] %}
                 {% set collaborators_for_u = universe_collaborators_map.get(u.id, []) if universe_collaborators_map else [] %}
                 {% set seconds_remaining = universe_invite_seconds_remaining_map.get(u.id) if universe_invite_seconds_remaining_map else None %}
-                <!-- Event-kind Universes are excluded from this grid entirely (see the kind-check
-                     wrapping this whole card above) - reported directly ("pull the events section
-                     out of the universe home"). They're reachable from the standalone 🎉 Events
-                     launcher button instead (see events_universe_href), paired next to 📝 Notes,
-                     same pattern as Notes' own standalone button rather than a generic grid tile. -->
+                <!-- Event-kind Universes used to be excluded from this grid entirely, reachable
+                     only via the standalone 🎉 Events launcher button - reported directly that any
+                     Universe that exists needs to be visible here regardless of kind or whether
+                     it's empty yet ("it can be empty but needs to be shown and then filled"). An
+                     Event Universe with nothing in it was otherwise completely undiscoverable: no
+                     tile here, and the 🎉 launcher only ever opens the FIRST Event Universe by
+                     sort_order, so a second one had no path to it at all. -->
                 <div class="universe-card universe-card-float relative flex flex-col items-center gap-2 w-28 group" data-universe-id="{{ u.id }}" style="--float-delay: -{{ (loop.index0 * 0.53) % 3.2 }}s;">
                     {% if u.user_id == user.id %}
                     <button type="button" onclick="openEditUniverse(this)"
@@ -1452,15 +1453,10 @@
                             </div>
                         </div>
                         <span class="text-xs font-bold text-white text-center truncate max-w-full">{{ u.name }}</span>
-                        <!-- "Tasks" badge restored - reported directly - now that Event-kind
-                             Universes are hidden from this grid entirely (see above), Events isn't
-                             visually represented here as its own category anymore, so Tasks vs.
-                             Contacts is worth spelling out again for a quick glance, especially once
-                             individual Events start showing up mixed into a plain Tasks Universe's
-                             own Realms (via "Organize this" - they still count as that Universe's
-                             kind, "task", not "event"). -->
-                        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full {% if u.kind == 'contact' %}bg-emerald-500/15 text-emerald-300 border border-emerald-500/30{% else %}bg-indigo-500/15 text-indigo-300 border border-indigo-500/30{% endif %}">
-                            {% if u.kind == 'contact' %}👥 Contacts{% else %}😈 Tasks{% endif %}
+                        <!-- Kind badge - lets Tasks/Contacts/Events tell apart at a glance. Events
+                             joined this now that Event Universes show here at all (see above). -->
+                        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full {% if u.kind == 'contact' %}bg-emerald-500/15 text-emerald-300 border border-emerald-500/30{% elif u.kind == 'event' %}bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/30{% else %}bg-indigo-500/15 text-indigo-300 border border-indigo-500/30{% endif %}">
+                            {% if u.kind == 'contact' %}👥 Contacts{% elif u.kind == 'event' %}🎉 Events{% else %}😈 Tasks{% endif %}
                         </span>
                         {% if u.user_id != user.id %}
                         <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700" title="Shared with you by {{ u.user.name if u.user else 'another owner' }}">👥 Shared by {{ u.user.name if u.user else 'owner' }}</span>
@@ -1478,7 +1474,6 @@
                         {% endif %}
                     </a>
                 </div>
-                {% endif %}
                 {% endfor %}
 
                 <button type="button" onclick="document.getElementById('add-universe-modal').classList.remove('hidden')"
