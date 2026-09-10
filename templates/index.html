@@ -1081,7 +1081,14 @@
                          evenly 50/50 instead of squeezing in a third box. -->
                     <div class="flex items-center gap-2">
                         <div class="relative flex-1 h-11">
+                            <!-- A native date input only auto-opens its calendar on a click that
+                               lands on its own small built-in icon glyph - stretching it invisibly
+                               over this whole button means most clicks just silently focus it
+                               instead (reported directly - "the date doesn't drop down to
+                               select"). Forcing it open via showPicker() on any click sidesteps
+                               that click-region guesswork entirely. -->
                             <input type="date" name="due_date" id="event-quick-due-date-input" required
+                                   onclick="this.showPicker && this.showPicker()"
                                    class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
                             <div id="event-quick-due-date-display"
                                  class="absolute inset-0 pointer-events-none bg-slate-950/80 border border-slate-700 rounded-xl flex items-center justify-center text-sm text-white">📅</div>
