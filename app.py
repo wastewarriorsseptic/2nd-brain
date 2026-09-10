@@ -1871,15 +1871,33 @@ def reorder_universes(request: Request, order: List[int] = Body(...)):
 
 @app.post("/universes/delete/")
 def delete_universe(request: Request, universe_id: int = Form(...)):
+    # Space View's own completion flow (see toggle_item_complete) already distinguishes an AJAX
+    # caller this way - reused here for the exact same reason: a real form POST used to always
+    # full-page-reload onto some OTHER, arbitrary fallback Universe's own dashboard, which is
+    # disruptive on its own but especially broke deleting several Universes in a row from the
+    # Multiverse picker's own wobble/edit mode (reported directly - "let me keep going until i
+    # stop"). A fetch call gets a plain JSON ack back instead, so the tile can just be removed from
+    # the grid in place, leaving the picker (and wobble mode) exactly as it was.
+    wants_json = request.headers.get("x-requested-with") == "fetch"
+
+    def respond(redirect_url: str):
+        if wants_json:
+            return JSONResponse({"ok": True})
+        return RedirectResponse(url=redirect_url, status_code=303)
+
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user_owns_universe(session, user, universe_id):
+            if wants_json:
+                return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
             return RedirectResponse(url="/", status_code=303)
 
         remaining = session.exec(select(Universe).where(Universe.user_id == user.id)).all()
         if len(remaining) <= 1:
             # Refuse to delete a user's last remaining universe - dashboard() has nothing
             # sensible to fall back to otherwise.
+            if wants_json:
+                return JSONResponse({"ok": False, "error": "Can't delete your last remaining Universe."}, status_code=400)
             return RedirectResponse(url=f"/?universe_id={universe_id}", status_code=303)
 
         universe = session.get(Universe, universe_id)
@@ -1887,6 +1905,11 @@ def delete_universe(request: Request, universe_id: int = Form(...)):
             for realm in universe.realms:
                 for bucket in realm.buckets:
                     for item in bucket.items:
+                        # An Event-kind Universe (or any Universe with events pinned into it) can
+                        # hold real Event items - deleting one without cleaning up its Event/
+                        # EventGuest rows first hits the exact same foreign-key violation
+                        # delete_item used to (see _delete_event_for_item's own docstring).
+                        _delete_event_for_item(session, item.id)
                         for reminder in item.reminders:
                             session.delete(reminder)
                         session.delete(item)
@@ -1915,7 +1938,7 @@ def delete_universe(request: Request, universe_id: int = Form(...)):
         # fall back to - reproduced directly while testing the Universe-share cascade above.
         fallback_id = next((u.id for u in remaining if u.id != universe_id), None)
 
-    return RedirectResponse(url=f"/?universe_id={fallback_id}" if fallback_id else "/", status_code=303)
+    return respond(f"/?universe_id={fallback_id}" if fallback_id else "/")
 
 # --- Realm & Bucket Endpoints ---
 @app.post("/realms/")

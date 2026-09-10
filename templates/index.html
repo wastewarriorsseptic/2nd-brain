@@ -1416,9 +1416,8 @@
                             data-id="{{ u.id }}" data-name="{{ u.name }}" data-icon="{{ u.icon }}" title="Edit Universe"
                             class="universe-card-action hidden absolute -top-1 -left-1 z-10 w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-indigo-400 hover:border-indigo-400/50 text-xs flex items-center justify-center transition">✏️</button>
                     {% if universes|length > 1 %}
-                    <form action="/universes/delete/" method="POST" onsubmit="return confirm('Delete the {{ u.name }} universe along with everything inside it - all its Realms, Buckets, and Tasks/People?');"
+                    <form onsubmit="deleteUniverseInPlace(event, {{ u.id }}); return false;"
                           class="universe-card-action hidden absolute -top-1 -right-1 z-10">
-                        <input type="hidden" name="universe_id" value="{{ u.id }}">
                         <button type="submit" title="Delete Universe"
                                 class="w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-red-400 hover:border-red-400/50 text-xs flex items-center justify-center transition">🗑️</button>
                     </form>
@@ -6262,6 +6261,44 @@
             document.querySelectorAll('.universe-card-action').forEach(el => el.classList.add('hidden'));
         }
 
+        // Deleting a Universe used to be a real form submit - a full-page reload onto some OTHER,
+        // arbitrary fallback Universe's own dashboard, which silently exited the picker (and
+        // wobble/reorder mode) entirely. Reported directly: wanting to delete several Universes in
+        // a row from wobble mode without it kicking you out after the first one ("let me keep going
+        // until i stop"). An AJAX call plus removing just this one tile from the grid leaves
+        // everything else - the picker, wobble mode, every other tile - untouched, so the next 🗑️
+        // is right there to tap immediately.
+        async function deleteUniverseInPlace(event, universeId) {
+            event.preventDefault();
+            const card = document.querySelector(`.universe-card[data-universe-id="${universeId}"]`);
+            // Read the display name straight off the already-rendered tile rather than taking it as
+            // a parameter baked into the inline onsubmit string - a Universe name run through
+            // Jinja's |tojson (needed to pass it as a JS argument safely otherwise) produces raw,
+            // unescaped quotes since tojson marks its output "safe" for <script> use, which broke
+            // out of the onsubmit="..." HTML attribute early for any name containing one. Pulling
+            // it from .textContent sidesteps that class of bug entirely.
+            const universeName = card ? (card.querySelector('.universe-card-link span')?.textContent?.trim() || 'this') : 'this';
+            if (!confirm(`Delete the ${universeName} universe along with everything inside it - all its Realms, Buckets, and Tasks/People?`)) {
+                return false;
+            }
+            try {
+                const res = await fetch('/universes/delete/', {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'fetch', 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ universe_id: universeId }),
+                });
+                const data = await res.json();
+                if (!data.ok) {
+                    alert(data.error || "Couldn't delete that Universe - check your connection and try again.");
+                    return false;
+                }
+                if (card) card.remove();
+            } catch (e) {
+                alert("Couldn't delete that Universe - check your connection and try again.");
+            }
+            return false;
+        }
+
         function enterMultiverseReorderMode() {
             if (multiverseReorderMode) return;
             multiverseReorderMode = true;
@@ -7025,23 +7062,41 @@
             const bucketList = Array.from(bucketsById.values());
 
             const headerRow = document.createElement('div');
-            headerRow.className = 'shrink-0 flex items-center gap-2 pointer-events-none mb-3 flex-wrap';
+            headerRow.className = 'shrink-0 flex items-end gap-2 pointer-events-none mb-3 flex-wrap';
 
             const addTile = document.createElement('button');
             addTile.type = 'button';
             addTile.onclick = openEventQuickCreateModal;
-            addTile.className = 'pointer-events-auto shrink-0 flex items-center gap-1.5 rounded-full border-2 border-dashed border-indigo-400/50 bg-indigo-500/10 hover:bg-indigo-500/20 hover:border-indigo-400/80 text-indigo-200 text-xs font-bold px-3 py-1.5 transition-colors';
+            addTile.className = 'pointer-events-auto shrink-0 flex items-center gap-1.5 rounded-full border-2 border-dashed border-indigo-400/50 bg-indigo-500/10 hover:bg-indigo-500/20 hover:border-indigo-400/80 text-indigo-200 text-xs font-bold px-3 py-1.5 transition-colors mb-0.5';
             addTile.innerHTML = '<span>✨</span><span>New Event</span>';
             headerRow.appendChild(addTile);
 
-            // Only shown once there's actually more than one Event Universe to switch between -
-            // reported directly, this is what actually FIXES a second Event Universe (e.g. a
-            // dedicated "Dispatch" alongside a personal "Events") being completely unreachable:
-            // Event Universes are excluded from the Multiverse picker grid entirely, and the
-            // standalone "🎉 Events" launcher only ever points at the first one by sort_order.
-            if (eventUniversesData.length > 1) {
-                const universeSelect = document.createElement('select');
-                universeSelect.className = 'pointer-events-auto shrink-0 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500';
+            // Wraps a <select> with its own small uppercase label above it (Universe/Realm/Bucket)
+            // - reported directly, wanting it always clear which dropdown is which rather than
+            // three unlabeled selects. Always shown now too (used to hide below 2 options) - even
+            // a single Realm/Bucket is worth seeing and labeled, both for discoverability (this is
+            // literally how you find out what structure exists) and consistency, rather than
+            // popping in only once there's something to switch between.
+            function buildLabeledSelect(labelText) {
+                const wrap = document.createElement('div');
+                wrap.className = 'pointer-events-auto flex flex-col gap-0.5';
+                const label = document.createElement('label');
+                label.className = 'text-[9px] font-bold text-slate-500 uppercase tracking-wide px-0.5';
+                label.textContent = labelText;
+                wrap.appendChild(label);
+                const select = document.createElement('select');
+                select.className = 'bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500';
+                wrap.appendChild(select);
+                headerRow.appendChild(wrap);
+                return select;
+            }
+
+            // This is also what actually FIXES a second Event Universe (e.g. a dedicated
+            // "Dispatch" alongside a personal "Events") being completely unreachable: Event
+            // Universes are excluded from the Multiverse picker grid entirely, and the standalone
+            // "🎉 Events" launcher only ever points at the first one by sort_order.
+            if (eventUniversesData.length > 0) {
+                const universeSelect = buildLabeledSelect('Universe');
                 eventUniversesData.forEach((u) => {
                     const opt = document.createElement('option');
                     opt.value = u.id;
@@ -7050,12 +7105,10 @@
                     universeSelect.appendChild(opt);
                 });
                 universeSelect.onchange = () => { window.location.href = '/?universe_id=' + universeSelect.value; };
-                headerRow.appendChild(universeSelect);
             }
 
-            if (realmList.length > 1) {
-                const realmSelect = document.createElement('select');
-                realmSelect.className = 'pointer-events-auto shrink-0 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500';
+            if (realmList.length > 0) {
+                const realmSelect = buildLabeledSelect('Realm');
                 const allOpt = document.createElement('option');
                 allOpt.value = '';
                 allOpt.textContent = 'All Realms';
@@ -7069,12 +7122,10 @@
                     realmSelect.appendChild(opt);
                 });
                 realmSelect.onchange = () => setEventCardsRealmFilter(realmSelect.value || null);
-                headerRow.appendChild(realmSelect);
             }
 
-            if (bucketList.length > 1) {
-                const bucketSelect = document.createElement('select');
-                bucketSelect.className = 'pointer-events-auto shrink-0 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500';
+            if (bucketList.length > 0) {
+                const bucketSelect = buildLabeledSelect('Bucket');
                 const allOpt = document.createElement('option');
                 allOpt.value = '';
                 allOpt.textContent = 'All Buckets';
@@ -7088,7 +7139,6 @@
                     bucketSelect.appendChild(opt);
                 });
                 bucketSelect.onchange = () => setEventCardsBucketFilter(bucketSelect.value || null);
-                headerRow.appendChild(bucketSelect);
             }
             inner.appendChild(headerRow);
 
