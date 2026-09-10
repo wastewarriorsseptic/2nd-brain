@@ -4032,6 +4032,38 @@ def api_settings_page(request: Request):
             select(ApiKey).where(ApiKey.user_id == user.id).order_by(ApiKey.created_at.desc())
         ).all()
 
+        # Universe -> Realm -> Bucket tree with real ids, purely so someone wiring up an external
+        # integration can actually find the bucket_id to target (e.g. routing a job to "Truck 1")
+        # without having to dig through page source or ask - reported directly, building exactly
+        # this kind of external-dispatch integration. Ownership-only (api_create_event's own
+        # user_can_access_bucket check is the same boundary), sorted the same way the sidebar is.
+        universes = session.exec(
+            select(Universe).where(Universe.user_id == user.id).order_by(Universe.sort_order)
+        ).all()
+        realms = session.exec(
+            select(Realm).where(Realm.user_id == user.id).order_by(Realm.sort_order)
+        ).all()
+        buckets = session.exec(
+            select(Bucket).where(Bucket.realm_id.in_([r.id for r in realms])).order_by(Bucket.sort_order)
+        ).all() if realms else []
+
+        bucket_tree = []
+        for u in universes:
+            u_realms = [r for r in realms if r.universe_id == u.id]
+            if not u_realms:
+                continue
+            realms_out = []
+            for r in u_realms:
+                r_buckets = [b for b in buckets if b.realm_id == r.id]
+                if not r_buckets:
+                    continue
+                realms_out.append({
+                    "name": r.name, "icon": r.icon or "🔮",
+                    "buckets": [{"id": b.id, "name": b.name, "icon": b.icon or "📌"} for b in r_buckets],
+                })
+            if realms_out:
+                bucket_tree.append({"name": u.name, "icon": u.icon or "😈", "realms": realms_out})
+
     # Stashed in the session by generate_api_key, one request ago, and popped (not just read) here
     # so it can never be shown again after this single page load - a raw key only ever exists in
     # the client's hands for this one render, matching how GitHub/Stripe show a new key exactly
@@ -4042,7 +4074,7 @@ def api_settings_page(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="api_settings.html",
-        context={"user": user, "keys": keys, "new_key": new_key}
+        context={"user": user, "keys": keys, "new_key": new_key, "bucket_tree": bucket_tree}
     )
 
 @app.post("/settings/api/generate")

@@ -54,6 +54,30 @@
                 </button>
             </form>
 
+            {% if bucket_tree %}
+            <div class="bg-slate-900/60 border border-slate-700/60 rounded-2xl p-4 mb-6">
+                <p class="font-bold text-slate-300 text-xs mb-1">🪣 Bucket IDs</p>
+                <p class="text-slate-500 text-[11px] mb-3">Pass one of these as <code class="text-indigo-300">bucket_id</code> to route an event somewhere specific (e.g. a particular truck) - omit it to fall back to the account's default Events bucket.</p>
+                <div class="space-y-3">
+                    {% for u in bucket_tree %}
+                    <div>
+                        <p class="text-[11px] font-bold text-white mb-1">{{ u.icon }} {{ u.name }}</p>
+                        {% for r in u.realms %}
+                        <div class="ml-3 mb-1.5">
+                            <p class="text-[10px] text-slate-400 mb-1">{{ r.icon }} {{ r.name }}</p>
+                            <div class="flex flex-wrap gap-1.5 ml-3">
+                                {% for b in r.buckets %}
+                                <code class="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-emerald-300 select-all">{{ b.icon }} {{ b.name }}: {{ b.id }}</code>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
             <div class="space-y-2">
                 {% for key in keys %}
                 <div class="flex items-center justify-between bg-slate-900/60 border border-slate-700/60 rounded-xl px-4 py-3">
