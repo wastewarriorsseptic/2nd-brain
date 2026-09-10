@@ -6,8 +6,58 @@
     <title>{{ event.emoji }} {{ item.title }} - TaskMonster</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        /* Same DOM/CSS starfield recipe as the main app's Space View (generateSpaceStars/
+           drawSpaceStars there, generateMultiversePickerStars' own DOM/CSS counterpart for a
+           full-screen overlay like this one) - reported directly, wanting this invite page to
+           match that background instead of a flat slate. This page is a standalone document with
+           no access to the app's own JS, so the same tiny/sparse/colored/slow-twinkle look is
+           reproduced here directly. */
+        @keyframes invite-star-twinkle {
+            0%, 100% { opacity: var(--star-min-o, 0.12); }
+            50% { opacity: var(--star-max-o, 0.34); }
+        }
+        .invite-star {
+            position: absolute;
+            border-radius: 9999px;
+            animation-name: invite-star-twinkle;
+            animation-timing-function: ease-in-out;
+            animation-iteration-count: infinite;
+        }
+    </style>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen p-4 md:p-10 font-sans flex items-center justify-center">
+<body class="bg-slate-950 text-slate-100 min-h-screen p-4 md:p-10 font-sans flex items-center justify-center relative overflow-x-hidden">
+    <div id="invite-stars" class="fixed inset-0 pointer-events-none overflow-hidden"></div>
+    <script>
+        (function generateInviteStars() {
+            const container = document.getElementById('invite-stars');
+            if (!container) return;
+            const PALETTE = [
+                { rgb: '129, 140, 248', glow: '#6366f1' },
+                { rgb: '196, 181, 253', glow: '#8b5cf6' },
+                { rgb: '125, 211, 252', glow: '#0ea5e9' },
+                { rgb: '253, 164, 175', glow: '#f43f5e' },
+                { rgb: '252, 211, 77', glow: '#f59e0b' },
+            ];
+            const STAR_COUNT = 40;
+            let html = '';
+            for (let i = 0; i < STAR_COUNT; i++) {
+                const palette = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+                const size = (1.2 + Math.random() * 2.2).toFixed(2);
+                const maxOVal = 0.28 + Math.random() * 0.18;
+                const minO = (maxOVal * (0.6 + Math.random() * 0.15)).toFixed(2);
+                const maxO = maxOVal.toFixed(2);
+                const left = (Math.random() * 100).toFixed(2);
+                const top = (Math.random() * 100).toFixed(2);
+                const delay = (Math.random() * 6).toFixed(2);
+                const duration = (8 + Math.random() * 8).toFixed(2);
+                const glowRadius = (parseFloat(size) * 2.5).toFixed(1);
+                html += `<div class="invite-star" style="left:${left}%; top:${top}%; width:${size}px; height:${size}px; background: rgba(${palette.rgb}, ${maxO}); box-shadow: 0 0 ${glowRadius}px ${palette.glow}; animation-delay: ${delay}s; animation-duration: ${duration}s; --star-min-o: ${minO}; --star-max-o: ${maxO};"></div>`;
+            }
+            container.innerHTML = html;
+        })();
+    </script>
+
     <!-- Explicit way out regardless of how this page was reached (a fresh redirect right after
          creating it, a shared link opened in its own tab, a guest's email link) - reported
          directly - rather than relying only on the browser's own back/close controls, which
