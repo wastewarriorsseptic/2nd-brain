@@ -2803,8 +2803,20 @@ def _delete_event_for_item(session: Session, item_id: int) -> None:
     event = session.exec(select(Event).where(Event.item_id == item_id)).first()
     if not event:
         return
-    for guest in session.exec(select(EventGuest).where(EventGuest.event_id == event.id)).all():
+    guests = session.exec(select(EventGuest).where(EventGuest.event_id == event.id)).all()
+    for guest in guests:
         session.delete(guest)
+    if guests:
+        # Event and EventGuest are only linked by a plain FK column, not a declared ORM
+        # Relationship - so SQLAlchemy's unit-of-work has no idea EventGuest must be flushed
+        # before Event, and an unrelated autoflush elsewhere later in the same request (e.g. a
+        # lazy-loaded item.reminders access right after this call, as both delete_item and
+        # delete_universe do) can flush the Event delete first, violating
+        # eventguest_event_id_fkey. SQLite (used in isolated tests) doesn't enforce FKs by
+        # default so this passed locally - it 500'd for real against Postgres the moment a
+        # guest was actually invited. Flushing the guest deletes immediately, before the event
+        # delete is even queued, sidesteps the ordering question entirely.
+        session.flush()
     session.delete(event)
 
 @app.post("/items/delete/")
