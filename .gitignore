@@ -4,3 +4,9 @@ __pycache__/
 backups/
 .env
 .DS_Store
+*.p8
+*.sql
+taskmonster_*backup*
+backup.py
+*backup*.sh
+ios/build/
