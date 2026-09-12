@@ -16,12 +16,18 @@
         .pac-icon { filter: invert(1) brightness(1.6); }
     </style>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen p-4 md:p-10 font-sans">
+<body class="bg-slate-900 text-slate-100 min-h-screen p-3 md:p-10 font-sans">
     <div class="max-w-xl mx-auto">
-        <a href="{{ back_url or '/' }}" class="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors mb-4 inline-block">← Back to TaskMonster</a>
-
-        <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-6 md:p-8 shadow-2xl">
-            <h1 class="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2 mb-1">
+        <!-- Anchored to the card's own corner rather than a fixed "Back to TaskMonster" link above
+             it - reported directly ("needs the X instead of back... it's hard to X out of it").
+             That link also sat at a bare top of the page with no safe-area consideration, landing
+             right under the phone's status bar; putting the close button inside the card (which
+             already has its own top padding) sidesteps that overlap too. -->
+        <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-5 md:p-8 shadow-2xl relative">
+            <a href="{{ back_url or '/' }}" aria-label="Close" class="absolute top-3 right-3 w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white transition-colors bg-slate-900/80 rounded-full border border-slate-700/60 z-10">
+                ✕
+            </a>
+            <h1 class="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2 mb-1 pr-10">
                 {{ '✏️ Edit Event' if is_edit else '🎉 New Event' }}
             </h1>
             <p class="text-slate-400 text-sm mb-6">Send a cool, shareable invite for a specific day - with or without RSVPs.</p>

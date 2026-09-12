@@ -4487,15 +4487,11 @@
         // keyboard back the way toggleAiChatPanel() normally does there.
         function openAiChatQuickTask(event) {
             if (event) event.stopPropagation();
-            // Reported directly: sitting in an Event universe (in Space View especially, like the
-            // screenshot that prompted this) with no way to create an actual Event right there -
-            // the chat's own quick-task flow only ever creates a plain task, and Events need their
-            // own richer form (title/date/guests/RSVP - see /events/new) anyway, so this jumps
-            // straight there instead of pretending the chat flow could substitute for it.
-            if (isEventUniverse) {
-                window.location.href = '/events/new';
-                return;
-            }
+            // Used to redirect straight to /events/new instead of opening the chat whenever the
+            // active universe was Event-kind (the chat's quick-task flow only ever creates a plain
+            // task, not a full Event with date/guests/RSVP) - reversed per explicit follow-up
+            // request ("the green + needs to just be for task creation"), so this button now
+            // always opens the chat the same way everywhere, Event universe or not.
             const panel = document.getElementById('ai-chat-panel');
             if (panel && panel.classList.contains('hidden')) {
                 toggleAiChatPanel(true);
