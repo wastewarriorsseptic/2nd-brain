@@ -3912,19 +3912,40 @@
             });
 
             // Restore persistent Space View state if user was previously in Space View
-            const savedSpaceViewState = localStorage.getItem('active_dashboard_view');
-            if (savedSpaceViewState === 'space') {
+            restoreSpaceViewOnAppOpen();
+        });
+
+        // Shared by the initial page-load restore above and the visibilitychange/pageshow
+        // listeners below. Installed as a PWA (an icon on the home screen, not a browser tab) -
+        // reported directly - "opening the app" often doesn't actually reload this page at all:
+        // iOS commonly keeps the whole WKWebView alive in the background when the app is
+        // backgrounded, so re-launching it just re-shows whatever screen was already sitting in
+        // memory (e.g. a single Universe drilled into from the Multiverse Timeline earlier),
+        // never touching DOMContentLoaded a second time. A plain page-load restore alone can only
+        // ever catch a genuine cold start, which is the exception rather than the rule for how
+        // this app actually gets "reopened" day to day.
+        function restoreSpaceViewOnAppOpen() {
+            if (localStorage.getItem('active_dashboard_view') !== 'space') return;
+            if (!isSpaceViewActive) {
                 toggleSpaceView();
                 document.documentElement.classList.remove('preload-space-view');
-                // Multiverse Timeline ("All Timelines") is a specific screen WITHIN Space View,
-                // tracked by its own separate flag (see openMultiverseTimeline) - reported
-                // directly, wanting that exact cross-Universe view to greet them on every fresh
-                // app open, not just survive a refresh of the same URL the way its mv_timeline
-                // query param already did.
-                if (localStorage.getItem('space_view_mode') === 'multiverse_timeline') {
-                    openMultiverseTimeline();
-                }
             }
+            // Multiverse Timeline ("All Timelines") is a specific screen WITHIN Space View, tracked
+            // by its own separate flag (see openMultiverseTimeline) - reported directly, wanting
+            // that exact cross-Universe view to greet them every time the app is opened, not just
+            // survive a refresh of the same URL the way its mv_timeline query param already did.
+            if (localStorage.getItem('space_view_mode') === 'multiverse_timeline' && !isMultiverseStackedView) {
+                openMultiverseTimeline();
+            }
+        }
+
+        // pageshow covers a page restored from the back/forward cache (bfcache) - Safari's own
+        // "resume this exact page" path, distinct from visibilitychange - and visibilitychange
+        // covers the WKWebView-kept-alive PWA resume described above. Between the two, every way
+        // "reopening the app" can actually manifest ends up re-asserting the saved preference.
+        window.addEventListener('pageshow', () => restoreSpaceViewOnAppOpen());
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') restoreSpaceViewOnAppOpen();
         });
 
         let selectedWeekdays = [];
@@ -8315,25 +8336,6 @@
                 spaceCtx.font = `${Math.round(addHubRadius * 0.9)}px sans-serif`;
                 spaceCtx.fillStyle = '#818cf8';
                 spaceCtx.fillText('+', 0, addHubY);
-                spaceCtx.restore();
-
-                spaceCtx.save();
-                spaceCtx.textAlign = 'center';
-                spaceCtx.textBaseline = 'middle';
-                spaceCtx.font = 'bold 34px sans-serif';
-                const addNameText = 'New Universe';
-                const addNameWidth = spaceCtx.measureText(addNameText).width + 36;
-                const addPillY = addHubY + addHubRadius + 16;
-                const addPillHeight = 46;
-                spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.92)';
-                spaceCtx.beginPath();
-                spaceCtx.roundRect(-addNameWidth / 2, addPillY, addNameWidth, addPillHeight, 23);
-                spaceCtx.fill();
-                spaceCtx.strokeStyle = '#6366f1';
-                spaceCtx.lineWidth = 1.5;
-                spaceCtx.stroke();
-                spaceCtx.fillStyle = '#ffffff';
-                spaceCtx.fillText(addNameText, 0, addPillY + addPillHeight / 2);
                 spaceCtx.restore();
             } else {
                 multiverseAddUniverseHub = null;
