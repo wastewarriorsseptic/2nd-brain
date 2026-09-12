@@ -1498,12 +1498,15 @@
                 </div>
                 {% endfor %}
 
+                <!-- Same look as a real Universe circle (and the equivalent "+" hub in the
+                     Multiverse Timeline - see the addHub drawing in renderMultiverseStackedLanes)
+                     rather than the old dashed muted-gray outline - reported directly, wanting the
+                     two to match. -->
                 <button type="button" onclick="document.getElementById('add-universe-modal').classList.remove('hidden')"
-                        class="flex flex-col items-center gap-2 w-28 group">
-                    <div class="w-20 h-20 rounded-full flex items-center justify-center text-3xl border-2 border-dashed border-slate-700 bg-slate-900 text-slate-500 group-hover:border-indigo-500/60 group-hover:text-indigo-400 transition">
-                        ➕
+                        title="Add Universe" class="flex flex-col items-center gap-2 w-28 group">
+                    <div class="w-20 h-20 rounded-full flex items-center justify-center text-3xl border-2 border-indigo-500 bg-slate-800/95 shadow-lg shadow-indigo-600/30 text-indigo-400 transition">
+                        +
                     </div>
-                    <span class="text-xs font-bold text-slate-400 group-hover:text-white text-center">Add Universe</span>
                 </button>
             </div>
         </div>
