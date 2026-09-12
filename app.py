@@ -2486,25 +2486,47 @@ def _invite_status_page(heading: str, body: str, show_logout: bool = False, redi
     dead end, whether they tap the link or not. When set, the link navigates there immediately on
     click, and a 5-second timer does the same automatically if they never tap it at all."""
     logout_link = (
-        '<a href="/logout" style="color: #6366f1; font-weight: 600;">Sign out</a> and then '
-        '<a href="/login" style="color: #6366f1; font-weight: 600;">sign back in</a> with the right address.'
+        '<a href="/logout" style="color: #818cf8; font-weight: 600;">Sign out</a> and then '
+        '<a href="/login" style="color: #818cf8; font-weight: 600;">sign back in</a> with the right address.'
         if show_logout else
-        f'<a href="{redirect_url}" style="color: #6366f1; font-weight: 600;">{redirect_label}</a>'
+        f'<a href="{redirect_url}" style="color: #818cf8; font-weight: 600;">{redirect_label}</a>'
         if redirect_url else
-        '<a href="https://usetaskmonster.app" style="color: #6366f1; font-weight: 600;">Go to TaskMonster</a>'
+        '<a href="https://usetaskmonster.app" style="color: #818cf8; font-weight: 600;">Go to TaskMonster</a>'
     )
     redirect_script = (
         f"""<script>setTimeout(function() {{ window.location.href = {_json.dumps(redirect_url)}; }}, 5000);</script>"""
         if redirect_url else ""
     )
-    return f"""
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 480px; margin: 80px auto; padding: 28px; border: 1px solid #e5e7eb; border-radius: 12px; text-align: center;">
-        <div style="font-size: 32px; margin-bottom: 8px;">😈</div>
-        <h2 style="margin-top: 0;">{heading}</h2>
-        <p style="color: #4b5563;">{body}</p>
-        <p style="margin-top: 24px;">{logout_link}</p>
-    </div>
-    {redirect_script}
+    # A real (if minimal) HTML document now, not a bare fragment - the missing <meta viewport>
+    # was the biggest reason this read as tiny on a phone: with no viewport tag, mobile WebKit
+    # renders at its ~980px desktop-width default and scales the whole page down to fit, shrinking
+    # text far more than any font-size choice here could fix on its own. Explicit dark background/
+    # colors on a full-viewport flex container match the rest of the app's own dark theme too,
+    # rather than relying on default light-theme colors against whatever background the browser
+    # happens to fall back to - reported directly after the account-deletion confirmation rendered
+    # as small, faint text stuck near the top of an otherwise empty dark screen. Centered vertically
+    # now too, and sized up to actually read as a real confirmation screen rather than an
+    # afterthought.
+    return f"""<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>TaskMonster</title>
+        <style>body {{ margin: 0; }}</style>
+    </head>
+    <body style="background: #0f172a;">
+        <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 28px; box-sizing: border-box;">
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #f1f5f9; line-height: 1.6; max-width: 480px; width: 100%; text-align: center;">
+                <div style="font-size: 56px; margin-bottom: 16px;">😈</div>
+                <h2 style="margin: 0 0 16px; font-size: 28px; font-weight: 800; color: #ffffff;">{heading}</h2>
+                <p style="color: #94a3b8; font-size: 17px;">{body}</p>
+                <p style="margin-top: 28px; font-size: 16px;">{logout_link}</p>
+            </div>
+        </div>
+        {redirect_script}
+    </body>
+    </html>
     """
 
 @app.post("/buckets/")
@@ -4578,7 +4600,7 @@ def delete_account(request: Request, confirm: str = Form("")):
     request.session.clear()
     return HTMLResponse(_invite_status_page(
         "Your account has been deleted",
-        "Everything associated with it is gone, permanently. Thanks for trying TaskMonster."
+        "Everything associated with it is gone, permanently. Thanks for trying TaskMonster!"
     ))
 
 def _event_context(session: Session, share_token: str):
