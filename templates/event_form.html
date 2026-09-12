@@ -27,45 +27,47 @@
             <a href="{{ back_url or '/' }}" aria-label="Close" class="absolute top-3 right-3 w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white transition-colors bg-slate-900/80 rounded-full border border-slate-700/60 z-10">
                 ✕
             </a>
-            <h1 class="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2 mb-1 pr-10">
+            <h1 class="text-xl font-extrabold text-white tracking-tight flex items-center gap-2 mb-0.5 pr-10">
                 {{ '✏️ Edit Event' if is_edit else '🎉 New Event' }}
             </h1>
-            <p class="text-slate-400 text-sm mb-6">Send a cool, shareable invite for a specific day - with or without RSVPs.</p>
+            <p class="text-slate-500 text-xs mb-4">Send a cool, shareable invite for a specific day - with or without RSVPs.</p>
 
-            <form action="{{ ('/events/' + event.share_token + '/edit') if is_edit else '/events/' }}" method="POST" class="space-y-5" id="event-create-form">
+            <form action="{{ ('/events/' + event.share_token + '/edit') if is_edit else '/events/' }}" method="POST" class="space-y-3" id="event-create-form">
                 <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Title</label>
+                    <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Title</label>
                     <input type="text" name="title" required placeholder="e.g. Sarah's Birthday Dinner"
                            value="{{ item.title if is_edit else '' }}"
-                           class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                           class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
                 </div>
 
-                <div class="grid grid-cols-2 gap-4">
+                <!-- Emoji folded into the same row as Date/Time (was its own full-width section
+                     below) - reported directly ("it's a mess... too big"), no reason a single
+                     64px box needs a whole row to itself. -->
+                <div class="grid grid-cols-[1fr_1fr_auto] gap-2.5">
                     <div>
-                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Date</label>
+                        <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Date</label>
                         <input type="date" name="due_date" required
                                value="{{ item.due_date.strftime('%Y-%m-%d') if is_edit else '' }}"
-                               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Time</label>
+                        <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Time</label>
                         <select name="due_time" id="event-form-due-time-select"
-                               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"></select>
+                               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"></select>
                     </div>
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Emoji</label>
-                    <input type="text" name="emoji" value="{{ event.emoji if is_edit else '🎉' }}" maxlength="8"
-                           class="w-16 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-lg text-center focus:outline-none focus:border-indigo-500">
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Emoji</label>
+                        <input type="text" name="emoji" value="{{ event.emoji if is_edit else '🎉' }}" maxlength="8"
+                               class="w-12 h-[38px] bg-slate-900 border border-slate-700 rounded-xl text-lg text-center focus:outline-none focus:border-indigo-500">
+                    </div>
                 </div>
 
                 <div class="relative">
-                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Where (optional)</label>
+                    <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Where (optional)</label>
                     <input type="text" name="location" id="event-location-input" autocomplete="off"
                            value="{{ event.location or '' if is_edit else '' }}"
                            placeholder="Start typing an address or place…"
-                           class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-ellipsis">
+                           class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-ellipsis">
                     {% if not google_places_enabled %}
                     <div id="event-location-suggestions" class="hidden absolute z-20 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden"></div>
                     {% endif %}
@@ -83,13 +85,12 @@
                         📁 Organize this (optional) ›
                     </button>
                     <div id="event-organize-body" class="hidden mt-2">
-                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Save into</label>
                         <!-- Grouped by Universe (optgroup) since this now spans every Task-bearing
                              Universe, not just dedicated Event ones - e.g. picking a bucket inside
                              an existing "Life Events" Universe so the event shows up right there,
                              not siloed off in a separate Events-only picker. -->
                         <select name="bucket_id" required
-                                class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                                class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
                             {% for universe_id, realm_group in realms|groupby('universe_id') %}
                                 {% set universe = universe_by_id.get(universe_id) %}
                                 <optgroup label="{{ universe.icon if universe else '' }} {{ universe.name if universe else 'Universe' }}">
@@ -105,50 +106,56 @@
                 </div>
 
                 <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Note (optional)</label>
+                    <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Note (optional)</label>
                     <textarea name="description" rows="2" placeholder="Anything guests should know"
-                              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none">{{ item.description or '' if is_edit else '' }}</textarea>
+                              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none">{{ item.description or '' if is_edit else '' }}</textarea>
                 </div>
 
-                <div class="border-t border-slate-700/80 pt-5 space-y-4">
-                    <label class="flex items-center gap-2.5 cursor-pointer">
+                <!-- Verbose inline parentheticals ("turn off for a plain confirmation...", "the
+                     link itself won't work for anyone else...") used to sit at full body-text size
+                     right in the same sentence as each option - reported directly ("it's a mess"),
+                     trimmed to a short label plus a smaller, dimmer sub-line instead so the actual
+                     choice reads at a glance and the explanation is there without competing with it. -->
+                <div class="border-t border-slate-700/80 pt-3.5 space-y-2.5">
+                    <label class="flex items-start gap-2.5 cursor-pointer">
                         <input type="checkbox" name="requires_rsvp" value="true" {{ 'checked' if (not is_edit) or event.requires_rsvp else '' }}
-                               class="w-4 h-4 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
-                        <span class="text-sm text-slate-200">Ask guests to RSVP <span class="text-slate-500">(turn off for a plain confirmation, e.g. an appointment)</span></span>
+                               class="w-4 h-4 mt-0.5 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
+                        <span class="text-sm text-slate-200 leading-tight">Ask guests to RSVP<br><span class="text-[11px] text-slate-500">Off = a plain heads-up, e.g. an appointment</span></span>
                     </label>
 
-                    <label class="flex items-center gap-2.5 cursor-pointer">
+                    <label class="flex items-start gap-2.5 cursor-pointer">
                         <input type="checkbox" name="is_private" value="true" id="event-is-private" {{ 'checked' if is_edit and event.is_private else '' }}
-                               class="w-4 h-4 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
-                        <span class="text-sm text-slate-200">🔒 Private - only the people I invite can open it <span class="text-slate-500">(the link itself won't work for anyone else, and can't be shared onward)</span></span>
+                               class="w-4 h-4 mt-0.5 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
+                        <span class="text-sm text-slate-200 leading-tight">🔒 Private invite<br><span class="text-[11px] text-slate-500">Only people you invite can open it</span></span>
                     </label>
 
-                    <label class="flex items-center gap-2.5 cursor-pointer">
+                    <label class="flex items-start gap-2.5 cursor-pointer">
                         <input type="checkbox" name="is_draft" value="true" id="event-is-draft" {{ 'checked' if is_edit and event.is_draft else '' }}
-                               class="w-4 h-4 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
-                        <span class="text-sm text-slate-200">📝 Save as draft <span class="text-slate-500">(nothing sends yet - no invite emails, no reminders - until you send it yourself)</span></span>
+                               class="w-4 h-4 mt-0.5 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
+                        <span class="text-sm text-slate-200 leading-tight">📝 Save as draft<br><span class="text-[11px] text-slate-500">Nothing sends until you do</span></span>
                     </label>
 
                     <div>
-                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5">Invite people (emails, one per line or comma-separated)</label>
-                        <textarea name="guest_emails" rows="3" placeholder="friend@example.com, another@example.com"
-                                  class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none">{{ existing_guest_emails if is_edit else '' }}</textarea>
-                        <p class="text-[11px] text-slate-500 mt-1" id="event-guest-emails-hint">{{ 'Anyone already on the list stays even if removed from here - deleting a guest isn\'t supported yet. New emails get invited when you save.' if is_edit else "You'll also get a shareable link on the next page, so this is optional." }}</p>
+                        <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Invite people (optional)</label>
+                        <textarea name="guest_emails" rows="2" placeholder="friend@example.com, another@example.com"
+                                  class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none">{{ existing_guest_emails if is_edit else '' }}</textarea>
+                        <p class="text-[11px] text-slate-500 mt-1" id="event-guest-emails-hint">{{ 'Anyone already on the list stays even if removed from here - deleting a guest isn\'t supported yet. New emails get invited when you save.' if is_edit else "You'll also get a shareable link next, so this is optional." }}</p>
                     </div>
                 </div>
 
-                <div class="border-t border-slate-700/80 pt-5 space-y-4">
-                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">Reminders</p>
+                <!-- Reminders collapsed onto two tight rows instead of a whole bordered section
+                     with its own heading - same "less mess" trim as the checkboxes above. -->
+                <div class="border-t border-slate-700/80 pt-3.5 space-y-2">
                     <label class="flex items-center gap-2.5 cursor-pointer">
                         <input type="checkbox" name="remind_day_before" value="true" {{ 'checked' if (not is_edit) or event.remind_day_before else '' }}
                                class="w-4 h-4 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
                         <span class="text-sm text-slate-200">Remind the day before</span>
                     </label>
-                    <div class="flex items-center gap-2.5">
-                        <span class="text-sm text-slate-200">Remind</span>
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm text-slate-200 shrink-0">Remind</span>
                         <input type="number" name="reminder_minutes_before" value="{{ event.reminder_minutes_before if (is_edit and event.reminder_minutes_before is not none) else 60 }}" min="0" step="5"
-                               class="w-24 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500">
-                        <span class="text-sm text-slate-200">minutes before (0 = right at the moment)</span>
+                               class="w-16 bg-slate-900 border border-slate-700 rounded-xl px-2 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                        <span class="text-sm text-slate-200">min before</span>
                     </div>
                 </div>
 
@@ -170,7 +177,10 @@
         // function is shared with the edit-task form where a pre-existing due time might not be.
         function populateTimeSelect(select, currentValue) {
             if (!select) return;
-            let html = '<option value="">Time (optional)</option>';
+            // Shortened from "Time (optional)" - the DATE/TIME/EMOJI grid this sits in got a good
+            // deal narrower once Emoji moved into the same row (see the surrounding markup), and
+            // the field's own "TIME" label above it already says what this is anyway.
+            let html = '<option value="">Optional</option>';
             let matched = false;
             for (let totalMinutes = 0; totalMinutes < 24 * 60; totalMinutes += 15) {
                 const h24 = Math.floor(totalMinutes / 60);
