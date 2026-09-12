@@ -81,10 +81,6 @@
          reported directly ("it needs to take me back to the Event area"). Works the same for a
          guest with no account (lands on /login, ?universe_id ignored) as it does for the creator
          (lands right back where the event lives) - both are legitimate "get out" outcomes. -->
-    <a href="{{ back_url or '/' }}" aria-label="Close" class="invite-safe-top fixed left-4 md:left-6 w-9 h-9 flex items-center justify-center text-slate-400 hover:text-white transition-colors bg-slate-900/80 backdrop-blur-sm rounded-full border border-slate-700/60 z-10">
-        ✕
-    </a>
-
     <!-- This page is otherwise the exact same public preview a guest sees - reported directly,
          tapping into your OWN event (this is what the card itself links to - see
          renderEventUniverseCards) with no obvious way to actually manage it from here. -->
@@ -104,7 +100,14 @@
     </div>
 
     <div class="max-w-lg w-full">
-        <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-6 md:p-8 shadow-2xl text-center">
+        <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-6 md:p-8 shadow-2xl text-center relative">
+            <!-- Anchored to the card's own corner instead of floating fixed above it - reported
+                 directly, wanting the close button on the card itself. The card already sits well
+                 clear of the phone's status bar on its own, so this sidesteps that overlap issue
+                 entirely too, rather than needing the safe-area-inset dance a fixed pill does. -->
+            <a href="{{ back_url or '/' }}" aria-label="Close" class="absolute top-3 right-3 w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white transition-colors bg-slate-900/80 rounded-full border border-slate-700/60 z-10">
+                ✕
+            </a>
             <div class="text-5xl mb-3">{{ event.emoji }}</div>
             {% if event.is_private %}
             <span class="inline-block bg-slate-900/80 border border-slate-700 text-slate-400 text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full mb-2">🔒 Private invite</span>

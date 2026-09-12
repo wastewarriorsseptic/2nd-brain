@@ -9982,11 +9982,14 @@
             const cy = realm.drawY ?? realm.y;
             const r = realm.radius ?? realm.hubRadius;
             const offsetAngle = -Math.PI / 4; // up-right diagonal off the circle
-            const dist = r * 1.05;
+            // Bumped up from 48 - reported directly, wanting an easier target to tap. Pushed out
+            // an extra 12px (the exact size increase) alongside it so the bigger bubble still sits
+            // at the same relative spot on the hub's edge instead of swallowing more of it.
+            const dist = r * 1.05 + 12;
             return {
                 x: cx + Math.cos(offsetAngle) * dist,
                 y: cy + Math.sin(offsetAngle) * dist,
-                radius: 48
+                radius: 60
             };
         }
 
@@ -10027,11 +10030,12 @@
             const cy = realm.drawY ?? realm.y;
             const r = realm.radius ?? realm.hubRadius;
             const offsetAngle = (-3 * Math.PI) / 4; // up-left diagonal - mirrors the delete icon's up-right spot
-            const dist = r * 1.05;
+            // Kept in sync with getDeleteIconPos's own size bump.
+            const dist = r * 1.05 + 12;
             return {
                 x: cx + Math.cos(offsetAngle) * dist,
                 y: cy + Math.sin(offsetAngle) * dist,
-                radius: 48
+                radius: 60
             };
         }
 
