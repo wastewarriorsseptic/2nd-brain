@@ -522,38 +522,45 @@
                 </button>
             </div>
 
-            <!-- + New Task/Person/Event Button below logo - one primary action per Universe kind,
-                 matching how Contact universes only ever offer "New Person". Events get their own
-                 dedicated kind (see is_event_universe/app.py) rather than being a secondary option
-                 bolted onto every Task universe, since their card info/logic genuinely differs. -->
-            {% if is_contact_universe %}
-            <button onclick="openGlobalAddPersonModal()"
-                    class="w-full mb-3 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs md:text-sm rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all">
-                <span>➕ New Person</span>
-            </button>
-            {% elif is_event_universe %}
-            <!-- Full-page link (not a modal) since the Event creation form is its own dedicated
-                 page - see /events/new in app.py. -->
-            <a href="/events/new"
-               class="w-full mb-3 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs md:text-sm rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all">
-                <span>🎉 New Event</span>
-            </a>
-            {% else %}
-            <button onclick="openGlobalAddTaskModal()"
-                    class="w-full mb-2 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs md:text-sm rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all">
-                <span>➕ New Task</span>
-            </button>
-            <!-- Also reachable from every Task universe, not just from inside an Event universe -
-                 reported directly that gating it behind already being IN an Event universe made it
-                 hard to discover/reach; it always lands in the auto-created default Events bucket
-                 regardless of which universe you're looking at right now (see
-                 get_or_create_default_event_bucket in app.py), so there's no reason to require
-                 navigating anywhere first. -->
-            <a href="/events/new"
-               class="w-full mb-3 py-2 px-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all">
-                <span>🎉 New Event</span>
-            </a>
-            {% endif %}
+            <!-- Quick-create grid: Task/Event/Contact/Note as four compact square tiles in a
+                 single row instead of a stack of long pills - reported directly ("use the same
+                 amount of space and accomplish more"), and always shown together now regardless of
+                 which Universe kind is active, rather than swapping in only whichever single
+                 action matched it. Task still opens its existing local modal
+                 (openGlobalAddTaskModal) when already inside a Task Universe since that modal's
+                 Realm/Bucket picker is server-rendered straight from the CURRENT Universe's own
+                 `realms` - wrong outside one, so tapping it from a Contact/Event Universe instead
+                 navigates to the user's own Task Universe and opens it there (see the
+                 isContactUniverse/isEventUniverse check inside the function). Event/Contact/Note
+                 all go straight to their own full-page forms instead, each of which auto-
+                 provisions its own default Universe/Realm/Bucket on demand
+                 (get_or_create_default_event_bucket / _contact_bucket, and Note's own
+                 universe_id-less create_note) - so, like Event already did, they work correctly no
+                 matter which Universe happens to be on screen right now. -->
+            <div class="grid grid-cols-4 gap-1.5 mb-3">
+                <button onclick="openGlobalAddTaskModal()"
+                        class="w-full flex flex-col items-center justify-center gap-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl shadow-lg shadow-indigo-600/30 transition-all">
+                    <span class="text-lg leading-none">➕</span>
+                    <span class="text-[10px] font-bold">Task</span>
+                </button>
+                <a href="/events/new"
+                   class="w-full flex flex-col items-center justify-center gap-1 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-2xl transition-all">
+                    <span class="text-lg leading-none">🎉</span>
+                    <span class="text-[10px] font-bold">Event</span>
+                </a>
+                <a href="/people/new"
+                   class="w-full flex flex-col items-center justify-center gap-1 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-2xl transition-all">
+                    <span class="text-lg leading-none">👤</span>
+                    <span class="text-[10px] font-bold">Contact</span>
+                </a>
+                <form action="/notes/" method="POST" class="contents">
+                    <button type="submit"
+                            class="w-full flex flex-col items-center justify-center gap-1 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-2xl transition-all">
+                        <span class="text-lg leading-none">📝</span>
+                        <span class="text-[10px] font-bold">Note</span>
+                    </button>
+                </form>
+            </div>
 
             <div class="bg-slate-800/90 border border-slate-700/50 rounded-2xl p-3 mb-2 md:mb-4 shadow-xl transition-all backdrop-blur-md">
                 
@@ -2812,6 +2819,25 @@
         ];
 
         function openGlobalAddTaskModal() {
+            // The "New Task" tile is now always visible regardless of which Universe kind is
+            // active (see the quick-create grid in the sidebar), but this modal's own Realm/Bucket
+            // <select> is server-rendered straight from `realms` for whichever Universe was active
+            // on page LOAD - a Contact or Event Universe's own realms, not Task ones, if that's
+            // what's currently on screen. Rather than showing the wrong tree, jump to the user's
+            // own Task Universe first (reusing the exact ?open_add_task=1 flag the cross-Universe
+            // "+" controller button already relies on - see the DOMContentLoaded handler below)
+            // and let it reopen this same modal correctly once there.
+            if (isContactUniverse || isEventUniverse) {
+                const taskUniverse = universesOfKind('task')[0];
+                if (taskUniverse) {
+                    window.location.href = `/?universe_id=${taskUniverse.id}&open_add_task=1`;
+                    return;
+                }
+                // No Task Universe exists at all (rare) - fall through and open the modal in
+                // place rather than risk bouncing between Universe kinds with nowhere real to
+                // land (a bare `/?open_add_task=1` can land back on an Event Universe here too).
+            }
+
             const picker = document.getElementById('modal-realm-bucket-picker');
             if (picker) picker.classList.remove('hidden');
 
@@ -6973,6 +6999,15 @@
         let eventCardsUniverseFilter = null;
         let eventCardsRealmFilter = null;
         let eventCardsBucketFilter = null;
+        // Past events default to hidden - reported directly, wanting the main timeline to open
+        // on what's coming up rather than leading with what's already happened. A "Past Events"
+        // pill (only shown once there IS a past event to reveal) toggles the column back on.
+        let eventCardsShowPast = false;
+
+        function toggleEventCardsShowPast() {
+            eventCardsShowPast = !eventCardsShowPast;
+            renderEventUniverseCards();
+        }
 
         function setEventCardsUniverseFilter(universeKey) {
             eventCardsUniverseFilter = universeKey;
@@ -7289,6 +7324,18 @@
             });
             pastCards.sort((a, b) => (a.dueDate < b.dueDate ? 1 : -1));
 
+            if (pastCards.length > 0) {
+                const pastPill = document.createElement('button');
+                pastPill.type = 'button';
+                pastPill.onclick = toggleEventCardsShowPast;
+                pastPill.className = 'pointer-events-auto shrink-0 flex items-center gap-1.5 rounded-full border text-xs font-bold px-3 py-1.5 transition-colors mb-0.5 ' +
+                    (eventCardsShowPast
+                        ? 'border-slate-500 bg-slate-700 text-white'
+                        : 'border-slate-700 bg-slate-800/60 hover:bg-slate-700/60 text-slate-300');
+                pastPill.innerHTML = `<span>🕓</span><span>${eventCardsShowPast ? 'Hide Past' : 'Past Events'} (${pastCards.length})</span>`;
+                headerRow.appendChild(pastPill);
+            }
+
             const horizonDate = capDate;
             const overflowCards = futureCards.filter(ev => {
                 const d = parseYMDLocal(ev.dueDate);
@@ -7339,7 +7386,7 @@
                 columnsWrap.appendChild(col);
             };
 
-            if (pastCards.length > 0) {
+            if (eventCardsShowPast && pastCards.length > 0) {
                 buildColumn('Past', `${pastCards.length}`, pastCards, { headerColorClass: 'text-slate-300', emptyDotClass: 'bg-slate-800' });
             }
 

@@ -1122,6 +1122,50 @@ def get_or_create_default_event_bucket(session: Session, user_id: int, target_un
 
     return bucket
 
+def get_or_create_default_contact_bucket(session: Session, user_id: int, target_universe: Optional["Universe"] = None, target_realm: Optional["Realm"] = None) -> "Bucket":
+    """Contact-kind counterpart to get_or_create_default_event_bucket, backing the global "New
+    Contact" quick-create entry point (see /people/new) reachable from any Universe. Every brand
+    new account already gets a "People" Contact Universe as one of its starter Universes (see
+    find_or_create_user_and_log_in) but - like every other starter Universe except Important
+    Dates - with no Realm/Bucket inside it yet, following the inline-create-on-first-use pattern.
+    This provisions that first Realm/Bucket on demand (idempotent by name, same as the Events
+    version) rather than requiring anyone to build it by hand first, and also covers an account
+    that somehow has no Contact Universe left at all (e.g. it was deleted) by creating one fresh."""
+    if target_realm is not None:
+        realm = target_realm
+    else:
+        universe = target_universe
+        if universe is None:
+            universe = session.exec(
+                select(Universe).where(Universe.user_id == user_id, Universe.kind == "contact").order_by(Universe.sort_order)
+            ).first()
+            if not universe:
+                max_order = len(session.exec(select(Universe).where(Universe.user_id == user_id)).all())
+                universe = Universe(name="People", icon="👥", kind="contact", sort_order=max_order, user_id=user_id)
+                session.add(universe)
+                session.commit()
+                session.refresh(universe)
+
+        realm = session.exec(
+            select(Realm).where(Realm.universe_id == universe.id, Realm.name == "General")
+        ).first()
+        if not realm:
+            realm = Realm(name="General", icon="👥", sort_order=0, user_id=user_id, universe_id=universe.id)
+            session.add(realm)
+            session.commit()
+            session.refresh(realm)
+
+    bucket = session.exec(
+        select(Bucket).where(Bucket.realm_id == realm.id, Bucket.name == "Contacts")
+    ).first()
+    if not bucket:
+        bucket = Bucket(name="Contacts", icon="👥", sort_order=0, realm_id=realm.id)
+        session.add(bucket)
+        session.commit()
+        session.refresh(bucket)
+
+    return bucket
+
 def get_events_universe_href(session: Session, user_id: int) -> str:
     """Where the standalone "🎉 Events" launcher button (paired next to 📝 Notes - see
     events_universe_href in dashboard()/notes_page()) actually goes. Event-kind Universes are
@@ -2618,6 +2662,52 @@ def delete_bucket(request: Request, bucket_id: int = Form(...)):
     return RedirectResponse(url="/", status_code=303)
 
 # --- Person Endpoints ---
+@app.get("/people/new", response_class=HTMLResponse)
+def new_person_form(request: Request):
+    """Standalone page (not a modal) for the global "New Contact" quick-create tile on the
+    dashboard - reachable from any Universe, mirroring how /events/new already works regardless
+    of which Universe is currently active. A modal was deliberately avoided here: the existing
+    in-Universe "+ New Person" modal only ever renders realms/buckets belonging to whichever
+    Universe happens to be on screen (its <select> is server-rendered straight from that
+    Universe's own `realms`), so opening it from a Task or Event Universe would show the wrong
+    Realm tree entirely, or worse, let a Person land in a non-Contact bucket. A full page load
+    sidesteps that: get_or_create_default_contact_bucket guarantees a valid Contact bucket to
+    pre-select no matter what was active before, exactly like new_event_form does for Events."""
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+
+        default_bucket = get_or_create_default_contact_bucket(session, user.id)
+
+        contact_universes = session.exec(
+            select(Universe).where(Universe.user_id == user.id, Universe.kind == "contact").order_by(Universe.sort_order)
+        ).all()
+        universe_ids = [u.id for u in contact_universes]
+        realms = session.exec(
+            select(Realm).where(Realm.user_id == user.id, Realm.universe_id.in_(universe_ids)).order_by(Realm.sort_order)
+        ).all() if universe_ids else []
+        realm_ids = [r.id for r in realms]
+        buckets = session.exec(
+            select(Bucket).where(Bucket.realm_id.in_(realm_ids)).order_by(Bucket.sort_order)
+        ).all() if realm_ids else []
+        buckets_by_realm = {}
+        for b in buckets:
+            buckets_by_realm.setdefault(b.realm_id, []).append(b)
+        universe_by_id = {u.id: u for u in contact_universes}
+
+        return templates.TemplateResponse(
+            request=request,
+            name="person_form.html",
+            context={
+                "user": user,
+                "realms": realms,
+                "buckets_by_realm": buckets_by_realm,
+                "universe_by_id": universe_by_id,
+                "default_bucket_id": default_bucket.id,
+            }
+        )
+
 @app.post("/people/")
 def create_person(
     request: Request,
