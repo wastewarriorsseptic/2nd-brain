@@ -8274,6 +8274,17 @@
                 drawTaskDeleteIcon(longPressTaskForDelete);
                 drawTaskEditIcon(longPressTaskForDelete);
             }
+
+            // Holding a Realm's own lane hub (not the Multiverse Timeline's Universe lanes - those
+            // hold Universes, not Realms, and holding one there arms drag-to-reorder instead - see
+            // the isMultiverseStackedView branch of the long-press handler) reveals the same
+            // delete/edit icon pair the classic realm/bucket ring already shows on a realm hold -
+            // reported directly ("if I hold down on a realm I should be able to edit it"). The
+            // Realm Timeline had no long-press handling on its lane hubs at all before this.
+            if (isRealmTimelineView && longPressRealmForDelete) {
+                drawDeleteIcon(longPressRealmForDelete);
+                drawRealmEditIcon(longPressRealmForDelete);
+            }
         }
 
         // Long-pressing a lane's hub arms this (see the isMultiverseStackedView branch of
@@ -9772,13 +9783,26 @@
                         });
                     }
 
+                    // Realm Timeline counterpart to pressedLane above - a lane hub here IS a Realm
+                    // (not a Universe), so holding one arms the exact same delete/edit icon pair the
+                    // classic realm/bucket ring already shows on a realm hold, rather than reorder
+                    // mode (reported directly - "if I hold down on a realm I should be able to edit
+                    // it"; these lane hubs had no long-press handling at all before this).
+                    let pressedRealmLane = null;
+                    if (isRealmTimelineView) {
+                        realmLanes.forEach(lane => {
+                            const dist = Math.hypot(worldX - lane.x, worldY - lane.y);
+                            if (dist <= lane.hubRadius + 10) pressedRealmLane = lane;
+                        });
+                    }
+
                     // Holding on a task's TEXT LABEL, not just its dot, now arms the same hold-to-act
                     // menu - a long title can visually extend well past the dot itself. task._labelRect
                     // is the exact same rect the normal-tap path already hit-tests against in
                     // detectClickNode below (only ever set while the label is genuinely on screen, so
                     // there's no stale-rect risk here either).
                     let pressedTask = null;
-                    if (!pressedBucket && !pressedRealm && !pressedLane) {
+                    if (!pressedBucket && !pressedRealm && !pressedLane && !pressedRealmLane) {
                         if (isMultiverseStackedView) {
                             multiverseLanes.forEach(lane => {
                                 lane.tasks.forEach(task => {
@@ -9820,6 +9844,12 @@
                         longPressTimer = setTimeout(() => {
                             longPressFired = true;
                             longPressRealmForDelete = pressedRealm;
+                            isDragging = false;
+                        }, 550);
+                    } else if (pressedRealmLane) {
+                        longPressTimer = setTimeout(() => {
+                            longPressFired = true;
+                            longPressRealmForDelete = pressedRealmLane;
                             isDragging = false;
                         }, 550);
                     } else if (pressedLane) {
@@ -9943,11 +9973,19 @@
         }
 
         function getDeleteIconPos(realm) {
+            // Doubles for a Realm Timeline lane hub too (see the isRealmTimelineView branch of the
+            // long-press handler below) - those use .x/.y/.hubRadius instead of the classic ring's
+            // own .drawX/.drawY/.radius (a lane hub has no separate floating draw position the way
+            // a ring realm does), so this falls back to whichever pair is actually present rather
+            // than needing a second, near-identical copy of this function just for lanes.
+            const cx = realm.drawX ?? realm.x;
+            const cy = realm.drawY ?? realm.y;
+            const r = realm.radius ?? realm.hubRadius;
             const offsetAngle = -Math.PI / 4; // up-right diagonal off the circle
-            const dist = realm.radius * 1.05;
+            const dist = r * 1.05;
             return {
-                x: realm.drawX + Math.cos(offsetAngle) * dist,
-                y: realm.drawY + Math.sin(offsetAngle) * dist,
+                x: cx + Math.cos(offsetAngle) * dist,
+                y: cy + Math.sin(offsetAngle) * dist,
                 radius: 48
             };
         }
@@ -9983,11 +10021,16 @@
         }
 
         function getRealmEditIconPos(realm) {
+            // Same .drawX/.drawY-or-.x/.y and .radius-or-.hubRadius fallback as getDeleteIconPos -
+            // see its own comment for why (shared with Realm Timeline lane hubs).
+            const cx = realm.drawX ?? realm.x;
+            const cy = realm.drawY ?? realm.y;
+            const r = realm.radius ?? realm.hubRadius;
             const offsetAngle = (-3 * Math.PI) / 4; // up-left diagonal - mirrors the delete icon's up-right spot
-            const dist = realm.radius * 1.05;
+            const dist = r * 1.05;
             return {
-                x: realm.drawX + Math.cos(offsetAngle) * dist,
-                y: realm.drawY + Math.sin(offsetAngle) * dist,
+                x: cx + Math.cos(offsetAngle) * dist,
+                y: cy + Math.sin(offsetAngle) * dist,
                 radius: 48
             };
         }
