@@ -488,7 +488,8 @@
             <textarea id="ai-chat-input" rows="1" placeholder="Add a task or ask a question…"
                    oninput="autoGrowAiChatInput()" onkeydown="handleAiChatInputKeydown(event)"
                    class="flex-1 bg-slate-100 border border-slate-200 rounded-2xl px-3.5 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white resize-none overflow-y-auto leading-relaxed" style="max-height: 120px;" autocomplete="off"></textarea>
-            <button type="button" id="ai-chat-mic-btn" onclick="toggleAiChatDictation()" title="Dictate"
+            <button type="button" id="ai-chat-mic-btn" onclick="toggleAiChatDictation()"
+                    onmousedown="event.preventDefault()" ontouchstart="event.preventDefault()" title="Dictate"
                     class="hidden w-9 h-9 shrink-0 bg-slate-100 border border-slate-200 hover:border-indigo-500 rounded-full text-slate-500 text-sm transition">🎤</button>
             <button type="submit" class="w-9 h-9 shrink-0 bg-indigo-600 hover:bg-indigo-500 rounded-full text-white text-sm transition">➤</button>
         </form>
@@ -4717,6 +4718,13 @@
         function syncAiChatPanelToViewport() {
             const panel = document.getElementById('ai-chat-panel');
             if (!panel || panel.classList.contains('hidden')) return;
+            // Tapping the mic button blurs the input and closes the keyboard (dictation doesn't
+            // need it) - reported directly, that keyboard-close was dragging the panel back down
+            // to its resting layout mid-dictation, which read as the whole window jumping/dropping
+            // while actively talking. Leave the panel exactly where it already is for as long as
+            // aiChatListening is true; a fresh sync runs the moment dictation stops (see
+            // setAiChatListening below) to correct whatever the real keyboard state is by then.
+            if (aiChatListening) return;
             if (window.innerWidth >= 768 || !window.visualViewport) {
                 panel.style.top = '';
                 panel.style.height = '';
@@ -4966,10 +4974,15 @@
             if (!micBtn) return;
             if (listening) {
                 micBtn.classList.add('bg-rose-600', 'border-rose-500', 'animate-pulse', 'text-white');
-                micBtn.classList.remove('bg-slate-800', 'border-slate-700', 'text-slate-300');
+                micBtn.classList.remove('bg-slate-100', 'border-slate-200', 'text-slate-500');
             } else {
                 micBtn.classList.remove('bg-rose-600', 'border-rose-500', 'animate-pulse', 'text-white');
-                micBtn.classList.add('bg-slate-800', 'border-slate-700', 'text-slate-300');
+                micBtn.classList.add('bg-slate-100', 'border-slate-200', 'text-slate-500');
+                // syncAiChatPanelToViewport skips repositioning entirely while listening (see its
+                // own guard) so the panel doesn't jump around mid-dictation - catch it back up now
+                // that dictation has actually stopped, in case the real keyboard state changed
+                // while that was frozen.
+                syncAiChatPanelToViewportSoon();
             }
         }
 
