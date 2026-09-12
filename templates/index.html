@@ -3916,6 +3916,14 @@
             if (savedSpaceViewState === 'space') {
                 toggleSpaceView();
                 document.documentElement.classList.remove('preload-space-view');
+                // Multiverse Timeline ("All Timelines") is a specific screen WITHIN Space View,
+                // tracked by its own separate flag (see openMultiverseTimeline) - reported
+                // directly, wanting that exact cross-Universe view to greet them on every fresh
+                // app open, not just survive a refresh of the same URL the way its mv_timeline
+                // query param already did.
+                if (localStorage.getItem('space_view_mode') === 'multiverse_timeline') {
+                    openMultiverseTimeline();
+                }
             }
         });
 
@@ -5477,6 +5485,10 @@
         // share the SAME multiverseReorderMode flag declared below near the grid's own long-press
         // setup, since a user is only ever looking at one of the two surfaces at a time.
         let multiverseDraggingLane = null;
+        // The "+ New Universe" hub drawn one slot below the lowest real lane in the Multiverse
+        // Timeline - recomputed every frame in renderMultiverseStackedLanes (null whenever that
+        // view isn't the one on screen), hit-tested separately in handleMultiverseStackedClick.
+        let multiverseAddUniverseHub = null;
         let multiverseDragStartWorldY = null;
         let multiverseDragLaneStartY = null;
         let cameraOffset = { x: 0, y: 0 };
@@ -6271,6 +6283,7 @@
                 toggleIcon.innerText = '🌌';
                 toggleLabel.innerText = 'Space View';
                 localStorage.setItem('active_dashboard_view', 'timeline');
+                localStorage.removeItem('space_view_mode');
                 hideHudCard();
                 deselectBucketSwipeDock();
                 longPressRealmForDelete = null;
@@ -7515,7 +7528,15 @@
             // while renderSpaceFrame kept drawing the lanes on top. The bottom HUD's own dedicated
             // button used to double as this view's exit before it was replaced with a direct
             // Multiverse Timeline shortcut - "Card View" (toggleSpaceView) is now the way out of
-            // the stacked lanes view.
+            // the stacked lanes view. Deliberately NOT touching the persisted space_view_mode flag
+            // here (see openMultiverseTimeline/toggleSpaceView) - initSpaceCanvas's own
+            // restoreOrRecenterSpace() calls this as a normal part of EVERY Space View entry,
+            // including the page-load restore that turns Multiverse Timeline back on in the first
+            // place, and this used to fire before that restore ever got a chance to read the flag,
+            // silently wiping it on every single reload. Only an explicit, full exit from Space
+            // View (toggleSpaceView's leaving branch) should ever clear that preference - same
+            // "only cleared on the way all the way out" rule the mv_timeline URL flag already
+            // follows.
             isMultiverseStackedView = false;
             multiverseActiveLaneId = null;
             if (multiverseReorderMode) exitMultiverseTimelineReorderMode();
@@ -8085,6 +8106,14 @@
                 localStorage.setItem('active_dashboard_view', 'space');
                 initSpaceCanvas();
             }
+            // Persisted separately from active_dashboard_view (which only distinguishes Space View
+            // from Card View, not which Space View screen) - reported directly, wanting THIS
+            // specific cross-Universe view to be what greets them on every fresh app open, not just
+            // survive a refresh of the same URL the way mv_timeline already did. Checked at page
+            // load (see the active_dashboard_view === 'space' block near the top of the file) and
+            // cleared wherever isMultiverseStackedView itself gets cleared (toggleSpaceView's
+            // leaving branch, recenterSpace) so leaving this view for good actually sticks.
+            localStorage.setItem('space_view_mode', 'multiverse_timeline');
 
             activeSelectedRealm = null;
             activeSelectedBucket = null;
@@ -8250,6 +8279,65 @@
                 // into that Universe - see handleMultiverseStackedClick.
                 lane._namePillRect = { x: lane.x - nameWidth / 2, y: pillY, w: nameWidth, h: pillHeight };
             });
+
+            // One more equally-spaced slot below the lowest Universe lane - an empty hub, same look
+            // as a real one, with a "+" standing in for an icon - reported directly, wanting a way
+            // to create a new Universe right from this view instead of having to leave it for the
+            // Multiverse picker. Deliberately kept OUT of the `lanes`/multiverseLanes array itself
+            // (computed fresh here, hit-tested separately in handleMultiverseStackedClick) rather
+            // than appended as a real lane entry - the hold-to-reorder machinery above indexes
+            // multiverseLanes positionally (splicing the dragged lane to a new array index, then
+            // reassigning every lane's y from ITS index) to reorder real Universes; a fake entry
+            // mixed into that same array would either become "draggable" itself or get its slot
+            // silently stolen by a real lane dragged past it. Only ever drawn for the actual
+            // Multiverse Timeline, not the per-Universe Realm Timeline this same function also
+            // renders (isRealmTimelineView) - "new Universe" has no equivalent meaning one level
+            // down, where each lane is a Realm instead.
+            if (isMultiverseStackedView && !isRealmTimelineView) {
+                const addHubY = lanes.length * (window.innerWidth < 768 ? 460 : 400);
+                const addHubRadius = lanes.length > 0 ? lanes[0].hubRadius : (window.innerWidth < 768 ? 90 : 70);
+                multiverseAddUniverseHub = { x: 0, y: addHubY, radius: addHubRadius };
+
+                spaceCtx.save();
+                spaceCtx.beginPath();
+                spaceCtx.arc(0, addHubY, addHubRadius, 0, Math.PI * 2);
+                spaceCtx.fillStyle = 'rgba(30, 41, 59, 0.95)';
+                spaceCtx.strokeStyle = '#6366f1';
+                spaceCtx.lineWidth = 3;
+                spaceCtx.shadowColor = '#818cf8';
+                spaceCtx.shadowBlur = 20;
+                spaceCtx.fill();
+                spaceCtx.stroke();
+
+                spaceCtx.shadowBlur = 0;
+                spaceCtx.textAlign = 'center';
+                spaceCtx.textBaseline = 'middle';
+                spaceCtx.font = `${Math.round(addHubRadius * 0.9)}px sans-serif`;
+                spaceCtx.fillStyle = '#818cf8';
+                spaceCtx.fillText('+', 0, addHubY);
+                spaceCtx.restore();
+
+                spaceCtx.save();
+                spaceCtx.textAlign = 'center';
+                spaceCtx.textBaseline = 'middle';
+                spaceCtx.font = 'bold 34px sans-serif';
+                const addNameText = 'New Universe';
+                const addNameWidth = spaceCtx.measureText(addNameText).width + 36;
+                const addPillY = addHubY + addHubRadius + 16;
+                const addPillHeight = 46;
+                spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+                spaceCtx.beginPath();
+                spaceCtx.roundRect(-addNameWidth / 2, addPillY, addNameWidth, addPillHeight, 23);
+                spaceCtx.fill();
+                spaceCtx.strokeStyle = '#6366f1';
+                spaceCtx.lineWidth = 1.5;
+                spaceCtx.stroke();
+                spaceCtx.fillStyle = '#ffffff';
+                spaceCtx.fillText(addNameText, 0, addPillY + addPillHeight / 2);
+                spaceCtx.restore();
+            } else {
+                multiverseAddUniverseHub = null;
+            }
 
             lanes.forEach(lane => {
                 lane.tasks.forEach(task => {
@@ -8420,6 +8508,20 @@
             // navigate away, matching how the Multiverse picker grid suppresses its <a> clicks
             // during its own wobble mode.
             if (multiverseReorderMode) return;
+
+            // Kept out of the multiverseLanes array itself (see renderMultiverseStackedLanes), so
+            // its hit-test lives here as its own separate check rather than falling out of the loop
+            // below for free. Opens the same "Create New Universe" modal the Multiverse picker's
+            // own "+" tile already uses - a plain, context-free form (no Realm/Bucket picker tied to
+            // whichever Universe happens to be active), so unlike the Task/Contact quick-create
+            // tiles there's no wrong-Universe risk in opening it right here.
+            if (multiverseAddUniverseHub) {
+                const distToAddHub = Math.hypot(worldX - multiverseAddUniverseHub.x, worldY - multiverseAddUniverseHub.y);
+                if (distToAddHub <= multiverseAddUniverseHub.radius + 10) {
+                    document.getElementById('add-universe-modal')?.classList.remove('hidden');
+                    return;
+                }
+            }
 
             for (const lane of multiverseLanes) {
                 const distToHub = Math.hypot(worldX - lane.x, worldY - lane.y);
