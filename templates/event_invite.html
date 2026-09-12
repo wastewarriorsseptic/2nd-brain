@@ -24,6 +24,21 @@
             animation-timing-function: ease-in-out;
             animation-iteration-count: infinite;
         }
+        /* "Back to TaskMonster" and "Edit Event" sit at a bare fixed 1rem from the top - fine in a
+           normal browser tab, but this page is also opened directly inside the iOS app's WebView
+           with no browser chrome of its own, so that 1rem lands right under the phone's own status
+           bar (clock/signal icons), overlapping it - reported directly ("overshadowed by iPhone
+           elements"). env(safe-area-inset-top) is 0 in a normal browser (max() just falls back to
+           the plain 1rem there), so this only pushes the pills down on a device that actually has a
+           notch/status bar to clear - same pattern the main app's own header already uses. */
+        .invite-safe-top {
+            top: max(1rem, env(safe-area-inset-top)) !important;
+        }
+        @media (min-width: 768px) {
+            .invite-safe-top {
+                top: max(1.5rem, env(safe-area-inset-top)) !important;
+            }
+        }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen p-4 md:p-10 font-sans flex items-center justify-center relative overflow-x-hidden">
@@ -66,15 +81,15 @@
          reported directly ("it needs to take me back to the Event area"). Works the same for a
          guest with no account (lands on /login, ?universe_id ignored) as it does for the creator
          (lands right back where the event lives) - both are legitimate "get out" outcomes. -->
-    <a href="{{ back_url or '/' }}" class="fixed top-4 left-4 md:top-6 md:left-6 text-xs font-semibold text-slate-400 hover:text-indigo-300 transition-colors bg-slate-900/80 backdrop-blur-sm px-3 py-1.5 rounded-full border border-slate-700/60 z-10">
-        ← Back to TaskMonster
+    <a href="{{ back_url or '/' }}" aria-label="Close" class="invite-safe-top fixed left-4 md:left-6 w-9 h-9 flex items-center justify-center text-slate-400 hover:text-white transition-colors bg-slate-900/80 backdrop-blur-sm rounded-full border border-slate-700/60 z-10">
+        ✕
     </a>
 
     <!-- This page is otherwise the exact same public preview a guest sees - reported directly,
          tapping into your OWN event (this is what the card itself links to - see
          renderEventUniverseCards) with no obvious way to actually manage it from here. -->
     {% if is_owner %}
-    <a href="/events/{{ event.share_token }}/edit" class="fixed top-4 right-4 md:top-6 md:right-6 text-xs font-semibold text-slate-400 hover:text-indigo-300 transition-colors bg-slate-900/80 backdrop-blur-sm px-3 py-1.5 rounded-full border border-slate-700/60 z-10">
+    <a href="/events/{{ event.share_token }}/edit" class="invite-safe-top fixed right-4 md:right-6 text-xs font-semibold text-slate-400 hover:text-indigo-300 transition-colors bg-slate-900/80 backdrop-blur-sm px-3 py-1.5 rounded-full border border-slate-700/60 z-10">
         ✏️ Edit Event
     </a>
     {% endif %}
