@@ -473,24 +473,24 @@
          it at roughly that same ~25% height (of the full device height, not the keyboard-shrunk
          visible one) and slides it to sit just above the keyboard once one is up. Desktop (md:)
          keeps its own compact floating-card layout, untouched. -->
-    <div id="ai-chat-panel" class="hidden fixed inset-x-3 bottom-24 h-[55vh] md:inset-x-auto md:top-auto md:bottom-40 md:right-4 md:w-11/12 md:max-w-md md:h-[80vh] md:max-h-[720px] z-[70] bg-slate-900/95 border border-indigo-500/40 rounded-2xl backdrop-blur-md shadow-2xl flex flex-col overflow-hidden">
-        <div class="flex items-center justify-between px-3.5 py-2.5 border-b border-slate-800 shrink-0">
+    <div id="ai-chat-panel" class="hidden fixed inset-x-3 bottom-24 h-[55vh] md:inset-x-auto md:top-auto md:bottom-40 md:right-4 md:w-11/12 md:max-w-md md:h-[80vh] md:max-h-[720px] z-[70] bg-white/97 border border-slate-200 rounded-2xl backdrop-blur-md shadow-2xl flex flex-col overflow-hidden">
+        <div class="flex items-center justify-between px-3.5 py-2.5 border-b border-slate-200 shrink-0">
             <span onclick="toggleAiChatPanel()" title="Minimize"
-                  class="text-xs font-extrabold text-indigo-300 uppercase tracking-wide cursor-pointer select-none hover:text-white transition">🤖 TaskMonster Assistant</span>
+                  class="text-xs font-extrabold text-indigo-600 uppercase tracking-wide cursor-pointer select-none hover:text-indigo-800 transition">😈 TaskMonster Assistant</span>
             <div class="flex items-center gap-2">
                 <button type="button" id="ai-chat-audio-btn" onclick="toggleAiChatAudio()"
-                        class="hidden text-sm text-slate-400 hover:text-white px-1 transition">🔇</button>
-                <button onclick="toggleAiChatPanel()" class="text-slate-400 hover:text-white text-xs font-bold px-1">✕</button>
+                        class="hidden text-sm text-slate-400 hover:text-slate-700 px-1 transition">🔇</button>
+                <button onclick="toggleAiChatPanel()" class="text-slate-400 hover:text-slate-700 text-xs font-bold px-1">✕</button>
             </div>
         </div>
-        <div id="ai-chat-messages" class="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-2.5 text-sm"></div>
-        <form id="ai-chat-form" onsubmit="return handleAiChatSubmit(event)" class="p-2.5 border-t border-slate-800 flex gap-2 shrink-0">
+        <div id="ai-chat-messages" class="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-2.5 text-sm bg-slate-50"></div>
+        <form id="ai-chat-form" onsubmit="return handleAiChatSubmit(event)" class="p-2.5 border-t border-slate-200 flex gap-2 shrink-0 bg-white">
             <textarea id="ai-chat-input" rows="1" placeholder="Add a task or ask a question…"
                    oninput="autoGrowAiChatInput()" onkeydown="handleAiChatInputKeydown(event)"
-                   class="flex-1 bg-slate-800 border border-slate-700 rounded-2xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none overflow-y-auto leading-relaxed" style="max-height: 120px;" autocomplete="off"></textarea>
+                   class="flex-1 bg-slate-100 border border-slate-200 rounded-2xl px-3.5 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white resize-none overflow-y-auto leading-relaxed" style="max-height: 120px;" autocomplete="off"></textarea>
             <button type="button" id="ai-chat-mic-btn" onclick="toggleAiChatDictation()" title="Dictate"
-                    class="hidden w-9 h-9 shrink-0 bg-slate-800 border border-slate-700 hover:border-indigo-500 rounded-full text-slate-300 text-sm transition">🎤</button>
-            <button type="submit" class="w-9 h-9 shrink-0 bg-indigo-600/90 hover:bg-indigo-500 rounded-full text-white text-sm transition">➤</button>
+                    class="hidden w-9 h-9 shrink-0 bg-slate-100 border border-slate-200 hover:border-indigo-500 rounded-full text-slate-500 text-sm transition">🎤</button>
+            <button type="submit" class="w-9 h-9 shrink-0 bg-indigo-600 hover:bg-indigo-500 rounded-full text-white text-sm transition">➤</button>
         </form>
     </div>
     {% endif %}
@@ -4976,17 +4976,17 @@
 
             const bubble = document.createElement('div');
             const isUser = role === 'user';
-            let bubbleClass = 'max-w-[85%] rounded-2xl px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap break-words ';
+            let bubbleClass = 'max-w-[85%] rounded-2xl px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap break-words shadow-sm ';
             if (variant === 'task_created') {
-                bubbleClass += 'bg-emerald-950/60 border border-emerald-500/50 text-emerald-100';
+                bubbleClass += 'bg-emerald-50 border border-emerald-200 text-emerald-800';
             } else if (variant === 'error') {
-                bubbleClass += 'bg-rose-950/40 border border-rose-500/40 text-rose-200';
+                bubbleClass += 'bg-rose-50 border border-rose-200 text-rose-700';
             } else if (variant === 'login_required') {
-                bubbleClass += 'bg-indigo-950/50 border border-indigo-500/50 text-indigo-100';
+                bubbleClass += 'bg-indigo-50 border border-indigo-200 text-indigo-800';
             } else if (isUser) {
-                bubbleClass += 'bg-indigo-600/90 text-white ml-auto';
+                bubbleClass += 'bg-indigo-600 text-white ml-auto shadow-indigo-600/20';
             } else {
-                bubbleClass += 'bg-slate-800 border border-slate-700 text-slate-200';
+                bubbleClass += 'bg-white border border-slate-200 text-slate-700';
             }
             bubble.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
             bubble.innerHTML = `<div class="${bubbleClass}"></div>`;
@@ -4995,7 +4995,7 @@
             if (navTarget && navTarget.bucket_id && navTarget.realm_id && navTarget.id) {
                 const link = document.createElement('button');
                 link.type = 'button';
-                link.className = 'mt-2 block text-left text-emerald-300 hover:text-emerald-100 underline underline-offset-2 font-bold';
+                link.className = 'mt-2 block text-left text-emerald-700 hover:text-emerald-900 underline underline-offset-2 font-bold';
                 link.textContent = '🎯 Go to this task';
                 link.onclick = () => goToAiChatTask(navTarget);
                 bubble.firstElementChild.appendChild(link);
@@ -5004,7 +5004,7 @@
             if (variant === 'login_required') {
                 const link = document.createElement('a');
                 link.href = '/login';
-                link.className = 'mt-2 block text-left text-indigo-300 hover:text-white underline underline-offset-2 font-bold';
+                link.className = 'mt-2 block text-left text-indigo-600 hover:text-indigo-900 underline underline-offset-2 font-bold';
                 link.textContent = '🔑 Sign in with Google';
                 bubble.firstElementChild.appendChild(link);
             }
@@ -5023,7 +5023,7 @@
 
             const bubble = document.createElement('div');
             bubble.className = 'flex justify-start';
-            bubble.innerHTML = `<div class="max-w-[85%] rounded-2xl px-3 py-2 bg-slate-800 border border-slate-700 flex items-center"><span class="text-lg inline-block" style="animation: ai-chat-launcher-float 1.3s ease-in-out infinite;">😈</span></div>`;
+            bubble.innerHTML = `<div class="max-w-[85%] rounded-2xl px-3 py-2 bg-white border border-slate-200 shadow-sm flex items-center"><span class="text-lg inline-block" style="animation: ai-chat-launcher-float 1.3s ease-in-out infinite;">😈</span></div>`;
 
             wrapper.appendChild(bubble);
             wrapper.scrollTop = wrapper.scrollHeight;
