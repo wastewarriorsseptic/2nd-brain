@@ -6189,6 +6189,18 @@
                 localStorage.setItem('active_dashboard_view', 'space');
                 initSpaceCanvas();
                 updateSpaceTopPillLabel();
+
+                // The reverse of this function's own leaving-Space-View cleanup below - reported
+                // directly as a "ghost" modal/text box left over from the Multiverse picker still
+                // showing on top of Space View. Add/Edit/Share Universe are each their own
+                // independent modal (not tied to the picker overlay's own hidden/visible state), so
+                // any of them left open when this fires - however that happened - would otherwise
+                // just sit there untouched, on top of the newly-opened Space View underneath.
+                document.getElementById('multiverse-view-overlay')?.classList.add('hidden');
+                document.getElementById('add-universe-modal')?.classList.add('hidden');
+                document.getElementById('edit-universe-modal')?.classList.add('hidden');
+                document.getElementById('share-universe-modal')?.classList.add('hidden');
+                if (multiverseReorderMode) exitMultiverseReorderMode();
             } else {
                 overlay.classList.add('hidden');
                 toggleIcon.innerText = '🌌';
