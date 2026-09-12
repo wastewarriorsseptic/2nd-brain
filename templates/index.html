@@ -1412,7 +1412,7 @@
         </div>
 
         <div class="max-w-3xl mx-auto px-6 pt-3 pb-24">
-            <p class="text-slate-400 text-sm mb-8 text-center">Your life, on track.</p>
+            <p class="text-slate-400 text-sm mb-8 text-center">AI Task MGMT</p>
             <div id="multiverse-grid" class="flex flex-wrap items-start justify-center gap-5">
                 {% for u in universes %}
                 {% set pending_for_u = universe_pending_invites_map.get(u.id, []) if universe_pending_invites_map else [] %}
@@ -10687,7 +10687,7 @@
                     wrapper.appendChild(card);
                 });
 
-                setupSwipeDockObserver(wrapper, sortedTasks);
+                setupSwipeDockObserver(wrapper, sortedTasks, { skipInitialFocus: !focusFirst });
             }
 
             dock.classList.remove('hidden');
@@ -10738,13 +10738,27 @@
         // every intermediate task before landing - jarring/dizzying, especially across a long dock (a
         // busy Multiverse Timeline lane can have 100+ cards). Instant scrolls skip straight to the final
         // card without ever triggering the observer for anything in between.
-        function setupSwipeDockObserver(container, tasks) {
+        function setupSwipeDockObserver(container, tasks, options = {}) {
+            // After an in-place completion re-renders this dock with focusFirst:false (see
+            // handleSpaceCompleteToggle, which passes it specifically so the camera stays put), the
+            // wrapper's innerHTML is cleared and rebuilt - which resets scroll position to 0, so
+            // whatever card now sits first immediately counts as "intersecting" the moment this
+            // BRAND NEW observer attaches. Without this guard that still silently recentered the
+            // camera onto it via focusCameraOnTask below, quietly overriding focusFirst:false
+            // (reported directly, mobile only - completing a task in Space View kept jumping back to
+            // center). skipInitialFocus swallows just that one synthetic first firing; any later one
+            // is a real user swipe/scroll and focuses normally exactly as before.
+            let skipNextFocus = options.skipInitialFocus === true;
             const observer = new IntersectionObserver((entries) => {
                 entries.forEach(entry => {
                     if (entry.isIntersecting) {
                         const taskId = entry.target.getAttribute('data-swipe-task-id');
                         if (taskId) {
                             activeSwipeTaskId = taskId;
+                            if (skipNextFocus) {
+                                skipNextFocus = false;
+                                return;
+                            }
                             const matchedTask = tasks.find(t => String(t.id) === String(taskId));
                             if (matchedTask) {
                                 focusCameraOnTask(matchedTask);
