@@ -94,15 +94,19 @@
                 <!-- Only shown once a specific Universe is picked - "All" has no single target to
                      put a new task in. Just a plain round "+" until tapped - reported directly,
                      wanting the add-task control to be a tap target, not a form always sitting on
-                     screen - toggleNewTaskForm() reveals the actual title/date/Add row beneath it. -->
-                <button type="button" onclick="toggleNewTaskForm()"
+                     screen. When AI chat is available it opens openNotesTaskChat() - a tiny
+                     dedicated chat asking what task to make, reported directly ("start a chat for
+                     what task to make within that exact universe") - rather than the plain
+                     title/date/Add row toggleNewTaskForm() reveals, kept only as the fallback for
+                     when AI chat is disabled entirely. -->
+                <button type="button" onclick="{{ 'openNotesTaskChat()' if gemini_enabled else 'toggleNewTaskForm()' }}"
                         class="w-9 h-9 shrink-0 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xl font-extrabold flex items-center justify-center shadow-lg shadow-indigo-600/30 transition-all">
                     +
                 </button>
                 {% endif %}
             </div>
 
-            {% if selected_universe_id %}
+            {% if selected_universe_id and not gemini_enabled %}
             <form id="new-task-form" action="/notes/new-task/" method="POST" class="hidden items-center gap-2 mb-4 shrink-0">
                 <input type="hidden" name="universe_id" value="{{ selected_universe_id }}">
                 <input type="text" name="title" placeholder="Add a task…" required autocomplete="off"
@@ -158,10 +162,37 @@
         </div>
     </div>
 
+    {% if gemini_enabled and selected_universe_id %}
+    <!-- Notes' own tiny task-creation chat - opened by the "+" next to a Universe's checklist
+         header. Deliberately NOT the full index.html chat panel (voice input, saved history,
+         navigation tools) - just enough to type a plain-language task description and have it
+         parsed, created in THIS Universe, and immediately starred so it shows right back up in the
+         checklist below - reported directly ("start a chat for what task to make within that exact
+         universe" / "have it know that if its being made there to have it starred to show there").
+         Reuses the same /ai/chat/ endpoint everything else on the site does, with
+         notes_task_universe_id set so the server forces the bucket and auto-stars the result
+         server-side - see ai_chat() in app.py. -->
+    <div id="notes-task-chat-modal" class="hidden fixed inset-0 z-[80] flex items-center justify-center px-4" style="background: rgba(2, 6, 23, 0.55);" onclick="if (event.target === this) closeNotesTaskChat();">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden" style="max-height: 80vh;">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 shrink-0">
+                <span class="text-sm font-extrabold text-indigo-600 uppercase tracking-wide">😈 New Task</span>
+                <button type="button" onclick="closeNotesTaskChat()" class="text-slate-400 hover:text-slate-700 text-xs font-bold px-1">✕</button>
+            </div>
+            <div id="notes-task-chat-messages" class="flex-1 min-h-0 overflow-y-auto p-3 space-y-2.5 text-sm bg-slate-50"></div>
+            <form id="notes-task-chat-form" onsubmit="return handleNotesTaskChatSubmit(event)" class="p-2.5 border-t border-slate-200 flex gap-2 shrink-0 bg-white">
+                <input id="notes-task-chat-input" type="text" autocomplete="off" placeholder="e.g. Pay the water bill Friday"
+                       class="flex-1 min-w-0 bg-slate-100 border border-slate-200 rounded-xl px-3.5 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500">
+                <button type="submit" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/20 transition-all shrink-0">Send</button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
     <script>
         // "+" next to the checklist header stays a plain tap target until pressed - reported
         // directly, wanting the add-task control out of the way rather than a form always sitting
-        // on screen. Toggles the title/date/Add row hidden right beneath it.
+        // on screen. Toggles the title/date/Add row hidden right beneath it. Fallback path only -
+        // openNotesTaskChat() below is what actually runs whenever AI chat is enabled.
         function toggleNewTaskForm() {
             const form = document.getElementById('new-task-form');
             if (!form) return;
@@ -169,6 +200,77 @@
             form.classList.toggle('flex', !isHidden);
             if (!isHidden) form.querySelector('input[name="title"]').focus();
         }
+
+        {% if gemini_enabled and selected_universe_id %}
+        const notesTaskChatUniverseId = {{ selected_universe_id }};
+        let notesTaskChatSending = false;
+
+        function renderNotesTaskChatBubble(role, text) {
+            const messages = document.getElementById('notes-task-chat-messages');
+            if (!messages) return null;
+            const bubble = document.createElement('div');
+            bubble.className = role === 'user'
+                ? 'ml-auto max-w-[85%] bg-indigo-600 text-white rounded-2xl rounded-br-sm px-3 py-2 whitespace-pre-wrap break-words'
+                : 'mr-auto max-w-[85%] bg-white border border-slate-200 text-slate-800 rounded-2xl rounded-bl-sm px-3 py-2 whitespace-pre-wrap break-words';
+            bubble.textContent = text;
+            messages.appendChild(bubble);
+            messages.scrollTop = messages.scrollHeight;
+            return bubble;
+        }
+
+        function openNotesTaskChat() {
+            const modal = document.getElementById('notes-task-chat-modal');
+            const messages = document.getElementById('notes-task-chat-messages');
+            if (!modal || !messages) return;
+            messages.innerHTML = '';
+            renderNotesTaskChatBubble('assistant', 'What task would you like me to star and create in ' + {{ (selected_universe.name if selected_universe else 'this Universe') | tojson }} + '?');
+            modal.classList.remove('hidden');
+            const input = document.getElementById('notes-task-chat-input');
+            if (input) { input.value = ''; input.focus(); }
+        }
+
+        function closeNotesTaskChat() {
+            const modal = document.getElementById('notes-task-chat-modal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        async function handleNotesTaskChatSubmit(event) {
+            event.preventDefault();
+            if (notesTaskChatSending) return false;
+            const input = document.getElementById('notes-task-chat-input');
+            const text = input.value.trim();
+            if (!text) return false;
+            input.value = '';
+            renderNotesTaskChatBubble('user', text);
+            const thinking = renderNotesTaskChatBubble('assistant', '…');
+            notesTaskChatSending = true;
+            try {
+                const res = await fetch('/ai/chat/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text, intent: 'create_task', notes_task_universe_id: notesTaskChatUniverseId })
+                });
+                const data = await res.json();
+                if (thinking) thinking.remove();
+                if (!res.ok || !data.ok) {
+                    renderNotesTaskChatBubble('assistant', data.error || 'Something went wrong - try again.');
+                    return false;
+                }
+                renderNotesTaskChatBubble('assistant', data.reply);
+                // Reload back into this same Universe's checklist once a task actually landed -
+                // it's a fresh server render, the only way the new starred row shows up.
+                if (data.task_created) {
+                    setTimeout(() => { window.location.href = '/notes?universe_id=' + notesTaskChatUniverseId; }, 900);
+                }
+            } catch (e) {
+                if (thinking) thinking.remove();
+                renderNotesTaskChatBubble('assistant', 'Something went wrong - try again.');
+            } finally {
+                notesTaskChatSending = false;
+            }
+            return false;
+        }
+        {% endif %}
     </script>
 
     <!-- Same floating launcher cluster as the main app - see the <style> block above for why
@@ -202,6 +304,7 @@
             📝
         </div>
         <a href="{{ events_universe_href }}" id="events-quick-btn" title="Events"
+           onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
            class="w-14 h-14 rounded-full bg-fuchsia-500 hover:bg-fuchsia-400 border border-fuchsia-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
             🎉
         </a>

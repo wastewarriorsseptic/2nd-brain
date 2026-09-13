@@ -5067,6 +5067,7 @@ def notes_page(request: Request, universe_id: Optional[int] = None):
                 "selected_universe_id": universe_id,
                 "selected_universe": selected_universe,
                 "events_universe_href": get_events_universe_href(session, user.id),
+                "gemini_enabled": GEMINI_ENABLED,
             }
         )
 
@@ -6056,6 +6057,24 @@ def ai_chat(request: Request, payload: dict = Body(...)):
         # button they tapped.
         quick_task_intent = payload.get("intent") == "create_task"
 
+        # Set when this message came from a specific Universe's own Notes checklist "+" instead
+        # (see openNotesTaskChat in notes.html) - reported directly, wanting that "+" to "start a
+        # chat for what task to make within that exact universe" and "have it know that if its
+        # being made there to have it starred to show there." bucket_id is forced below (in the
+        # create_task tool-call branch) regardless of what the model returns - the whole point of
+        # this entry point is a guaranteed destination, not another thing for the model to infer -
+        # and a successful creation is immediately starred into that Universe's Notes the same way
+        # toggle_note_from_task does.
+        notes_task_universe = None
+        notes_task_bucket = None
+        notes_task_universe_id = payload.get("notes_task_universe_id")
+        if notes_task_universe_id:
+            notes_task_universe = session.get(Universe, notes_task_universe_id)
+            if not notes_task_universe or notes_task_universe.user_id != user.id or notes_task_universe.kind != "task":
+                return JSONResponse({"ok": False, "error": "That Universe isn't available."}, status_code=404)
+            notes_task_bucket = get_or_create_default_task_bucket_in_universe(session, user.id, notes_task_universe)
+            quick_task_intent = True
+
         # History and "last touched task" both now come from the DB (this user's own saved
         # conversation), not from anything the client sends - the client used to track and send
         # both itself, which meant a stale/wrong client-side value could feed the model a bad
@@ -6078,6 +6097,15 @@ def ai_chat(request: Request, payload: dict = Body(...)):
                 "default) and proceed with your usual create_task rules, including still asking a "
                 "clarifying question if the bucket is genuinely ambiguous. Only skip create_task if "
                 "the message is clearly not task-related at all."
+            )
+        if notes_task_bucket:
+            system_instruction += (
+                f"\n\nThis message is specifically adding a task to the \"{notes_task_universe.name}\" "
+                f"Universe's own Notes checklist. If you call create_task, its bucket_id will be forced "
+                f"to {notes_task_bucket.id} server-side no matter what you pass, so don't spend any "
+                f"effort reasoning about which universe/realm/bucket to use - it's already decided. "
+                f"Just extract the title (and due date if mentioned, otherwise today) and call "
+                f"create_task. Do not ask which universe or bucket to use."
             )
         config = genai_types.GenerateContentConfig(system_instruction=system_instruction, tools=_ai_tools)
 
@@ -6144,9 +6172,17 @@ def ai_chat(request: Request, payload: dict = Body(...)):
                     args = dict(function_call.args)
 
                     if name == "create_task":
+                        if notes_task_bucket:
+                            args["bucket_id"] = notes_task_bucket.id
                         result = _ai_execute_create_task(session, user, args)
                         if "error" not in result:
                             task_created = result
+                            if notes_task_universe:
+                                session.add(Note(
+                                    user_id=user.id, title="", content="",
+                                    universe_id=notes_task_universe.id, source_item_id=result["id"],
+                                ))
+                                session.commit()
                     elif name == "update_task":
                         result = _ai_execute_update_task(session, user, args)
                         if "error" not in result:
