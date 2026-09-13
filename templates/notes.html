@@ -12,6 +12,11 @@
          way for any of that JS to detect or correct for it - only a fresh page load resets it, which
          matches "isnt able to be back to normal unless i reset app" exactly. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <!-- Matches index.html's own theme-color exactly (#0f172a = bg-slate-900) - without it, the
+         area behind the status bar/notch gets painted by the OS/WKWebView with its own default
+         color rather than this page's actual background, showing up as a mismatched band sitting
+         on top of the starfield - reported directly with a screenshot. -->
+    <meta name="theme-color" content="#0f172a">
     <title>{{ (selected_universe.name if selected_universe else 'Notes') }} - TaskMonster</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
