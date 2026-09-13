@@ -140,6 +140,7 @@
                         </div>
                         <div class="flex flex-col items-end gap-1.5 shrink-0">
                             <a href="/?realm_id={{ row.realm_id }}&bucket_id={{ row.bucket_id }}&goto_item={{ row.item_id }}"
+                               onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
                                class="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline underline-offset-2 whitespace-nowrap">🎯 Go to task</a>
                             <form action="/notes/{{ row.note_id }}/delete" method="POST">
                                 <button type="submit" title="Remove from Notes" class="text-[11px] font-bold text-slate-400 hover:text-rose-500 transition-colors whitespace-nowrap">⭐ Un-star</button>
