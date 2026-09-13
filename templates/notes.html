@@ -139,9 +139,22 @@
             <!-- Shown only while reordering the Universe strip below (see
                  enterNotesUniverseReorderMode/exitNotesUniverseReorderMode) - the explicit way out
                  of wobble mode, matching iOS's own "Done" button, same as index.html's own
-                 multiverse-reorder-done-btn. -->
+                 multiverse-reorder-done-btn. invisible (visibility:hidden), not hidden
+                 (display:none) - confirmed via a real screen recording that the moment this button
+                 disappears from layout, the header row's own height shrinks and the Universe strip
+                 below jumps up with it, and on-device that upward jump lands right as WebKit is
+                 mid-repaint of the strip's own overflow-clip layer (the same forced overflow-y:auto
+                 from the pt-8 comment below) - the clip mask doesn't get re-solved for the new
+                 layout and the circles are left permanently rendered with their tops cut off, not
+                 just for one transient frame but stuck that way until something else forces a
+                 repaint (confirmed in the recording: still clipped 1.5+ seconds and dozens of frames
+                 after tapping Done, no auto-recovery). invisible keeps this button's layout space
+                 reserved at all times so nothing below it ever moves when reorder mode toggles,
+                 which removes the reflow that triggers this entirely - a bigger pt buffer alone
+                 (tried first) can't fix a stale clip mask, only prevent overflow within a layout
+                 that stays put. -->
             <button type="button" id="notes-universe-reorder-done-btn" onclick="exitNotesUniverseReorderMode()"
-                    class="hidden px-3.5 py-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-emerald-400/30">
+                    class="invisible px-3.5 py-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-emerald-400/30">
                 ✓ Done
             </button>
         </div>
@@ -726,7 +739,7 @@
             if (!picker) return;
             picker.querySelectorAll('.notes-universe-card').forEach(card => card.classList.add('universe-card-wobbling'));
             const doneBtn = document.getElementById('notes-universe-reorder-done-btn');
-            if (doneBtn) doneBtn.classList.remove('hidden');
+            if (doneBtn) doneBtn.classList.remove('invisible');
             if (notesUniverseSortable) notesUniverseSortable.option('disabled', false);
         }
 
@@ -735,7 +748,7 @@
             const picker = document.getElementById('notes-universe-picker');
             if (picker) picker.querySelectorAll('.universe-card-wobbling').forEach(el => el.classList.remove('universe-card-wobbling'));
             const doneBtn = document.getElementById('notes-universe-reorder-done-btn');
-            if (doneBtn) doneBtn.classList.add('hidden');
+            if (doneBtn) doneBtn.classList.add('invisible');
             if (notesUniverseSortable) notesUniverseSortable.option('disabled', true);
         }
 
