@@ -8261,6 +8261,21 @@
             const realmOrderById = new Map(realmsData.map((r, idx) => [String(r.id), idx]));
             lanes.sort((a, b) => (realmOrderById.get(String(a.id)) ?? 0) - (realmOrderById.get(String(b.id)) ?? 0));
 
+            // A standalone, always-first "this Universe" hub, purely as a way back out to the
+            // Multiverse Timeline - reported directly, wanting an actual circle to tap for this
+            // (the earlier "tap blank canvas space" fallback wasn't discoverable/obvious enough,
+            // and easy to mistake for just another empty Realm lane like the ones this same report
+            // was originally about). No tasks, no +, no hold-to-edit/delete - see the isUniverseNode
+            // checks in handleRealmTimelineClick and ontouchstart's pressedRealmLane guard.
+            const activeUniverseMeta = allUniversesData.find(u => String(u.id) === String(activeUniverseId));
+            lanes.unshift({
+                id: '__universe_self__',
+                name: activeUniverseMeta ? activeUniverseMeta.name : 'Universe',
+                icon: activeUniverseIcon,
+                tasks: [],
+                isUniverseNode: true
+            });
+
             const isMobile = window.innerWidth < 768;
             const laneSpacing = isMobile ? 460 : 400;
             const hubRadius = isMobile ? 90 : 70;
@@ -8478,12 +8493,20 @@
                     spaceCtx.fill();
                 }
 
+                // The synthetic "go back to Multiverse Timeline" hub (see the Universe-node
+                // back-fill in buildRealmLanes) is tinted amber instead of the usual indigo -
+                // same accent color as the launcher cluster's own hourglass Multiverse Timeline
+                // badge, so it visually reads as "this one takes you there" rather than looking
+                // like just another (possibly empty) Realm lane, which was easy to mistake it for.
+                const laneAccent = lane.isUniverseNode ? '#f59e0b' : '#6366f1';
+                const laneGlow = lane.isUniverseNode ? '#fbbf24' : '#818cf8';
+
                 spaceCtx.beginPath();
                 spaceCtx.arc(lane.x, lane.y, hubDrawRadius, 0, Math.PI * 2);
                 spaceCtx.fillStyle = 'rgba(30, 41, 59, 0.95)';
-                spaceCtx.strokeStyle = '#6366f1';
+                spaceCtx.strokeStyle = laneAccent;
                 spaceCtx.lineWidth = 3;
-                spaceCtx.shadowColor = '#818cf8';
+                spaceCtx.shadowColor = laneGlow;
                 spaceCtx.shadowBlur = isDraggedLane ? 32 : 20;
                 spaceCtx.fill();
                 spaceCtx.stroke();
@@ -8499,7 +8522,7 @@
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
                 spaceCtx.font = 'bold 34px sans-serif';
-                const nameText = lane.name;
+                const nameText = lane.isUniverseNode ? `↩ ${lane.name}` : lane.name;
                 const nameWidth = spaceCtx.measureText(nameText).width + 36;
                 const pillY = lane.y + lane.hubRadius + 16;
                 const pillHeight = 46;
@@ -8507,7 +8530,7 @@
                 spaceCtx.beginPath();
                 spaceCtx.roundRect(lane.x - nameWidth / 2, pillY, nameWidth, pillHeight, 23);
                 spaceCtx.fill();
-                spaceCtx.strokeStyle = '#6366f1';
+                spaceCtx.strokeStyle = laneAccent;
                 spaceCtx.lineWidth = 1.5;
                 spaceCtx.stroke();
                 spaceCtx.fillStyle = '#ffffff';
@@ -8925,6 +8948,12 @@
                 const r = lane._namePillRect;
                 const hitPill = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
                 if (distToHub <= lane.hubRadius + 10 || hitPill) {
+                    // The synthetic "go back" Universe hub (see buildRealmLanes) always steps out
+                    // to the Multiverse Timeline - it has no Realm of its own to focus/unfocus.
+                    if (lane.isUniverseNode) {
+                        openMultiverseTimeline();
+                        return;
+                    }
                     if (realmTimelineFocusedLaneId === lane.id) {
                         unfocusRealmTimelineLane();
                     } else {
@@ -10223,6 +10252,7 @@
                     let pressedRealmLane = null;
                     if (isRealmTimelineView) {
                         realmLanes.forEach(lane => {
+                            if (lane.isUniverseNode) return; // no delete/edit for the synthetic "go back" hub
                             const dist = Math.hypot(worldX - lane.x, worldY - lane.y);
                             if (dist <= lane.hubRadius + 10) pressedRealmLane = lane;
                         });
