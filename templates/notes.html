@@ -350,6 +350,21 @@
                 const data = await res.json();
                 if (!res.ok || !data.ok) return;
                 const isCompleted = data.is_completed;
+                // Same confetti burst fireCompleteConfetti fires everywhere else in the app on
+                // marking a task complete - reported directly ("the confetti doesnt go off when i
+                // hit complete check mark"), the checklist's own checkbox never had it at all.
+                // Only on the completing edge (not un-completing back to incomplete), same as
+                // everywhere else it's used.
+                if (isCompleted && typeof confetti === 'function') {
+                    const rect = button.getBoundingClientRect();
+                    confetti({
+                        particleCount: 65,
+                        spread: 80,
+                        origin: { x: (rect.left + rect.width / 2) / window.innerWidth, y: (rect.top + rect.height / 2) / window.innerHeight },
+                        colors: ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#3b82f6'],
+                        disableForReducedMotion: true
+                    });
+                }
                 button.title = isCompleted ? 'Mark Incomplete' : 'Mark Complete';
                 button.classList.toggle('bg-emerald-500', isCompleted);
                 button.classList.toggle('border-emerald-500', isCompleted);
