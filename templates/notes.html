@@ -274,6 +274,11 @@
         {% if gemini_enabled and selected_universe_id %}
         const notesTaskChatUniverseId = {{ selected_universe_id }};
         let notesTaskChatSending = false;
+        // Set the moment any message in this chat session actually creates a task - closeNotesTaskChat
+        // only bothers reloading the page (the one way the checklist behind the modal picks up a
+        // newly-starred task) when this is true, so closing after a pure Q&A/error exchange with no
+        // real creation doesn't force an unnecessary reload.
+        let notesTaskChatCreatedAny = false;
 
         function renderNotesTaskChatBubble(role, text) {
             const messages = document.getElementById('notes-task-chat-messages');
@@ -293,6 +298,7 @@
             const messages = document.getElementById('notes-task-chat-messages');
             if (!modal || !messages) return;
             messages.innerHTML = '';
+            notesTaskChatCreatedAny = false;
             renderNotesTaskChatBubble('assistant', 'What task would you like me to star and create in ' + {{ (selected_universe.name if selected_universe else 'this Universe') | tojson }} + '?');
             modal.classList.remove('hidden');
             const input = document.getElementById('notes-task-chat-input');
@@ -303,10 +309,21 @@
             syncNotesTaskChatToViewport();
         }
 
+        // Reported directly - the chat used to auto-redirect back to /notes 900ms after every
+        // successful creation, ripping the conversation away before there was any real chance to
+        // read the reply or ask for a second task right after the first ("please have it stay open
+        // after i hit enter"). It now only ever closes when the user actually taps away/hits X - see
+        // handleNotesTaskChatSubmit, which no longer touches window.location at all. Reloading is
+        // deferred to THIS moment instead, and only when something was actually created this
+        // session (notesTaskChatCreatedAny) - that's still the only way the checklist behind the
+        // modal picks up whatever got starred while it was open, just no longer forced mid-chat.
         function closeNotesTaskChat() {
             const modal = document.getElementById('notes-task-chat-modal');
             if (modal) modal.classList.add('hidden');
             resetNotesTaskChatLayout();
+            if (notesTaskChatCreatedAny) {
+                window.location.href = '/notes?universe_id=' + notesTaskChatUniverseId;
+            }
         }
 
         function resetNotesTaskChatLayout() {
@@ -414,11 +431,15 @@
                     return false;
                 }
                 renderNotesTaskChatBubble('assistant', data.reply);
-                // Reload back into this same Universe's checklist once a task actually landed -
-                // it's a fresh server render, the only way the new starred row shows up.
+                // The task itself is still created and starred right here, same as always (see
+                // ai_chat()/_ai_execute_create_task in app.py) - only the auto-redirect that used to
+                // follow it is gone. notesTaskChatCreatedAny just remembers that it happened so
+                // closeNotesTaskChat() knows to refresh the checklist once the user is actually done
+                // chatting, instead of yanking them out of the conversation immediately.
                 if (data.task_created) {
-                    setTimeout(() => { window.location.href = '/notes?universe_id=' + notesTaskChatUniverseId; }, 900);
+                    notesTaskChatCreatedAny = true;
                 }
+                input.focus();
             } catch (e) {
                 if (thinking) thinking.remove();
                 renderNotesTaskChatBubble('assistant', 'Something went wrong - try again.');
