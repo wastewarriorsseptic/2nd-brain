@@ -237,7 +237,12 @@
             const modal = document.getElementById('notes-task-chat-modal');
             if (modal) modal.classList.add('hidden');
             const card = document.getElementById('notes-task-chat-card');
-            if (card) { card.style.position = ''; card.style.top = ''; card.style.left = ''; card.style.right = ''; card.style.width = ''; card.style.margin = ''; card.style.maxHeight = '80vh'; }
+            if (card) resetNotesTaskChatCardStyle(card);
+        }
+
+        function resetNotesTaskChatCardStyle(card) {
+            card.style.position = ''; card.style.top = ''; card.style.left = ''; card.style.right = '';
+            card.style.width = ''; card.style.margin = ''; card.style.maxHeight = '80vh';
         }
 
         // Same fixed-position-doesn't-track-the-keyboard problem the main chat panel already
@@ -247,20 +252,26 @@
         // window.visualViewport reports the ACTUAL visible area above the keyboard - pin the card
         // to that directly instead of trusting the flex-centered CSS layout, which centers against
         // the full (keyboard-covered) layout viewport instead.
+        //
+        // Whether to pin at all is decided by focus, NOT by comparing visualViewport.height against
+        // window.innerHeight - a follow-up screenshot showed the exact same cut-off layout even
+        // after the width fix below shipped, meaning the height-diff heuristic itself was never
+        // firing true in that WKWebView (some iOS versions/contexts shrink window.innerHeight
+        // roughly in step with visualViewport.height when the keyboard opens, keeping the diff
+        // under the 80px threshold). This modal only ever has the one input, so "is it focused" is
+        // a direct, reliable signal for "should the keyboard be open" - visualViewport is still used
+        // for the actual geometry (top/height), just not for deciding whether to use it at all.
         function syncNotesTaskChatToViewport() {
             const modal = document.getElementById('notes-task-chat-modal');
             const card = document.getElementById('notes-task-chat-card');
+            const input = document.getElementById('notes-task-chat-input');
             if (!modal || !card || modal.classList.contains('hidden')) return;
-            if (window.innerWidth >= 768 || !window.visualViewport) {
-                card.style.position = ''; card.style.top = ''; card.style.left = ''; card.style.right = ''; card.style.width = ''; card.style.margin = ''; card.style.maxHeight = '80vh';
+            const keyboardLikelyOpen = window.innerWidth < 768 && document.activeElement === input;
+            if (!keyboardLikelyOpen || !window.visualViewport) {
+                resetNotesTaskChatCardStyle(card);
                 return;
             }
             const vv = window.visualViewport;
-            const keyboardLikelyOpen = vv.height < window.innerHeight - 80;
-            if (!keyboardLikelyOpen) {
-                card.style.position = ''; card.style.top = ''; card.style.left = ''; card.style.right = ''; card.style.width = ''; card.style.margin = ''; card.style.maxHeight = '80vh';
-                return;
-            }
             const TOP_MARGIN = 16;
             const BOTTOM_GAP = 10;
             const top = Math.max(0, vv.offsetTop + TOP_MARGIN);
@@ -296,6 +307,14 @@
         if (window.visualViewport) {
             window.visualViewport.addEventListener('resize', syncNotesTaskChatToViewportSoon);
             window.visualViewport.addEventListener('scroll', syncNotesTaskChatToViewportSoon);
+        }
+        // The actual decision to pin now runs off focus (see syncNotesTaskChatToViewport's own
+        // comment) - these are what make that decision reactive to the keyboard opening/closing,
+        // the same way the visualViewport listeners above keep the geometry reactive once pinned.
+        const notesTaskChatInputEl = document.getElementById('notes-task-chat-input');
+        if (notesTaskChatInputEl) {
+            notesTaskChatInputEl.addEventListener('focus', syncNotesTaskChatToViewportSoon);
+            notesTaskChatInputEl.addEventListener('blur', syncNotesTaskChatToViewportSoon);
         }
 
         async function handleNotesTaskChatSubmit(event) {
