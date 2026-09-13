@@ -481,33 +481,21 @@
     </script>
 
     <script>
-        // Same accent palette as Space View's own distant-star field (SPACE_STAR_PALETTE in
-        // index.html) - indigo/violet/sky/rose/amber, each star picking one at random so the dark
-        // background reads as genuinely varied rather than a single-tint sky. rgb is the fill
-        // (paired with the star's own low opacity), glow is the box-shadow color for its soft halo.
-        const NOTES_SPACE_STAR_PALETTE = [
-            { rgb: '129, 140, 248', glow: '#6366f1' },
-            { rgb: '196, 181, 253', glow: '#8b5cf6' },
-            { rgb: '125, 211, 252', glow: '#0ea5e9' },
-            { rgb: '253, 164, 175', glow: '#f43f5e' },
-            { rgb: '252, 211, 77', glow: '#f59e0b' },
-        ];
-
         function generateNotesSpaceStars() {
             const container = document.getElementById('notes-space-stars');
             if (!container) return;
-            // 40 (copied straight from index.html's Multiverse picker, a FULL-SCREEN overlay) read
-            // as a visible wash of extra color here instead of "a few subtle stars" - reported
-            // directly ("remove that masking color"). This page's own dark area is only ever the
-            // header strip up top (the white note card covers the rest), a fraction of a full
-            // screen, so far fewer stars with a tighter glow keep the same look without it reading
-            // as a different background color.
+            // Reported directly, twice, with a side-by-side comparison screenshot: the colored
+            // box-shadow glow on each star (removed below) was the actual source of the "frosty"/
+            // masking look, not just star count - a blurred halo around every dot, even a small,
+            // tight one, reads as a soft wash of light rather than a crisp point of light once
+            // several are on screen together. Plain small dots, no shadow/glow at all, no per-star
+            // color - just a faint white speck that fades in and out - is what the reference
+            // screenshot (a plain event list, not even Space View) actually shows.
             const STAR_COUNT = 14;
             let html = '';
             for (let i = 0; i < STAR_COUNT; i++) {
-                const palette = NOTES_SPACE_STAR_PALETTE[Math.floor(Math.random() * NOTES_SPACE_STAR_PALETTE.length)];
-                const size = (1.2 + Math.random() * 2.2).toFixed(2);
-                const maxOVal = 0.28 + Math.random() * 0.18;
+                const size = (1 + Math.random() * 1.4).toFixed(2);
+                const maxOVal = 0.25 + Math.random() * 0.2;
                 // minO stays a fraction of maxO (never below 60% of it) rather than two
                 // independently-random values that could land far apart - a narrow swing reads as a
                 // gentle pulse, a wide one reads as blinking on/off.
@@ -517,8 +505,7 @@
                 const top = (Math.random() * 100).toFixed(2);
                 const delay = (Math.random() * 6).toFixed(2);
                 const duration = (8 + Math.random() * 8).toFixed(2);
-                const glowRadius = (parseFloat(size) * 1.4).toFixed(1);
-                html += `<div class="notes-space-star" style="left:${left}%; top:${top}%; width:${size}px; height:${size}px; background: rgba(${palette.rgb}, ${maxO}); box-shadow: 0 0 ${glowRadius}px ${palette.glow}; animation-delay: ${delay}s; animation-duration: ${duration}s; --star-min-o: ${minO}; --star-max-o: ${maxO};"></div>`;
+                html += `<div class="notes-space-star" style="left:${left}%; top:${top}%; width:${size}px; height:${size}px; background: rgba(226, 232, 240, ${maxO}); animation-delay: ${delay}s; animation-duration: ${duration}s; --star-min-o: ${minO}; --star-max-o: ${maxO};"></div>`;
             }
             container.innerHTML = html;
         }
