@@ -321,13 +321,20 @@
             const messages = document.getElementById('notes-task-chat-messages');
             if (!messages) return null;
             const bubble = document.createElement('div');
-            let bubbleClass = 'max-w-[85%] rounded-2xl px-3 py-2 whitespace-pre-wrap break-words ';
+            // Exactly index.html's own renderAiChatBubble bubbleClass construction (base classes +
+            // per-variant colors), just with mr-auto/ml-auto standing in for its outer flex
+            // justify-end/justify-start wrapper - same visual alignment, one less wrapper div.
+            let bubbleClass = 'max-w-[85%] rounded-2xl px-3 py-2 whitespace-pre-wrap break-words shadow-sm ';
             if (variant === 'task_created') {
-                bubbleClass += 'mr-auto bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-bl-sm';
+                bubbleClass += 'mr-auto bg-emerald-50 border border-emerald-200 text-emerald-800';
+            } else if (variant === 'error') {
+                bubbleClass += 'mr-auto bg-rose-50 border border-rose-200 text-rose-700';
+            } else if (variant === 'login_required') {
+                bubbleClass += 'mr-auto bg-indigo-50 border border-indigo-200 text-indigo-800';
             } else if (role === 'user') {
-                bubbleClass += 'ml-auto bg-indigo-600 text-white rounded-br-sm';
+                bubbleClass += 'ml-auto bg-indigo-600 text-white shadow-indigo-600/20';
             } else {
-                bubbleClass += 'mr-auto bg-white border border-slate-200 text-slate-800 rounded-bl-sm';
+                bubbleClass += 'mr-auto bg-white border border-slate-200 text-slate-700';
             }
             bubble.className = bubbleClass;
             bubble.textContent = text;
@@ -337,6 +344,13 @@
                 link.className = 'mt-2 block text-left text-emerald-700 hover:text-emerald-900 underline underline-offset-2 font-bold';
                 link.textContent = '🎯 Go to this task';
                 link.onclick = () => goToNotesTaskChatTask(navTarget);
+                bubble.appendChild(link);
+            }
+            if (variant === 'login_required') {
+                const link = document.createElement('a');
+                link.href = '/login';
+                link.className = 'mt-2 block text-left text-indigo-600 hover:text-indigo-900 underline underline-offset-2 font-bold';
+                link.textContent = '🔑 Sign in with Google';
                 bubble.appendChild(link);
             }
             messages.appendChild(bubble);
@@ -351,7 +365,7 @@
             const messages = document.getElementById('notes-task-chat-messages');
             if (!messages) return null;
             const bubble = document.createElement('div');
-            bubble.className = 'mr-auto max-w-[85%] rounded-2xl px-3 py-2 bg-white border border-slate-200 rounded-bl-sm flex items-center';
+            bubble.className = 'mr-auto max-w-[85%] rounded-2xl px-3 py-2 bg-white border border-slate-200 shadow-sm flex items-center';
             bubble.innerHTML = '<span class="text-lg inline-block" style="animation: ai-chat-launcher-float 1.3s ease-in-out infinite;">😈</span>';
             messages.appendChild(bubble);
             messages.scrollTop = messages.scrollHeight;
@@ -515,7 +529,11 @@
                 const data = await res.json();
                 if (thinking) thinking.remove();
                 if (!res.ok || !data.ok) {
-                    renderNotesTaskChatBubble('assistant', data.error || 'Something went wrong - try again.');
+                    // Same error/login_required split as index.html's own handleAiChatSubmit - a
+                    // session that expired mid-chat gets the sign-in link instead of reading as a
+                    // generic failure.
+                    const errorVariant = data.code === 'login_required' ? 'login_required' : 'error';
+                    renderNotesTaskChatBubble('assistant', data.error || 'Something went wrong - try again.', errorVariant);
                     return false;
                 }
                 renderNotesTaskChatBubble('assistant', data.reply, data.task_created ? 'task_created' : undefined, data.task_created);
@@ -530,7 +548,7 @@
                 input.focus();
             } catch (e) {
                 if (thinking) thinking.remove();
-                renderNotesTaskChatBubble('assistant', 'Something went wrong - try again.');
+                renderNotesTaskChatBubble('assistant', 'Something went wrong - try again.', 'error');
             } finally {
                 notesTaskChatSending = false;
             }
