@@ -173,7 +173,7 @@
          notes_task_universe_id set so the server forces the bucket and auto-stars the result
          server-side - see ai_chat() in app.py. -->
     <div id="notes-task-chat-modal" class="hidden fixed inset-0 z-[80] flex items-center justify-center px-4" style="background: rgba(2, 6, 23, 0.55);" onclick="if (event.target === this) closeNotesTaskChat();">
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden" style="max-height: 80vh;">
+        <div id="notes-task-chat-card" class="bg-white rounded-3xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden" style="max-height: 80vh;">
             <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 shrink-0">
                 <span class="text-sm font-extrabold text-indigo-600 uppercase tracking-wide">😈 New Task</span>
                 <button type="button" onclick="closeNotesTaskChat()" class="text-slate-400 hover:text-slate-700 text-xs font-bold px-1">✕</button>
@@ -227,11 +227,67 @@
             modal.classList.remove('hidden');
             const input = document.getElementById('notes-task-chat-input');
             if (input) { input.value = ''; input.focus(); }
+            // Focusing the input above pops the keyboard up right away on mobile - sync
+            // immediately (rather than waiting for the first visualViewport event) so the card
+            // never has a chance to render centered-then-jump.
+            syncNotesTaskChatToViewport();
         }
 
         function closeNotesTaskChat() {
             const modal = document.getElementById('notes-task-chat-modal');
             if (modal) modal.classList.add('hidden');
+            const card = document.getElementById('notes-task-chat-card');
+            if (card) { card.style.position = ''; card.style.top = ''; card.style.left = ''; card.style.right = ''; card.style.margin = ''; card.style.maxHeight = '80vh'; }
+        }
+
+        // Same fixed-position-doesn't-track-the-keyboard problem the main chat panel already
+        // solved (see syncAiChatPanelToViewport in index.html) - reported directly with a
+        // screenshot showing the input/Send row squeezed right up against the keyboard, its own
+        // accessory bar, with most of the card's height wasted above on a mostly-hidden viewport.
+        // window.visualViewport reports the ACTUAL visible area above the keyboard - pin the card
+        // to that directly instead of trusting the flex-centered CSS layout, which centers against
+        // the full (keyboard-covered) layout viewport instead.
+        function syncNotesTaskChatToViewport() {
+            const modal = document.getElementById('notes-task-chat-modal');
+            const card = document.getElementById('notes-task-chat-card');
+            if (!modal || !card || modal.classList.contains('hidden')) return;
+            if (window.innerWidth >= 768 || !window.visualViewport) {
+                card.style.position = ''; card.style.top = ''; card.style.left = ''; card.style.right = ''; card.style.margin = ''; card.style.maxHeight = '80vh';
+                return;
+            }
+            const vv = window.visualViewport;
+            const keyboardLikelyOpen = vv.height < window.innerHeight - 80;
+            if (!keyboardLikelyOpen) {
+                card.style.position = ''; card.style.top = ''; card.style.left = ''; card.style.right = ''; card.style.margin = ''; card.style.maxHeight = '80vh';
+                return;
+            }
+            const TOP_MARGIN = 16;
+            const BOTTOM_GAP = 10;
+            const top = Math.max(0, vv.offsetTop + TOP_MARGIN);
+            const maxHeight = Math.max(vv.height - TOP_MARGIN - BOTTOM_GAP, 160);
+            card.style.position = 'fixed';
+            card.style.top = `${top}px`;
+            card.style.left = '16px';
+            card.style.right = '16px';
+            card.style.margin = '0';
+            card.style.maxHeight = `${maxHeight}px`;
+            const messages = document.getElementById('notes-task-chat-messages');
+            if (messages) messages.scrollTop = messages.scrollHeight;
+        }
+
+        // The keyboard's open/close animation dispatches a burst of visualViewport resize/scroll
+        // events with intermediate, not-yet-final heights - sync on every one for responsiveness,
+        // plus one more pass a beat after the last event in a burst to correct anything an
+        // in-between reading got wrong, same two-pass pattern syncAiChatPanelToViewportSoon uses.
+        let notesTaskChatViewportSettleTimer = null;
+        function syncNotesTaskChatToViewportSoon() {
+            syncNotesTaskChatToViewport();
+            clearTimeout(notesTaskChatViewportSettleTimer);
+            notesTaskChatViewportSettleTimer = setTimeout(syncNotesTaskChatToViewport, 180);
+        }
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', syncNotesTaskChatToViewportSoon);
+            window.visualViewport.addEventListener('scroll', syncNotesTaskChatToViewportSoon);
         }
 
         async function handleNotesTaskChatSubmit(event) {
