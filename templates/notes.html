@@ -222,7 +222,11 @@
             </form>
             {% endif %}
 
-            <div class="flex-1 overflow-y-auto space-y-2.5">
+            <!-- pb-32 - reported directly with a screenshot showing the last row(s) sitting right
+                 behind the floating launcher cluster (devil/+/🏡/⏳ and Notes/Events), which are
+                 fixed-positioned over the bottom of the screen regardless of scroll position. This
+                 just gives the scrollable list enough room to clear them at the very bottom. -->
+            <div class="flex-1 overflow-y-auto space-y-2.5 pb-32">
                 {% for row in checklist %}
                     <div class="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
                         <form action="/items/toggle-complete/" method="POST" class="shrink-0 mt-0.5">
@@ -275,7 +279,16 @@
          Reuses the same /ai/chat/ endpoint everything else on the site does, with
          notes_task_universe_id set so the server forces the bucket and auto-stars the result
          server-side - see ai_chat() in app.py. -->
-    <div id="notes-task-chat-modal" class="hidden fixed inset-0 z-[80] flex items-center justify-center px-4" style="background: rgba(2, 6, 23, 0.55);" onclick="if (event.target === this) closeNotesTaskChat();">
+    <!-- No tap-the-backdrop-to-close - reproduced directly in the iOS Simulator with pixel-precise
+         taps on the Send button: the card's own keyboard-avoidance repositioning (see
+         syncNotesTaskChatToViewport) can shift its layout between when a tap is aimed and when it
+         actually registers, occasionally landing a Send tap on the backdrop behind it instead - and
+         with this handler in place, that silently closed the whole chat and threw away whatever was
+         typed, with zero network request ever sent (confirmed via server logs). Removing it doesn't
+         fix why the coordinates can drift, but it removes the destructive outcome: a stray tap
+         anywhere on the backdrop now does nothing, so at worst a mis-tap requires tapping Send
+         again, never loses the conversation. The X button is the only way to close now. -->
+    <div id="notes-task-chat-modal" class="hidden fixed inset-0 z-[80] flex items-center justify-center px-4" style="background: rgba(2, 6, 23, 0.55);">
         <div id="notes-task-chat-card" class="bg-white rounded-3xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden" style="max-height: 80vh;">
             <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 shrink-0">
                 <span class="text-sm font-extrabold text-indigo-600 uppercase tracking-wide">😈 New Task</span>
