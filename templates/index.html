@@ -6261,7 +6261,23 @@
             if (openMultiverseTimelineFlag) {
                 openMultiverseTimeline();
             } else if (currentSelectedRealmId) {
-                navigateToDigestItem(currentSelectedRealmId, currentSelectedBucketId, gotoItemId);
+                // isMultiverseStackedView/isRealmTimelineView already reflect whatever
+                // restoreSpaceViewOnAppOpen() (registered earlier, runs first) or Realm Timeline's
+                // own "default view for a Task Universe" fallback (see recenterSpace) just put on
+                // screen - navigateToDigestItem unconditionally drills into a single Realm's bucket
+                // ring, which used to silently kick the user OUT of whichever Timeline overview
+                // they were actually looking at the instant a task landed (create, chat-create,
+                // reorder/recurring-accept - anything that redirects here with goto_item). Reported
+                // directly: creating a task while in the Multiverse Timeline ("hourglass" view)
+                // needed a SECOND, plain refresh (no goto_item left to re-trigger this drill-down)
+                // before the new task actually showed up where it was created - it was there in the
+                // data the whole time, just hidden behind an unwanted forced navigation to a
+                // different screen. Skipping the drill when already in one of these overviews
+                // leaves the freshly-rendered page (this task included, since it's the same fresh
+                // load create_item's own redirect produced) exactly as-is.
+                if (!isMultiverseStackedView && !isRealmTimelineView) {
+                    navigateToDigestItem(currentSelectedRealmId, currentSelectedBucketId, gotoItemId);
+                }
             }
 
             // Strip these (keeping realm_id/bucket_id/universe_id) so a manual refresh of this URL
