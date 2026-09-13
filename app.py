@@ -205,6 +205,7 @@ def safe_apply_migrations():
             # a brand-new environment with no note table yet still gets it (realm_id included)
             # straight from create_all() below, making this a harmless no-op there.
             conn.execute(text('ALTER TABLE IF EXISTS note ADD COLUMN IF NOT EXISTS realm_id INTEGER;'))
+            conn.execute(text('ALTER TABLE IF EXISTS note ADD COLUMN IF NOT EXISTS source_item_id INTEGER;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT \'UTC\';'))
             conn.execute(text('ALTER TABLE realm ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
             # "IF EXISTS" on the table guards the case where this runs before create_all() has
@@ -274,6 +275,8 @@ def safe_apply_migrations():
                 note_cols = [col[1] for col in cursor.fetchall()]
                 if 'realm_id' not in note_cols:
                     cursor.execute('ALTER TABLE note ADD COLUMN "realm_id" INTEGER;')
+                if 'source_item_id' not in note_cols:
+                    cursor.execute('ALTER TABLE note ADD COLUMN "source_item_id" INTEGER;')
 
             cursor.execute("PRAGMA table_info(users);")
             user_cols = [col[1] for col in cursor.fetchall()]
@@ -569,6 +572,13 @@ class Note(SQLModel, table=True):
     realm_id: Optional[int] = Field(default=None, foreign_key="realm.id", index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    # Set only for a note created via the task-card "star" toggle (see toggle_note_from_task) -
+    # None for every hand-typed note. Lets the toggle button know whether a given task already has
+    # a starred note (and find it again to un-star), and lets the Notes list surface "this note
+    # came from a task" + a way back to it. The Item can later be deleted independently without
+    # touching this note - it just becomes an orphaned reference (see notes_page's own null-guard
+    # when building the go-to-task link), same as any other soft cross-reference in this app.
+    source_item_id: Optional[int] = Field(default=None, foreign_key="item.id", index=True)
 
 # --- FastAPI & Middleware Setup ---
 app = FastAPI()
@@ -1704,6 +1714,16 @@ def dashboard(
             items = session.exec(query.order_by(Item.due_date.asc())).all() if all_realm_ids else []
             people = []
 
+        # Every task this user currently has starred into Notes (see toggle_note_from_task) -
+        # drives the star button's initial ⭐/☆ state on the Card View task card and (via each
+        # card's own data-is-noted attribute) the same state on Space View's task objects, which
+        # are built client-side by reading THIS page's card attributes rather than a second
+        # server round trip. Queried once across every Universe (not just the active one) since
+        # it's cheap and a handful of ints, rather than re-deriving it per code path below.
+        noted_item_ids = set(session.exec(
+            select(Note.source_item_id).where(Note.user_id == user.id, Note.source_item_id.is_not(None))
+        ).all())
+
         # Event-only extras (emoji/share link/RSVP counts) for whichever of the items above are
         # actually Events (item.is_event) - the Timeline card for one of these shows this instead
         # of the plain amount/shopping-cart layout a normal task card has, per "their card info is
@@ -1901,6 +1921,7 @@ def dashboard(
                         "dueDateFormatted": it.due_date.strftime("%b %d, %Y"),
                         "amount": it.amount if it.amount is not None else "",
                         "isShoppable": bool(it.is_shoppable),
+                        "isNoted": bool(it.id in noted_item_ids),
                         "isCompleted": bool(it.is_completed),
                         "completedAt": it.completed_at.isoformat() if it.completed_at else None,
                         "description": it.description or "",
@@ -1923,6 +1944,7 @@ def dashboard(
                 "realms": realms,
                 "buckets": buckets,
                 "items": items,
+                "noted_item_ids": noted_item_ids,
                 "people": people,
                 "universes": universes,
                 "universes_tree": universes_tree,
@@ -4941,7 +4963,7 @@ def notes_page(request: Request, note_id: Optional[int] = None, universe_id: Opt
         notes_query = select(Note).where(Note.user_id == user.id)
         if universe_id:
             notes_query = notes_query.where(Note.universe_id == universe_id)
-        notes = session.exec(notes_query.order_by(Note.updated_at.desc())).all()
+        notes = session.exec(notes_query).all()
 
         # Only Universes this user owns outright - pinning is a personal organizing tool, not
         # something to extend to a Universe someone else merely shared with them.
@@ -4949,6 +4971,47 @@ def notes_page(request: Request, note_id: Optional[int] = None, universe_id: Opt
             select(Universe).where(Universe.user_id == user.id).order_by(Universe.sort_order)
         ).all()
         universe_by_id = {u.id: u for u in universes}
+
+        # For every starred note, the live state of the task it came from (title can drift out of
+        # sync with the note's own if the task's since been renamed, so this is read fresh rather
+        # than trusted from the note) - lets the list show a "linked task" chip and the editor
+        # offer a real "Mark Complete" action without leaving the Notes page. A note whose source
+        # task was deleted independently simply gets no entry here (see notes.html's own
+        # note_task_links.get(...) null-guard) - the note itself is untouched, it just loses its
+        # task chip/complete button, same as any soft cross-reference elsewhere in this app.
+        note_task_links = {}
+        source_item_ids = [n.source_item_id for n in notes if n.source_item_id]
+        if source_item_ids:
+            linked_items = session.exec(select(Item).where(Item.id.in_(source_item_ids))).all()
+            item_by_id = {it.id: it for it in linked_items}
+            bucket_ids = [it.bucket_id for it in linked_items]
+            bucket_by_id = {b.id: b for b in session.exec(select(Bucket).where(Bucket.id.in_(bucket_ids))).all()} if bucket_ids else {}
+            for n in notes:
+                it = item_by_id.get(n.source_item_id) if n.source_item_id else None
+                b = bucket_by_id.get(it.bucket_id) if it else None
+                if it and b:
+                    note_task_links[n.id] = {
+                        "item_id": it.id,
+                        "realm_id": b.realm_id,
+                        "bucket_id": b.id,
+                        "title": it.title,
+                        "is_completed": bool(it.is_completed),
+                        "due_date": it.due_date,
+                        "due_date_formatted": it.due_date.strftime("%b %d, %Y"),
+                    }
+
+        # Task-starred notes (source_item_id set, and its task still exists - see
+        # note_task_links above) sort ABOVE every other note, by the task's own due date soonest-
+        # first - reported directly ("sort by most upcoming"). A starred note whose task got
+        # deleted independently, and every hand-typed note, falls into the second group, ordered
+        # most-recently-edited first as before.
+        notes = sorted(
+            notes,
+            key=lambda n: (
+                (0, note_task_links[n.id]["due_date"]) if n.id in note_task_links
+                else (1, -n.updated_at.timestamp())
+            )
+        )
 
         selected_note = None
         if note_id:
@@ -4966,11 +5029,62 @@ def notes_page(request: Request, note_id: Optional[int] = None, universe_id: Opt
                 "notes": notes,
                 "universes": universes,
                 "universe_by_id": universe_by_id,
+                "note_task_links": note_task_links,
                 "selected_note": selected_note,
                 "selected_universe_id": universe_id,
                 "events_universe_href": get_events_universe_href(session, user.id),
             }
         )
+
+@app.post("/notes/toggle-from-task/")
+def toggle_note_from_task(request: Request, payload: dict = Body(...)):
+    """The task-card "star" toggle (Card View's top-right button, Space View HUD's top-bar
+    button) - JSON in/out, no redirect, since it's meant to flip instantly without navigating
+    away from whatever task list or Space View screen the user is already looking at. Mirrors a
+    Photos-style "add/remove from Favorites": tapping it again on an already-starred task deletes
+    the note outright (any manual edits made to it in the meantime go with it) rather than just
+    unlinking it - same "removing a favorite doesn't touch the original" analogy the user gave,
+    just applied to the star's own generated note rather than the task itself, which is never
+    touched either way."""
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return JSONResponse({"ok": False, "error": "Not logged in."}, status_code=401)
+
+        item_id = payload.get("item_id")
+        if not user_can_access_item(session, user, item_id):
+            return JSONResponse({"ok": False, "error": "Task not found."}, status_code=404)
+
+        existing = session.exec(
+            select(Note).where(Note.source_item_id == item_id, Note.user_id == user.id)
+        ).first()
+        if existing:
+            session.delete(existing)
+            session.commit()
+            return JSONResponse({"ok": True, "noted": False})
+
+        item = session.get(Item, item_id)
+        bucket = session.get(Bucket, item.bucket_id) if item else None
+        realm = session.get(Realm, bucket.realm_id) if bucket else None
+
+        content_lines = [f"📅 {item.due_date.strftime('%b %d, %Y')}"]
+        if realm and bucket:
+            content_lines.append(f"📍 {realm.name} / {bucket.name}")
+        if item.description:
+            content_lines.append("")
+            content_lines.append(item.description)
+
+        note = Note(
+            user_id=user.id,
+            title=item.title,
+            content="\n".join(content_lines),
+            universe_id=realm.universe_id if realm else None,
+            source_item_id=item_id,
+        )
+        session.add(note)
+        session.commit()
+        session.refresh(note)
+        return JSONResponse({"ok": True, "noted": True, "note_id": note.id})
 
 @app.post("/notes/")
 def create_note(request: Request, universe_id: Optional[int] = Form(None)):

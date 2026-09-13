@@ -837,6 +837,7 @@
                              data-due-date-formatted="{{ item.due_date.strftime('%b %d, %Y') }}"
                              data-amount="{{ item.amount or '' }}"
                              data-is-shoppable="{{ 'true' if item.is_shoppable else 'false' }}"
+                             data-is-noted="{{ 'true' if item.id in noted_item_ids else 'false' }}"
                              data-description="{{ item.description or '' }}"
                              data-title="{{ item.title }}"
                              data-item-id="{{ item.id }}"
@@ -846,8 +847,17 @@
                              data-bucket-id="{{ item.bucket.id if item.bucket else '' }}">
                             <div class="absolute -left-[23px] md:-left-[31px] top-5 w-3.5 md:w-4 h-3.5 md:h-4 rounded-full border-2 border-slate-900 {% if item.is_completed %}bg-slate-600{% elif days_out < 0 %}bg-rose-500 animate-pulse{% else %}bg-indigo-500 group-hover:scale-125{% endif %} transition-all"></div>
                             
-                            <div class="border rounded-2xl p-4 md:p-5 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all {% if item.is_completed %}bg-slate-800/40 border-slate-700/40 opacity-70{% elif days_out < 0 %}bg-rose-950/20 border-rose-500/40{% else %}bg-slate-800/90 border-slate-700/80{% endif %}">
-                                
+                            <div class="border rounded-2xl p-4 md:p-5 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all relative {% if item.is_completed %}bg-slate-800/40 border-slate-700/40 opacity-70{% elif days_out < 0 %}bg-rose-950/20 border-rose-500/40{% else %}bg-slate-800/90 border-slate-700/80{% endif %}">
+                                <!-- Star-to-Notes toggle (Photos-style "add/remove from Favorites")
+                                     - reported directly, wanting this top-right on the card. Initial
+                                     ⭐/☆ state comes from noted_item_ids (see dashboard()); clicking
+                                     flips it optimistically then confirms via toggleTaskNote(). -->
+                                <button type="button" onclick="toggleTaskNote(this)"
+                                        data-item-id="{{ item.id }}"
+                                        data-noted="{{ 'true' if item.id in noted_item_ids else 'false' }}"
+                                        title="{{ 'Remove from Notes' if item.id in noted_item_ids else 'Add to Notes' }}"
+                                        class="task-note-star absolute top-3 right-3 text-base leading-none transition {{ 'text-amber-400 hover:text-amber-300' if item.id in noted_item_ids else 'text-slate-600 hover:text-amber-400' }}">{{ '⭐' if item.id in noted_item_ids else '☆' }}</button>
+
                                 <div class="flex items-start md:items-center gap-3 md:gap-4 flex-1">
                                     <form action="/items/toggle-complete/" method="POST" class="inline shrink-0 mt-0.5 md:mt-0" onsubmit="triggerTaskConfetti(event, this)">
                                         <input type="hidden" name="item_id" value="{{ item.id }}">
@@ -858,7 +868,7 @@
                                         </button>
                                     </form>
 
-                                    <div class="flex-1 min-w-0">
+                                    <div class="flex-1 min-w-0 pr-6">
                                         <div class="flex flex-wrap items-center gap-1.5 md:gap-2 mb-1.5">
                                             <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[11px] md:text-xs font-semibold px-2 md:px-2.5 py-0.5 rounded-full flex items-center gap-1 truncate max-w-full">
                                                 {{ item.bucket.realm.icon or '🔮' }} {{ item.bucket.realm.name if item.bucket and item.bucket.realm else 'General' }} / {{ item.bucket.name if item.bucket else '' }}
@@ -1320,11 +1330,18 @@
                  mode) - same mb-16 clearance from the fixed chat launcher as the swipe dock above,
                  for the same reason. -->
             <div id="space-hud-card" class="hidden pointer-events-auto w-11/12 max-w-sm bg-slate-900/95 border border-indigo-500/40 p-3.5 rounded-2xl backdrop-blur-md shadow-2xl space-y-2.5 mb-16 md:mb-0">
-                <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
-                    <span id="hud-category-badge" class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full truncate">
+                <div class="grid grid-cols-3 items-center gap-2 border-b border-slate-800 pb-2">
+                    <span id="hud-category-badge" class="justify-self-start bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full truncate">
                         Realm / Bucket
                     </span>
-                    <div class="flex items-center gap-1">
+                    <!-- Star-to-Notes toggle, centered - same feature/behavior as Card View's
+                         top-right button (see toggleTaskNote), just placed here per how this HUD's
+                         own top bar reads. Hidden for a Person (toggleHudTaskNote/showHudCard both
+                         no-op on those - Notes stars a Task, not a Contact). -->
+                    <button id="hud-note-btn" onclick="toggleHudTaskNote()" data-item-id="" data-noted="false"
+                            title="Add to Notes"
+                            class="justify-self-center text-slate-600 hover:text-amber-400 text-base leading-none transition">☆</button>
+                    <div class="justify-self-end flex items-center gap-1">
                         <span id="hud-status-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full">
                             Active
                         </span>
@@ -5514,6 +5531,84 @@
             }
             document.getElementById('delete-item-modal').classList.remove('hidden');
         }
+
+        // Star-to-Notes toggle (Photos-style "add/remove from Favorites") - reported directly.
+        // Tapping it stars the task into a Note (pinned to the task's own Universe, see
+        // toggle_note_from_task) with the task's title/due-date/location baked into the note's
+        // content; tapping an already-starred task deletes that note. Shared core used by both
+        // the Card View button (below) and the Space View HUD's own copy (setupHudDraggable
+        // area), so the two stay in sync with a single source of truth for the actual POST.
+        async function postToggleNoteForItem(itemId) {
+            const res = await fetch('/notes/toggle-from-task/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ item_id: itemId }),
+            });
+            return res.json();
+        }
+
+        function setTaskNoteButtonVisual(btn, noted) {
+            if (!btn) return;
+            btn.setAttribute('data-noted', noted ? 'true' : 'false');
+            btn.textContent = noted ? '⭐' : '☆';
+            btn.title = noted ? 'Remove from Notes' : 'Add to Notes';
+            btn.classList.toggle('text-amber-400', noted);
+            btn.classList.toggle('hover:text-amber-300', noted);
+            btn.classList.toggle('text-slate-600', !noted);
+            btn.classList.toggle('hover:text-amber-400', !noted);
+        }
+
+        // Keeps every on-screen representation of the same task's star in sync - Card View's own
+        // card (still sitting in the DOM even while Space View is open on top of it) and the
+        // Space View HUD, whichever of those happen to be showing this exact task right now.
+        // Also patches activeSelectedTask itself, since that in-memory object (not a DOM read) is
+        // what showHudCard() re-renders from if the HUD reopens on this same task later.
+        function syncTaskNoteStateEverywhere(itemId, noted) {
+            const cardBtn = document.querySelector(`.task-note-star[data-item-id="${itemId}"]`);
+            setTaskNoteButtonVisual(cardBtn, noted);
+            if (typeof activeSelectedTask !== 'undefined' && activeSelectedTask && String(activeSelectedTask.id) === String(itemId)) {
+                activeSelectedTask.isNoted = noted;
+            }
+            const hudBtn = document.getElementById('hud-note-btn');
+            if (hudBtn && hudBtn.getAttribute('data-item-id') === String(itemId)) {
+                setTaskNoteButtonVisual(hudBtn, noted);
+            }
+        }
+
+        // Card View's top-right star button - optimistic flip (feels instant), reverted if the
+        // server call fails for any reason.
+        async function toggleTaskNote(btn) {
+            const itemId = btn.getAttribute('data-item-id');
+            const wasNoted = btn.getAttribute('data-noted') === 'true';
+            setTaskNoteButtonVisual(btn, !wasNoted);
+            try {
+                const data = await postToggleNoteForItem(itemId);
+                if (!data.ok) throw new Error(data.error || 'toggle failed');
+                syncTaskNoteStateEverywhere(itemId, data.noted);
+            } catch (e) {
+                setTaskNoteButtonVisual(btn, wasNoted);
+            }
+        }
+
+        // The Space View HUD's own copy of the same star, centered in its top bar - reported
+        // directly. Reads/writes activeSelectedTask directly rather than taking a button argument,
+        // since showHudCard() already keys everything else in the HUD off that same object.
+        async function toggleHudTaskNote() {
+            if (!activeSelectedTask || activeSelectedTask.isPerson) return;
+            const btn = document.getElementById('hud-note-btn');
+            const itemId = activeSelectedTask.id;
+            const wasNoted = !!activeSelectedTask.isNoted;
+            activeSelectedTask.isNoted = !wasNoted;
+            setTaskNoteButtonVisual(btn, !wasNoted);
+            try {
+                const data = await postToggleNoteForItem(itemId);
+                if (!data.ok) throw new Error(data.error || 'toggle failed');
+                syncTaskNoteStateEverywhere(itemId, data.noted);
+            } catch (e) {
+                activeSelectedTask.isNoted = wasNoted;
+                setTaskNoteButtonVisual(btn, wasNoted);
+            }
+        }
     </script>
 
     <!-- SPACE VIEW CANVAS ENGINE SCRIPT -->
@@ -6942,6 +7037,7 @@
                                     dueDateFormatted: el.getAttribute('data-due-date-formatted') || '',
                                     amount: el.getAttribute('data-amount') || '',
                                     isShoppable: el.getAttribute('data-is-shoppable') === 'true',
+                                    isNoted: el.getAttribute('data-is-noted') === 'true',
                                     description: el.getAttribute('data-description') || '',
                                     recurrenceType: el.getAttribute('data-recurrence-type') || 'none',
                                     bucketId: bucket.id,
@@ -7927,6 +8023,7 @@
                     dueDateFormatted: t.dueDateFormatted || '',
                     amount: t.amount || '',
                     isShoppable: !!t.isShoppable,
+                    isNoted: !!t.isNoted,
                     description: t.description || '',
                     recurrenceType: t.recurrenceType || 'none',
                     bucketId: t.bucketId,
@@ -8056,6 +8153,7 @@
                     dueDateFormatted: t.dueDateFormatted || '',
                     amount: t.amount || '',
                     isShoppable: !!t.isShoppable,
+                    isNoted: !!t.isNoted,
                     description: t.description || '',
                     recurrenceType: t.recurrenceType || 'none',
                     bucketId: t.bucketId,
@@ -11153,6 +11251,7 @@
             const idInput = document.getElementById('hud-task-id-input');
             const completeForm = document.getElementById('hud-complete-form');
             const shopBtn = document.getElementById('hud-shop-btn');
+            const noteBtn = document.getElementById('hud-note-btn');
 
             badgeCategory.innerText = `${task.realmName} / ${task.bucketName}`;
             idInput.value = task.id;
@@ -11166,6 +11265,7 @@
                 date.innerHTML = contactLine || (task.personBirthdayFormatted ? `🎂 ${escapeHtml(task.personBirthdayFormatted)}` : '');
                 if (completeForm) completeForm.classList.add('hidden');
                 if (shopBtn) shopBtn.classList.add('hidden');
+                if (noteBtn) noteBtn.classList.add('hidden');
                 badgeStatus.innerText = '👥 Person';
                 badgeStatus.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30';
                 card.classList.remove('hidden');
@@ -11176,6 +11276,11 @@
             if (completeForm) completeForm.classList.remove('hidden');
             date.innerText = `📅 ${task.dueDateFormatted}`;
             if (shopBtn) shopBtn.classList.toggle('hidden', !task.isShoppable);
+            if (noteBtn) {
+                noteBtn.classList.remove('hidden');
+                noteBtn.setAttribute('data-item-id', task.id);
+                setTaskNoteButtonVisual(noteBtn, !!task.isNoted);
+            }
 
             if (task.isOverdue) {
                 badgeStatus.innerText = '⚠️ Overdue';

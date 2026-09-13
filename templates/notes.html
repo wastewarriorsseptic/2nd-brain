@@ -90,8 +90,18 @@
 
                 <div class="flex-1 overflow-y-auto space-y-1 -mx-1 px-1">
                     {% for n in notes %}
+                    {% set task_link = note_task_links.get(n.id) %}
                     <a href="/notes?note_id={{ n.id }}{% if selected_universe_id %}&universe_id={{ selected_universe_id }}{% endif %}"
                        class="block px-2.5 py-2 rounded-xl transition-colors {{ 'bg-indigo-600/90' if selected_note and n.id == selected_note.id else 'hover:bg-slate-700/60' }}">
+                        <!-- A note starred from a task (see note_task_links/toggle_note_from_task)
+                             sorts to the top of this list and gets its own badge here - reported
+                             directly, wanting these to read at a glance as "this came from a task",
+                             distinct from a plain pinned-to-a-Universe note below it. -->
+                        {% if task_link %}
+                        <span class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full mb-1 mr-1 {% if task_link.is_completed %}bg-emerald-500/15 text-emerald-300 border border-emerald-500/30{% else %}bg-amber-500/15 text-amber-300 border border-amber-500/30{% endif %}">
+                            {% if task_link.is_completed %}✅ Done{% else %}⭐ {{ task_link.due_date_formatted }}{% endif %}
+                        </span>
+                        {% endif %}
                         <!-- A note's Universe pin used to be just a small unlabeled emoji next to the
                              title - reported directly as too easy to forget the meaning of at a
                              glance. Now a proper labeled badge (icon + full name), same visual
@@ -117,6 +127,26 @@
             <!-- Editor -->
             <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-5 md:p-6 flex flex-col md:overflow-hidden">
                 {% if selected_note %}
+                {% set selected_task_link = note_task_links.get(selected_note.id) %}
+                {% if selected_task_link %}
+                <!-- Only shown for a note starred from a task (see toggle_note_from_task) - lets
+                     the task itself be marked done, and jumped back to, without ever leaving the
+                     Notes page - reported directly. Plain form POST (not fetch/AJAX) since
+                     /items/toggle-complete/ already redirects back to whatever page it was posted
+                     from via the Referer header, which lands right back here for free. -->
+                <div class="flex items-center justify-between gap-2 mb-3 px-3 py-2 rounded-xl bg-slate-900/60 border border-slate-700/60">
+                    <form action="/items/toggle-complete/" method="POST" class="flex items-center gap-2 min-w-0">
+                        <input type="hidden" name="item_id" value="{{ selected_task_link.item_id }}">
+                        <button type="submit" title="{{ 'Mark Incomplete' if selected_task_link.is_completed else 'Mark Complete' }}"
+                                class="w-5 h-5 shrink-0 rounded-md border flex items-center justify-center transition {% if selected_task_link.is_completed %}bg-emerald-500 border-emerald-500 text-slate-950 font-bold{% else %}border-slate-600 hover:border-emerald-400 text-transparent hover:text-emerald-400/50{% endif %}">
+                            ✓
+                        </button>
+                        <span class="text-xs font-semibold truncate {{ 'text-slate-500 line-through' if selected_task_link.is_completed else 'text-slate-300' }}">📅 {{ selected_task_link.due_date_formatted }}</span>
+                    </form>
+                    <a href="/?realm_id={{ selected_task_link.realm_id }}&bucket_id={{ selected_task_link.bucket_id }}&goto_item={{ selected_task_link.item_id }}"
+                       class="text-[11px] font-bold text-indigo-300 hover:text-white underline underline-offset-2 shrink-0">🎯 Go to task</a>
+                </div>
+                {% endif %}
                 <div class="flex items-center justify-between gap-2 mb-3">
                     <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
                         <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wide shrink-0">📌 Pin to</label>
