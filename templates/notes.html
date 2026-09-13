@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>{{ (selected_universe.name if selected_universe else 'Notes') }} - TaskMonster</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
@@ -61,11 +61,30 @@
         .universe-card-wobbling {
             animation: universe-card-wobble 0.22s ease-in-out infinite;
         }
+        /* Without this, holding down on a circle triggers iOS's own native text-selection
+           magnifier/callout instead of the long-press timer below ever getting a chance to fire -
+           reported directly ("when i hold down on the emojis it thinks i want to select them"). The
+           emoji and label are plain text nodes, so a plain long-press reads exactly like
+           select-to-copy text unless explicitly told not to. */
+        #notes-universe-strip a, #notes-universe-strip a * {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
+    <!-- Zero-height probe whose padding-top resolves env(safe-area-inset-top) into a real pixel
+         value syncNotesTaskChatToViewport() can read via getBoundingClientRect() - env() can't be
+         read directly from JS, only from a rendered box. 0 on a non-notched device/browser.
+         Same pattern as index.html's own ai-chat-safe-area-probe. -->
+    <div id="notes-safe-area-probe" style="position: fixed; top: 0; left: 0; height: 0; padding-top: env(safe-area-inset-top); pointer-events: none; visibility: hidden;"></div>
     <div class="max-w-5xl mx-auto p-4 md:p-6">
-        <div class="flex items-center justify-between mb-4">
+        <!-- padding-top: env(safe-area-inset-top) - reported directly with a screenshot showing the
+             "Notes" title and Done button rendering right under the status bar/notch (needs
+             viewport-fit=cover in the <meta name="viewport"> tag above for env() to report a real
+             value here at all rather than silently resolving to 0 - see that tag's own edit). -->
+        <div class="flex items-center justify-between mb-4" style="padding-top: env(safe-area-inset-top, 0px);">
             <h1 class="text-sm font-extrabold text-white tracking-tight flex items-center gap-1.5">📝 Notes</h1>
             <!-- Shown only while reordering the Universe strip below (see
                  enterNotesUniverseReorderMode/exitNotesUniverseReorderMode) - the explicit way out
@@ -84,7 +103,7 @@
              uses, just scaled down) rather than a big grid or a scrolling list of individual notes
              - reported directly, wanting the picker out of the way so the checklist below gets
              the actual full-screen whitespace. -->
-        <div class="flex items-start gap-3 overflow-x-auto pb-1 mb-4 -mx-1 px-1">
+        <div id="notes-universe-strip" class="flex items-start gap-3 overflow-x-auto pb-1 mb-4 -mx-1 px-1">
             <a href="/notes" class="shrink-0 flex flex-col items-center gap-1 w-14">
                 <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if not selected_universe_id else 'border-slate-700 bg-slate-900 hover:border-indigo-500/60' }}">
                     ✨
@@ -307,7 +326,14 @@
                 return;
             }
             const vv = window.visualViewport;
-            const TOP_MARGIN = 16;
+            // Floored to the notch/Dynamic Island's own height (plus a small gap) so the "NEW TASK"
+            // header can't end up sliding under it once the keyboard pushes the card toward the top
+            // of the viewport - a flat 16px margin clears the status bar on a non-notched phone but
+            // not the safe area on a notched one. Same approach as index.html's own
+            // syncAiChatPanelToViewport.
+            const safeAreaProbe = document.getElementById('notes-safe-area-probe');
+            const safeAreaTop = safeAreaProbe ? safeAreaProbe.getBoundingClientRect().height : 0;
+            const TOP_MARGIN = Math.max(16, safeAreaTop + 8);
             const BOTTOM_GAP = 10;
             const top = Math.max(0, vv.offsetTop + TOP_MARGIN);
             const maxHeight = Math.max(vv.height - TOP_MARGIN - BOTTOM_GAP, 160);
