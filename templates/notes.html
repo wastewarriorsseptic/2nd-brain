@@ -313,17 +313,59 @@
         // real creation doesn't force an unnecessary reload.
         let notesTaskChatCreatedAny = false;
 
-        function renderNotesTaskChatBubble(role, text) {
+        // Same variant styling and "Go to this task" link as index.html's own renderAiChatBubble -
+        // reported directly, wanting this chat to match the main one's own behavior rather than
+        // read as a stripped-down copy. navTarget is the task_created object /ai/chat/ already
+        // returns (id/bucket_id/realm_id), same shape aiChatTaskUrl expects.
+        function renderNotesTaskChatBubble(role, text, variant, navTarget) {
             const messages = document.getElementById('notes-task-chat-messages');
             if (!messages) return null;
             const bubble = document.createElement('div');
-            bubble.className = role === 'user'
-                ? 'ml-auto max-w-[85%] bg-indigo-600 text-white rounded-2xl rounded-br-sm px-3 py-2 whitespace-pre-wrap break-words'
-                : 'mr-auto max-w-[85%] bg-white border border-slate-200 text-slate-800 rounded-2xl rounded-bl-sm px-3 py-2 whitespace-pre-wrap break-words';
+            let bubbleClass = 'max-w-[85%] rounded-2xl px-3 py-2 whitespace-pre-wrap break-words ';
+            if (variant === 'task_created') {
+                bubbleClass += 'mr-auto bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-bl-sm';
+            } else if (role === 'user') {
+                bubbleClass += 'ml-auto bg-indigo-600 text-white rounded-br-sm';
+            } else {
+                bubbleClass += 'mr-auto bg-white border border-slate-200 text-slate-800 rounded-bl-sm';
+            }
+            bubble.className = bubbleClass;
             bubble.textContent = text;
+            if (navTarget && navTarget.bucket_id && navTarget.realm_id && navTarget.id) {
+                const link = document.createElement('button');
+                link.type = 'button';
+                link.className = 'mt-2 block text-left text-emerald-700 hover:text-emerald-900 underline underline-offset-2 font-bold';
+                link.textContent = '🎯 Go to this task';
+                link.onclick = () => goToNotesTaskChatTask(navTarget);
+                bubble.appendChild(link);
+            }
             messages.appendChild(bubble);
             messages.scrollTop = messages.scrollHeight;
             return bubble;
+        }
+
+        // "Thinking" placeholder while awaiting a reply - a small floating/bobbing 😈 instead of a
+        // static "…", same as index.html's own renderAiChatThinkingBubble (same keyframe, same
+        // cycle length) rather than a plain ellipsis.
+        function renderNotesTaskChatThinkingBubble() {
+            const messages = document.getElementById('notes-task-chat-messages');
+            if (!messages) return null;
+            const bubble = document.createElement('div');
+            bubble.className = 'mr-auto max-w-[85%] rounded-2xl px-3 py-2 bg-white border border-slate-200 rounded-bl-sm flex items-center';
+            bubble.innerHTML = '<span class="text-lg inline-block" style="animation: ai-chat-launcher-float 1.3s ease-in-out infinite;">😈</span>';
+            messages.appendChild(bubble);
+            messages.scrollTop = messages.scrollHeight;
+            return bubble;
+        }
+
+        // Mirrors goToAiChatTask/aiChatTaskUrl in index.html exactly - navigates straight to the
+        // task's own bucket/realm view and highlights it there (goto_item), same suppression write
+        // the checklist's own "Go to task" links already use so landing there doesn't immediately
+        // snap back to the Multiverse Timeline.
+        function goToNotesTaskChatTask(nav) {
+            if (!nav || !nav.bucket_id || !nav.realm_id || !nav.id) return;
+            try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}
+            window.location.href = '/?realm_id=' + nav.realm_id + '&bucket_id=' + nav.bucket_id + '&goto_item=' + nav.id;
         }
 
         function openNotesTaskChat() {
@@ -462,7 +504,7 @@
             if (!text) return false;
             input.value = '';
             renderNotesTaskChatBubble('user', text);
-            const thinking = renderNotesTaskChatBubble('assistant', '…');
+            const thinking = renderNotesTaskChatThinkingBubble();
             notesTaskChatSending = true;
             try {
                 const res = await fetch('/ai/chat/', {
@@ -476,7 +518,7 @@
                     renderNotesTaskChatBubble('assistant', data.error || 'Something went wrong - try again.');
                     return false;
                 }
-                renderNotesTaskChatBubble('assistant', data.reply);
+                renderNotesTaskChatBubble('assistant', data.reply, data.task_created ? 'task_created' : undefined, data.task_created);
                 // The task itself is still created and starred right here, same as always (see
                 // ai_chat()/_ai_execute_create_task in app.py) - only the auto-redirect that used to
                 // follow it is gone. notesTaskChatCreatedAny just remembers that it happened so
