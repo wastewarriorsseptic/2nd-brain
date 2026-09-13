@@ -19,6 +19,7 @@
     <title>{{ (selected_universe.name if selected_universe else 'Notes') }} - TaskMonster</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <style>
         /* Same floating launcher cluster as the main app (index.html) - reported directly as
            wanting it back on this standalone page too. This is a static replica: no AI chat panel
@@ -614,7 +615,7 @@
                     renderNotesTaskChatBubble('assistant', data.error || 'Something went wrong - try again.', errorVariant);
                     return false;
                 }
-                renderNotesTaskChatBubble('assistant', data.reply, data.task_created ? 'task_created' : undefined, data.task_created);
+                const replyBubble = renderNotesTaskChatBubble('assistant', data.reply, data.task_created ? 'task_created' : undefined, data.task_created);
                 // The task itself is still created and starred right here, same as always (see
                 // ai_chat()/_ai_execute_create_task in app.py) - only the auto-redirect that used to
                 // follow it is gone. notesTaskChatCreatedAny just remembers that it happened so
@@ -622,6 +623,21 @@
                 // chatting, instead of yanking them out of the conversation immediately.
                 if (data.task_created) {
                     notesTaskChatCreatedAny = true;
+                    // Same confetti burst as everywhere else in the app a task's own completion
+                    // checkbox fires (fireCompleteConfetti in index.html) - reported directly,
+                    // wanting task creation via this chat to feel just as celebratory. Origin is the
+                    // confirmation bubble's own position, same "burst from the thing that just
+                    // happened" pattern the rest of the app already uses.
+                    if (typeof confetti === 'function' && replyBubble) {
+                        const rect = replyBubble.getBoundingClientRect();
+                        confetti({
+                            particleCount: 65,
+                            spread: 80,
+                            origin: { x: (rect.left + rect.width / 2) / window.innerWidth, y: (rect.top + rect.height / 2) / window.innerHeight },
+                            colors: ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#3b82f6'],
+                            disableForReducedMotion: true
+                        });
+                    }
                 }
                 input.focus();
             } catch (e) {
