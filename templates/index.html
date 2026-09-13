@@ -189,22 +189,24 @@
             animation-play-state: paused;
         }
         /* Devil launcher, "+" quick-task badge, and 🌀 Multiverse badge all share the exact same
-           timing/easing/duration with no per-element delay, so the three tangent circles still bob
-           and pulse as one synced unit - independently staggering them (as the "+" and 🌀 briefly
-           were) read as distracting next to each other rather than lively. Toned down from an
-           earlier -6px/1.12 pass - that much motion combined with each circle scaling around its
-           own center (not a shared cluster center) swelled the overlap between them noticeably at
-           the peak of every cycle; this calmer amplitude keeps them looking like one pinned/bonded
-           cluster throughout, not just at rest. The "+" and 🌀 variants below ALSO nudge sideways,
-           away from the devil, at that same peak - like the devil's own growth is gently repelling
-           them outward - which doubles as extra insurance against the overlap-at-peak issue above.
-           Intentional design goal: rest (static Tailwind offsets, no transform) is where these
-           circles overlap the devil the MOST - the peak of every cycle should always pull them back
-           out to less overlap than that, never more. The push magnitude below (7px) is tuned to
-           clear the shared -3px vertical float's cancelling effect (devil and badge both float up
-           together, so only the sideways push actually changes their relative distance) - a smaller
-           push was barely perceptible. See the ⏳ Timeline badge's own keyframe for why ITS push
-           doesn't need to fight that same cancellation (it skips the shared float entirely). */
+           timing/easing/duration with no per-element delay, so the three circles still bob and
+           pulse as one synced unit - independently staggering them (as the "+" and 🌀 briefly were)
+           read as distracting next to each other rather than lively. Toned down from an earlier
+           -6px/1.12 pass - that much motion combined with each circle scaling around its own center
+           (not a shared cluster center) swelled the overlap between them noticeably at the peak of
+           every cycle; this calmer amplitude keeps them looking like one pinned/bonded cluster
+           throughout. The "+" and 🌀 variants below ALSO nudge sideways, away from the devil, at
+           that same peak - like the devil's own growth is gently repelling them outward.
+           Design goal (revised - reported directly, wanting the rest-of-the-time overlap gone
+           entirely): these three should get close enough to read as one cluster but never actually
+           overlap at any point in the cycle, rest included - so the static Tailwind offsets below
+           were widened (-right-9/-left-9 -> -right-12/-left-12) until rest itself has clearance,
+           with this same sideways repel then adding to that margin at the peak rather than being
+           the only thing preventing overlap. The push magnitude below (7px) is tuned to clear the
+           shared -3px vertical float's cancelling effect (devil and badge both float up together, so
+           only the sideways push actually changes their relative distance) - a smaller push was
+           barely perceptible. See the ⏳ Timeline badge's own keyframe for why ITS push doesn't need
+           to fight that same cancellation (it skips the shared float entirely). */
         @keyframes ai-chat-quick-task-float-breathe {
             0%, 100% { transform: translateY(0) scale(1); }
             50% { transform: translateY(-3px) scale(1.06); }
@@ -424,7 +426,7 @@
                  bare "Buy milk tomorrow" as a create request instead of asking what's meant. -->
             <button type="button" id="ai-chat-quick-task-btn" onclick="openAiChatQuickTask(event)"
                     title="{{ 'Add a new event' if is_event_universe else 'Add a new task' }}"
-                    class="absolute -bottom-6 -right-9 w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 border border-emerald-300/40 text-white text-2xl font-extrabold flex items-center justify-center shadow-lg transition">
+                    class="absolute -bottom-6 -right-12 w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 border border-emerald-300/40 text-white text-2xl font-extrabold flex items-center justify-center shadow-lg transition">
                 +
             </button>
             {% if user %}
@@ -433,7 +435,7 @@
                  see openMultiverseView()) from anywhere in the app instead of only via the
                  sidebar's Universe pill or Space View's own top-left pill. -->
             <button type="button" id="multiverse-quick-btn" onclick="openMultiverseView()" title="Universes Home"
-                    class="absolute -bottom-6 -left-9 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 border border-indigo-400/30 text-white text-xl flex items-center justify-center shadow-lg transition">
+                    class="absolute -bottom-6 -left-12 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 border border-indigo-400/30 text-white text-xl flex items-center justify-center shadow-lg transition">
                 🏡
             </button>
             <!-- Fourth tangent circle, centered below the devil between the "+" and 🌀 badges -
