@@ -11031,7 +11031,7 @@
                         const amountText = task.amount ? `<span class="text-emerald-400 font-bold text-xs">$${parseFloat(task.amount).toFixed(2)}</span>` : '';
                         const descText = task.description ? `<p class="text-slate-400 text-xs line-clamp-2 leading-relaxed mt-1">${task.description}</p>` : '';
                         const shopBtnHtml = task.isShoppable
-                            ? `<button onclick="event.stopPropagation(); openAmazonSearch(${JSON.stringify(task.title).replace(/"/g, '&quot;')}, ${JSON.stringify(task.amount).replace(/"/g, '&quot;')})" title="Shop on Amazon" class="text-slate-400 hover:text-amber-400 text-xs">🛒</button>`
+                            ? `<button onclick="event.stopPropagation(); openAmazonSearch(${JSON.stringify(task.title).replace(/"/g, '&quot;')}, ${JSON.stringify(task.amount).replace(/"/g, '&quot;')})" title="Shop on Amazon" class="text-slate-400 hover:text-amber-400 text-lg">🛒</button>`
                             : '';
 
                         // Star-to-Notes toggle - reported directly, wanting this reachable from the
@@ -11041,21 +11041,26 @@
                         // bucket/lane). Reuses toggleTaskNote/task-note-star as-is: same data-item-id/
                         // data-noted attributes Card View's own button reads, so
                         // syncTaskNoteStateEverywhere keeps this, Card View, and the standalone HUD
-                        // all in sync no matter which one was actually clicked.
-                        const noteBtnHtml = `<button onclick="event.stopPropagation(); toggleTaskNote(this)" data-item-id="${task.id}" data-noted="${task.isNoted ? 'true' : 'false'}" title="${task.isNoted ? 'Remove from Notes' : 'Add to Notes'}" class="task-note-star ${task.isNoted ? 'text-amber-400 hover:text-amber-300' : 'text-slate-400 hover:text-amber-400'} text-xs transition">${task.isNoted ? '⭐' : '☆'}</button>`;
+                        // all in sync no matter which one was actually clicked. Grouped into the
+                        // right-side icon cluster below (not its own justify-between slot) - reported
+                        // directly with a screenshot showing it stranded in a big gap of its own
+                        // between the badge and the other icons, rather than reading as one of them.
+                        const noteBtnHtml = `<button onclick="event.stopPropagation(); toggleTaskNote(this)" data-item-id="${task.id}" data-noted="${task.isNoted ? 'true' : 'false'}" title="${task.isNoted ? 'Remove from Notes' : 'Add to Notes'}" class="task-note-star ${task.isNoted ? 'text-amber-400 hover:text-amber-300' : 'text-slate-400 hover:text-amber-400'} text-lg transition">${task.isNoted ? '⭐' : '☆'}</button>`;
 
+                        // Sizes bumped across the board (badge/star/checkbox/shop/edit) - reported
+                        // directly, wanting these easier to actually tap, not just a layout fix.
                         card.innerHTML = `
                             <div class="flex items-center justify-between gap-2 border-b border-slate-700/50 pb-1.5">
-                                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border ${badgeClass}">${badgeText}</span>
-                                ${noteBtnHtml}
-                                <div class="flex items-center gap-2">
+                                <span class="text-xs font-bold px-2.5 py-1 rounded-full border ${badgeClass}">${badgeText}</span>
+                                <div class="flex items-center gap-3">
+                                    ${noteBtnHtml}
                                     ${amountText}
                                     <form action="/items/toggle-complete/" method="POST" class="inline" onclick="event.stopPropagation()" onsubmit="return handleSpaceCompleteToggle(event, this, '${task.id}')">
                                         <input type="hidden" name="item_id" value="${task.id}">
-                                        <button type="submit" title="Mark Complete" class="w-5 h-5 rounded border border-slate-600 hover:border-emerald-400 text-slate-400 hover:text-emerald-400 flex items-center justify-center text-xs transition">✓</button>
+                                        <button type="submit" title="Mark Complete" class="w-7 h-7 rounded border border-slate-600 hover:border-emerald-400 text-slate-400 hover:text-emerald-400 flex items-center justify-center text-sm transition">✓</button>
                                     </form>
                                     ${shopBtnHtml}
-                                    <button onclick="event.stopPropagation(); openEditItemFromTask(${JSON.stringify(task).replace(/"/g, '&quot;')})" title="Edit Task" class="text-slate-400 hover:text-indigo-400 text-xs">✏️</button>
+                                    <button onclick="event.stopPropagation(); openEditItemFromTask(${JSON.stringify(task).replace(/"/g, '&quot;')})" title="Edit Task" class="text-slate-400 hover:text-indigo-400 text-lg">✏️</button>
                                 </div>
                             </div>
                             <div>
