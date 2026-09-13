@@ -496,7 +496,13 @@
         function generateNotesSpaceStars() {
             const container = document.getElementById('notes-space-stars');
             if (!container) return;
-            const STAR_COUNT = 40;
+            // 40 (copied straight from index.html's Multiverse picker, a FULL-SCREEN overlay) read
+            // as a visible wash of extra color here instead of "a few subtle stars" - reported
+            // directly ("remove that masking color"). This page's own dark area is only ever the
+            // header strip up top (the white note card covers the rest), a fraction of a full
+            // screen, so far fewer stars with a tighter glow keep the same look without it reading
+            // as a different background color.
+            const STAR_COUNT = 14;
             let html = '';
             for (let i = 0; i < STAR_COUNT; i++) {
                 const palette = NOTES_SPACE_STAR_PALETTE[Math.floor(Math.random() * NOTES_SPACE_STAR_PALETTE.length)];
@@ -511,7 +517,7 @@
                 const top = (Math.random() * 100).toFixed(2);
                 const delay = (Math.random() * 6).toFixed(2);
                 const duration = (8 + Math.random() * 8).toFixed(2);
-                const glowRadius = (parseFloat(size) * 2.5).toFixed(1);
+                const glowRadius = (parseFloat(size) * 1.4).toFixed(1);
                 html += `<div class="notes-space-star" style="left:${left}%; top:${top}%; width:${size}px; height:${size}px; background: rgba(${palette.rgb}, ${maxO}); box-shadow: 0 0 ${glowRadius}px ${palette.glow}; animation-delay: ${delay}s; animation-duration: ${duration}s; --star-min-o: ${minO}; --star-max-o: ${maxO};"></div>`;
             }
             container.innerHTML = html;
