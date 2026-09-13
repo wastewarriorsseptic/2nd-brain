@@ -424,7 +424,7 @@
                  bare "Buy milk tomorrow" as a create request instead of asking what's meant. -->
             <button type="button" id="ai-chat-quick-task-btn" onclick="openAiChatQuickTask(event)"
                     title="{{ 'Add a new event' if is_event_universe else 'Add a new task' }}"
-                    class="absolute -bottom-6 -right-9 w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 border-2 border-slate-950 text-white text-2xl font-extrabold flex items-center justify-center shadow-lg transition">
+                    class="absolute -bottom-6 -right-9 w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 border border-emerald-300/40 text-white text-2xl font-extrabold flex items-center justify-center shadow-lg transition">
                 +
             </button>
             {% if user %}
@@ -433,7 +433,7 @@
                  see openMultiverseView()) from anywhere in the app instead of only via the
                  sidebar's Universe pill or Space View's own top-left pill. -->
             <button type="button" id="multiverse-quick-btn" onclick="openMultiverseView()" title="Universes Home"
-                    class="absolute -bottom-6 -left-9 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 border-2 border-slate-950 text-white text-xl flex items-center justify-center shadow-lg transition">
+                    class="absolute -bottom-6 -left-9 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 border border-indigo-400/30 text-white text-xl flex items-center justify-center shadow-lg transition">
                 🏡
             </button>
             <!-- Fourth tangent circle, centered below the devil between the "+" and 🌀 badges -
@@ -442,7 +442,7 @@
                  one reachable-from-anywhere shortcut straight into the stacked cross-Universe
                  timeline, same as the other two launcher badges. -->
             <button type="button" id="multiverse-timeline-quick-btn" onclick="openMultiverseTimeline()" title="Multiverse Timeline"
-                    class="absolute -bottom-11 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full bg-amber-500 hover:bg-amber-400 border-2 border-slate-950 text-white text-xl flex items-center justify-center shadow-lg transition">
+                    class="absolute -bottom-11 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full bg-amber-500 hover:bg-amber-400 border border-amber-300/40 text-white text-xl flex items-center justify-center shadow-lg transition">
                 ⏳
             </button>
             {% endif %}
