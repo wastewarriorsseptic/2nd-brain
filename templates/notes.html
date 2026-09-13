@@ -61,12 +61,19 @@
         .universe-card-wobbling {
             animation: universe-card-wobble 0.22s ease-in-out infinite;
         }
-        /* Without this, holding down on a circle triggers iOS's own native text-selection
-           magnifier/callout instead of the long-press timer below ever getting a chance to fire -
-           reported directly ("when i hold down on the emojis it thinks i want to select them"). The
-           emoji and label are plain text nodes, so a plain long-press reads exactly like
-           select-to-copy text unless explicitly told not to. */
-        #notes-universe-strip a, #notes-universe-strip a * {
+        /* Without this, holding down on a circle (or dragging across a few of them) triggers iOS's
+           own native text selection instead of the long-press timer below ever getting a chance to
+           fire - reported directly, twice: first as "when i hold down on the emojis it thinks i
+           want to select them", then confirmed still happening in a screen recording showing an
+           actual selection highlight band under "All"/"Life" after a drag across the strip. Scoping
+           this to just the <a> tags and their children (the first attempt) wasn't broad enough - a
+           selection gesture can still originate from the STRIP CONTAINER itself (the flex gaps
+           between cards, the container's own padding) and drag across into text nodes that
+           individually have user-select:none, since that property only blocks a selection from
+           STARTING inside an element, not one that started on an ancestor and swept through it.
+           Applying it to the whole strip - container included, not just the cards inside it - closes
+           that gap entirely. */
+        #notes-universe-strip, #notes-universe-strip * {
             -webkit-touch-callout: none;
             -webkit-user-select: none;
             user-select: none;
