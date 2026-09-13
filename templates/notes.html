@@ -3,14 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ (selected_note.title or 'Notes') if selected_note else 'Notes' }} - TaskMonster</title>
+    <title>{{ (selected_universe.name if selected_universe else 'Notes') }} - TaskMonster</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Auto-expanding content textarea, no manual resize handle - matches Apple Notes' own
-           "the note just grows" feel rather than a fixed scrollable box. */
-        #note-content-input { resize: none; overflow: hidden; }
-        #note-title-input::placeholder, #note-content-input::placeholder { color: #475569; }
-
         /* Same floating launcher cluster as the main app (index.html) - reported directly as
            wanting it back on this standalone page too. This is a static replica: no AI chat panel
            to toggle here, so the devil/+/🏡/⏳ buttons are plain links back into the main app
@@ -61,186 +56,102 @@
             <h1 class="text-sm font-extrabold text-white tracking-tight flex items-center gap-1.5">📝 Notes</h1>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-4 md:h-[calc(100vh-90px)]">
-            <!-- Note list - collapses above the editor on mobile (order-1), sits as a fixed-width
-                 sidebar on desktop (md:order-none, its own scroll region so a long list never
-                 pushes the editor off-screen). -->
-            <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-3 flex flex-col md:overflow-hidden">
-                <form action="/notes/" method="POST" class="mb-2.5">
-                    {% if selected_universe_id %}<input type="hidden" name="universe_id" value="{{ selected_universe_id }}">{% endif %}
-                    <button type="submit" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/20 transition-all">
-                        + New Note
-                    </button>
-                </form>
-
-                {% if universes %}
-                <div class="flex items-center gap-1.5 overflow-x-auto pb-2 mb-1.5 border-b border-slate-700/60">
-                    <a href="/notes" title="All Notes"
-                       class="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full transition-colors {{ 'bg-indigo-600 text-white' if not selected_universe_id else 'bg-slate-900/80 text-slate-400 hover:text-white' }}">
-                        All
-                    </a>
-                    {% for u in universes %}
-                    <a href="/notes?universe_id={{ u.id }}" title="{{ u.name }}"
-                       class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm transition-colors border {{ 'bg-indigo-600 border-indigo-400' if selected_universe_id == u.id else 'bg-slate-900/80 border-slate-700 hover:border-indigo-500/60' }}">
-                        {{ u.icon or '😈' }}
-                    </a>
-                    {% endfor %}
-                </div>
-                {% endif %}
-
-                <div class="flex-1 overflow-y-auto space-y-1 -mx-1 px-1">
-                    {% for n in notes %}
-                    {% set task_link = note_task_links.get(n.id) %}
-                    <a href="/notes?note_id={{ n.id }}{% if selected_universe_id %}&universe_id={{ selected_universe_id }}{% endif %}"
-                       class="block px-2.5 py-2 rounded-xl transition-colors {{ 'bg-indigo-600/90' if selected_note and n.id == selected_note.id else 'hover:bg-slate-700/60' }}">
-                        <!-- A note starred from a task (see note_task_links/toggle_note_from_task)
-                             sorts to the top of this list and gets its own badge here - reported
-                             directly, wanting these to read at a glance as "this came from a task",
-                             distinct from a plain pinned-to-a-Universe note below it. -->
-                        {% if task_link %}
-                        <span class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full mb-1 mr-1 {% if task_link.is_completed %}bg-emerald-500/15 text-emerald-300 border border-emerald-500/30{% else %}bg-amber-500/15 text-amber-300 border border-amber-500/30{% endif %}">
-                            {% if task_link.is_completed %}✅ Done{% else %}⭐ {{ task_link.due_date_formatted }}{% endif %}
-                        </span>
-                        {% endif %}
-                        <!-- A note's Universe pin used to be just a small unlabeled emoji next to the
-                             title - reported directly as too easy to forget the meaning of at a
-                             glance. Now a proper labeled badge (icon + full name), same visual
-                             pattern the main app uses for its own Realm/Bucket badges, so which
-                             Universe a note belongs to (or that it isn't pinned to one at all) is
-                             obvious without hovering for a tooltip. -->
-                        {% if n.universe_id and universe_by_id.get(n.universe_id) %}
-                        <span class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 mb-1">
-                            {{ universe_by_id.get(n.universe_id).icon or '😈' }} {{ universe_by_id.get(n.universe_id).name }}
-                        </span>
-                        {% endif %}
-                        <p class="text-xs font-bold truncate {{ 'text-white' if selected_note and n.id == selected_note.id else 'text-slate-200' }}">{{ n.title or 'New Note' }}</p>
-                        <p class="text-[11px] mt-0.5 truncate {{ 'text-indigo-200' if selected_note and n.id == selected_note.id else 'text-slate-500' }}">
-                            {{ n.updated_at.strftime('%b %d, %Y') }}{% if n.content.strip() %} · {{ n.content.strip()[:60] }}{% endif %}
-                        </p>
-                    </a>
-                    {% else %}
-                    <p class="text-slate-500 text-xs text-center py-6">No notes yet.</p>
-                    {% endfor %}
+        <!-- Reworked from a freeform, Apple-Notes-style list into a pure "starred tasks" checklist
+             browsed by Universe - reported directly: no more typing an arbitrary note, no more
+             per-note selection. This sidebar is now a Universe PICKER, same round-icon-plus-name
+             look the Multiverse picker grid (index.html's "Home" screen) already uses, rather than
+             a scrolling list of individual notes with preview text. -->
+        <div class="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4 md:h-[calc(100vh-90px)]">
+            <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-4 flex flex-col md:overflow-hidden">
+                <div class="flex-1 overflow-y-auto -mx-1 px-1">
+                    <div class="grid grid-cols-3 md:grid-cols-2 gap-3">
+                        <a href="/notes" class="flex flex-col items-center gap-1.5 group">
+                            <div class="w-16 h-16 rounded-full flex items-center justify-center text-2xl border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if not selected_universe_id else 'border-slate-700 bg-slate-900 group-hover:border-indigo-500/60' }}">
+                                ✨
+                            </div>
+                            <span class="text-[11px] font-bold text-center truncate w-full {{ 'text-white' if not selected_universe_id else 'text-slate-400' }}">All</span>
+                        </a>
+                        {% for u in universes %}
+                        <a href="/notes?universe_id={{ u.id }}" class="flex flex-col items-center gap-1.5 group">
+                            <div class="w-16 h-16 rounded-full flex items-center justify-center text-2xl border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if selected_universe_id == u.id else 'border-slate-700 bg-slate-900 group-hover:border-indigo-500/60' }}">
+                                {{ u.icon or '😈' }}
+                            </div>
+                            <span class="text-[11px] font-bold text-center truncate w-full {{ 'text-white' if selected_universe_id == u.id else 'text-slate-400' }}">{{ u.name }}</span>
+                        </a>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
 
-            <!-- Editor - deliberately light/white once a note is actually open, unlike every dark
-                 card elsewhere in this app - reported directly, wanting an open note to read as an
-                 actual paper note rather than "some card below" blending into the same dark chrome
-                 as everything else. Only this state is light; the empty/no-selection state below
-                 keeps the app's normal dark styling since there's no "paper" to show yet. -->
-            <div class="{{ 'bg-white' if selected_note else 'bg-slate-800 border border-slate-700/80' }} rounded-3xl p-5 md:p-6 flex flex-col md:overflow-hidden">
-                {% if selected_note %}
-                {% set selected_task_link = note_task_links.get(selected_note.id) %}
-                {% if selected_task_link %}
-                <!-- Only shown for a note starred from a task (see toggle_note_from_task) - lets
-                     the task itself be marked done, and jumped back to, without ever leaving the
-                     Notes page - reported directly. Plain form POST (not fetch/AJAX) since
-                     /items/toggle-complete/ already redirects back to whatever page it was posted
-                     from via the Referer header, which lands right back here for free. -->
-                <div class="flex items-start justify-between gap-2 mb-3 px-3 py-2.5 rounded-xl bg-slate-100 border border-slate-200">
-                    <form action="/items/toggle-complete/" method="POST" class="flex items-start gap-2.5 min-w-0 flex-1">
-                        <input type="hidden" name="item_id" value="{{ selected_task_link.item_id }}">
-                        <button type="submit" title="{{ 'Mark Incomplete' if selected_task_link.is_completed else 'Mark Complete' }}"
-                                class="w-5 h-5 mt-0.5 shrink-0 rounded-md border flex items-center justify-center transition {% if selected_task_link.is_completed %}bg-emerald-500 border-emerald-500 text-white font-bold{% else %}border-slate-400 hover:border-emerald-500 text-transparent hover:text-emerald-500/50{% endif %}">
-                            ✓
-                        </button>
-                        <div class="min-w-0">
-                            <p class="text-sm font-semibold break-words leading-snug {{ 'text-slate-400 line-through' if selected_task_link.is_completed else 'text-slate-800' }}">{{ selected_task_link.title }}</p>
-                            <p class="text-xs text-slate-500 mt-0.5">📅 {{ selected_task_link.due_date_formatted }}</p>
-                        </div>
-                    </form>
-                    <a href="/?realm_id={{ selected_task_link.realm_id }}&bucket_id={{ selected_task_link.bucket_id }}&goto_item={{ selected_task_link.item_id }}"
-                       class="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline underline-offset-2 shrink-0">🎯 Go to task</a>
-                </div>
-                {% endif %}
-                <!-- No more manual "Pin to [Universe]" picker here - reported directly, the
-                     direction is reversed now: a note gets its Universe by PINNING A TASK to it
-                     (see the star toggle / toggle_note_from_task), not by hand-picking one for an
-                     arbitrary note. Universe_id still exists on Note and still drives the badge
-                     below/the sidebar filter chips - it's just never manually editable anymore. -->
-                <div class="flex items-center justify-end gap-2.5 mb-3">
-                    <span id="note-save-indicator" class="text-[10px] text-slate-400 opacity-0 transition-opacity">Saved</span>
-                    <form action="/notes/{{ selected_note.id }}/delete" method="POST" onsubmit="return confirm('Delete this note? This cannot be undone.');">
-                        <button type="submit" class="text-slate-400 hover:text-rose-500 text-xs font-bold transition-colors">🗑 Delete</button>
-                    </form>
-                </div>
+            <!-- Checklist - every currently-starred task in the selected scope, soonest-due first
+                 (see notes_page/toggle_note_from_task). Rows are light/white cards ("pile up" like
+                 real paper checklist items) rather than the app's usual dark cards - reported
+                 directly, wanting these to read as actual notes rather than blending into the same
+                 dark chrome as everything else. -->
+            <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-5 md:p-6 flex flex-col md:overflow-hidden">
+                <h2 class="text-lg font-extrabold text-white flex items-center gap-2 mb-4 shrink-0">
+                    {% if selected_universe %}{{ selected_universe.icon or '😈' }} {{ selected_universe.name }}{% else %}✨ All{% endif %}
+                </h2>
 
-                <input type="text" id="note-title-input" placeholder="Title" autocomplete="off"
-                       value="{{ selected_note.title }}"
-                       class="w-full bg-transparent border-none text-xl font-extrabold text-slate-900 placeholder-slate-400 focus:outline-none mb-2">
-                <textarea id="note-content-input" placeholder="Start typing…"
-                          class="w-full flex-1 bg-transparent border-none text-sm text-slate-700 placeholder-slate-400 focus:outline-none leading-relaxed md:overflow-y-auto">{{ selected_note.content }}</textarea>
-                {% else %}
-                <div class="flex-1 flex flex-col items-center justify-center text-center gap-3 py-16">
-                    <div class="text-4xl">📝</div>
-                    <p class="text-slate-400 text-sm">No note selected yet.</p>
-                    <form action="/notes/" method="POST">
-                        {% if selected_universe_id %}<input type="hidden" name="universe_id" value="{{ selected_universe_id }}">{% endif %}
-                        <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/20 transition-all">
-                            + New Note
-                        </button>
-                    </form>
-                </div>
+                {% if selected_universe_id %}
+                <!-- Only shown once a specific Universe is picked - "All" has no single target to
+                     put a new task in. Reported directly, wanting to create a task right from here
+                     rather than leaving Notes to do it - auto-stars immediately (see
+                     new_task_from_notes) so it shows up in the checklist below right away. -->
+                <form action="/notes/new-task/" method="POST" class="flex items-center gap-2 mb-4 shrink-0">
+                    <input type="hidden" name="universe_id" value="{{ selected_universe_id }}">
+                    <input type="text" name="title" placeholder="Add a task…" required autocomplete="off"
+                           class="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                    <input type="date" name="due_date"
+                           class="bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 shrink-0">
+                    <button type="submit" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/20 transition-all shrink-0">
+                        + Add
+                    </button>
+                </form>
                 {% endif %}
+
+                <div class="flex-1 overflow-y-auto space-y-2.5">
+                    {% for row in checklist %}
+                    <div class="flex items-start gap-3 p-3.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+                        <form action="/items/toggle-complete/" method="POST" class="shrink-0 mt-0.5">
+                            <input type="hidden" name="item_id" value="{{ row.item_id }}">
+                            <button type="submit" title="{{ 'Mark Incomplete' if row.is_completed else 'Mark Complete' }}"
+                                    class="w-5 h-5 rounded-md border flex items-center justify-center transition {% if row.is_completed %}bg-emerald-500 border-emerald-500 text-white font-bold{% else %}border-slate-400 hover:border-emerald-500 text-transparent hover:text-emerald-500/50{% endif %}">
+                                ✓
+                            </button>
+                        </form>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-semibold break-words leading-snug {{ 'text-slate-400 line-through' if row.is_completed else 'text-slate-800' }}">{{ row.title }}</p>
+                            {% if row.description %}
+                            <p class="text-xs text-slate-500 mt-0.5 break-words">{{ row.description }}</p>
+                            {% endif %}
+                            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
+                                <span class="text-[11px] text-slate-500">📅 {{ row.due_date_formatted }}</span>
+                                {% if not selected_universe_id %}
+                                <span class="text-[11px] text-slate-500">{{ row.universe_icon }} {{ row.universe_name }}</span>
+                                {% endif %}
+                                <span class="text-[11px] text-slate-500">{{ row.realm_icon }} {{ row.realm_name }} / {{ row.bucket_name }}</span>
+                            </div>
+                        </div>
+                        <div class="flex flex-col items-end gap-1.5 shrink-0">
+                            <a href="/?realm_id={{ row.realm_id }}&bucket_id={{ row.bucket_id }}&goto_item={{ row.item_id }}"
+                               class="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline underline-offset-2 whitespace-nowrap">🎯 Go to task</a>
+                            <form action="/notes/{{ row.note_id }}/delete" method="POST">
+                                <button type="submit" title="Remove from Notes" class="text-[11px] font-bold text-slate-400 hover:text-rose-500 transition-colors whitespace-nowrap">⭐ Un-star</button>
+                            </form>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="flex-1 flex flex-col items-center justify-center text-center gap-2 py-16">
+                        <div class="text-4xl">⭐</div>
+                        <p class="text-slate-400 text-sm">No starred tasks{% if selected_universe %} in {{ selected_universe.name }}{% endif %} yet.</p>
+                        <p class="text-slate-500 text-xs">Star a task from its card to see it here{% if selected_universe_id %}, or add one above{% endif %}.</p>
+                    </div>
+                    {% endfor %}
+                </div>
             </div>
         </div>
     </div>
-
-    {% if selected_note %}
-    <script>
-        const NOTE_ID = {{ selected_note.id }};
-        const titleInput = document.getElementById('note-title-input');
-        const contentInput = document.getElementById('note-content-input');
-        const saveIndicator = document.getElementById('note-save-indicator');
-
-        function autoGrow() {
-            contentInput.style.height = 'auto';
-            contentInput.style.height = contentInput.scrollHeight + 'px';
-        }
-        autoGrow();
-        contentInput.addEventListener('input', autoGrow);
-
-        let saveTimer = null;
-        let saveIndicatorTimer = null;
-
-        // Debounced autosave (Apple Notes-style - no explicit Save button, it just quietly saves
-        // itself a beat after typing stops) rather than saving on every single keystroke.
-        function scheduleSave(fields) {
-            clearTimeout(saveTimer);
-            saveTimer = setTimeout(() => saveNote(fields), 600);
-        }
-
-        async function saveNote(fields) {
-            try {
-                const res = await fetch(`/notes/${NOTE_ID}/update`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(fields),
-                });
-                if (!res.ok) return;
-                clearTimeout(saveIndicatorTimer);
-                saveIndicator.style.opacity = '1';
-                saveIndicatorTimer = setTimeout(() => { saveIndicator.style.opacity = '0'; }, 1500);
-            } catch (e) {
-                // Offline or a network hiccup - not fatal, the next successful edit will retry.
-            }
-        }
-
-        titleInput.addEventListener('input', () => scheduleSave({ title: titleInput.value }));
-        contentInput.addEventListener('input', () => scheduleSave({ content: contentInput.value }));
-
-        // Save-on-navigate-away, in case someone clicks a different note (or leaves the page)
-        // inside the 600ms debounce window - otherwise that last unsaved keystroke could be lost.
-        window.addEventListener('beforeunload', () => {
-            clearTimeout(saveTimer);
-            navigator.sendBeacon(
-                `/notes/${NOTE_ID}/update`,
-                new Blob([JSON.stringify({ title: titleInput.value, content: contentInput.value })], { type: 'application/json' })
-            );
-        });
-    </script>
-    {% endif %}
 
     <!-- Same floating launcher cluster as the main app - see the <style> block above for why
          these are plain links instead of the JS-driven buttons index.html itself uses. -->

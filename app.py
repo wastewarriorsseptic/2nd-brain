@@ -1180,6 +1180,32 @@ def get_or_create_default_contact_bucket(session: Session, user_id: int, target_
 
     return bucket
 
+def get_or_create_default_task_bucket_in_universe(session: Session, user_id: int, universe: "Universe") -> "Bucket":
+    """Backs the Notes checklist's own "+ Add Task" (new_task_from_notes) - unlike
+    get_or_create_default_event_bucket/_contact_bucket, this always has a concrete, already-chosen
+    target Universe (whichever one's checklist is currently open) rather than needing to find or
+    invent one itself, so it skips straight to provisioning a General Realm -> Tasks Bucket pair
+    inside it."""
+    realm = session.exec(
+        select(Realm).where(Realm.universe_id == universe.id, Realm.name == "General")
+    ).first()
+    if not realm:
+        realm = Realm(name="General", icon=universe.icon or "🔮", sort_order=0, user_id=user_id, universe_id=universe.id)
+        session.add(realm)
+        session.commit()
+        session.refresh(realm)
+
+    bucket = session.exec(
+        select(Bucket).where(Bucket.realm_id == realm.id, Bucket.name == "Tasks")
+    ).first()
+    if not bucket:
+        bucket = Bucket(name="Tasks", icon="✅", sort_order=0, realm_id=realm.id)
+        session.add(bucket)
+        session.commit()
+        session.refresh(bucket)
+
+    return bucket
+
 def get_events_universe_href(session: Session, user_id: int) -> str:
     """Where the standalone "🎉 Events" launcher button (paired next to 📝 Notes - see
     events_universe_href in dashboard()/notes_page()) actually goes. Event-kind Universes are
@@ -4958,84 +4984,88 @@ def send_draft_event(request: Request, share_token: str):
 # --- Notes (Apple-Notes-style, deliberately undated) ---
 
 @app.get("/notes", response_class=HTMLResponse)
-def notes_page(request: Request, note_id: Optional[int] = None, universe_id: Optional[int] = None):
+def notes_page(request: Request, universe_id: Optional[int] = None):
+    """Reported directly - Notes was reworked from a freeform, Apple-Notes-style list into a pure
+    "starred tasks" checklist, browsed by Universe: no more typing an arbitrary title/content, no
+    more per-note selection. The sidebar picks a scope (a specific Universe, home-screen-grid
+    style, or "All") and the main pane is that scope's checklist - every currently-starred task
+    (Note.source_item_id set - see toggle_note_from_task) in it, soonest-due first, each row
+    reading its OWN live state (title/due date/completed/Realm-Bucket) straight from its Item
+    rather than anything cached on the Note row itself, so a renamed or completed task is never
+    stale here. create_note/update_note (the old blank-note-and-autosave routes) are left in place
+    server-side but are no longer reachable from this page - nothing links to them anymore."""
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user:
             return RedirectResponse(url="/login", status_code=303)
 
-        notes_query = select(Note).where(Note.user_id == user.id)
-        if universe_id:
-            notes_query = notes_query.where(Note.universe_id == universe_id)
-        notes = session.exec(notes_query).all()
-
-        # Only Universes this user owns outright - pinning is a personal organizing tool, not
-        # something to extend to a Universe someone else merely shared with them.
+        # Only Universes this user owns outright - same "personal organizing tool" scope the old
+        # Pin-to picker had, not extended to a Universe someone else merely shared with them.
         universes = session.exec(
             select(Universe).where(Universe.user_id == user.id).order_by(Universe.sort_order)
         ).all()
         universe_by_id = {u.id: u for u in universes}
 
-        # For every starred note, the live state of the task it came from (title can drift out of
-        # sync with the note's own if the task's since been renamed, so this is read fresh rather
-        # than trusted from the note) - lets the list show a "linked task" chip and the editor
-        # offer a real "Mark Complete" action without leaving the Notes page. A note whose source
-        # task was deleted independently simply gets no entry here (see notes.html's own
-        # note_task_links.get(...) null-guard) - the note itself is untouched, it just loses its
-        # task chip/complete button, same as any soft cross-reference elsewhere in this app.
-        note_task_links = {}
-        source_item_ids = [n.source_item_id for n in notes if n.source_item_id]
+        starred_query = select(Note).where(Note.user_id == user.id, Note.source_item_id.is_not(None))
+        if universe_id:
+            starred_query = starred_query.where(Note.universe_id == universe_id)
+        starred_notes = session.exec(starred_query).all()
+
+        checklist = []
+        source_item_ids = [n.source_item_id for n in starred_notes]
         if source_item_ids:
             linked_items = session.exec(select(Item).where(Item.id.in_(source_item_ids))).all()
             item_by_id = {it.id: it for it in linked_items}
             bucket_ids = [it.bucket_id for it in linked_items]
             bucket_by_id = {b.id: b for b in session.exec(select(Bucket).where(Bucket.id.in_(bucket_ids))).all()} if bucket_ids else {}
-            for n in notes:
-                it = item_by_id.get(n.source_item_id) if n.source_item_id else None
+            realm_ids = [b.realm_id for b in bucket_by_id.values()]
+            realm_by_id = {r.id: r for r in session.exec(select(Realm).where(Realm.id.in_(realm_ids))).all()} if realm_ids else {}
+            for n in starred_notes:
+                it = item_by_id.get(n.source_item_id)
                 b = bucket_by_id.get(it.bucket_id) if it else None
-                if it and b:
-                    note_task_links[n.id] = {
-                        "item_id": it.id,
-                        "realm_id": b.realm_id,
-                        "bucket_id": b.id,
-                        "title": it.title,
-                        "is_completed": bool(it.is_completed),
-                        "due_date": it.due_date,
-                        "due_date_formatted": it.due_date.strftime("%b %d, %Y"),
-                    }
+                r = realm_by_id.get(b.realm_id) if b else None
+                # A starred task whose Item was deleted independently simply drops off the
+                # checklist entirely now (no orphan row to show without a task to read from) -
+                # the Note row itself is harmless leftover data, cleaned up the next time anyone
+                # stars/un-stars that same item_id again (toggle_note_from_task's own lookup would
+                # just never find it, so a fresh star creates a new row rather than colliding).
+                if not it or not b:
+                    continue
+                u = universe_by_id.get(r.universe_id) if r else None
+                checklist.append({
+                    "note_id": n.id,
+                    "item_id": it.id,
+                    "title": it.title,
+                    "description": it.description or "",
+                    "is_completed": bool(it.is_completed),
+                    "due_date": it.due_date,
+                    "due_date_formatted": it.due_date.strftime("%b %d, %Y"),
+                    "realm_id": b.realm_id,
+                    "bucket_id": b.id,
+                    "realm_name": r.name if r else "",
+                    "realm_icon": (r.icon if r else "") or "🔮",
+                    "bucket_name": b.name,
+                    # Only really needed on the "All" scope (a specific Universe's own checklist
+                    # already says which one you're looking at via the page header) but included
+                    # on every row regardless, so the template doesn't need to know which scope
+                    # it's rendering to decide whether to show it.
+                    "universe_icon": u.icon if u else "😈",
+                    "universe_name": u.name if u else "",
+                })
+        checklist.sort(key=lambda c: c["due_date"])
 
-        # Task-starred notes (source_item_id set, and its task still exists - see
-        # note_task_links above) sort ABOVE every other note, by the task's own due date soonest-
-        # first - reported directly ("sort by most upcoming"). A starred note whose task got
-        # deleted independently, and every hand-typed note, falls into the second group, ordered
-        # most-recently-edited first as before.
-        notes = sorted(
-            notes,
-            key=lambda n: (
-                (0, note_task_links[n.id]["due_date"]) if n.id in note_task_links
-                else (1, -n.updated_at.timestamp())
-            )
-        )
-
-        selected_note = None
-        if note_id:
-            candidate = session.get(Note, note_id)
-            if candidate and candidate.user_id == user.id:
-                selected_note = candidate
-        if not selected_note and notes:
-            selected_note = notes[0]
+        selected_universe = universe_by_id.get(universe_id) if universe_id else None
 
         return templates.TemplateResponse(
             request=request,
             name="notes.html",
             context={
                 "user": user,
-                "notes": notes,
+                "checklist": checklist,
                 "universes": universes,
                 "universe_by_id": universe_by_id,
-                "note_task_links": note_task_links,
-                "selected_note": selected_note,
                 "selected_universe_id": universe_id,
+                "selected_universe": selected_universe,
                 "events_universe_href": get_events_universe_href(session, user.id),
             }
         )
@@ -5071,17 +5101,16 @@ def toggle_note_from_task(request: Request, payload: dict = Body(...)):
         bucket = session.get(Bucket, item.bucket_id) if item else None
         realm = session.get(Realm, bucket.realm_id) if bucket else None
 
-        content_lines = [f"📅 {item.due_date.strftime('%b %d, %Y')}"]
-        if realm and bucket:
-            content_lines.append(f"📍 {realm.name} / {bucket.name}")
-        if item.description:
-            content_lines.append("")
-            content_lines.append(item.description)
-
+        # Title/due-date/Realm-Bucket are deliberately NOT duplicated into the note's own
+        # title/content here - reported directly, that just repeated the same three facts the
+        # editor's own task strip (see note_task_links/notes.html) already shows right above it.
+        # The note starts as an actual blank note - same as a hand-typed one - ready for whatever
+        # the user actually wants to write about the task, seeded with the task's own description
+        # (if it has one) since that's real information nowhere else in this view, not a repeat.
         note = Note(
             user_id=user.id,
-            title=item.title,
-            content="\n".join(content_lines),
+            title="",
+            content=item.description or "",
             universe_id=realm.universe_id if realm else None,
             source_item_id=item_id,
         )
@@ -5089,6 +5118,51 @@ def toggle_note_from_task(request: Request, payload: dict = Body(...)):
         session.commit()
         session.refresh(note)
         return JSONResponse({"ok": True, "noted": True, "note_id": note.id})
+
+@app.post("/notes/new-task/")
+def new_task_from_notes(request: Request, title: str = Form(...), due_date: Optional[str] = Form(None), universe_id: int = Form(...)):
+    """The Notes checklist's own "+ Add Task" - reported directly, wanting to create a brand new
+    task right from inside a Universe's checklist rather than leaving Notes to do it elsewhere.
+    Always targets whichever Universe's checklist is currently open (never "All" - there's no
+    single Universe to put a new task in from there, so the form is only ever shown once one is
+    selected), auto-provisioning a default General/Tasks Bucket in it if needed, then immediately
+    stars the new task the same way toggle_note_from_task does - it shows up in the checklist right
+    away without a separate manual star tap."""
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+
+        universe = session.get(Universe, universe_id)
+        if not universe or universe.user_id != user.id:
+            return RedirectResponse(url="/notes", status_code=303)
+
+        title = title.strip()
+        if not title:
+            return RedirectResponse(url=f"/notes?universe_id={universe_id}", status_code=303)
+
+        bucket = get_or_create_default_task_bucket_in_universe(session, user.id, universe)
+
+        parsed_due = None
+        if due_date:
+            try:
+                parsed_due = datetime.strptime(due_date, "%Y-%m-%d").replace(hour=9, minute=0, second=0)
+            except ValueError:
+                parsed_due = None
+        if not parsed_due:
+            today = get_user_today_date(user.timezone or "UTC")
+            parsed_due = datetime(today.year, today.month, today.day, 9, 0, 0)
+
+        item = Item(title=title, bucket_id=bucket.id, due_date=parsed_due)
+        session.add(item)
+        session.commit()
+        session.refresh(item)
+
+        note = Note(user_id=user.id, title="", content="", universe_id=universe_id, source_item_id=item.id)
+        session.add(note)
+        session.commit()
+
+    return RedirectResponse(url=f"/notes?universe_id={universe_id}", status_code=303)
 
 @app.post("/notes/")
 def create_note(request: Request, universe_id: Optional[int] = Form(None)):
