@@ -2,7 +2,16 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <!-- maximum-scale=1.0, user-scalable=no - reported directly: pinching to zoom on this page left
+         the whole layout "whacked out" and stuck that way until force-quitting the app. This page
+         never had that pair (unlike index.html, which already locks scale down for the exact same
+         reason), so pinch-zoom was fully enabled here the entire time - every position:fixed layer
+         on this page (the header's safe-area padding, the new-task chat's keyboard-pinned position,
+         the Universe strip itself) computes its own geometry assuming a 1.0 page scale, and native
+         pinch-zoom leaves the page's OWN zoom level stuck at whatever the gesture landed on with no
+         way for any of that JS to detect or correct for it - only a fresh page load resets it, which
+         matches "isnt able to be back to normal unless i reset app" exactly. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>{{ (selected_universe.name if selected_universe else 'Notes') }} - TaskMonster</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
