@@ -279,16 +279,16 @@
          Reuses the same /ai/chat/ endpoint everything else on the site does, with
          notes_task_universe_id set so the server forces the bucket and auto-stars the result
          server-side - see ai_chat() in app.py. -->
-    <!-- No tap-the-backdrop-to-close - reproduced directly in the iOS Simulator with pixel-precise
-         taps on the Send button: the card's own keyboard-avoidance repositioning (see
-         syncNotesTaskChatToViewport) can shift its layout between when a tap is aimed and when it
-         actually registers, occasionally landing a Send tap on the backdrop behind it instead - and
-         with this handler in place, that silently closed the whole chat and threw away whatever was
-         typed, with zero network request ever sent (confirmed via server logs). Removing it doesn't
-         fix why the coordinates can drift, but it removes the destructive outcome: a stray tap
-         anywhere on the backdrop now does nothing, so at worst a mis-tap requires tapping Send
-         again, never loses the conversation. The X button is the only way to close now. -->
-    <div id="notes-task-chat-modal" class="hidden fixed inset-0 z-[80] flex items-center justify-center px-4" style="background: rgba(2, 6, 23, 0.55);">
+    <!-- Tap-the-backdrop-to-close, same as the other quick-create modals - reinstated now that the
+         actual bug is fixed at its source: tapping Send blurs the input as part of that same tap,
+         and the blur handler used to reposition the card IMMEDIATELY, shifting its layout out from
+         under the finger before the tap's own click resolved (reported directly with a screen
+         recording - Send "moved the window down" and needed a second tap). The blur handler below
+         now only schedules that reposition after a short delay instead of doing it inline, so the
+         tap that's already in flight - Send included - finishes on a stable layout first. With that
+         race actually closed, a genuine tap on the backdrop can go back to closing the chat like
+         every other modal in the app, without also swallowing an in-flight Send. -->
+    <div id="notes-task-chat-modal" class="hidden fixed inset-0 z-[80] flex items-center justify-center px-4" style="background: rgba(2, 6, 23, 0.55);" onclick="if (event.target === this) closeNotesTaskChat();">
         <div id="notes-task-chat-card" class="bg-white rounded-3xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden" style="max-height: 80vh;">
             <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 shrink-0">
                 <span class="text-sm font-extrabold text-indigo-600 uppercase tracking-wide">😈 New Task</span>
@@ -518,7 +518,19 @@
         const notesTaskChatInputEl = document.getElementById('notes-task-chat-input');
         if (notesTaskChatInputEl) {
             notesTaskChatInputEl.addEventListener('focus', syncNotesTaskChatToViewportSoon);
-            notesTaskChatInputEl.addEventListener('blur', syncNotesTaskChatToViewportSoon);
+            // Deliberately NOT syncNotesTaskChatToViewportSoon (which repositions immediately, then
+            // again after a settle delay) - reported directly with a screen recording: tapping Send
+            // blurs the input FIRST, as part of that same tap, and an immediate reposition right
+            // then shifts the card's layout out from under the finger before the tap's own click
+            // ever resolves - the tap "moved the window down" instead of registering as Send, and
+            // needed a second tap (now correctly aimed at the settled position) to actually work.
+            // Only scheduling the delayed pass here lets whatever was just tapped - Send included -
+            // finish being handled on the still-stable layout first; the reposition still happens,
+            // just a beat later instead of racing the tap.
+            notesTaskChatInputEl.addEventListener('blur', () => {
+                clearTimeout(notesTaskChatViewportSettleTimer);
+                notesTaskChatViewportSettleTimer = setTimeout(syncNotesTaskChatToViewport, 250);
+            });
             // Reported directly with a screen recording: typing a message and hitting Enter closed
             // the chat almost instantly, far faster than an actual AI round-trip could ever
             // complete - meaning the request most likely never went out at all. This relied entirely
