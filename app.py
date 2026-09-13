@@ -5011,6 +5011,13 @@ def notes_page(request: Request, universe_id: Optional[int] = None):
             starred_query = starred_query.where(Note.universe_id == universe_id)
         starred_notes = session.exec(starred_query).all()
 
+        # A completed task stays in the checklist through the rest of the day it was checked off,
+        # then drops off starting the next day - same "Completed Yesterday" day-boundary the Daily
+        # Digest already uses (see build_task_universe_context/the digest loop above), just applied
+        # here as "still today" instead of "was yesterday". Reported directly, choosing midnight
+        # over a rolling few-hours timer for consistency with that existing behavior.
+        user_today = get_user_today_date(user.timezone or "UTC")
+
         checklist = []
         source_item_ids = [n.source_item_id for n in starred_notes]
         if source_item_ids:
@@ -5031,6 +5038,25 @@ def notes_page(request: Request, universe_id: Optional[int] = None):
                 # just never find it, so a fresh star creates a new row rather than colliding).
                 if not it or not b:
                     continue
+                if it.is_completed:
+                    # Same naive-UTC-then-convert-to-the-user's-own-timezone approach the digest
+                    # uses - completed_at is stored naive (assumed UTC), so it has to be localized
+                    # before comparing its calendar date against "today" in wherever the user
+                    # actually is. Missing completed_at (only possible on rows completed before that
+                    # column existed) is treated as "not today" - there's no way to know when it
+                    # actually happened, and the whole point here is not letting stale completed
+                    # rows pile up.
+                    completed_today = False
+                    if it.completed_at:
+                        dt = it.completed_at
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        try:
+                            completed_today = dt.astimezone(ZoneInfo(user.timezone or "UTC")).date() == user_today
+                        except Exception:
+                            completed_today = dt.date() == user_today
+                    if not completed_today:
+                        continue
                 u = universe_by_id.get(r.universe_id) if r else None
                 checklist.append({
                     "note_id": n.id,
