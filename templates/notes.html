@@ -237,7 +237,7 @@
             const modal = document.getElementById('notes-task-chat-modal');
             if (modal) modal.classList.add('hidden');
             const card = document.getElementById('notes-task-chat-card');
-            if (card) { card.style.position = ''; card.style.top = ''; card.style.left = ''; card.style.right = ''; card.style.margin = ''; card.style.maxHeight = '80vh'; }
+            if (card) { card.style.position = ''; card.style.top = ''; card.style.left = ''; card.style.right = ''; card.style.width = ''; card.style.margin = ''; card.style.maxHeight = '80vh'; }
         }
 
         // Same fixed-position-doesn't-track-the-keyboard problem the main chat panel already
@@ -252,13 +252,13 @@
             const card = document.getElementById('notes-task-chat-card');
             if (!modal || !card || modal.classList.contains('hidden')) return;
             if (window.innerWidth >= 768 || !window.visualViewport) {
-                card.style.position = ''; card.style.top = ''; card.style.left = ''; card.style.right = ''; card.style.margin = ''; card.style.maxHeight = '80vh';
+                card.style.position = ''; card.style.top = ''; card.style.left = ''; card.style.right = ''; card.style.width = ''; card.style.margin = ''; card.style.maxHeight = '80vh';
                 return;
             }
             const vv = window.visualViewport;
             const keyboardLikelyOpen = vv.height < window.innerHeight - 80;
             if (!keyboardLikelyOpen) {
-                card.style.position = ''; card.style.top = ''; card.style.left = ''; card.style.right = ''; card.style.margin = ''; card.style.maxHeight = '80vh';
+                card.style.position = ''; card.style.top = ''; card.style.left = ''; card.style.right = ''; card.style.width = ''; card.style.margin = ''; card.style.maxHeight = '80vh';
                 return;
             }
             const TOP_MARGIN = 16;
@@ -269,6 +269,14 @@
             card.style.top = `${top}px`;
             card.style.left = '16px';
             card.style.right = '16px';
+            // The card's own w-full Tailwind class sets width:100% - left unchecked, that wins
+            // over left/right once position is fixed (a width explicitly set to something other
+            // than auto overrides whatever left/right would otherwise compute), pushing the card
+            // 100% of the viewport wide STARTING at left:16px and overflowing off the right edge.
+            // width:auto is what actually lets left/right define the box, same as if width had
+            // never been set at all - reported directly with a screenshot showing the Send button
+            // cut off past the right edge.
+            card.style.width = 'auto';
             card.style.margin = '0';
             card.style.maxHeight = `${maxHeight}px`;
             const messages = document.getElementById('notes-task-chat-messages');
