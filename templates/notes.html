@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ (selected_universe.name if selected_universe else 'Notes') }} - TaskMonster</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <style>
         /* Same floating launcher cluster as the main app (index.html) - reported directly as
            wanting it back on this standalone page too. This is a static replica: no AI chat panel
@@ -48,12 +49,32 @@
         #events-quick-btn:hover {
             animation-play-state: paused;
         }
+        /* iOS home-screen-style jiggle while reordering the Universe picker strip (see
+           enterNotesUniverseReorderMode in index.html's own multiverseReorderMode) - hold down on a
+           circle to wobble everything and drag to reorder, reported directly. Same keyframe/class
+           name as index.html's own wobble mode for consistency, just declared locally here since
+           this standalone page doesn't share a stylesheet with it. */
+        @keyframes universe-card-wobble {
+            0%, 100% { transform: rotate(-2deg); }
+            50% { transform: rotate(2deg); }
+        }
+        .universe-card-wobbling {
+            animation: universe-card-wobble 0.22s ease-in-out infinite;
+        }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
     <div class="max-w-5xl mx-auto p-4 md:p-6">
-        <div class="flex items-center justify-end mb-4">
+        <div class="flex items-center justify-between mb-4">
             <h1 class="text-sm font-extrabold text-white tracking-tight flex items-center gap-1.5">📝 Notes</h1>
+            <!-- Shown only while reordering the Universe strip below (see
+                 enterNotesUniverseReorderMode/exitNotesUniverseReorderMode) - the explicit way out
+                 of wobble mode, matching iOS's own "Done" button, same as index.html's own
+                 multiverse-reorder-done-btn. -->
+            <button type="button" id="notes-universe-reorder-done-btn" onclick="exitNotesUniverseReorderMode()"
+                    class="hidden px-3.5 py-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-emerald-400/30">
+                ✓ Done
+            </button>
         </div>
 
         <!-- Reworked from a freeform, Apple-Notes-style list into a pure "starred tasks" checklist
@@ -70,14 +91,20 @@
                 </div>
                 <span class="text-[10px] font-bold text-center truncate w-full {{ 'text-white' if not selected_universe_id else 'text-slate-400' }}">All</span>
             </a>
-            {% for u in universes %}
-            <a href="/notes?universe_id={{ u.id }}" class="shrink-0 flex flex-col items-center gap-1 w-14">
-                <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if selected_universe_id == u.id else 'border-slate-700 bg-slate-900 hover:border-indigo-500/60' }}">
-                    {{ u.icon or '😈' }}
-                </div>
-                <span class="text-[10px] font-bold text-center truncate w-full {{ 'text-white' if selected_universe_id == u.id else 'text-slate-400' }}">{{ u.name }}</span>
-            </a>
-            {% endfor %}
+            <!-- Only these cards are hold-to-reorder (see setupNotesUniverseLongPress) - "All" above
+                 is a synthetic "show everything" filter, not a real Universe, so it's kept as a
+                 plain sibling outside this SortableJS-managed container rather than a draggable item
+                 that could get shuffled out of its always-first spot. -->
+            <div id="notes-universe-picker" class="flex items-start gap-3">
+                {% for u in universes %}
+                <a href="/notes?universe_id={{ u.id }}" class="notes-universe-card shrink-0 flex flex-col items-center gap-1 w-14" data-universe-id="{{ u.id }}">
+                    <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if selected_universe_id == u.id else 'border-slate-700 bg-slate-900 hover:border-indigo-500/60' }}">
+                        {{ u.icon or '😈' }}
+                    </div>
+                    <span class="text-[10px] font-bold text-center truncate w-full {{ 'text-white' if selected_universe_id == u.id else 'text-slate-400' }}">{{ u.name }}</span>
+                </a>
+                {% endfor %}
+            </div>
         </div>
 
         <!-- The checklist container itself IS "the note" for this scope - deliberately a full
@@ -351,6 +378,97 @@
             return false;
         }
         {% endif %}
+    </script>
+
+    <!-- Hold-to-reorder the Universe picker strip above - "hold down on the top circle emojis...
+         hold down for wobble mode and then can push where i want them to be ordered", reported
+         directly. Same long-press/wobble/SortableJS pattern as index.html's own
+         enterMultiverseReorderMode for the main Multiverse picker grid, scaled down to this page's
+         one horizontal strip and writing to the exact same /universes/reorder/ endpoint (so a
+         reorder from either page shows up on the other, and on every Universe-ordered surface in
+         the app). Kept as its own small standalone copy rather than shared code, same reasoning as
+         the rest of this page's floating launcher cluster - no shared JS module with index.html. -->
+    <script>
+        let notesUniverseReorderMode = false;
+        let notesUniverseSortable = null;
+        let notesUniverseLongPressTimer = null;
+        let notesUniverseLongPressStartPos = null;
+
+        function enterNotesUniverseReorderMode() {
+            if (notesUniverseReorderMode) return;
+            notesUniverseReorderMode = true;
+            const picker = document.getElementById('notes-universe-picker');
+            if (!picker) return;
+            picker.querySelectorAll('.notes-universe-card').forEach(card => card.classList.add('universe-card-wobbling'));
+            const doneBtn = document.getElementById('notes-universe-reorder-done-btn');
+            if (doneBtn) doneBtn.classList.remove('hidden');
+            if (notesUniverseSortable) notesUniverseSortable.option('disabled', false);
+        }
+
+        function exitNotesUniverseReorderMode() {
+            notesUniverseReorderMode = false;
+            const picker = document.getElementById('notes-universe-picker');
+            if (picker) picker.querySelectorAll('.universe-card-wobbling').forEach(el => el.classList.remove('universe-card-wobbling'));
+            const doneBtn = document.getElementById('notes-universe-reorder-done-btn');
+            if (doneBtn) doneBtn.classList.add('hidden');
+            if (notesUniverseSortable) notesUniverseSortable.option('disabled', true);
+        }
+
+        function initNotesUniverseSortable() {
+            const picker = document.getElementById('notes-universe-picker');
+            if (!picker || notesUniverseSortable || typeof Sortable === 'undefined') return;
+            notesUniverseSortable = new Sortable(picker, {
+                animation: 150,
+                disabled: true,
+                onEnd: () => {
+                    const order = Array.from(picker.querySelectorAll('.notes-universe-card'))
+                        .map(el => parseInt(el.getAttribute('data-universe-id')))
+                        .filter(Boolean);
+                    fetch('/universes/reorder/', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(order)
+                    });
+                }
+            });
+        }
+
+        function setupNotesUniverseLongPress() {
+            const picker = document.getElementById('notes-universe-picker');
+            if (!picker) return;
+            initNotesUniverseSortable();
+
+            picker.querySelectorAll('.notes-universe-card').forEach(card => {
+                card.addEventListener('pointerdown', (e) => {
+                    if (e.pointerType === 'mouse' && e.button !== 0) return;
+                    notesUniverseLongPressStartPos = { x: e.clientX, y: e.clientY };
+                    clearTimeout(notesUniverseLongPressTimer);
+                    notesUniverseLongPressTimer = setTimeout(enterNotesUniverseReorderMode, 500);
+                });
+                const cancelPress = () => clearTimeout(notesUniverseLongPressTimer);
+                card.addEventListener('pointerup', cancelPress);
+                card.addEventListener('pointerleave', cancelPress);
+                card.addEventListener('pointercancel', cancelPress);
+                card.addEventListener('pointermove', (e) => {
+                    if (!notesUniverseLongPressStartPos) return;
+                    const dist = Math.hypot(e.clientX - notesUniverseLongPressStartPos.x, e.clientY - notesUniverseLongPressStartPos.y);
+                    if (dist > 10) clearTimeout(notesUniverseLongPressTimer);
+                });
+                // Every card is a live drag target while in reorder mode, so the native click (which
+                // still fires on pointerup whether that ended a drag or just the long-press that
+                // entered this mode) must never navigate away mid-reorder.
+                card.addEventListener('click', (e) => {
+                    if (notesUniverseReorderMode) e.preventDefault();
+                });
+            });
+
+            document.addEventListener('pointerdown', (e) => {
+                if (e.target.closest('.notes-universe-card') || e.target.closest('#notes-universe-reorder-done-btn')) return;
+                if (notesUniverseReorderMode) exitNotesUniverseReorderMode();
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', setupNotesUniverseLongPress);
     </script>
 
     <!-- Same floating launcher cluster as the main app - see the <style> block above for why
