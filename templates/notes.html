@@ -236,31 +236,39 @@
         function closeNotesTaskChat() {
             const modal = document.getElementById('notes-task-chat-modal');
             if (modal) modal.classList.add('hidden');
-            const card = document.getElementById('notes-task-chat-card');
-            if (card) resetNotesTaskChatCardStyle(card);
+            resetNotesTaskChatLayout();
         }
 
-        function resetNotesTaskChatCardStyle(card) {
-            card.style.position = ''; card.style.top = ''; card.style.left = ''; card.style.right = '';
-            card.style.width = ''; card.style.margin = ''; card.style.maxHeight = '80vh';
+        function resetNotesTaskChatLayout() {
+            const modal = document.getElementById('notes-task-chat-modal');
+            const card = document.getElementById('notes-task-chat-card');
+            if (modal) { modal.style.alignItems = ''; modal.style.paddingTop = ''; }
+            if (card) card.style.maxHeight = '80vh';
         }
 
         // Same fixed-position-doesn't-track-the-keyboard problem the main chat panel already
         // solved (see syncAiChatPanelToViewport in index.html) - reported directly with a
         // screenshot showing the input/Send row squeezed right up against the keyboard, its own
         // accessory bar, with most of the card's height wasted above on a mostly-hidden viewport.
-        // window.visualViewport reports the ACTUAL visible area above the keyboard - pin the card
-        // to that directly instead of trusting the flex-centered CSS layout, which centers against
-        // the full (keyboard-covered) layout viewport instead.
+        // window.visualViewport reports the ACTUAL visible area above the keyboard - shift the card
+        // up into that directly instead of trusting the flex-centered CSS layout, which centers
+        // against the full (keyboard-covered) layout viewport instead.
         //
-        // Whether to pin at all is decided by focus, NOT by comparing visualViewport.height against
-        // window.innerHeight - a follow-up screenshot showed the exact same cut-off layout even
-        // after the width fix below shipped, meaning the height-diff heuristic itself was never
-        // firing true in that WKWebView (some iOS versions/contexts shrink window.innerHeight
-        // roughly in step with visualViewport.height when the keyboard opens, keeping the diff
-        // under the 80px threshold). This modal only ever has the one input, so "is it focused" is
-        // a direct, reliable signal for "should the keyboard be open" - visualViewport is still used
-        // for the actual geometry (top/height), just not for deciding whether to use it at all.
+        // Two earlier attempts at this both re-positioned the CARD itself (position:fixed with an
+        // explicit left/right/width) and both still shipped with the same cut-off screenshot coming
+        // back afterward, on more than one device size - some combination of the card's own w-full
+        // Tailwind class and the left/right/width box-model resolution kept losing that fight in a
+        // way that was never fully pinned down. This version never touches the card's own
+        // position/width/left/right at all - it only changes the WRAPPER's vertical alignment
+        // (align-items + padding-top), letting the card keep flowing exactly as it already does in
+        // the (always-correct) non-keyboard case, just shifted down from the top instead of
+        // centered. Horizontal sizing is completely untouched either way, so it can't regress.
+        //
+        // Whether to reposition at all is decided by focus, not by comparing visualViewport.height
+        // against window.innerHeight - some iOS/WKWebView contexts shrink window.innerHeight right
+        // along with the keyboard, which silently defeated that comparison. This modal only ever
+        // has the one input, so "is it focused" is a direct, reliable signal for "the keyboard
+        // should be open" regardless of how innerHeight behaves in a given context.
         function syncNotesTaskChatToViewport() {
             const modal = document.getElementById('notes-task-chat-modal');
             const card = document.getElementById('notes-task-chat-card');
@@ -268,7 +276,7 @@
             if (!modal || !card || modal.classList.contains('hidden')) return;
             const keyboardLikelyOpen = window.innerWidth < 768 && document.activeElement === input;
             if (!keyboardLikelyOpen || !window.visualViewport) {
-                resetNotesTaskChatCardStyle(card);
+                resetNotesTaskChatLayout();
                 return;
             }
             const vv = window.visualViewport;
@@ -276,19 +284,8 @@
             const BOTTOM_GAP = 10;
             const top = Math.max(0, vv.offsetTop + TOP_MARGIN);
             const maxHeight = Math.max(vv.height - TOP_MARGIN - BOTTOM_GAP, 160);
-            card.style.position = 'fixed';
-            card.style.top = `${top}px`;
-            card.style.left = '16px';
-            card.style.right = '16px';
-            // The card's own w-full Tailwind class sets width:100% - left unchecked, that wins
-            // over left/right once position is fixed (a width explicitly set to something other
-            // than auto overrides whatever left/right would otherwise compute), pushing the card
-            // 100% of the viewport wide STARTING at left:16px and overflowing off the right edge.
-            // width:auto is what actually lets left/right define the box, same as if width had
-            // never been set at all - reported directly with a screenshot showing the Send button
-            // cut off past the right edge.
-            card.style.width = 'auto';
-            card.style.margin = '0';
+            modal.style.alignItems = 'flex-start';
+            modal.style.paddingTop = `${top}px`;
             card.style.maxHeight = `${maxHeight}px`;
             const messages = document.getElementById('notes-task-chat-messages');
             if (messages) messages.scrollTop = messages.scrollHeight;
