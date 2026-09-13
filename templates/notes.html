@@ -87,6 +87,24 @@
             -webkit-user-select: none;
             user-select: none;
         }
+        /* Space View's own distant-starfield background, reused here - reported directly, wanting
+           this page's dark background to match. Same twinkle keyframe/CSS-driven approach as
+           index.html's own Multiverse picker starfield (generateMultiversePickerStars) rather than
+           the canvas-drawn one Space View itself uses - this page has no canvas engine, and a
+           couple dozen small absolutely-positioned divs give the identical look for a fraction of
+           the setup. Only ever visible against the dark bg-slate-900 page background - the white
+           note card and the floating launcher circles sit on top of it same as everywhere else. */
+        @keyframes notes-space-star-twinkle {
+            0%, 100% { opacity: var(--star-min-o, 0.12); }
+            50% { opacity: var(--star-max-o, 0.34); }
+        }
+        .notes-space-star {
+            position: absolute;
+            border-radius: 9999px;
+            animation-name: notes-space-star-twinkle;
+            animation-timing-function: ease-in-out;
+            animation-iteration-count: infinite;
+        }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
@@ -95,7 +113,13 @@
          read directly from JS, only from a rendered box. 0 on a non-notched device/browser.
          Same pattern as index.html's own ai-chat-safe-area-probe. -->
     <div id="notes-safe-area-probe" style="position: fixed; top: 0; left: 0; height: 0; padding-top: env(safe-area-inset-top); pointer-events: none; visibility: hidden;"></div>
-    <div class="max-w-5xl mx-auto p-4 md:p-6">
+    <!-- Populated once by generateNotesSpaceStars(). Fixed (not absolute) so it covers the whole
+         viewport regardless of page scroll height, no z-index needed - a position:static/relative
+         element always paints above a position:fixed one with no explicit z-index of its own, so
+         the plain "relative z-10" on the content wrapper right below is what actually keeps
+         everything readable on top of it. -->
+    <div id="notes-space-stars" class="fixed inset-0 pointer-events-none overflow-hidden"></div>
+    <div class="relative z-10 max-w-5xl mx-auto p-4 md:p-6">
         <!-- padding-top: env(safe-area-inset-top) - reported directly with a screenshot showing the
              "Notes" title and Done button rendering right under the status bar/notch (needs
              viewport-fit=cover in the <meta name="viewport"> tag above for env() to report a real
@@ -449,6 +473,45 @@
             return false;
         }
         {% endif %}
+    </script>
+
+    <script>
+        // Same accent palette as Space View's own distant-star field (SPACE_STAR_PALETTE in
+        // index.html) - indigo/violet/sky/rose/amber, each star picking one at random so the dark
+        // background reads as genuinely varied rather than a single-tint sky. rgb is the fill
+        // (paired with the star's own low opacity), glow is the box-shadow color for its soft halo.
+        const NOTES_SPACE_STAR_PALETTE = [
+            { rgb: '129, 140, 248', glow: '#6366f1' },
+            { rgb: '196, 181, 253', glow: '#8b5cf6' },
+            { rgb: '125, 211, 252', glow: '#0ea5e9' },
+            { rgb: '253, 164, 175', glow: '#f43f5e' },
+            { rgb: '252, 211, 77', glow: '#f59e0b' },
+        ];
+
+        function generateNotesSpaceStars() {
+            const container = document.getElementById('notes-space-stars');
+            if (!container) return;
+            const STAR_COUNT = 40;
+            let html = '';
+            for (let i = 0; i < STAR_COUNT; i++) {
+                const palette = NOTES_SPACE_STAR_PALETTE[Math.floor(Math.random() * NOTES_SPACE_STAR_PALETTE.length)];
+                const size = (1.2 + Math.random() * 2.2).toFixed(2);
+                const maxOVal = 0.28 + Math.random() * 0.18;
+                // minO stays a fraction of maxO (never below 60% of it) rather than two
+                // independently-random values that could land far apart - a narrow swing reads as a
+                // gentle pulse, a wide one reads as blinking on/off.
+                const minO = (maxOVal * (0.6 + Math.random() * 0.15)).toFixed(2);
+                const maxO = maxOVal.toFixed(2);
+                const left = (Math.random() * 100).toFixed(2);
+                const top = (Math.random() * 100).toFixed(2);
+                const delay = (Math.random() * 6).toFixed(2);
+                const duration = (8 + Math.random() * 8).toFixed(2);
+                const glowRadius = (parseFloat(size) * 2.5).toFixed(1);
+                html += `<div class="notes-space-star" style="left:${left}%; top:${top}%; width:${size}px; height:${size}px; background: rgba(${palette.rgb}, ${maxO}); box-shadow: 0 0 ${glowRadius}px ${palette.glow}; animation-delay: ${delay}s; animation-duration: ${duration}s; --star-min-o: ${minO}; --star-max-o: ${maxO};"></div>`;
+            }
+            container.innerHTML = html;
+        }
+        document.addEventListener('DOMContentLoaded', generateNotesSpaceStars);
     </script>
 
     <!-- Hold-to-reorder the Universe picker strip above - "hold down on the top circle emojis...
