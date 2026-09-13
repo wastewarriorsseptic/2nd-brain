@@ -25,7 +25,14 @@ struct WebView: UIViewRepresentable {
         webView.allowsBackForwardNavigationGestures = true
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.isOpaque = false
-        webView.backgroundColor = UIColor(red: 0.008, green: 0.024, blue: 0.09, alpha: 1)
+        // Matches the web app's own bg-slate-900 (#0f172a) exactly - this used to be Tailwind's
+        // darker slate-950 (#020617) instead, a visibly different shade from the page's actual
+        // background. Whenever this native color peeks through the page content - scroll
+        // bounce/rubber-banding chief among them, since contentInsetAdjustmentBehavior is .never
+        // above - the mismatch showed up as a "haze" band sitting on top of the page, reported
+        // directly with several screenshots. No amount of CSS on the page itself could ever have
+        // fixed this: it's the native WKWebView's own background paint, not page content.
+        webView.backgroundColor = UIColor(red: 0.0588, green: 0.0902, blue: 0.1647, alpha: 1)
         webView.load(URLRequest(url: url))
         return webView
     }
