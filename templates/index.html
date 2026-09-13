@@ -7952,10 +7952,31 @@
         // button defaults to whichever upcoming task it's immediately left or right of - only ever a
         // starting point, since the Add Task modal it opens (openGlobalAddTaskModal) still shows its
         // own Realm/Bucket picker.
-        function computeLaneMidAddButtons(lane, upcomingTasks, hubRadius, startGap, stepSpacing, isMobile) {
+        function computeLaneMidAddButtons(lane, upcomingTasks, hubRadius, startGap, stepSpacing, isMobile, emptyLaneFallback) {
             const midAddButtons = [];
-            if (upcomingTasks.length === 0) return midAddButtons;
             const radius = isMobile ? 22 : 19;
+
+            // A lane with no upcoming tasks (a brand new Realm/Universe, or one where every task
+            // happens to be overdue) used to get no "+" at all - every button below sources its
+            // bucketId/realmId/universeId from a neighboring task, and there isn't one to source
+            // from here. Reported directly with a screenshot of two empty Realm lanes sitting bare
+            // next to populated ones that all had their own "+". emptyLaneFallback (looked up by
+            // each caller from realmsData/allUniversesData - the lane's own first Bucket, not from
+            // any task) lets the exact same in-place "+" still work here; still nothing to show if
+            // the Realm/Universe itself has no Bucket at all yet, same as before.
+            if (upcomingTasks.length === 0) {
+                if (emptyLaneFallback && emptyLaneFallback.bucketId != null) {
+                    midAddButtons.push({
+                        x: lane.x + hubRadius + startGap,
+                        y: lane.y,
+                        bucketId: emptyLaneFallback.bucketId,
+                        realmId: emptyLaneFallback.realmId,
+                        universeId: emptyLaneFallback.universeId,
+                        radius,
+                    });
+                }
+                return midAddButtons;
+            }
 
             midAddButtons.push({
                 x: lane.x + hubRadius + (startGap / 2),
@@ -8069,6 +8090,19 @@
 
             const lanes = Array.from(byUniverse.values());
             lanes.forEach(lane => lane.tasks.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)));
+
+            // A Task-kind Universe with zero tasks anywhere in it never gets added to byUniverse
+            // above at all (it's only ever populated by iterating actual tasks) - same underlying
+            // gap as the empty-lane "+" fix below, one level up: without this, an empty Universe
+            // wouldn't even get a lane to put a "+" on. Mirrors buildRealmLanes' own back-fill from
+            // realmsData just below, using allUniversesData instead since this view spans every
+            // Universe rather than just the active one.
+            const existingLaneUniverseIds = new Set(lanes.map(l => String(l.id)));
+            allUniversesData.forEach(u => {
+                if (u.kind === 'task' && !existingLaneUniverseIds.has(String(u.id))) {
+                    lanes.push({ id: u.id, name: u.name, icon: u.icon || '😈', tasks: [] });
+                }
+            });
             // Lane order follows each Universe's own sort_order - the same order the Multiverse
             // picker grid uses, and the same field hold-to-reorder (either surface) writes to via
             // /universes/reorder/. Used to be "busiest-soonest first" (whichever Universe's next
@@ -8114,7 +8148,21 @@
 
                 lane.leftmostTaskX = overdueTasks.length ? overdueTasks[overdueTasks.length - 1].x : null;
                 lane.rightmostTaskX = upcomingTasks.length ? upcomingTasks[upcomingTasks.length - 1].x : null;
-                lane.midAddButtons = computeLaneMidAddButtons(lane, upcomingTasks, hubRadius, startGap, stepSpacing, isMobile);
+
+                // Only reached when this lane has no upcoming task of its own to source a
+                // bucketId/realmId from (see computeLaneMidAddButtons) - falls back to the
+                // Universe's own first Realm's first Bucket, from allUniversesData rather than any
+                // task, so a brand new/empty Universe's lane still gets a working "+".
+                let emptyLaneFallback = null;
+                if (upcomingTasks.length === 0) {
+                    const universeMeta = allUniversesData.find(u => String(u.id) === String(lane.id));
+                    const fallbackRealm = universeMeta && universeMeta.realms && universeMeta.realms[0];
+                    const fallbackBucket = fallbackRealm && fallbackRealm.buckets && fallbackRealm.buckets[0];
+                    if (fallbackBucket) {
+                        emptyLaneFallback = { bucketId: fallbackBucket.id, realmId: fallbackRealm.id, universeId: lane.id };
+                    }
+                }
+                lane.midAddButtons = computeLaneMidAddButtons(lane, upcomingTasks, hubRadius, startGap, stepSpacing, isMobile, emptyLaneFallback);
             });
 
             return lanes;
@@ -8238,7 +8286,21 @@
 
                 lane.leftmostTaskX = overdueTasks.length ? overdueTasks[overdueTasks.length - 1].x : null;
                 lane.rightmostTaskX = upcomingTasks.length ? upcomingTasks[upcomingTasks.length - 1].x : null;
-                lane.midAddButtons = computeLaneMidAddButtons(lane, upcomingTasks, hubRadius, startGap, stepSpacing, isMobile);
+
+                // Only reached when this lane has no upcoming task of its own to source a
+                // bucketId from (see computeLaneMidAddButtons) - falls back to the Realm's own
+                // first Bucket, from realmsData rather than any task, so a brand new/empty Realm's
+                // lane still gets a working "+". Reported directly with a screenshot of two such
+                // Realms sitting bare next to populated ones.
+                let emptyLaneFallback = null;
+                if (upcomingTasks.length === 0) {
+                    const realmMeta = realmsData.find(r => String(r.id) === String(lane.id));
+                    const fallbackBucket = realmMeta && realmMeta.buckets && realmMeta.buckets[0];
+                    if (fallbackBucket) {
+                        emptyLaneFallback = { bucketId: fallbackBucket.id, realmId: lane.id, universeId: activeUniverseId };
+                    }
+                }
+                lane.midAddButtons = computeLaneMidAddButtons(lane, upcomingTasks, hubRadius, startGap, stepSpacing, isMobile, emptyLaneFallback);
             });
 
             return lanes;
