@@ -5559,13 +5559,17 @@
         }
 
         // Keeps every on-screen representation of the same task's star in sync - Card View's own
-        // card (still sitting in the DOM even while Space View is open on top of it) and the
-        // Space View HUD, whichever of those happen to be showing this exact task right now.
-        // Also patches activeSelectedTask itself, since that in-memory object (not a DOM read) is
-        // what showHudCard() re-renders from if the HUD reopens on this same task later.
+        // card (still sitting in the DOM even while Space View is open on top of it), any
+        // swipe-dock card for the same task, and the standalone HUD, whichever of those happen to
+        // be showing this exact task right now. querySelectorAll (not querySelector) since the
+        // Card View card and a swipe-dock card for the SAME task can both be in the DOM
+        // simultaneously - updating only the first match left the other one stale. Also patches
+        // activeSelectedTask itself, since that in-memory object (not a DOM read) is what
+        // showHudCard() re-renders from if the HUD reopens on this same task later.
         function syncTaskNoteStateEverywhere(itemId, noted) {
-            const cardBtn = document.querySelector(`.task-note-star[data-item-id="${itemId}"]`);
-            setTaskNoteButtonVisual(cardBtn, noted);
+            document.querySelectorAll(`.task-note-star[data-item-id="${itemId}"]`).forEach((btn) => {
+                setTaskNoteButtonVisual(btn, noted);
+            });
             if (typeof activeSelectedTask !== 'undefined' && activeSelectedTask && String(activeSelectedTask.id) === String(itemId)) {
                 activeSelectedTask.isNoted = noted;
             }
@@ -11030,9 +11034,20 @@
                             ? `<button onclick="event.stopPropagation(); openAmazonSearch(${JSON.stringify(task.title).replace(/"/g, '&quot;')}, ${JSON.stringify(task.amount).replace(/"/g, '&quot;')})" title="Shop on Amazon" class="text-slate-400 hover:text-amber-400 text-xs">🛒</button>`
                             : '';
 
+                        // Star-to-Notes toggle - reported directly, wanting this reachable from the
+                        // task card actually shown when tapping a task inside a Multiverse/Realm
+                        // Timeline lane (this swipe-dock card, not the separate standalone HUD -
+                        // see space-hud-card - which only ever shows for a task tapped outside any
+                        // bucket/lane). Reuses toggleTaskNote/task-note-star as-is: same data-item-id/
+                        // data-noted attributes Card View's own button reads, so
+                        // syncTaskNoteStateEverywhere keeps this, Card View, and the standalone HUD
+                        // all in sync no matter which one was actually clicked.
+                        const noteBtnHtml = `<button onclick="event.stopPropagation(); toggleTaskNote(this)" data-item-id="${task.id}" data-noted="${task.isNoted ? 'true' : 'false'}" title="${task.isNoted ? 'Remove from Notes' : 'Add to Notes'}" class="task-note-star ${task.isNoted ? 'text-amber-400 hover:text-amber-300' : 'text-slate-400 hover:text-amber-400'} text-xs transition">${task.isNoted ? '⭐' : '☆'}</button>`;
+
                         card.innerHTML = `
                             <div class="flex items-center justify-between gap-2 border-b border-slate-700/50 pb-1.5">
                                 <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border ${badgeClass}">${badgeText}</span>
+                                ${noteBtnHtml}
                                 <div class="flex items-center gap-2">
                                     ${amountText}
                                     <form action="/items/toggle-complete/" method="POST" class="inline" onclick="event.stopPropagation()" onsubmit="return handleSpaceCompleteToggle(event, this, '${task.id}')">
