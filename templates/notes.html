@@ -282,11 +282,22 @@
                 <button type="button" onclick="closeNotesTaskChat()" class="text-slate-400 hover:text-slate-700 text-xs font-bold px-1">✕</button>
             </div>
             <div id="notes-task-chat-messages" class="flex-1 min-h-0 overflow-y-auto p-3 space-y-2.5 text-sm bg-slate-50"></div>
-            <form id="notes-task-chat-form" onsubmit="return handleNotesTaskChatSubmit(event)" class="p-2.5 border-t border-slate-200 flex gap-2 shrink-0 bg-white">
+            <!-- Deliberately a plain <div>, not a <form> - reported directly, repeatedly, that
+                 tapping Send closed the chat instead of sending, even after Enter was already fixed
+                 the same way. A <form> submitting natively (a real GET navigation to the current
+                 URL, since there's no action/method set) would look exactly like "it just closes" -
+                 the whole page reloads, wiping the open modal - and relying on
+                 event.preventDefault() inside an async onsubmit handler to reliably stop that
+                 native submission is exactly the kind of thing that can silently fail in one
+                 WebKit/WKWebView context and not another. Removing the <form> entirely removes the
+                 native-submission failure mode by construction: a plain type="button" Send
+                 (onclick below) and the input's own keydown handler for Enter are now the ONLY two
+                 ways this can ever fire, both calling handleNotesTaskChatSubmit directly. -->
+            <div id="notes-task-chat-form" class="p-2.5 border-t border-slate-200 flex gap-2 shrink-0 bg-white">
                 <input id="notes-task-chat-input" type="text" autocomplete="off" placeholder="e.g. Pay the water bill Friday"
                        class="flex-1 min-w-0 bg-slate-100 border border-slate-200 rounded-xl px-3.5 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500">
-                <button type="submit" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/20 transition-all shrink-0">Send</button>
-            </form>
+                <button type="button" onclick="handleNotesTaskChatSubmit(event)" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/20 transition-all shrink-0">Send</button>
+            </div>
         </div>
     </div>
     {% endif %}
