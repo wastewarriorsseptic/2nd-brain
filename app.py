@@ -556,8 +556,12 @@ class Note(SQLModel, table=True):
     Timeline or in Space View. universe_id is an optional "pin" purely for organizing/filtering the
     Notes list itself (see notes_page) - a note pinned to a Universe still isn't INSIDE that
     Universe's own Realm/Bucket hierarchy the way a task is, since that hierarchy exists to organize
-    dated tasks, which a note by definition isn't. updated_at (not created_at) drives the list's own
-    sort order, matching Apple Notes' own "most recently edited first" ordering.
+    dated tasks, which a note by definition isn't. Reported directly, the direction on HOW a note
+    gets pinned was reversed: there's no more manual "Pin to Universe" picker in the editor - the
+    only way a note's universe_id is ever set now is by starring a task into it (source_item_id,
+    toggle_note_from_task), inheriting THAT task's own Universe. A note that's never had a task
+    starred to it stays unpinned forever. updated_at (not created_at) drives the list's own sort
+    order, matching Apple Notes' own "most recently edited first" ordering.
 
     realm_id is a deprecated, no-longer-surfaced sub-pin - Notes pinning was scoped down to
     Universe-only (reported directly: per-Realm pinning was "too micro focused", and the tiny
@@ -5088,6 +5092,11 @@ def toggle_note_from_task(request: Request, payload: dict = Body(...)):
 
 @app.post("/notes/")
 def create_note(request: Request, universe_id: Optional[int] = Form(None)):
+    """universe_id here is ONLY a navigation hint (which Universe filter chip to land back on
+    after creating the note - see the +New Note forms in notes.html) - it no longer pins the new
+    note to that Universe. Manually pinning a note was retired in favor of the star toggle
+    (toggle_note_from_task): a note's Universe now only ever comes from a task pinned to it, never
+    from a hand-picked dropdown."""
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user:
@@ -5098,7 +5107,7 @@ def create_note(request: Request, universe_id: Optional[int] = Form(None)):
         ).first():
             universe_id = None
 
-        note = Note(user_id=user.id, title="", content="", universe_id=universe_id)
+        note = Note(user_id=user.id, title="", content="")
         session.add(note)
         session.commit()
         session.refresh(note)
@@ -5127,13 +5136,9 @@ def update_note(request: Request, note_id: int, payload: dict = Body(...)):
             note.title = (payload["title"] or "").strip()
         if "content" in payload:
             note.content = payload["content"] or ""
-        if "universe_id" in payload:
-            new_universe_id = payload["universe_id"] or None
-            if new_universe_id and not session.exec(
-                select(Universe).where(Universe.id == new_universe_id, Universe.user_id == user.id)
-            ).first():
-                new_universe_id = None
-            note.universe_id = new_universe_id
+        # universe_id is deliberately NOT settable here anymore - manually pinning a note was
+        # retired in favor of the star toggle (toggle_note_from_task); a note's Universe now only
+        # ever comes from a task pinned to it.
 
         note.updated_at = datetime.utcnow()
         session.add(note)

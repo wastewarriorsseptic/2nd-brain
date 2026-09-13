@@ -147,22 +147,16 @@
                        class="text-[11px] font-bold text-indigo-300 hover:text-white underline underline-offset-2 shrink-0">🎯 Go to task</a>
                 </div>
                 {% endif %}
-                <div class="flex items-center justify-between gap-2 mb-3">
-                    <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
-                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wide shrink-0">📌 Pin to</label>
-                        <select id="note-universe-select" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 min-w-0">
-                            <option value="">No Universe</option>
-                            {% for u in universes %}
-                            <option value="{{ u.id }}" {{ 'selected' if selected_note.universe_id == u.id else '' }}>{{ u.icon or '😈' }} {{ u.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="flex items-center gap-2.5 shrink-0">
-                        <span id="note-save-indicator" class="text-[10px] text-slate-500 opacity-0 transition-opacity">Saved</span>
-                        <form action="/notes/{{ selected_note.id }}/delete" method="POST" onsubmit="return confirm('Delete this note? This cannot be undone.');">
-                            <button type="submit" class="text-slate-500 hover:text-rose-400 text-xs font-bold transition-colors">🗑 Delete</button>
-                        </form>
-                    </div>
+                <!-- No more manual "Pin to [Universe]" picker here - reported directly, the
+                     direction is reversed now: a note gets its Universe by PINNING A TASK to it
+                     (see the star toggle / toggle_note_from_task), not by hand-picking one for an
+                     arbitrary note. Universe_id still exists on Note and still drives the badge
+                     below/the sidebar filter chips - it's just never manually editable anymore. -->
+                <div class="flex items-center justify-end gap-2.5 mb-3">
+                    <span id="note-save-indicator" class="text-[10px] text-slate-500 opacity-0 transition-opacity">Saved</span>
+                    <form action="/notes/{{ selected_note.id }}/delete" method="POST" onsubmit="return confirm('Delete this note? This cannot be undone.');">
+                        <button type="submit" class="text-slate-500 hover:text-rose-400 text-xs font-bold transition-colors">🗑 Delete</button>
+                    </form>
                 </div>
 
                 <input type="text" id="note-title-input" placeholder="Title" autocomplete="off"
@@ -191,7 +185,6 @@
         const NOTE_ID = {{ selected_note.id }};
         const titleInput = document.getElementById('note-title-input');
         const contentInput = document.getElementById('note-content-input');
-        const universeSelect = document.getElementById('note-universe-select');
         const saveIndicator = document.getElementById('note-save-indicator');
 
         function autoGrow() {
@@ -229,12 +222,6 @@
 
         titleInput.addEventListener('input', () => scheduleSave({ title: titleInput.value }));
         contentInput.addEventListener('input', () => scheduleSave({ content: contentInput.value }));
-        if (universeSelect) {
-            universeSelect.addEventListener('change', () => {
-                const newUniverseId = universeSelect.value ? parseInt(universeSelect.value, 10) : null;
-                saveNote({ universe_id: newUniverseId });
-            });
-        }
 
         // Save-on-navigate-away, in case someone clicks a different note (or leaves the page)
         // inside the 600ms debounce window - otherwise that last unsaved keystroke could be lost.
