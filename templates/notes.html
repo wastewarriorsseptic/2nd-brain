@@ -12,11 +12,10 @@
          way for any of that JS to detect or correct for it - only a fresh page load resets it, which
          matches "isnt able to be back to normal unless i reset app" exactly. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <!-- Matches index.html's own theme-color exactly (#0f172a = bg-slate-900) - without it, the
-         area behind the status bar/notch gets painted by the OS/WKWebView with its own default
-         color rather than this page's actual background, showing up as a mismatched band sitting
-         on top of the starfield - reported directly with a screenshot. -->
-    <meta name="theme-color" content="#0f172a">
+    <!-- Matches this page's own bg-slate-950 body (see below) - without it, the area behind the
+         status bar/notch gets painted by the OS/WKWebView with its own default color rather than
+         this page's actual background, showing up as a mismatched band - reported directly. -->
+    <meta name="theme-color" content="#020617">
     <title>{{ (selected_universe.name if selected_universe else 'Notes') }} - TaskMonster</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
@@ -97,7 +96,7 @@
            index.html's own Multiverse picker starfield (generateMultiversePickerStars) rather than
            the canvas-drawn one Space View itself uses - this page has no canvas engine, and a
            couple dozen small absolutely-positioned divs give the identical look for a fraction of
-           the setup. Only ever visible against the dark bg-slate-900 page background - the white
+           the setup. Only ever visible against the dark bg-slate-950 page background - the white
            note card and the floating launcher circles sit on top of it same as everywhere else. */
         @keyframes notes-space-star-twinkle {
             0%, 100% { opacity: var(--star-min-o, 0.12); }
@@ -112,7 +111,12 @@
         }
     </style>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
+<!-- bg-slate-950, not the app's more common bg-slate-900 - matches Space View/the Multiverse
+     Timeline's own background (#space-view-overlay in index.html is bg-slate-950) exactly, since
+     that's what this page's starfield is meant to read as an extension of. Reported directly with
+     a side-by-side screenshot of both pages open on desktop Safari - a real, reproducible shade
+     mismatch, nothing to do with the separate native-iOS background issue fixed earlier. -->
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
     <!-- Zero-height probe whose padding-top resolves env(safe-area-inset-top) into a real pixel
          value syncNotesTaskChatToViewport() can read via getBoundingClientRect() - env() can't be
          read directly from JS, only from a rendered box. 0 on a non-notched device/browser.
