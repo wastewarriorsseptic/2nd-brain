@@ -439,6 +439,19 @@
         if (notesTaskChatInputEl) {
             notesTaskChatInputEl.addEventListener('focus', syncNotesTaskChatToViewportSoon);
             notesTaskChatInputEl.addEventListener('blur', syncNotesTaskChatToViewportSoon);
+            // Reported directly with a screen recording: typing a message and hitting Enter closed
+            // the chat almost instantly, far faster than an actual AI round-trip could ever
+            // complete - meaning the request most likely never went out at all. This relied entirely
+            // on the browser's own implicit "Enter submits a lone-text-input form" behavior via the
+            // form's onsubmit, which this WKWebView context apparently doesn't fire reliably. Handling
+            // Enter directly here - calling the exact same handler a real submit would - removes that
+            // dependency instead of trying to explain it away.
+            notesTaskChatInputEl.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.isComposing) {
+                    e.preventDefault();
+                    handleNotesTaskChatSubmit(e);
+                }
+            });
         }
 
         async function handleNotesTaskChatSubmit(event) {
