@@ -200,9 +200,14 @@
            Design goal (revised - reported directly, wanting the rest-of-the-time overlap gone
            entirely): these three should get close enough to read as one cluster but never actually
            overlap at any point in the cycle, rest included - so the static Tailwind offsets below
-           were widened (-right-9/-left-9 -> -right-12/-left-12) until rest itself has clearance,
-           with this same sideways repel then adding to that margin at the peak rather than being
-           the only thing preventing overlap. The push magnitude below (7px) is tuned to clear the
+           were widened from -right-9/-left-9. -right-12/-left-12 (tried first) fixed the overlap but
+           over-corrected the other way - reported directly, right after, as too far out and, on a
+           narrow phone, pushing the "+" badge to the very edge of the screen (getBoundingClientRect
+           confirmed it: ~5px past the viewport at that badge's own animation peak). -right-10/-left-10
+           is the smallest step that still keeps every pair clear at both rest and peak (measured
+           ~5px minimum clearance throughout) while leaving several px of on-screen margin even at
+           375px wide, with this same sideways repel adding to that clearance at the peak rather
+           than being the only thing preventing overlap. The push magnitude below (7px) is tuned to clear the
            shared -3px vertical float's cancelling effect (devil and badge both float up together, so
            only the sideways push actually changes their relative distance) - a smaller push was
            barely perceptible. See the ⏳ Timeline badge's own keyframe for why ITS push doesn't need
@@ -426,7 +431,7 @@
                  bare "Buy milk tomorrow" as a create request instead of asking what's meant. -->
             <button type="button" id="ai-chat-quick-task-btn" onclick="openAiChatQuickTask(event)"
                     title="{{ 'Add a new event' if is_event_universe else 'Add a new task' }}"
-                    class="absolute -bottom-6 -right-12 w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 border border-emerald-300/40 text-white text-2xl font-extrabold flex items-center justify-center shadow-lg transition">
+                    class="absolute -bottom-6 -right-10 w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 border border-emerald-300/40 text-white text-2xl font-extrabold flex items-center justify-center shadow-lg transition">
                 +
             </button>
             {% if user %}
@@ -435,7 +440,7 @@
                  see openMultiverseView()) from anywhere in the app instead of only via the
                  sidebar's Universe pill or Space View's own top-left pill. -->
             <button type="button" id="multiverse-quick-btn" onclick="openMultiverseView()" title="Universes Home"
-                    class="absolute -bottom-6 -left-12 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 border border-indigo-400/30 text-white text-xl flex items-center justify-center shadow-lg transition">
+                    class="absolute -bottom-6 -left-10 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 border border-indigo-400/30 text-white text-xl flex items-center justify-center shadow-lg transition">
                 🏡
             </button>
             <!-- Fourth tangent circle, centered below the devil between the "+" and 🌀 badges -
