@@ -153,15 +153,22 @@
              uses, just scaled down) rather than a big grid or a scrolling list of individual notes
              - reported directly, wanting the picker out of the way so the checklist below gets
              the actual full-screen whitespace. -->
-        <!-- pt-3 (rather than pt-0) - a horizontally-scrolling container with overflow-x:auto and
+        <!-- pt-8 (rather than pt-0) - a horizontally-scrolling container with overflow-x:auto and
              no overflow-y set computes overflow-y to auto too, per the CSS overflow spec's own
              "one axis non-visible forces the other out of visible" rule, so it silently clips any
              vertical bleed at its own top edge: the wobbling cards' own rotate() transform (see
              .universe-card-wobbling) grows their bounding box slightly, and the selected card's own
              shadow-lg glow bleeds upward too - reported directly with a screenshot showing circles
-             cut off across the top the moment reorder mode's wobble kicks in. This margin just gives
-             both room to render without touching that clip boundary. -->
-        <div id="notes-universe-strip" class="flex items-start gap-3 overflow-x-auto pt-3 pb-1 mb-4 -mx-1 px-1">
+             cut off across the top the moment reorder mode's wobble kicks in. Bumped from the
+             original pt-3 after a second report ("after i move the universes around in wobble mode
+             and hit done the tops get cut off") - a real drag-and-drop reorder (not just the idle
+             wobble) adds SortableJS's own "chosen"/"drag" state on top of the wobble rotation for
+             the ~150ms it takes to animate into the dropped position, which bleeds noticeably more
+             than idle wobble alone but only for that brief animated window, making it easy to miss
+             in a static screenshot taken after the fact. A bigger fixed margin is the only real fix
+             for this exact CSS quirk (you cannot ask just the Y axis to stay non-clipping once X is
+             set to auto), so this errs generous rather than trying to measure the exact worst case. -->
+        <div id="notes-universe-strip" class="flex items-start gap-3 overflow-x-auto pt-8 pb-1 mb-4 -mx-1 px-1">
             <a href="/notes" class="shrink-0 flex flex-col items-center gap-1 w-14">
                 <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if not selected_universe_id else 'border-slate-700 bg-slate-900 hover:border-indigo-500/60' }}">
                     ✨
@@ -749,6 +756,14 @@
                 delay: 150,
                 delayOnTouchOnly: true,
                 onEnd: () => {
+                    // A dropped <a> can be left showing the browser's own default blue focus ring
+                    // (native drag-and-drop hands it keyboard focus on drop) even though nothing
+                    // about our own "selected universe" styling changed - noticed while reproducing
+                    // a different report (see the pt-8 comment above) and worth closing here since
+                    // it's this same drag path that causes it.
+                    if (document.activeElement && document.activeElement.classList.contains('notes-universe-card')) {
+                        document.activeElement.blur();
+                    }
                     const order = Array.from(picker.querySelectorAll('.notes-universe-card'))
                         .map(el => parseInt(el.getAttribute('data-universe-id')))
                         .filter(Boolean);
