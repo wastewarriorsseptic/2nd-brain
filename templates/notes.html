@@ -228,16 +228,20 @@
                  just gives the scrollable list enough room to clear them at the very bottom. -->
             <div class="flex-1 overflow-y-auto space-y-2.5 pb-32">
                 {% for row in checklist %}
-                    <div class="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
-                        <form action="/items/toggle-complete/" method="POST" class="shrink-0 mt-0.5">
-                            <input type="hidden" name="item_id" value="{{ row.item_id }}">
-                            <button type="submit" title="{{ 'Mark Incomplete' if row.is_completed else 'Mark Complete' }}"
-                                    class="w-5 h-5 rounded-md border flex items-center justify-center transition {% if row.is_completed %}bg-emerald-500 border-emerald-500 text-white font-bold{% else %}border-slate-400 hover:border-emerald-500 text-transparent hover:text-emerald-500/50{% endif %}">
-                                ✓
-                            </button>
-                        </form>
+                    <div class="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200" data-row-item-id="{{ row.item_id }}">
+                        <!-- fetch() with X-Requested-With, same as Space View's own completion
+                             toggle - reported directly with a screen recording: the checklist's old
+                             plain form POST did a full page reload on every complete/incomplete tap,
+                             which reset scroll to the top and threw the user back to the first row
+                             every single time. toggle_item_complete already supports this exact
+                             no-reload path (see app.py) - this was purely a matter of using it here
+                             too instead of the fallback plain-form behavior. -->
+                        <button type="button" onclick="toggleNotesChecklistItem(this, {{ row.item_id }})" title="{{ 'Mark Incomplete' if row.is_completed else 'Mark Complete' }}"
+                                class="shrink-0 mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center transition {% if row.is_completed %}bg-emerald-500 border-emerald-500 text-white font-bold{% else %}border-slate-400 hover:border-emerald-500 text-transparent hover:text-emerald-500/50{% endif %}">
+                            ✓
+                        </button>
                         <div class="flex-1 min-w-0">
-                            <p class="text-sm font-semibold break-words leading-snug {{ 'text-slate-400 line-through' if row.is_completed else 'text-slate-800' }}">{{ row.title }}</p>
+                            <p class="notes-checklist-title text-sm font-semibold break-words leading-snug {{ 'text-slate-400 line-through' if row.is_completed else 'text-slate-800' }}">{{ row.title }}</p>
                             {% if row.description %}
                             <p class="text-xs text-slate-500 mt-0.5 break-words">{{ row.description }}</p>
                             {% endif %}
@@ -326,6 +330,44 @@
             const isHidden = form.classList.toggle('hidden');
             form.classList.toggle('flex', !isHidden);
             if (!isHidden) form.querySelector('input[name="title"]').focus();
+        }
+
+        // Same fetch()-with-X-Requested-With pattern Space View's own completion toggle already
+        // uses against this exact route (see toggle_item_complete in app.py) - reported directly
+        // with a screen recording: the checklist's own checkbox used to be a plain form POST, a
+        // full page reload on every single tap that reset scroll to the top and threw the user back
+        // to the first row every time. No reload here at all - just flips this one row's own
+        // checkbox/strikethrough classes once the server confirms the toggle.
+        async function toggleNotesChecklistItem(button, itemId) {
+            button.disabled = true;
+            try {
+                const res = await fetch('/items/toggle-complete/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'fetch' },
+                    body: 'item_id=' + encodeURIComponent(itemId)
+                });
+                const data = await res.json();
+                if (!res.ok || !data.ok) return;
+                const isCompleted = data.is_completed;
+                button.title = isCompleted ? 'Mark Incomplete' : 'Mark Complete';
+                button.classList.toggle('bg-emerald-500', isCompleted);
+                button.classList.toggle('border-emerald-500', isCompleted);
+                button.classList.toggle('text-white', isCompleted);
+                button.classList.toggle('font-bold', isCompleted);
+                button.classList.toggle('border-slate-400', !isCompleted);
+                button.classList.toggle('hover:border-emerald-500', !isCompleted);
+                button.classList.toggle('text-transparent', !isCompleted);
+                button.classList.toggle('hover:text-emerald-500/50', !isCompleted);
+                const row = button.closest('[data-row-item-id]');
+                const title = row ? row.querySelector('.notes-checklist-title') : null;
+                if (title) {
+                    title.classList.toggle('text-slate-400', isCompleted);
+                    title.classList.toggle('line-through', isCompleted);
+                    title.classList.toggle('text-slate-800', !isCompleted);
+                }
+            } finally {
+                button.disabled = false;
+            }
         }
 
         {% if gemini_enabled and selected_universe_id %}
