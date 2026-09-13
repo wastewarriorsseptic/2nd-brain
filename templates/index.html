@@ -10763,21 +10763,41 @@
             }
 
             // If the hold-to-delete trash icon (or its sibling Edit icon) is currently showing,
-            // this tap either hits one of them or lands elsewhere (dismiss) - either way it's
-            // consumed here.
+            // this tap either hits one of them (consumed here, same as before) or lands elsewhere.
+            // "Elsewhere" used to always just dismiss and swallow the tap outright - but a Realm's
+            // hub is the exact same node that was held to arm these icons in the first place, and
+            // that hub is also the one place in this whole view meant to toggle back out on a
+            // second tap (focusRealmTimelineLane/focusAndRepelRealms's own "tap again to pop out").
+            // A tap that merely lasted a bit long (past the 550ms long-press delay - easy to do
+            // without meaning to) armed the icons instead of toggling, and this swallowed the very
+            // next tap too since it only ever dismissed rather than still counting as a real click -
+            // reported directly ("i can tap a universe node to pop back out, but tapping a realm
+            // node doesn't get me back out"), needing a THIRD tap before a normal one finally landed.
+            // Only truly dismiss-and-stop-there when the tap hit neither icon AND isn't back on the
+            // held realm's own hub - falling through (no return) lets a tap that missed both icons
+            // but landed on the hub itself go on to be handled as the ordinary tap it looks like.
             if (longPressRealmForDelete) {
                 const realmForActions = longPressRealmForDelete;
                 const deleteIconPos = getDeleteIconPos(realmForActions);
                 const editIconPos = getRealmEditIconPos(realmForActions);
                 const distToDelete = Math.hypot(worldX - deleteIconPos.x, worldY - deleteIconPos.y);
                 const distToEdit = Math.hypot(worldX - editIconPos.x, worldY - editIconPos.y);
+                const hubX = isRealmTimelineView ? realmForActions.x : realmForActions.drawX;
+                const hubY = isRealmTimelineView ? realmForActions.y : realmForActions.drawY;
+                const hubRadius = isRealmTimelineView ? realmForActions.hubRadius + 10 : realmForActions.radius + 24;
+                const distToHub = Math.hypot(worldX - hubX, worldY - hubY);
                 longPressRealmForDelete = null;
                 if (distToDelete <= deleteIconPos.radius + 10) {
                     confirmAndDeleteRealm(realmForActions.id, realmForActions.name);
+                    return;
                 } else if (distToEdit <= editIconPos.radius + 10) {
                     openEditRealmFromCanvas(realmForActions);
+                    return;
+                } else if (distToHub > hubRadius) {
+                    return;
                 }
-                return;
+                // Falls through to the normal tap-handling below, which re-detects this as a tap on
+                // the Realm's own hub and toggles it exactly like any other first-time tap would.
             }
 
             if (isMultiverseStackedView) {
