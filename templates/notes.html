@@ -58,61 +58,66 @@
 
         <!-- Reworked from a freeform, Apple-Notes-style list into a pure "starred tasks" checklist
              browsed by Universe - reported directly: no more typing an arbitrary note, no more
-             per-note selection. This sidebar is now a Universe PICKER, same round-icon-plus-name
-             look the Multiverse picker grid (index.html's "Home" screen) already uses, rather than
-             a scrolling list of individual notes with preview text. -->
-        <div class="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4 md:h-[calc(100vh-90px)]">
-            <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-4 flex flex-col md:overflow-hidden">
-                <div class="flex-1 overflow-y-auto -mx-1 px-1">
-                    <div class="grid grid-cols-3 md:grid-cols-2 gap-3">
-                        <a href="/notes" class="flex flex-col items-center gap-1.5 group">
-                            <div class="w-16 h-16 rounded-full flex items-center justify-center text-2xl border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if not selected_universe_id else 'border-slate-700 bg-slate-900 group-hover:border-indigo-500/60' }}">
-                                ✨
-                            </div>
-                            <span class="text-[11px] font-bold text-center truncate w-full {{ 'text-white' if not selected_universe_id else 'text-slate-400' }}">All</span>
-                        </a>
-                        {% for u in universes %}
-                        <a href="/notes?universe_id={{ u.id }}" class="flex flex-col items-center gap-1.5 group">
-                            <div class="w-16 h-16 rounded-full flex items-center justify-center text-2xl border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if selected_universe_id == u.id else 'border-slate-700 bg-slate-900 group-hover:border-indigo-500/60' }}">
-                                {{ u.icon or '😈' }}
-                            </div>
-                            <span class="text-[11px] font-bold text-center truncate w-full {{ 'text-white' if selected_universe_id == u.id else 'text-slate-400' }}">{{ u.name }}</span>
-                        </a>
-                        {% endfor %}
-                    </div>
+             per-note selection. The Universe picker is a compact, always-minimized horizontal
+             strip (round icon + name, same look the Multiverse picker grid on the home screen
+             uses, just scaled down) rather than a big grid or a scrolling list of individual notes
+             - reported directly, wanting the picker out of the way so the checklist below gets
+             the actual full-screen whitespace. -->
+        <div class="flex items-start gap-3 overflow-x-auto pb-1 mb-4 -mx-1 px-1">
+            <a href="/notes" class="shrink-0 flex flex-col items-center gap-1 w-14">
+                <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if not selected_universe_id else 'border-slate-700 bg-slate-900 hover:border-indigo-500/60' }}">
+                    ✨
                 </div>
-            </div>
+                <span class="text-[10px] font-bold text-center truncate w-full {{ 'text-white' if not selected_universe_id else 'text-slate-400' }}">All</span>
+            </a>
+            {% for u in universes %}
+            <a href="/notes?universe_id={{ u.id }}" class="shrink-0 flex flex-col items-center gap-1 w-14">
+                <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if selected_universe_id == u.id else 'border-slate-700 bg-slate-900 hover:border-indigo-500/60' }}">
+                    {{ u.icon or '😈' }}
+                </div>
+                <span class="text-[10px] font-bold text-center truncate w-full {{ 'text-white' if selected_universe_id == u.id else 'text-slate-400' }}">{{ u.name }}</span>
+            </a>
+            {% endfor %}
+        </div>
 
-            <!-- Checklist - every currently-starred task in the selected scope, soonest-due first
-                 (see notes_page/toggle_note_from_task). Rows are light/white cards ("pile up" like
-                 real paper checklist items) rather than the app's usual dark cards - reported
-                 directly, wanting these to read as actual notes rather than blending into the same
-                 dark chrome as everything else. -->
-            <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-5 md:p-6 flex flex-col md:overflow-hidden">
-                <h2 class="text-lg font-extrabold text-white flex items-center gap-2 mb-4 shrink-0">
+        <!-- The checklist container itself IS "the note" for this scope - deliberately a full
+             white paper surface (not just individual light rows floating on a dark card) so it's
+             unmistakable that these starred tasks are seeded WITHIN this Universe's own note,
+             reported directly wanting that to be clear. Full width and most of the remaining
+             viewport height now that the picker above no longer eats into it. -->
+        <div class="bg-white rounded-3xl p-5 md:p-6 flex flex-col shadow-2xl" style="min-height: calc(100vh - 230px);">
+            <div class="flex items-center justify-between gap-2 mb-4 shrink-0">
+                <h2 class="text-lg font-extrabold text-slate-900 flex items-center gap-2">
                     {% if selected_universe %}{{ selected_universe.icon or '😈' }} {{ selected_universe.name }}{% else %}✨ All{% endif %}
                 </h2>
-
                 {% if selected_universe_id %}
                 <!-- Only shown once a specific Universe is picked - "All" has no single target to
-                     put a new task in. Reported directly, wanting to create a task right from here
-                     rather than leaving Notes to do it - auto-stars immediately (see
-                     new_task_from_notes) so it shows up in the checklist below right away. -->
-                <form action="/notes/new-task/" method="POST" class="flex items-center gap-2 mb-4 shrink-0">
-                    <input type="hidden" name="universe_id" value="{{ selected_universe_id }}">
-                    <input type="text" name="title" placeholder="Add a task…" required autocomplete="off"
-                           class="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
-                    <input type="date" name="due_date"
-                           class="bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 shrink-0">
-                    <button type="submit" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/20 transition-all shrink-0">
-                        + Add
-                    </button>
-                </form>
+                     put a new task in. Just a plain round "+" until tapped - reported directly,
+                     wanting the add-task control to be a tap target, not a form always sitting on
+                     screen - toggleNewTaskForm() reveals the actual title/date/Add row beneath it. -->
+                <button type="button" onclick="toggleNewTaskForm()"
+                        class="w-9 h-9 shrink-0 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xl font-extrabold flex items-center justify-center shadow-lg shadow-indigo-600/30 transition-all">
+                    +
+                </button>
                 {% endif %}
+            </div>
 
-                <div class="flex-1 overflow-y-auto space-y-2.5">
-                    {% for row in checklist %}
-                    <div class="flex items-start gap-3 p-3.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+            {% if selected_universe_id %}
+            <form id="new-task-form" action="/notes/new-task/" method="POST" class="hidden items-center gap-2 mb-4 shrink-0">
+                <input type="hidden" name="universe_id" value="{{ selected_universe_id }}">
+                <input type="text" name="title" placeholder="Add a task…" required autocomplete="off"
+                       class="flex-1 min-w-0 bg-slate-100 border border-slate-200 rounded-xl px-3.5 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500">
+                <input type="date" name="due_date"
+                       class="bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-2 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 shrink-0">
+                <button type="submit" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/20 transition-all shrink-0">
+                    Add
+                </button>
+            </form>
+            {% endif %}
+
+            <div class="flex-1 overflow-y-auto space-y-2.5">
+                {% for row in checklist %}
+                    <div class="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
                         <form action="/items/toggle-complete/" method="POST" class="shrink-0 mt-0.5">
                             <input type="hidden" name="item_id" value="{{ row.item_id }}">
                             <button type="submit" title="{{ 'Mark Incomplete' if row.is_completed else 'Mark Complete' }}"
@@ -148,10 +153,22 @@
                         <p class="text-slate-500 text-xs">Star a task from its card to see it here{% if selected_universe_id %}, or add one above{% endif %}.</p>
                     </div>
                     {% endfor %}
-                </div>
             </div>
         </div>
     </div>
+
+    <script>
+        // "+" next to the checklist header stays a plain tap target until pressed - reported
+        // directly, wanting the add-task control out of the way rather than a form always sitting
+        // on screen. Toggles the title/date/Add row hidden right beneath it.
+        function toggleNewTaskForm() {
+            const form = document.getElementById('new-task-form');
+            if (!form) return;
+            const isHidden = form.classList.toggle('hidden');
+            form.classList.toggle('flex', !isHidden);
+            if (!isHidden) form.querySelector('input[name="title"]').focus();
+        }
+    </script>
 
     <!-- Same floating launcher cluster as the main app - see the <style> block above for why
          these are plain links instead of the JS-driven buttons index.html itself uses. -->
