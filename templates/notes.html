@@ -103,7 +103,15 @@
              uses, just scaled down) rather than a big grid or a scrolling list of individual notes
              - reported directly, wanting the picker out of the way so the checklist below gets
              the actual full-screen whitespace. -->
-        <div id="notes-universe-strip" class="flex items-start gap-3 overflow-x-auto pb-1 mb-4 -mx-1 px-1">
+        <!-- pt-3 (rather than pt-0) - a horizontally-scrolling container with overflow-x:auto and
+             no overflow-y set computes overflow-y to auto too, per the CSS overflow spec's own
+             "one axis non-visible forces the other out of visible" rule, so it silently clips any
+             vertical bleed at its own top edge: the wobbling cards' own rotate() transform (see
+             .universe-card-wobbling) grows their bounding box slightly, and the selected card's own
+             shadow-lg glow bleeds upward too - reported directly with a screenshot showing circles
+             cut off across the top the moment reorder mode's wobble kicks in. This margin just gives
+             both room to render without touching that clip boundary. -->
+        <div id="notes-universe-strip" class="flex items-start gap-3 overflow-x-auto pt-3 pb-1 mb-4 -mx-1 px-1">
             <a href="/notes" class="shrink-0 flex flex-col items-center gap-1 w-14">
                 <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if not selected_universe_id else 'border-slate-700 bg-slate-900 hover:border-indigo-500/60' }}">
                     ✨
@@ -446,6 +454,16 @@
             notesUniverseSortable = new Sortable(picker, {
                 animation: 150,
                 disabled: true,
+                // Without these, being in wobble mode turned every touch on the strip into a drag
+                // from the very first pixel of movement - reported directly, wanting to still be
+                // able to swipe sideways to see off-screen Universes without dragging whichever one
+                // the swipe happened to start on. delayOnTouchOnly makes a touch wait 150ms before a
+                // drag actually starts (mouse drags on desktop are unaffected); if the finger moves
+                // past Sortable's own touch-move threshold before that delay elapses, it releases
+                // the gesture back to the browser's native horizontal scroll instead of grabbing the
+                // card. A deliberate press-and-hold-then-drag still reorders exactly as before.
+                delay: 150,
+                delayOnTouchOnly: true,
                 onEnd: () => {
                     const order = Array.from(picker.querySelectorAll('.notes-universe-card'))
                         .map(el => parseInt(el.getAttribute('data-universe-id')))
