@@ -3196,6 +3196,17 @@
             document.getElementById('custom-repeat-modal').classList.remove('hidden');
         }
 
+        // Real vibration on completing a task, requested directly. The web Vibration API
+        // (navigator.vibrate) has no effect at all in Safari/WKWebView on iOS - it silently does
+        // nothing - so this reaches a real haptic generator via the native bridge registered in
+        // ios/TaskMonster/Sources/WebView.swift instead. That bridge only exists inside the native
+        // app wrapper, so this always no-ops (via the try/catch) when running in a normal browser.
+        function triggerHapticFeedback(kind = 'success') {
+            try {
+                window.webkit.messageHandlers.haptics.postMessage(kind);
+            } catch (e) {}
+        }
+
         function triggerTaskConfetti(event, formElement) {
             const cardWrapper = formElement.closest('.timeline-card-wrapper');
             const isCompleted = cardWrapper && cardWrapper.getAttribute('data-completed') === 'true';
@@ -3214,6 +3225,7 @@
                     colors: ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#3b82f6'],
                     disableForReducedMotion: true
                 });
+                triggerHapticFeedback();
 
                 setTimeout(() => {
                     formElement.submit();
@@ -3230,6 +3242,7 @@
                 colors: ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#3b82f6'],
                 disableForReducedMotion: true
             });
+            triggerHapticFeedback();
         }
 
         // Space View's own complete flow: a real fetch() instead of a form submit, specifically so

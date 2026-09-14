@@ -18,6 +18,14 @@ struct WebView: UIViewRepresentable {
         // WKWebView needs this to grant that permission (see Coordinator's WKUIDelegate method
         // below, plus NSMicrophoneUsageDescription in Info.plist).
         config.mediaTypesRequiringUserActionForPlayback = []
+        // Lets the page trigger a real native haptic (UINotificationFeedbackGenerator, via the
+        // Coordinator's WKScriptMessageHandler below) on completing a task - reported directly,
+        // wanting actual vibration feedback there. The web Vibration API (navigator.vibrate) the
+        // page would otherwise reach for has never worked in Safari/WKWebView on iOS at all - it
+        // silently does nothing no matter what the page calls, on every iOS version - so
+        // window.webkit.messageHandlers.haptics.postMessage(...) from the page's own JS is the
+        // only way to reach a real haptic generator from web content on this platform at all.
+        config.userContentController.add(context.coordinator, name: "haptics")
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
@@ -39,7 +47,7 @@ struct WebView: UIViewRepresentable {
 
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         // Known non-usetaskmonster.app hosts that are still part of a legitimate in-flow
         // navigation (Google/Apple sign-in) rather than an external link - let these load
         // in the same WKWebView instead of bouncing out to Safari.
@@ -93,6 +101,33 @@ struct WebView: UIViewRepresentable {
             decisionHandler: @escaping (WKPermissionDecision) -> Void
         ) {
             decisionHandler(.grant)
+        }
+
+        // Fires on window.webkit.messageHandlers.haptics.postMessage(...) from the page - see the
+        // userContentController.add(...) registration in makeUIView above. The page sends a kind
+        // string ("success"/"warning"/"error" for UINotificationFeedbackGenerator, anything else
+        // treated as an impact style) so it can ask for different feedback in different spots
+        // without another native round-trip later.
+        func userContentController(
+            _ userContentController: WKUserContentController,
+            didReceive message: WKScriptMessage
+        ) {
+            guard message.name == "haptics" else { return }
+            let kind = (message.body as? String) ?? "success"
+            switch kind {
+            case "success":
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            case "warning":
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            case "error":
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+            case "light":
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            case "heavy":
+                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+            default:
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            }
         }
 
         // WKUIDelegate's alert/confirm/prompt panel methods are all optional - leaving them

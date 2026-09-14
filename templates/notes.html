@@ -341,6 +341,17 @@
     {% endif %}
 
     <script>
+        // Real vibration on completing a task, requested directly. The web Vibration API
+        // (navigator.vibrate) has no effect at all in Safari/WKWebView on iOS, so this reaches a
+        // real haptic generator via the native bridge registered in
+        // ios/TaskMonster/Sources/WebView.swift instead - a no-op (via the try/catch) in a normal
+        // browser, since that bridge only exists inside the native app wrapper.
+        function triggerHapticFeedback(kind = 'success') {
+            try {
+                window.webkit.messageHandlers.haptics.postMessage(kind);
+            } catch (e) {}
+        }
+
         // "+" next to the checklist header stays a plain tap target until pressed - reported
         // directly, wanting the add-task control out of the way rather than a form always sitting
         // on screen. Toggles the title/date/Add row hidden right beneath it. Fallback path only -
@@ -385,6 +396,7 @@
                         disableForReducedMotion: true
                     });
                 }
+                if (isCompleted) triggerHapticFeedback();
                 button.title = isCompleted ? 'Mark Incomplete' : 'Mark Complete';
                 button.classList.toggle('bg-emerald-500', isCompleted);
                 button.classList.toggle('border-emerald-500', isCompleted);
