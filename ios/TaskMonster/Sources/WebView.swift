@@ -41,6 +41,7 @@ struct WebView: UIViewRepresentable {
         // directly with several screenshots. No amount of CSS on the page itself could ever have
         // fixed this: it's the native WKWebView's own background paint, not page content.
         webView.backgroundColor = UIColor(red: 0.0588, green: 0.0902, blue: 0.1647, alpha: 1)
+        context.coordinator.attach(webView: webView, url: url)
         webView.load(URLRequest(url: url))
         return webView
     }
@@ -48,6 +49,94 @@ struct WebView: UIViewRepresentable {
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
+        private weak var webView: WKWebView?
+        private var url: URL?
+        private weak var errorOverlay: UIView?
+
+        // Before this, a failed initial load (no connectivity, DNS hiccup, server timeout) left
+        // the app sitting on its own background color forever with zero feedback and no way to
+        // recover short of force-quitting - reported directly as the app being "just black
+        // space" with a screenshot showing exactly this native background and nothing else.
+        // WKWebView has no built-in error UI of its own, so this builds a minimal one - message
+        // plus a Retry button that just re-issues the same load - and wires it to the
+        // didFail/didFailProvisionalNavigation delegate methods below.
+        func attach(webView: WKWebView, url: URL) {
+            self.webView = webView
+            self.url = url
+
+            let overlay = UIView()
+            overlay.backgroundColor = webView.backgroundColor
+            overlay.isHidden = true
+            overlay.translatesAutoresizingMaskIntoConstraints = false
+
+            let label = UILabel()
+            label.text = "Couldn't connect. Check your internet connection and try again."
+            label.textColor = .white
+            label.numberOfLines = 0
+            label.textAlignment = .center
+            label.font = .systemFont(ofSize: 16, weight: .medium)
+            label.translatesAutoresizingMaskIntoConstraints = false
+
+            let retryButton = UIButton(type: .system)
+            retryButton.setTitle("Retry", for: .normal)
+            retryButton.setTitleColor(.white, for: .normal)
+            retryButton.titleLabel?.font = .systemFont(ofSize: 16, weight: .bold)
+            retryButton.backgroundColor = UIColor(red: 0.302, green: 0.267, blue: 0.851, alpha: 1) // indigo-600
+            retryButton.layer.cornerRadius = 12
+            retryButton.contentEdgeInsets = UIEdgeInsets(top: 12, left: 28, bottom: 12, right: 28)
+            retryButton.translatesAutoresizingMaskIntoConstraints = false
+            retryButton.addTarget(self, action: #selector(retryTapped), for: .touchUpInside)
+
+            overlay.addSubview(label)
+            overlay.addSubview(retryButton)
+            webView.addSubview(overlay)
+
+            NSLayoutConstraint.activate([
+                overlay.leadingAnchor.constraint(equalTo: webView.leadingAnchor),
+                overlay.trailingAnchor.constraint(equalTo: webView.trailingAnchor),
+                overlay.topAnchor.constraint(equalTo: webView.topAnchor),
+                overlay.bottomAnchor.constraint(equalTo: webView.bottomAnchor),
+
+                label.centerXAnchor.constraint(equalTo: overlay.centerXAnchor),
+                label.centerYAnchor.constraint(equalTo: overlay.centerYAnchor, constant: -28),
+                label.leadingAnchor.constraint(greaterThanOrEqualTo: overlay.leadingAnchor, constant: 32),
+                label.trailingAnchor.constraint(lessThanOrEqualTo: overlay.trailingAnchor, constant: -32),
+
+                retryButton.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 20),
+                retryButton.centerXAnchor.constraint(equalTo: overlay.centerXAnchor),
+            ])
+
+            errorOverlay = overlay
+        }
+
+        @objc private func retryTapped() {
+            guard let webView, let url else { return }
+            errorOverlay?.isHidden = true
+            webView.load(URLRequest(url: url))
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            errorOverlay?.isHidden = true
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            showErrorOverlayUnlessCancelled(error)
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            showErrorOverlayUnlessCancelled(error)
+        }
+
+        // Cancelling a navigation from decidePolicyFor (every external link/OAuth redirect handed
+        // off to Safari via UIApplication.shared.open above) delivers a didFailProvisionalNavigation
+        // with NSURLErrorCancelled (-999) right along with the real network-failure case - without
+        // this guard, tapping any external link or going through Google/Apple sign-in would flash
+        // the "Couldn't connect" retry screen even though nothing actually failed.
+        private func showErrorOverlayUnlessCancelled(_ error: Error) {
+            if (error as NSError).code == NSURLErrorCancelled { return }
+            errorOverlay?.isHidden = false
+        }
+
         // Known non-usetaskmonster.app hosts that are still part of a legitimate in-flow
         // navigation (Google/Apple sign-in) rather than an external link - let these load
         // in the same WKWebView instead of bouncing out to Safari.
