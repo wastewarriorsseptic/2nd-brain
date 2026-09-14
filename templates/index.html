@@ -8329,6 +8329,20 @@
         // which is exactly what forced every Universe's tasks into one merged, hard-to-read chain
         // before. Kept as a fully separate code path specifically so this new view can't destabilize
         // the existing (already fragile) realm/bucket rendering used everywhere else.
+        // Keeps the first stacked lane's hub (Multiverse Timeline or Realm Timeline) from
+        // rendering above/behind the Daily Digest pill when there are enough lanes that
+        // vertically centering the whole stack would otherwise push lane 0 up past it - reported
+        // directly with a screenshot of several Universe lanes clipped under the pill. Measures
+        // the pill's own real bottom edge live (DOM position, not a guessed constant) so this
+        // stays correct across every device/notch size, rather than hardcoding a pixel value
+        // that would drift the moment the pill's own content/padding changed.
+        function minStackedLaneCameraY(hubRadiusPx, zoomVal) {
+            const pill = document.getElementById('daily-digest-hud');
+            const pillBottom = (pill && !pill.classList.contains('hidden')) ? pill.getBoundingClientRect().bottom : 0;
+            const padding = 24;
+            return pillBottom + padding + (hubRadiusPx * zoomVal);
+        }
+
         function openMultiverseTimeline() {
             closeMultiverseView();
 
@@ -8412,10 +8426,15 @@
                 // centering a short stack (the common case) against the RAW window height left a
                 // large empty gap under the pill, since the center of a tall desktop viewport sits
                 // well below a couple of lanes' worth of content. Reported directly. Mobile keeps
-                // the original centered formula (untouched, wasn't flagged) since its topChrome is
-                // always 0 anyway.
+                // the original centered formula for a short stack (still looks best when there's
+                // room to spare), but clamped so it can never push lane 0 up past the Daily Digest
+                // pill once there are enough Universes for that centering math to want to - see
+                // minStackedLaneCameraY.
                 y: isMobile
-                    ? ((window.innerHeight / 2) - ((totalHeight / 2) * zoomVal))
+                    ? Math.max(
+                        (window.innerHeight / 2) - ((totalHeight / 2) * zoomVal),
+                        minStackedLaneCameraY((multiverseLanes[0] && multiverseLanes[0].hubRadius) || 90, zoomVal)
+                      )
                     : (topChrome + 40)
             };
         }
@@ -8861,8 +8880,14 @@
             targetCameraZoom = zoomValRT;
             targetCameraOffset = {
                 x: window.innerWidth * 0.5,
+                // Same centered-but-clamped formula as openMultiverseTimeline's own camera Y -
+                // see minStackedLaneCameraY. realmLanes[0] is always the synthetic "go back"
+                // Universe hub (see buildRealmLanes), same hubRadius as every other lane here.
                 y: isMobileRT
-                    ? ((window.innerHeight / 2) - ((totalHeightRT / 2) * zoomValRT))
+                    ? Math.max(
+                        (window.innerHeight / 2) - ((totalHeightRT / 2) * zoomValRT),
+                        minStackedLaneCameraY(realmLanes[0].hubRadius, zoomValRT)
+                      )
                     : (topChromeRT + 40)
             };
         }
