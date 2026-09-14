@@ -262,7 +262,7 @@
                             ✓
                         </button>
                         <div class="flex-1 min-w-0">
-                            <p class="notes-checklist-title text-sm font-semibold break-words leading-snug {{ 'text-slate-400 line-through' if row.is_completed else 'text-slate-800' }}">{{ row.title }}</p>
+                            <p class="notes-checklist-title text-sm font-semibold break-words leading-snug {{ 'text-slate-400 line-through' if row.is_completed else 'text-slate-800' }}">{{ row.title | linkify_phone }}</p>
                             {% if row.description %}
                             <p class="text-xs text-slate-500 mt-0.5 break-words">{{ row.description }}</p>
                             {% endif %}

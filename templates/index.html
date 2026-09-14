@@ -924,7 +924,7 @@
                                         </div>
 
                                         <h3 class="text-lg md:text-xl font-semibold break-words {% if item.is_completed %}line-through text-slate-400{% else %}text-white{% endif %}">
-                                            {{ item.title }}
+                                            {{ item.title | linkify_phone }}
                                         </h3>
                                         {% if item.description %}
                                         <p class="text-slate-400 text-xs md:text-sm mt-1 break-words {% if item.is_completed %}line-through opacity-70{% endif %}">
@@ -3367,7 +3367,7 @@
             clearTimeout(undoCompleteToastTimer);
 
             toast.innerHTML = `
-                <span class="truncate">✓ "${escapeHtml(title)}" completed</span>
+                <span class="truncate">✓ "${linkifyTitle(title)}" completed</span>
                 <button type="button" class="shrink-0 text-emerald-300 hover:text-emerald-100 underline underline-offset-2 font-bold">Undo</button>
             `;
             toast.classList.remove('hidden');
@@ -4344,7 +4344,7 @@
                 count: parseInt(suggestion.match_count || '2', 10)
             };
 
-            document.getElementById('reorder-toast-title').innerText = `"${pendingReorderSuggestion.title}"`;
+            document.getElementById('reorder-toast-title').innerHTML = `"${linkifyTitle(pendingReorderSuggestion.title)}"`;
             document.getElementById('reorder-toast-days').innerText = pendingReorderSuggestion.days;
             document.getElementById('reorder-toast-confidence').innerText =
                 pendingReorderSuggestion.count >= 3
@@ -4471,7 +4471,7 @@
                 shoppable: params.get('recur_shoppable') === 'true'
             };
 
-            document.getElementById('recurring-toast-title').innerText = `"${title}"`;
+            document.getElementById('recurring-toast-title').innerHTML = `"${linkifyTitle(title)}"`;
             document.getElementById('recurring-toast-days').innerText = pendingRecurringSuggestion.days;
             document.getElementById('recurring-suggestion-toast').classList.remove('hidden');
 
@@ -5745,6 +5745,24 @@
             return div.innerHTML;
         }
 
+        // Same phone-number pattern/behavior as app.py's own linkify_phone Jinja filter (kept
+        // in sync manually - see that function's own comment) for every title this app builds
+        // as HTML client-side instead of through Jinja. Escapes first (so this is a drop-in
+        // replacement for a bare escapeHtml(title) call, never a second, separate escaping
+        // pass), then wraps any phone-number-looking substring in a tappable tel: link -
+        // reported directly, wanting a phone number typed into a task's own title to call on a
+        // tap instead of just triggering iOS's own text-selection popup. onclick=
+        // "event.stopPropagation()" matters wherever the title sits inside its own clickable
+        // row (a swipe-dock card, a Daily Digest list item) - without it, tapping the phone
+        // number also fires whatever that row's own click does.
+        const PHONE_NUMBER_RE = /(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g;
+        function linkifyTitle(str) {
+            return escapeHtml(str).replace(PHONE_NUMBER_RE, (match) => {
+                const digits = match.replace(/[^\d+]/g, '');
+                return `<a href="tel:${digits}" class="underline decoration-dotted underline-offset-2" onclick="event.stopPropagation()">${match}</a>`;
+            });
+        }
+
         // Native <input type="time"> steppers don't reliably honor the `step` attribute in every
         // browser's own picker UI (Chrome's desktop dropdown in particular still lists every
         // single minute regardless) - reported directly. A plain <select> built from a fixed
@@ -5965,7 +5983,7 @@
                         // cross-Universe entry (navigateToDigestItemCrossUniverse), wired up via event
                         // delegation on each digest's own body wrapper below. realmId is the one thing
                         // always needed; bucketId/itemId may be missing for an orphaned task.
-                        return `<li class="flex items-start gap-1.5 text-slate-200 leading-snug" data-nav-realm-id="${escapeHtml(it.realmId)}" data-nav-bucket-id="${escapeHtml(it.bucketId)}" data-nav-item-id="${escapeHtml(it.itemId)}">${checkboxHtml}<span class="cursor-pointer hover:text-white transition flex-1">${universeTag}<span class="font-semibold hover:underline">${escapeHtml(it.title)}</span>${overdueTag}${locationTag}</span></li>`;
+                        return `<li class="flex items-start gap-1.5 text-slate-200 leading-snug" data-nav-realm-id="${escapeHtml(it.realmId)}" data-nav-bucket-id="${escapeHtml(it.bucketId)}" data-nav-item-id="${escapeHtml(it.itemId)}">${checkboxHtml}<span class="cursor-pointer hover:text-white transition flex-1">${universeTag}<span class="font-semibold hover:underline">${linkifyTitle(it.title)}</span>${overdueTag}${locationTag}</span></li>`;
                     }).join('');
                     inner = `<ul class="space-y-1">${rows}</ul>`;
                 }
@@ -11259,7 +11277,7 @@
                                 </div>
                             </div>
                             <div>
-                                <h4 class="text-sm font-bold text-white break-words leading-snug">${task.title}</h4>
+                                <h4 class="text-sm font-bold text-white break-words leading-snug">${linkifyTitle(task.title)}</h4>
                                 ${descText}
                             </div>
                             <div class="flex items-center justify-between pt-1 border-t border-slate-700/40 text-[11px] text-indigo-300 font-mono">
@@ -11487,7 +11505,7 @@
                 return;
             }
 
-            title.innerText = task.title;
+            title.innerHTML = linkifyTitle(task.title);
             if (completeForm) completeForm.classList.remove('hidden');
             date.innerText = `📅 ${task.dueDateFormatted}`;
             if (shopBtn) shopBtn.classList.toggle('hidden', !task.isShoppable);

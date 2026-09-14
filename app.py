@@ -19,6 +19,7 @@ from fastapi import FastAPI, Request, Form, Body
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 from sqlmodel import SQLModel, Field, Relationship, Session, create_engine, select
 from sqlalchemy import text
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -594,6 +595,29 @@ app.add_middleware(
 )
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+# Matches common US phone formats typed into a task title - "978-887-6000", "(978) 887-6000",
+# "978.887.6000", a bare "9788876000", or any of those with a leading "+1"/"1-" country code.
+PHONE_NUMBER_RE = re.compile(r"(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b")
+
+def linkify_phone(text: str) -> Markup:
+    """Wraps any phone-number-looking substring of a task title in a tappable tel: link -
+    reported directly, wanting a phone number typed into a task's own title to call on a tap
+    instead of just triggering iOS's own text-selection popup (Copy/Call/Message). Escapes the
+    rest of the title itself here (this is the only place a title reaches the page unescaped by
+    Jinja's own autoescape, since returning Markup opts out of it for this one value), so
+    nothing else about how a title renders changes. onclick="event.stopPropagation()" matters
+    wherever a title sits inside its own clickable row (the Daily Digest list, a swipe-dock
+    card) - without it, tapping the phone number also fires whatever that row's own click does."""
+    escaped = str(escape(text or ""))
+
+    def _replace(m: re.Match) -> str:
+        digits = re.sub(r"[^\d+]", "", m.group(0))
+        return f'<a href="tel:{digits}" class="underline decoration-dotted underline-offset-2" onclick="event.stopPropagation()">{m.group(0)}</a>'
+
+    return Markup(PHONE_NUMBER_RE.sub(_replace, escaped))
+
+templates.env.filters["linkify_phone"] = linkify_phone
 
 # --- OAuth Registration ---
 oauth = OAuth()
