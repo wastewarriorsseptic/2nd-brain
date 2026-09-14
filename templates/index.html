@@ -3983,6 +3983,20 @@
             // survive a refresh of the same URL the way its mv_timeline query param already did.
             if (!suppressed && localStorage.getItem('space_view_mode') === 'multiverse_timeline' && !isMultiverseStackedView) {
                 openMultiverseTimeline();
+                // The render loop eases cameraZoom/cameraOffset toward targetCamera* by 10% a
+                // frame rather than snapping instantly, which reads as a nice slide when the
+                // Multiverse Timeline opens from a live tap (the hourglass launcher badge, say) -
+                // but on a cold app open there's far more competing work (network, JS parsing,
+                // everything else this same DOMContentLoaded chain is doing) than a simple button
+                // tap on an already-idle page, so a screenshot/glance taken right after launch can
+                // catch the camera still mid-catch-up, part way through its journey from the
+                // hardcoded {x:0,y:0}/zoom:1 default toward the real target - reported directly,
+                // wanting the very first frame to already be at the same settled position/spacing
+                // a live hourglass tap eventually eases into, not part way there. Snapping only
+                // here (not inside openMultiverseTimeline itself) keeps that nice eased transition
+                // for every other, already-idle way into this view.
+                cameraZoom = targetCameraZoom;
+                cameraOffset = { ...targetCameraOffset };
             }
         }
 
@@ -6260,6 +6274,10 @@
             }
             if (openMultiverseTimelineFlag) {
                 openMultiverseTimeline();
+                // Same cold-load snap as restoreSpaceViewOnAppOpen's own call - this handler only
+                // ever fires from a fresh page navigation too.
+                cameraZoom = targetCameraZoom;
+                cameraOffset = { ...targetCameraOffset };
             } else if (currentSelectedRealmId) {
                 // isMultiverseStackedView/isRealmTimelineView already reflect whatever
                 // restoreSpaceViewOnAppOpen() (registered earlier, runs first) or Realm Timeline's
@@ -6320,6 +6338,9 @@
                 document.documentElement.classList.remove('preload-space-view');
             }
             openMultiverseTimeline();
+            // Same cold-load snap as restoreSpaceViewOnAppOpen's own call - see its comment.
+            cameraZoom = targetCameraZoom;
+            cameraOffset = { ...targetCameraOffset };
         });
 
         // Lands here after tapping a "+" on a Multiverse Timeline lane belonging to a DIFFERENT
