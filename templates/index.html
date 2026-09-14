@@ -928,7 +928,7 @@
                                         </h3>
                                         {% if item.description %}
                                         <p class="text-slate-400 text-xs md:text-sm mt-1 break-words {% if item.is_completed %}line-through opacity-70{% endif %}">
-                                            {{ item.description }}
+                                            {{ item.description | linkify_phone }}
                                         </p>
                                         {% endif %}
                                     </div>
@@ -11242,7 +11242,7 @@
                         }
 
                         const amountText = task.amount ? `<span class="text-emerald-400 font-bold text-xs">$${parseFloat(task.amount).toFixed(2)}</span>` : '';
-                        const descText = task.description ? `<p class="text-slate-400 text-xs line-clamp-2 leading-relaxed mt-1">${task.description}</p>` : '';
+                        const descText = task.description ? `<p class="text-slate-400 text-xs line-clamp-2 leading-relaxed mt-1">${linkifyTitle(task.description)}</p>` : '';
                         const shopBtnHtml = task.isShoppable
                             ? `<button onclick="event.stopPropagation(); openAmazonSearch(${JSON.stringify(task.title).replace(/"/g, '&quot;')}, ${JSON.stringify(task.amount).replace(/"/g, '&quot;')})" title="Shop on Amazon" class="text-slate-400 hover:text-amber-400 text-lg">🛒</button>`
                             : '';

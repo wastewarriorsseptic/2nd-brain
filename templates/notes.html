@@ -264,7 +264,7 @@
                         <div class="flex-1 min-w-0">
                             <p class="notes-checklist-title text-sm font-semibold break-words leading-snug {{ 'text-slate-400 line-through' if row.is_completed else 'text-slate-800' }}">{{ row.title | linkify_phone }}</p>
                             {% if row.description %}
-                            <p class="text-xs text-slate-500 mt-0.5 break-words">{{ row.description }}</p>
+                            <p class="text-xs text-slate-500 mt-0.5 break-words">{{ row.description | linkify_phone }}</p>
                             {% endif %}
                             <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
                                 <span class="text-[11px] text-slate-500">📅 {{ row.due_date_formatted }}</span>
