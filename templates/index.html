@@ -5278,7 +5278,22 @@
         // resolve to exactly this task regardless of which Universe it's in. A short delay lets the
         // confirmation bubble actually be read before the page leaves.
         function aiChatTaskUrl(nav) {
-            return '/?realm_id=' + nav.realm_id + '&bucket_id=' + nav.bucket_id + '&goto_item=' + nav.id;
+            // focus_item=1 marks this as a deliberate "take me to this exact task" navigation
+            // (a chat "Go to this task" link, a Daily Digest item tap) - as opposed to goto_item
+            // alone, which ALSO shows up on the redirect after simply creating/updating a task
+            // (create_item's own server-side redirect, never routed through this function at
+            // all) where the goto_item pickup below now deliberately does NOT drill down if the
+            // user's already looking at a Timeline overview (Realm or Multiverse), so a task
+            // landing nearby doesn't silently kick them out of it - reported directly earlier
+            // this session. But suppressMultiverseTimelineRestoreOnce() (called by every caller
+            // of this URL) only ever suppresses the MULTIVERSE Timeline's own restore - Realm
+            // Timeline is still the unconditional default view for a fresh Task-Universe page
+            // load regardless, so without this flag an explicit "go to task" tap landed on that
+            // same guard and got silently skipped too, same as an incidental creation redirect -
+            // reported directly: tapping the link "takes me to the general area" of the task
+            // instead of actually focusing it. focus_item overrides that guard for exactly this
+            // one navigation, where going precisely to the task IS the whole point of the tap.
+            return '/?realm_id=' + nav.realm_id + '&bucket_id=' + nav.bucket_id + '&goto_item=' + nav.id + '&focus_item=1';
         }
 
         function navigateToTaskFromChat(nav) {
@@ -6280,6 +6295,7 @@
             const params = new URLSearchParams(window.location.search);
             const gotoItemId = params.get('goto_item');
             const chatNav = params.get('chat_nav');
+            const focusItem = params.get('focus_item') === '1';
             // Set by update_item's redirect when the edit was opened from inside the Multiverse
             // Timeline (see edit-item-from-multiverse-timeline) - reopens that view directly
             // instead of falling into the normal single-Universe goto_item/chat_nav handling below.
@@ -6310,8 +6326,17 @@
                 // data the whole time, just hidden behind an unwanted forced navigation to a
                 // different screen. Skipping the drill when already in one of these overviews
                 // leaves the freshly-rendered page (this task included, since it's the same fresh
-                // load create_item's own redirect produced) exactly as-is.
-                if (!isMultiverseStackedView && !isRealmTimelineView) {
+                // load create_item's own redirect produced) exactly as-is. focus_item (see
+                // aiChatTaskUrl) overrides that skip - a chat "Go to this task" link or Daily
+                // Digest item tap is a deliberate "take me to this exact task" request, not an
+                // incidental task-creation redirect, and needs the precise drill-down/camera
+                // focus every time regardless of whichever Timeline overview happened to be
+                // showing (suppressMultiverseTimelineRestoreOnce only ever suppresses the
+                // MULTIVERSE Timeline's own restore - Realm Timeline is still this fresh page's
+                // unconditional default otherwise, so without this override the same skip above
+                // silently swallowed an explicit tap too - reported directly: the link "takes me
+                // to the general area" instead of actually focusing the task).
+                if (focusItem || (!isMultiverseStackedView && !isRealmTimelineView)) {
                     navigateToDigestItem(currentSelectedRealmId, currentSelectedBucketId, gotoItemId);
                 }
             }
@@ -6322,6 +6347,7 @@
             cleanUrl.searchParams.delete('goto_item');
             cleanUrl.searchParams.delete('chat_nav');
             cleanUrl.searchParams.delete('open_multiverse_timeline');
+            cleanUrl.searchParams.delete('focus_item');
             history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
         });
 
