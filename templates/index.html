@@ -3218,6 +3218,10 @@
                 const originX = (rect.left + rect.width / 2) / window.innerWidth;
                 const originY = (rect.top + rect.height / 2) / window.innerHeight;
 
+                // Fired before confetti(), not after - confetti's own particle-system setup is
+                // synchronous JS work that measurably delayed the buzz relative to the tap when it
+                // ran first, reported directly as "a slight delay... it needs to be faster".
+                triggerHapticFeedback();
                 confetti({
                     particleCount: 65,
                     spread: 80,
@@ -3225,7 +3229,6 @@
                     colors: ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#3b82f6'],
                     disableForReducedMotion: true
                 });
-                triggerHapticFeedback();
 
                 setTimeout(() => {
                     formElement.submit();
@@ -3234,6 +3237,7 @@
         }
 
         function fireCompleteConfetti(formElement) {
+            triggerHapticFeedback();
             const rect = formElement.getBoundingClientRect();
             confetti({
                 particleCount: 65,
@@ -3242,7 +3246,6 @@
                 colors: ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#3b82f6'],
                 disableForReducedMotion: true
             });
-            triggerHapticFeedback();
         }
 
         // Space View's own complete flow: a real fetch() instead of a form submit, specifically so

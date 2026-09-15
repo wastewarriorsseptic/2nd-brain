@@ -386,6 +386,12 @@
                 // hit complete check mark"), the checklist's own checkbox never had it at all.
                 // Only on the completing edge (not un-completing back to incomplete), same as
                 // everywhere else it's used.
+                if (isCompleted) {
+                    // Fired before confetti() - confetti's own particle-system setup is synchronous
+                    // JS work that measurably delayed the buzz relative to the tap when it ran
+                    // first, reported directly as "a slight delay... it needs to be faster".
+                    triggerHapticFeedback();
+                }
                 if (isCompleted && typeof confetti === 'function') {
                     const rect = button.getBoundingClientRect();
                     confetti({
@@ -396,7 +402,6 @@
                         disableForReducedMotion: true
                     });
                 }
-                if (isCompleted) triggerHapticFeedback();
                 button.title = isCompleted ? 'Mark Incomplete' : 'Mark Complete';
                 button.classList.toggle('bg-emerald-500', isCompleted);
                 button.classList.toggle('border-emerald-500', isCompleted);

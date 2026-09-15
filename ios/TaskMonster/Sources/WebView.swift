@@ -53,6 +53,17 @@ struct WebView: UIViewRepresentable {
         private var url: URL?
         private weak var errorOverlay: UIView?
 
+        // Kept alive and pre-.prepare()'d rather than built fresh per call - reported directly as
+        // "a slight delay" between tapping and feeling the buzz. A UIFeedbackGenerator has to spin
+        // up the Taptic Engine on first use, which is exactly that delay; prepare() pays that cost
+        // ahead of time instead of at the moment the page asks for a haptic. See attach() below
+        // for the initial warm-up and the didReceive handler for the immediate re-prepare after
+        // each fire, so the next tap stays just as fast as the first.
+        private let notificationGenerator = UINotificationFeedbackGenerator()
+        private let impactGeneratorLight = UIImpactFeedbackGenerator(style: .light)
+        private let impactGeneratorMedium = UIImpactFeedbackGenerator(style: .medium)
+        private let impactGeneratorHeavy = UIImpactFeedbackGenerator(style: .heavy)
+
         // Before this, a failed initial load (no connectivity, DNS hiccup, server timeout) left
         // the app sitting on its own background color forever with zero feedback and no way to
         // recover short of force-quitting - reported directly as the app being "just black
@@ -63,6 +74,13 @@ struct WebView: UIViewRepresentable {
         func attach(webView: WKWebView, url: URL) {
             self.webView = webView
             self.url = url
+
+            // Warm the Taptic Engine from app launch, well before the first tap - see the
+            // generators' own doc comment above for why this matters.
+            notificationGenerator.prepare()
+            impactGeneratorLight.prepare()
+            impactGeneratorMedium.prepare()
+            impactGeneratorHeavy.prepare()
 
             let overlay = UIView()
             overlay.backgroundColor = webView.backgroundColor
@@ -205,17 +223,23 @@ struct WebView: UIViewRepresentable {
             let kind = (message.body as? String) ?? "success"
             switch kind {
             case "success":
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                notificationGenerator.notificationOccurred(.success)
+                notificationGenerator.prepare()
             case "warning":
-                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                notificationGenerator.notificationOccurred(.warning)
+                notificationGenerator.prepare()
             case "error":
-                UINotificationFeedbackGenerator().notificationOccurred(.error)
+                notificationGenerator.notificationOccurred(.error)
+                notificationGenerator.prepare()
             case "light":
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                impactGeneratorLight.impactOccurred()
+                impactGeneratorLight.prepare()
             case "heavy":
-                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                impactGeneratorHeavy.impactOccurred()
+                impactGeneratorHeavy.prepare()
             default:
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                impactGeneratorMedium.impactOccurred()
+                impactGeneratorMedium.prepare()
             }
         }
 
