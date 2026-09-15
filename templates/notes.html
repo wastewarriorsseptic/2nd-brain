@@ -175,18 +175,16 @@
              rotate() transform and shadow-lg glow from clipping against this container's own
              overflow-x:auto-forces-overflow-y:auto boundary (see that function's own comment for
              the full history), which only happens during that mode, so there's no reason to reserve
-             the space for it the rest of the time. position: sticky (not static) - reported
-             directly wanting the strip to stay pinned at the top instead of scrolling away with the
-             checklist below it. top is env(safe-area-inset-top) alone (not the padding-top value
-             above, a separate concern) - that's the threshold sticky uses to decide how close to
-             the viewport's own top edge this box's OUTER edge may get before it stops scrolling and
-             holds there; the padding-top above then adds its own small internal offset from that
-             held edge to the circles inside it, same as it already does in the normal in-flow case.
-             z-10 so the checklist's own white card scrolls underneath rather than over it, and a
-             solid bg-slate-950 (matching the page's own background) so that scrolled-under card is
-             never visible through it. -->
-        <div id="notes-universe-strip" class="flex items-start gap-3 overflow-x-auto pb-1 mb-4 -mx-1 px-1 sticky z-10 bg-slate-950"
-             style="padding-top: calc(env(safe-area-inset-top, 0px) + 0.375rem); top: env(safe-area-inset-top, 0px);">
+             the space for it the rest of the time.
+
+             position: sticky was tried here next (reported directly wanting the strip pinned while
+             scrolling) and then reverted - reported directly with a screenshot from a real device
+             showing a large dead-space gap above the stuck strip that never showed up testing this
+             in a desktop browser (env(safe-area-inset-top) resolves to 0 there, masking whatever
+             the real device's actual inset/WKWebView-sticky interaction was doing). Back to plain
+             static flow - simpler, and matches what was actually confirmed to look right. -->
+        <div id="notes-universe-strip" class="flex items-start gap-3 overflow-x-auto pb-1 mb-4 -mx-1 px-1"
+             style="padding-top: calc(env(safe-area-inset-top, 0px) + 0.375rem);">
             <a href="/notes" class="shrink-0 flex flex-col items-center gap-1 w-14">
                 <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if not selected_universe_id else 'border-slate-700 bg-slate-900 hover:border-indigo-500/60' }}">
                     ✨
