@@ -866,7 +866,7 @@
                                         class="task-note-star absolute top-3 right-3 text-base leading-none transition {{ 'text-amber-400 hover:text-amber-300' if item.id in noted_item_ids else 'text-slate-600 hover:text-amber-400' }}">{{ '⭐' if item.id in noted_item_ids else '☆' }}</button>
 
                                 <div class="flex items-start md:items-center gap-3 md:gap-4 flex-1">
-                                    <form action="/items/toggle-complete/" method="POST" class="inline shrink-0 mt-0.5 md:mt-0" onsubmit="triggerTaskConfetti(event, this)">
+                                    <form action="/items/toggle-complete/" method="POST" class="inline shrink-0 mt-0.5 md:mt-0" onsubmit="triggerTaskConfetti(event, this)" ontouchstart="triggerHapticFeedback()">
                                         <input type="hidden" name="item_id" value="{{ item.id }}">
                                         <button type="submit" 
                                                 title="{% if item.is_completed %}Mark Incomplete{% else %}Mark Complete{% endif %}"
@@ -1357,7 +1357,7 @@
                 </div>
 
                 <div class="flex items-start gap-3">
-                    <form id="hud-complete-form" action="/items/toggle-complete/" method="POST" class="inline shrink-0 mt-0.5" onsubmit="return handleHudCompleteToggle(event, this)">
+                    <form id="hud-complete-form" action="/items/toggle-complete/" method="POST" class="inline shrink-0 mt-0.5" onsubmit="return handleHudCompleteToggle(event, this)" ontouchstart="triggerHapticFeedback()">
                         <input type="hidden" name="item_id" id="hud-task-id-input" value="">
                         <button type="submit" id="hud-checkbox-btn"
                                 title="Mark Complete"
@@ -3204,6 +3204,13 @@
         // Defaults to 'rigid' (a single sharp knock) rather than 'success' (a built-in two-pulse
         // pattern with a ramp-up) - asked for the completion haptic to feel snappier, and a
         // notification-style pattern inherently takes longer to fully play out than one impact tap.
+        // Called from ontouchstart on the actual checkbox/button elements now, not from these
+        // functions - still "still not responsive enough" even after the prepare()/ordering/style
+        // fixes, because everything until now fired on click/submit, which only resolves after
+        // WebKit's full touchstart-to-touchend-to-click gesture recognition finishes. touchstart is
+        // the earliest possible signal of a physical tap; nothing before it exists to fire on. Fires
+        // on both completing and un-completing now (touchstart can't yet know which direction the
+        // tap will resolve to) - matches how a native iOS checkbox/switch gives feedback either way.
         function triggerHapticFeedback(kind = 'rigid') {
             try {
                 window.webkit.messageHandlers.haptics.postMessage(kind);
@@ -3217,13 +3224,8 @@
             if (!isCompleted) {
                 event.preventDefault();
 
-                // Fired before any DOM measurement or confetti() - getBoundingClientRect() below
-                // can force a synchronous layout reflow if there's pending layout work queued, and
-                // confetti's own particle-system setup is synchronous JS too. Both measurably delay
-                // the buzz relative to the tap when either runs first, reported directly as
-                // "a slight delay... it needs to be faster" / "a little more responsive".
-                triggerHapticFeedback();
-
+                // Haptic already fired on ontouchstart (see the form's own attribute) - not here,
+                // see triggerHapticFeedback's own comment for why.
                 const rect = formElement.getBoundingClientRect();
                 const originX = (rect.left + rect.width / 2) / window.innerWidth;
                 const originY = (rect.top + rect.height / 2) / window.innerHeight;
@@ -3243,7 +3245,8 @@
         }
 
         function fireCompleteConfetti(formElement) {
-            triggerHapticFeedback();
+            // Haptic already fired on ontouchstart (see each caller's own markup) - not here, see
+            // triggerHapticFeedback's own comment for why.
             const rect = formElement.getBoundingClientRect();
             confetti({
                 particleCount: 65,
@@ -6013,7 +6016,7 @@
                         const checkboxHtml = isCompletedSection
                             ? `<span class="w-4 h-4 rounded border border-emerald-500 bg-emerald-500 text-slate-950 flex items-center justify-center text-[10px] leading-none shrink-0 mt-0.5">✓</span>`
                             : (it.itemId
-                                ? `<button type="button" onclick="${completeToggleFn}(event, this, '${escapeHtml(it.itemId)}')" title="Mark Complete" class="w-4 h-4 rounded border border-slate-600 hover:border-emerald-400 text-transparent hover:text-emerald-400/50 flex items-center justify-center text-[10px] leading-none shrink-0 mt-0.5 transition">✓</button>`
+                                ? `<button type="button" onclick="${completeToggleFn}(event, this, '${escapeHtml(it.itemId)}')" ontouchstart="triggerHapticFeedback()" title="Mark Complete" class="w-4 h-4 rounded border border-slate-600 hover:border-emerald-400 text-transparent hover:text-emerald-400/50 flex items-center justify-center text-[10px] leading-none shrink-0 mt-0.5 transition">✓</button>`
                                 : `<span class="w-4 h-4 shrink-0 mt-0.5"></span>`);
                         // Tapping the task text (not the checkbox) jumps straight to it - either the
                         // in-page camera jump (navigateToDigestItem) or a real navigation for a
@@ -11316,7 +11319,7 @@
                                 <div class="flex items-center gap-3">
                                     ${noteBtnHtml}
                                     ${amountText}
-                                    <form action="/items/toggle-complete/" method="POST" class="inline" onclick="event.stopPropagation()" onsubmit="return handleSpaceCompleteToggle(event, this, '${task.id}')">
+                                    <form action="/items/toggle-complete/" method="POST" class="inline" onclick="event.stopPropagation()" onsubmit="return handleSpaceCompleteToggle(event, this, '${task.id}')" ontouchstart="triggerHapticFeedback()">
                                         <input type="hidden" name="item_id" value="${task.id}">
                                         <button type="submit" title="Mark Complete" class="w-7 h-7 rounded border border-slate-600 hover:border-emerald-400 text-slate-400 hover:text-emerald-400 flex items-center justify-center text-sm transition">✓</button>
                                     </form>

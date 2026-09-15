@@ -263,7 +263,7 @@
                              every single time. toggle_item_complete already supports this exact
                              no-reload path (see app.py) - this was purely a matter of using it here
                              too instead of the fallback plain-form behavior. -->
-                        <button type="button" onclick="toggleNotesChecklistItem(this, {{ row.item_id }})" title="{{ 'Mark Incomplete' if row.is_completed else 'Mark Complete' }}"
+                        <button type="button" onclick="toggleNotesChecklistItem(this, {{ row.item_id }})" ontouchstart="triggerHapticFeedback()" title="{{ 'Mark Incomplete' if row.is_completed else 'Mark Complete' }}"
                                 class="shrink-0 mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center transition {% if row.is_completed %}bg-emerald-500 border-emerald-500 text-white font-bold{% else %}border-slate-400 hover:border-emerald-500 text-transparent hover:text-emerald-500/50{% endif %}">
                             ✓
                         </button>
@@ -355,6 +355,13 @@
         // Defaults to 'rigid' (a single sharp knock) rather than 'success' (a built-in two-pulse
         // pattern with a ramp-up) - asked for the completion haptic to feel snappier, and a
         // notification-style pattern inherently takes longer to fully play out than one impact tap.
+        // Called from ontouchstart on the checkbox itself now, not from this function - still
+        // "not responsive enough" even after the prepare()/ordering/style fixes, because everything
+        // until now fired on click, which only resolves after WebKit's full touchstart-to-touchend-
+        // to-click gesture recognition finishes. touchstart is the earliest possible signal of a
+        // physical tap; nothing before it exists to fire on. Fires on both completing and
+        // un-completing now (touchstart can't yet know which direction the tap will resolve to) -
+        // matches how a native iOS checkbox/switch gives feedback on either state change.
         function triggerHapticFeedback(kind = 'rigid') {
             try {
                 window.webkit.messageHandlers.haptics.postMessage(kind);
@@ -395,12 +402,8 @@
                 // hit complete check mark"), the checklist's own checkbox never had it at all.
                 // Only on the completing edge (not un-completing back to incomplete), same as
                 // everywhere else it's used.
-                if (isCompleted) {
-                    // Fired before confetti() - confetti's own particle-system setup is synchronous
-                    // JS work that measurably delayed the buzz relative to the tap when it ran
-                    // first, reported directly as "a slight delay... it needs to be faster".
-                    triggerHapticFeedback();
-                }
+                // Haptic already fired on ontouchstart (see the button's own attribute) - not
+                // here, see triggerHapticFeedback's own comment for why.
                 if (isCompleted && typeof confetti === 'function') {
                     const rect = button.getBoundingClientRect();
                     confetti({
