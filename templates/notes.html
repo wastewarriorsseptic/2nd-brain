@@ -166,27 +166,27 @@
              uses, just scaled down) rather than a big grid or a scrolling list of individual notes
              - reported directly, wanting the picker out of the way so the checklist below gets
              the actual full-screen whitespace. -->
-        <!-- padding-top combines two unrelated concerns that both used to live in separate spots:
-             env(safe-area-inset-top) (used to be the old header row's own padding, before that row
-             was collapsed away - see the Done button's comment above) so the strip clears the
-             notch/status bar, plus a flat 2rem (rather than pt-0) because a horizontally-scrolling
-             container with overflow-x:auto and no overflow-y set computes overflow-y to auto too,
-             per the CSS overflow spec's own "one axis non-visible forces the other out of visible"
-             rule, so it silently clips any vertical bleed at its own top edge: the wobbling cards'
-             own rotate() transform (see .universe-card-wobbling) grows their bounding box slightly,
-             and the selected card's own shadow-lg glow bleeds upward too - reported directly with a
-             screenshot showing circles cut off across the top the moment reorder mode's wobble
-             kicks in. Bumped from an original flat pt-3 after a second report ("after i move the
-             universes around in wobble mode and hit done the tops get cut off") - a real
-             drag-and-drop reorder (not just the idle wobble) adds SortableJS's own "chosen"/"drag"
-             state on top of the wobble rotation for the ~150ms it takes to animate into the dropped
-             position, which bleeds noticeably more than idle wobble alone but only for that brief
-             animated window, making it easy to miss in a static screenshot taken after the fact. A
-             bigger fixed margin is the only real fix for this exact CSS quirk (you cannot ask just
-             the Y axis to stay non-clipping once X is set to auto), so the 2rem errs generous rather
-             than trying to measure the exact worst case. -->
-        <div id="notes-universe-strip" class="flex items-start gap-3 overflow-x-auto pb-1 mb-4 -mx-1 px-1"
-             style="padding-top: calc(env(safe-area-inset-top, 0px) + 2rem);">
+        <!-- padding-top is env(safe-area-inset-top) plus a small fixed nudge (0.375rem) - just
+             enough breathing room to clear the notch/status bar without sitting flush against it.
+             Reported directly wanting the strip sitting higher up than an earlier version of this
+             padding allowed. The bigger 2rem buffer this used to carry unconditionally (see
+             setNotesUniverseStripTopPadding below) is now applied dynamically, only while reorder
+             mode is actually active - it exists purely to stop the wobbling/dragging cards' own
+             rotate() transform and shadow-lg glow from clipping against this container's own
+             overflow-x:auto-forces-overflow-y:auto boundary (see that function's own comment for
+             the full history), which only happens during that mode, so there's no reason to reserve
+             the space for it the rest of the time. position: sticky (not static) - reported
+             directly wanting the strip to stay pinned at the top instead of scrolling away with the
+             checklist below it. top is env(safe-area-inset-top) alone (not the padding-top value
+             above, a separate concern) - that's the threshold sticky uses to decide how close to
+             the viewport's own top edge this box's OUTER edge may get before it stops scrolling and
+             holds there; the padding-top above then adds its own small internal offset from that
+             held edge to the circles inside it, same as it already does in the normal in-flow case.
+             z-10 so the checklist's own white card scrolls underneath rather than over it, and a
+             solid bg-slate-950 (matching the page's own background) so that scrolled-under card is
+             never visible through it. -->
+        <div id="notes-universe-strip" class="flex items-start gap-3 overflow-x-auto pb-1 mb-4 -mx-1 px-1 sticky z-10 bg-slate-950"
+             style="padding-top: calc(env(safe-area-inset-top, 0px) + 0.375rem); top: env(safe-area-inset-top, 0px);">
             <a href="/notes" class="shrink-0 flex flex-col items-center gap-1 w-14">
                 <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if not selected_universe_id else 'border-slate-700 bg-slate-900 hover:border-indigo-500/60' }}">
                     ✨
@@ -760,6 +760,19 @@
         let notesUniverseLongPressTimer = null;
         let notesUniverseLongPressStartPos = null;
 
+        // The strip's own idle padding-top (see its own comment) is deliberately tight now - asked
+        // for it to sit higher up. The bigger 2rem buffer it used to carry unconditionally is only
+        // ever needed while reorder mode's wobble/drag is actually live (see the strip's own
+        // comment for the clipping bug it's defending against), so it's applied here for just that
+        // window instead of reserved permanently.
+        function setNotesUniverseStripTopPadding(reordering) {
+            const strip = document.getElementById('notes-universe-strip');
+            if (!strip) return;
+            strip.style.paddingTop = reordering
+                ? 'calc(env(safe-area-inset-top, 0px) + 2rem)'
+                : 'calc(env(safe-area-inset-top, 0px) + 0.375rem)';
+        }
+
         function enterNotesUniverseReorderMode() {
             if (notesUniverseReorderMode) return;
             notesUniverseReorderMode = true;
@@ -768,6 +781,7 @@
             picker.querySelectorAll('.notes-universe-card').forEach(card => card.classList.add('universe-card-wobbling'));
             const doneBtn = document.getElementById('notes-universe-reorder-done-btn');
             if (doneBtn) doneBtn.classList.remove('invisible');
+            setNotesUniverseStripTopPadding(true);
             if (notesUniverseSortable) notesUniverseSortable.option('disabled', false);
         }
 
@@ -777,6 +791,7 @@
             if (picker) picker.querySelectorAll('.universe-card-wobbling').forEach(el => el.classList.remove('universe-card-wobbling'));
             const doneBtn = document.getElementById('notes-universe-reorder-done-btn');
             if (doneBtn) doneBtn.classList.add('invisible');
+            setNotesUniverseStripTopPadding(false);
             if (notesUniverseSortable) notesUniverseSortable.option('disabled', true);
         }
 
