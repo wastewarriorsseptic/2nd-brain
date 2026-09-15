@@ -130,40 +130,34 @@
          everything readable on top of it. -->
     <div id="notes-space-stars" class="fixed inset-0 pointer-events-none overflow-hidden"></div>
     <div class="relative z-10 max-w-5xl mx-auto p-4 md:p-6">
-        <!-- padding-top: env(safe-area-inset-top) - reported directly with a screenshot showing the
-             "Notes" title and Done button rendering right under the status bar/notch (needs
-             viewport-fit=cover in the <meta name="viewport"> tag above for env() to report a real
-             value here at all rather than silently resolving to 0 - see that tag's own edit). -->
-        <!-- The "📝 Notes" title used to sit here - removed as unnecessary chrome, reported
-             directly along with the leftover empty space it left behind once gone. The row itself
-             stays (env(safe-area-inset-top) still needs to push content below the notch/status
-             bar, and the Done button below still needs its layout space reserved even while
-             invisible - see that button's own comment), just with mb-4 dropped to mb-0 since nothing
-             here needs breathing room from the Universe strip below anymore; that strip already
-             carries its own generous pt-8 for an unrelated reason (see its own comment). -->
-        <div class="flex items-center justify-end mb-0" style="padding-top: env(safe-area-inset-top, 0px);">
-            <!-- Shown only while reordering the Universe strip below (see
-                 enterNotesUniverseReorderMode/exitNotesUniverseReorderMode) - the explicit way out
-                 of wobble mode, matching iOS's own "Done" button, same as index.html's own
-                 multiverse-reorder-done-btn. invisible (visibility:hidden), not hidden
-                 (display:none) - confirmed via a real screen recording that the moment this button
-                 disappears from layout, the header row's own height shrinks and the Universe strip
-                 below jumps up with it, and on-device that upward jump lands right as WebKit is
-                 mid-repaint of the strip's own overflow-clip layer (the same forced overflow-y:auto
-                 from the pt-8 comment below) - the clip mask doesn't get re-solved for the new
-                 layout and the circles are left permanently rendered with their tops cut off, not
-                 just for one transient frame but stuck that way until something else forces a
-                 repaint (confirmed in the recording: still clipped 1.5+ seconds and dozens of frames
-                 after tapping Done, no auto-recovery). invisible keeps this button's layout space
-                 reserved at all times so nothing below it ever moves when reorder mode toggles,
-                 which removes the reflow that triggers this entirely - a bigger pt buffer alone
-                 (tried first) can't fix a stale clip mask, only prevent overflow within a layout
-                 that stays put. -->
-            <button type="button" id="notes-universe-reorder-done-btn" onclick="exitNotesUniverseReorderMode()"
-                    class="invisible px-3.5 py-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-emerald-400/30">
-                ✓ Done
-            </button>
-        </div>
+        <!-- Used to be a whole dedicated header row - env(safe-area-inset-top) padding, the old
+             "📝 Notes" title (removed separately as unnecessary chrome), and this Done button as a
+             flex sibling that had to keep its layout space reserved at all times even while
+             invisible (see the button's own comment for the wobble-mode clipping bug that reserved
+             space was working around). Once the title was gone that whole row was empty space with
+             nothing in it but this one button - reported directly ("i dont like the top area...
+             how can we master this layout"). Pulling the button out of document flow entirely
+             (absolute, floated over the strip below) means it no longer needs a reserved row at
+             all: an invisible absolutely-positioned element can never push sibling layout around
+             regardless of whether reorder mode is on, so the original clipping bug this was
+             defending against is structurally impossible now, not just avoided. The safe-area inset
+             that used to live on this row's own padding-top moved onto the strip's own top padding
+             below instead (see its own comment) - there's no other row left to carry it. -->
+        <!-- Shown only while reordering the Universe strip below (see
+             enterNotesUniverseReorderMode/exitNotesUniverseReorderMode) - the explicit way out of
+             wobble mode, matching iOS's own "Done" button, same as index.html's own
+             multiverse-reorder-done-btn. invisible (visibility:hidden), not hidden (display:none) -
+             kept even though this button no longer participates in layout at all, purely so a
+             future edit that moves it back into flow doesn't silently reintroduce the old bug this
+             class was already fixed to avoid. right-0 anchors flush to the padding edge of the
+             nearest positioned ancestor (the page's own "relative z-10 p-4 md:p-6" wrapper below) -
+             that's the same padding box normal-flow content already sits inside, so this lands in
+             the exact spot the old right-aligned flex row put it, no extra inset needed here. -->
+        <button type="button" id="notes-universe-reorder-done-btn" onclick="exitNotesUniverseReorderMode()"
+                class="invisible absolute top-0 right-0 z-20 px-3.5 py-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-emerald-400/30"
+                style="top: env(safe-area-inset-top, 0px);">
+            ✓ Done
+        </button>
 
         <!-- Reworked from a freeform, Apple-Notes-style list into a pure "starred tasks" checklist
              browsed by Universe - reported directly: no more typing an arbitrary note, no more
@@ -172,22 +166,27 @@
              uses, just scaled down) rather than a big grid or a scrolling list of individual notes
              - reported directly, wanting the picker out of the way so the checklist below gets
              the actual full-screen whitespace. -->
-        <!-- pt-8 (rather than pt-0) - a horizontally-scrolling container with overflow-x:auto and
-             no overflow-y set computes overflow-y to auto too, per the CSS overflow spec's own
-             "one axis non-visible forces the other out of visible" rule, so it silently clips any
-             vertical bleed at its own top edge: the wobbling cards' own rotate() transform (see
-             .universe-card-wobbling) grows their bounding box slightly, and the selected card's own
-             shadow-lg glow bleeds upward too - reported directly with a screenshot showing circles
-             cut off across the top the moment reorder mode's wobble kicks in. Bumped from the
-             original pt-3 after a second report ("after i move the universes around in wobble mode
-             and hit done the tops get cut off") - a real drag-and-drop reorder (not just the idle
-             wobble) adds SortableJS's own "chosen"/"drag" state on top of the wobble rotation for
-             the ~150ms it takes to animate into the dropped position, which bleeds noticeably more
-             than idle wobble alone but only for that brief animated window, making it easy to miss
-             in a static screenshot taken after the fact. A bigger fixed margin is the only real fix
-             for this exact CSS quirk (you cannot ask just the Y axis to stay non-clipping once X is
-             set to auto), so this errs generous rather than trying to measure the exact worst case. -->
-        <div id="notes-universe-strip" class="flex items-start gap-3 overflow-x-auto pt-8 pb-1 mb-4 -mx-1 px-1">
+        <!-- padding-top combines two unrelated concerns that both used to live in separate spots:
+             env(safe-area-inset-top) (used to be the old header row's own padding, before that row
+             was collapsed away - see the Done button's comment above) so the strip clears the
+             notch/status bar, plus a flat 2rem (rather than pt-0) because a horizontally-scrolling
+             container with overflow-x:auto and no overflow-y set computes overflow-y to auto too,
+             per the CSS overflow spec's own "one axis non-visible forces the other out of visible"
+             rule, so it silently clips any vertical bleed at its own top edge: the wobbling cards'
+             own rotate() transform (see .universe-card-wobbling) grows their bounding box slightly,
+             and the selected card's own shadow-lg glow bleeds upward too - reported directly with a
+             screenshot showing circles cut off across the top the moment reorder mode's wobble
+             kicks in. Bumped from an original flat pt-3 after a second report ("after i move the
+             universes around in wobble mode and hit done the tops get cut off") - a real
+             drag-and-drop reorder (not just the idle wobble) adds SortableJS's own "chosen"/"drag"
+             state on top of the wobble rotation for the ~150ms it takes to animate into the dropped
+             position, which bleeds noticeably more than idle wobble alone but only for that brief
+             animated window, making it easy to miss in a static screenshot taken after the fact. A
+             bigger fixed margin is the only real fix for this exact CSS quirk (you cannot ask just
+             the Y axis to stay non-clipping once X is set to auto), so the 2rem errs generous rather
+             than trying to measure the exact worst case. -->
+        <div id="notes-universe-strip" class="flex items-start gap-3 overflow-x-auto pb-1 mb-4 -mx-1 px-1"
+             style="padding-top: calc(env(safe-area-inset-top, 0px) + 2rem);">
             <a href="/notes" class="shrink-0 flex flex-col items-center gap-1 w-14">
                 <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if not selected_universe_id else 'border-slate-700 bg-slate-900 hover:border-indigo-500/60' }}">
                     ✨
