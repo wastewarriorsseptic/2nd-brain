@@ -20,6 +20,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>TaskMonster uses your mic for voice dictation when adding tasks through the AI assistant.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>TaskMonster uses on-device speech recognition to turn your voice into task text when you tap the mic in AI chat.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

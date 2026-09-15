@@ -27,12 +27,20 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         NSMicrophoneUsageDescription: "TaskMonster uses your mic for voice dictation when adding tasks through the AI assistant."
+        # A distinct permission from NSMicrophoneUsageDescription above - iOS gates the actual
+        # speech-to-text transcription behind its own Speech Recognition authorization, separate
+        # from raw microphone access. Without this key, WKWebView's webkitSpeechRecognition
+        # object still exists and .start() doesn't throw, but iOS silently denies the underlying
+        # recognition session - the mic button's own "listening" UI state still activates (that's
+        # purely JS/CSS, no permission needed for that part), but no audio is ever transcribed.
+        # Reported directly: "the microphone circle... isn't actually working and listening".
+        NSSpeechRecognitionUsageDescription: "TaskMonster uses on-device speech recognition to turn your voice into task text when you tap the mic in AI chat."
         UIUserInterfaceStyle: Dark
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.usetaskmonster.ios
         MARKETING_VERSION: "1.0.1"
-        CURRENT_PROJECT_VERSION: "6"
+        CURRENT_PROJECT_VERSION: "7"
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "5.0"
         DEVELOPMENT_TEAM: XD34CA7MJU
