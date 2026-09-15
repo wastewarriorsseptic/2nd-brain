@@ -134,8 +134,14 @@
              "Notes" title and Done button rendering right under the status bar/notch (needs
              viewport-fit=cover in the <meta name="viewport"> tag above for env() to report a real
              value here at all rather than silently resolving to 0 - see that tag's own edit). -->
-        <div class="flex items-center justify-between mb-4" style="padding-top: env(safe-area-inset-top, 0px);">
-            <h1 class="text-sm font-extrabold text-white tracking-tight flex items-center gap-1.5">📝 Notes</h1>
+        <!-- The "📝 Notes" title used to sit here - removed as unnecessary chrome, reported
+             directly along with the leftover empty space it left behind once gone. The row itself
+             stays (env(safe-area-inset-top) still needs to push content below the notch/status
+             bar, and the Done button below still needs its layout space reserved even while
+             invisible - see that button's own comment), just with mb-4 dropped to mb-0 since nothing
+             here needs breathing room from the Universe strip below anymore; that strip already
+             carries its own generous pt-8 for an unrelated reason (see its own comment). -->
+        <div class="flex items-center justify-end mb-0" style="padding-top: env(safe-area-inset-top, 0px);">
             <!-- Shown only while reordering the Universe strip below (see
                  enterNotesUniverseReorderMode/exitNotesUniverseReorderMode) - the explicit way out
                  of wobble mode, matching iOS's own "Done" button, same as index.html's own
@@ -346,7 +352,10 @@
         // real haptic generator via the native bridge registered in
         // ios/TaskMonster/Sources/WebView.swift instead - a no-op (via the try/catch) in a normal
         // browser, since that bridge only exists inside the native app wrapper.
-        function triggerHapticFeedback(kind = 'success') {
+        // Defaults to 'rigid' (a single sharp knock) rather than 'success' (a built-in two-pulse
+        // pattern with a ramp-up) - asked for the completion haptic to feel snappier, and a
+        // notification-style pattern inherently takes longer to fully play out than one impact tap.
+        function triggerHapticFeedback(kind = 'rigid') {
             try {
                 window.webkit.messageHandlers.haptics.postMessage(kind);
             } catch (e) {}

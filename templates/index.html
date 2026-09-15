@@ -3201,7 +3201,10 @@
         // nothing - so this reaches a real haptic generator via the native bridge registered in
         // ios/TaskMonster/Sources/WebView.swift instead. That bridge only exists inside the native
         // app wrapper, so this always no-ops (via the try/catch) when running in a normal browser.
-        function triggerHapticFeedback(kind = 'success') {
+        // Defaults to 'rigid' (a single sharp knock) rather than 'success' (a built-in two-pulse
+        // pattern with a ramp-up) - asked for the completion haptic to feel snappier, and a
+        // notification-style pattern inherently takes longer to fully play out than one impact tap.
+        function triggerHapticFeedback(kind = 'rigid') {
             try {
                 window.webkit.messageHandlers.haptics.postMessage(kind);
             } catch (e) {}
@@ -3214,14 +3217,17 @@
             if (!isCompleted) {
                 event.preventDefault();
 
+                // Fired before any DOM measurement or confetti() - getBoundingClientRect() below
+                // can force a synchronous layout reflow if there's pending layout work queued, and
+                // confetti's own particle-system setup is synchronous JS too. Both measurably delay
+                // the buzz relative to the tap when either runs first, reported directly as
+                // "a slight delay... it needs to be faster" / "a little more responsive".
+                triggerHapticFeedback();
+
                 const rect = formElement.getBoundingClientRect();
                 const originX = (rect.left + rect.width / 2) / window.innerWidth;
                 const originY = (rect.top + rect.height / 2) / window.innerHeight;
 
-                // Fired before confetti(), not after - confetti's own particle-system setup is
-                // synchronous JS work that measurably delayed the buzz relative to the tap when it
-                // ran first, reported directly as "a slight delay... it needs to be faster".
-                triggerHapticFeedback();
                 confetti({
                     particleCount: 65,
                     spread: 80,

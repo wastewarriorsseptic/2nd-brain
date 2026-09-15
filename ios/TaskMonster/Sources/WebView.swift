@@ -32,6 +32,13 @@ struct WebView: UIViewRepresentable {
         webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
         webView.scrollView.contentInsetAdjustmentBehavior = .never
+        // Reported directly with a screenshot: pulling down past the top of a page (the Notes
+        // page's own scroll view, but this is a single shared WKWebView so it applied everywhere)
+        // rubber-banded past the content edge and revealed empty native background above it, which
+        // read as a stray "pull to refresh"-looking gap even though nothing was actually bound to
+        // that gesture. Disabling the scroll view's elastic bounce entirely removes the gesture's
+        // visible effect at both edges - there's nothing left to pull past.
+        webView.scrollView.bounces = false
         webView.isOpaque = false
         // Matches the web app's own bg-slate-900 (#0f172a) exactly - this used to be Tailwind's
         // darker slate-950 (#020617) instead, a visibly different shade from the page's actual
@@ -63,6 +70,11 @@ struct WebView: UIViewRepresentable {
         private let impactGeneratorLight = UIImpactFeedbackGenerator(style: .light)
         private let impactGeneratorMedium = UIImpactFeedbackGenerator(style: .medium)
         private let impactGeneratorHeavy = UIImpactFeedbackGenerator(style: .heavy)
+        // .rigid is a single sharp knock with essentially no ramp-up, vs. notificationOccurred's
+        // built-in two-pulse "success" pattern which takes longer to fully play out by design (it's
+        // meant to feel ceremonial, not instantaneous) - asked for something snappier after the
+        // prepare()/ordering latency fix already landed, so this is the completion haptic's default now.
+        private let impactGeneratorRigid = UIImpactFeedbackGenerator(style: .rigid)
 
         // Before this, a failed initial load (no connectivity, DNS hiccup, server timeout) left
         // the app sitting on its own background color forever with zero feedback and no way to
@@ -81,6 +93,7 @@ struct WebView: UIViewRepresentable {
             impactGeneratorLight.prepare()
             impactGeneratorMedium.prepare()
             impactGeneratorHeavy.prepare()
+            impactGeneratorRigid.prepare()
 
             let overlay = UIView()
             overlay.backgroundColor = webView.backgroundColor
@@ -237,6 +250,9 @@ struct WebView: UIViewRepresentable {
             case "heavy":
                 impactGeneratorHeavy.impactOccurred()
                 impactGeneratorHeavy.prepare()
+            case "rigid":
+                impactGeneratorRigid.impactOccurred()
+                impactGeneratorRigid.prepare()
             default:
                 impactGeneratorMedium.impactOccurred()
                 impactGeneratorMedium.prepare()
