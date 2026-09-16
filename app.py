@@ -29,6 +29,7 @@ from dotenv import load_dotenv
 import jwt  # PyJWT - used to generate Apple's short-lived ES256 client secret
 
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from authlib.integrations.starlette_client import OAuth
 
 # Load environment variables
@@ -587,6 +588,28 @@ class Note(SQLModel, table=True):
 
 # --- FastAPI & Middleware Setup ---
 app = FastAPI()
+
+# Every dynamic response here carries a signed-in user's own, constantly-changing data (tasks,
+# realms, chat history) - there is never a correct scenario where serving a stale cached copy is
+# preferable to a fresh one, and this app was never sending any Cache-Control header at all, which
+# is exactly the condition under which a client's own cache (WKWebView's NSURLCache chief among
+# them - see ios/TaskMonster/Sources/WebView.swift's own cache-bypass fix) falls back to a
+# heuristic freshness lifetime instead of always revalidating. That native-side fix only covers
+# the app's own initial webView.load(...) calls, not every in-page link tap/form submit WKWebView
+# handles internally via its own navigation - reported directly, separately from the caching bug
+# that fix was originally for: newly-created tasks didn't show up until a full app close-and-
+# reopen. Setting this here, once, covers every response from every client (native app, browser,
+# any future consumer) and every navigation path uniformly, rather than patching cache policy
+# client-side call-site by call-site. /static/* is exempt - actual static assets (icons, etc.)
+# are the one thing here that legitimately benefits from caching.
+class NoCacheMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        if not request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-store, must-revalidate"
+        return response
+
+app.add_middleware(NoCacheMiddleware)
 app.add_middleware(
     SessionMiddleware,
     secret_key=SECRET_KEY,
