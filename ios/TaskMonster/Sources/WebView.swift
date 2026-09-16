@@ -1,5 +1,7 @@
 import SwiftUI
 @preconcurrency import WebKit
+import Speech
+import AVFoundation
 
 /// Wraps the live TaskMonster site (server-rendered FastAPI/Jinja app - there is no bundled
 /// local copy) in a WKWebView. The default WKWebsiteDataStore persists cookies across launches
@@ -26,6 +28,15 @@ struct WebView: UIViewRepresentable {
         // window.webkit.messageHandlers.haptics.postMessage(...) from the page's own JS is the
         // only way to reach a real haptic generator from web content on this platform at all.
         config.userContentController.add(context.coordinator, name: "haptics")
+        // The page's own mic button used to call the browser's webkitSpeechRecognition API
+        // directly - that constructor exists inside WKWebView and .start() never throws, but it
+        // never actually captures or transcribes any audio there (unlike real Mobile Safari,
+        // where the same API works fine) - reported directly, twice: the mic button visibly went
+        // into its "listening" state but nothing was ever transcribed, even after confirming the
+        // Info.plist NSSpeechRecognitionUsageDescription fix had already shipped. This message
+        // handler lets the page hand recognition off to this bridge instead, which drives Apple's
+        // own Speech framework directly - see startSpeechRecognition/stopSpeechRecognition below.
+        config.userContentController.add(context.coordinator, name: "speechRecognition")
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
@@ -75,6 +86,17 @@ struct WebView: UIViewRepresentable {
         // meant to feel ceremonial, not instantaneous) - asked for something snappier after the
         // prepare()/ordering latency fix already landed, so this is the completion haptic's default now.
         private let impactGeneratorRigid = UIImpactFeedbackGenerator(style: .rigid)
+
+        // Drives on-device speech-to-text directly via Apple's own Speech framework, since
+        // WKWebView's webkitSpeechRecognition constructor exists but never actually transcribes
+        // anything there (see the config.userContentController.add(... "speechRecognition") call
+        // in makeUIView for the full story). One recognizer instance reused across sessions;
+        // request/task/audio engine are torn down and rebuilt each time recognition starts, since
+        // a used SFSpeechAudioBufferRecognitionRequest can't be restarted.
+        private let speechRecognizer = SFSpeechRecognizer(locale: Locale.current)
+        private var speechRecognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+        private var speechRecognitionTask: SFSpeechRecognitionTask?
+        private let speechAudioEngine = AVAudioEngine()
 
         // Before this, a failed initial load (no connectivity, DNS hiccup, server timeout) left
         // the app sitting on its own background color forever with zero feedback and no way to
@@ -223,40 +245,173 @@ struct WebView: UIViewRepresentable {
             decisionHandler(.grant)
         }
 
-        // Fires on window.webkit.messageHandlers.haptics.postMessage(...) from the page - see the
-        // userContentController.add(...) registration in makeUIView above. The page sends a kind
-        // string ("success"/"warning"/"error" for UINotificationFeedbackGenerator, anything else
-        // treated as an impact style) so it can ask for different feedback in different spots
-        // without another native round-trip later.
+        // Fires on window.webkit.messageHandlers.<name>.postMessage(...) from the page - see the
+        // two config.userContentController.add(...) registrations in makeUIView above.
         func userContentController(
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
-            guard message.name == "haptics" else { return }
-            let kind = (message.body as? String) ?? "success"
-            switch kind {
-            case "success":
-                notificationGenerator.notificationOccurred(.success)
-                notificationGenerator.prepare()
-            case "warning":
-                notificationGenerator.notificationOccurred(.warning)
-                notificationGenerator.prepare()
-            case "error":
-                notificationGenerator.notificationOccurred(.error)
-                notificationGenerator.prepare()
-            case "light":
-                impactGeneratorLight.impactOccurred()
-                impactGeneratorLight.prepare()
-            case "heavy":
-                impactGeneratorHeavy.impactOccurred()
-                impactGeneratorHeavy.prepare()
-            case "rigid":
-                impactGeneratorRigid.impactOccurred()
-                impactGeneratorRigid.prepare()
+            switch message.name {
+            case "haptics":
+                // The page sends a kind string ("success"/"warning"/"error" for
+                // UINotificationFeedbackGenerator, anything else treated as an impact style) so it
+                // can ask for different feedback in different spots without another native round
+                // trip later.
+                let kind = (message.body as? String) ?? "success"
+                switch kind {
+                case "success":
+                    notificationGenerator.notificationOccurred(.success)
+                    notificationGenerator.prepare()
+                case "warning":
+                    notificationGenerator.notificationOccurred(.warning)
+                    notificationGenerator.prepare()
+                case "error":
+                    notificationGenerator.notificationOccurred(.error)
+                    notificationGenerator.prepare()
+                case "light":
+                    impactGeneratorLight.impactOccurred()
+                    impactGeneratorLight.prepare()
+                case "heavy":
+                    impactGeneratorHeavy.impactOccurred()
+                    impactGeneratorHeavy.prepare()
+                case "rigid":
+                    impactGeneratorRigid.impactOccurred()
+                    impactGeneratorRigid.prepare()
+                default:
+                    impactGeneratorMedium.impactOccurred()
+                    impactGeneratorMedium.prepare()
+                }
+
+            case "speechRecognition":
+                let command = (message.body as? String) ?? ""
+                if command == "stop" {
+                    stopSpeechRecognition()
+                } else {
+                    startSpeechRecognition()
+                }
+
             default:
-                impactGeneratorMedium.impactOccurred()
-                impactGeneratorMedium.prepare()
+                break
             }
+        }
+
+        // MARK: - Speech recognition bridge
+        //
+        // The page's mic button posts "start"/"stop" here instead of calling the browser's own
+        // webkitSpeechRecognition, which exists inside WKWebView but never actually transcribes
+        // anything there. This drives Apple's Speech framework directly and calls back into the
+        // page's own JS (window.__nativeSpeechResult/__nativeSpeechEnded, defined in index.html's
+        // toggleAiChatDictation rewrite) with the same shape the old browser API's onresult/onend
+        // callbacks already provided, so the rest of that dictation code - accumulating final text,
+        // showing interim text live, auto-growing the textarea - needed no changes.
+        private func startSpeechRecognition() {
+            guard let speechRecognizer, speechRecognizer.isAvailable else {
+                sendSpeechEndedToPage()
+                return
+            }
+
+            SFSpeechRecognizer.requestAuthorization { [weak self] authStatus in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    guard authStatus == .authorized else {
+                        self.sendSpeechEndedToPage()
+                        return
+                    }
+                    AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                        DispatchQueue.main.async {
+                            if granted {
+                                self.beginSpeechAudioCapture()
+                            } else {
+                                self.sendSpeechEndedToPage()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private func beginSpeechAudioCapture() {
+            // Tear down any previous session first - a used recognitionRequest/task can't be
+            // restarted, and the audio engine's own tap can only ever have one installed at a time.
+            stopSpeechRecognition(silently: true)
+
+            let audioSession = AVAudioSession.sharedInstance()
+            do {
+                try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
+                try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            } catch {
+                sendSpeechEndedToPage()
+                return
+            }
+
+            let request = SFSpeechAudioBufferRecognitionRequest()
+            request.shouldReportPartialResults = true
+            // On-device only - keeps dictation working with no network round trip and matches the
+            // app's own "your data stays on your phone" posture for voice input specifically.
+            if #available(iOS 13.0, *) {
+                request.requiresOnDeviceRecognition = speechRecognizer?.supportsOnDeviceRecognition ?? false
+            }
+            speechRecognitionRequest = request
+
+            let inputNode = speechAudioEngine.inputNode
+            let recordingFormat = inputNode.outputFormat(forBus: 0)
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+                request.append(buffer)
+            }
+
+            speechAudioEngine.prepare()
+            do {
+                try speechAudioEngine.start()
+            } catch {
+                sendSpeechEndedToPage()
+                return
+            }
+
+            speechRecognitionTask = speechRecognizer?.recognitionTask(with: request) { [weak self] result, error in
+                guard let self else { return }
+                if let result {
+                    self.sendSpeechResultToPage(
+                        transcript: result.bestTranscription.formattedString,
+                        isFinal: result.isFinal
+                    )
+                    if result.isFinal {
+                        self.stopSpeechRecognition()
+                    }
+                }
+                if error != nil {
+                    self.stopSpeechRecognition()
+                }
+            }
+        }
+
+        private func stopSpeechRecognition(silently: Bool = false) {
+            if speechAudioEngine.isRunning {
+                speechAudioEngine.stop()
+                speechRecognitionRequest?.endAudio()
+            }
+            if speechAudioEngine.inputNode.numberOfInputs > 0 {
+                speechAudioEngine.inputNode.removeTap(onBus: 0)
+            }
+            speechRecognitionTask?.cancel()
+            speechRecognitionTask = nil
+            speechRecognitionRequest = nil
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            if !silently {
+                sendSpeechEndedToPage()
+            }
+        }
+
+        private func sendSpeechResultToPage(transcript: String, isFinal: Bool) {
+            let escaped = transcript
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+                .replacingOccurrences(of: "\n", with: "\\n")
+            let js = "window.__nativeSpeechResult && window.__nativeSpeechResult(\"\(escaped)\", \(isFinal));"
+            webView?.evaluateJavaScript(js)
+        }
+
+        private func sendSpeechEndedToPage() {
+            webView?.evaluateJavaScript("window.__nativeSpeechEnded && window.__nativeSpeechEnded();")
         }
 
         // WKUIDelegate's alert/confirm/prompt panel methods are all optional - leaving them

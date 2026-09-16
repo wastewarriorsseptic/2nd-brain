@@ -5005,10 +5005,23 @@
             });
         }
 
-        // Voice dictation for the chat input - the browser's own SpeechRecognition API, no server
-        // round trip and no new dependency. Not every browser supports this (Firefox doesn't), so
-        // the mic button stays hidden by default and is only revealed once feature-detected below.
+        // Voice dictation for the chat input. Two backends:
+        // 1. The native app wrapper's own Speech-framework bridge (see the
+        //    config.userContentController.add(... "speechRecognition") registration and
+        //    startSpeechRecognition/stopSpeechRecognition in ios/TaskMonster/Sources/WebView.swift)
+        //    - used whenever it's present. Reported directly, twice: the mic button's "listening"
+        //    UI activated but nothing was ever transcribed. WKWebView's own webkitSpeechRecognition
+        //    constructor exists and .start() never throws, but it never actually captures/
+        //    transcribes any audio inside an embedded WKWebView (unlike real Mobile Safari, where
+        //    the same browser API works fine) - a platform limitation no Info.plist permission
+        //    fixes, since the constructor "working" was never the problem.
+        // 2. The browser's own SpeechRecognition API - the original implementation, kept as the
+        //    fallback for every other context (desktop/mobile Safari, Chrome) where the bridge
+        //    doesn't exist and the browser API genuinely does work.
+        // Not every browser supports either path (Firefox has neither), so the mic button stays
+        // hidden by default and is only revealed once one of the two is feature-detected below.
         const AiSpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const aiChatNativeSpeechBridge = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.speechRecognition);
         let aiChatRecognition = null;
         let aiChatListening = false;
         let aiChatDictationBaseText = '';
@@ -5047,7 +5060,34 @@
             }
         }
 
-        if (AiSpeechRecognition) {
+        if (aiChatNativeSpeechBridge) {
+            document.addEventListener('DOMContentLoaded', () => {
+                const micBtn = document.getElementById('ai-chat-mic-btn');
+                if (micBtn) micBtn.classList.remove('hidden');
+            });
+
+            // Called from WebView.swift's sendSpeechResultToPage() - transcript is the FULL
+            // accumulated text of the current utterance so far (growing with each call), not an
+            // incremental fragment like the browser API's per-result indexing, so no separate
+            // "fold into base text" bookkeeping is needed mid-session the way the browser-API path
+            // below still requires - the base text (whatever was already in the box before this
+            // recording started) plus the latest transcript is the whole story on every call.
+            window.__nativeSpeechResult = (transcript, isFinal) => {
+                if (aiChatDictationSuppressed) return;
+                const input = document.getElementById('ai-chat-input');
+                if (!input) return;
+                input.value = (aiChatDictationBaseText + ' ' + transcript).trim();
+                autoGrowAiChatInput();
+            };
+
+            // Called from WebView.swift's sendSpeechEndedToPage() - fires whenever the native
+            // session stops, whether from a manual stop, a delivered final result, or an error
+            // (permission denied, recognizer unavailable) - same "always reset the button" contract
+            // the browser API's onerror/onend already had below.
+            window.__nativeSpeechEnded = () => {
+                setAiChatListening(false);
+            };
+        } else if (AiSpeechRecognition) {
             document.addEventListener('DOMContentLoaded', () => {
                 const micBtn = document.getElementById('ai-chat-mic-btn');
                 if (micBtn) micBtn.classList.remove('hidden');
@@ -5106,6 +5146,19 @@
         }
 
         function toggleAiChatDictation() {
+            if (aiChatNativeSpeechBridge) {
+                if (aiChatListening) {
+                    window.webkit.messageHandlers.speechRecognition.postMessage('stop');
+                    setAiChatListening(false);
+                    return;
+                }
+                aiChatDictationBaseText = document.getElementById('ai-chat-input').value.trim();
+                aiChatDictationSuppressed = false;
+                window.webkit.messageHandlers.speechRecognition.postMessage('start');
+                setAiChatListening(true);
+                return;
+            }
+
             if (!aiChatRecognition) return;
 
             if (aiChatListening) {
@@ -5192,7 +5245,11 @@
             event.preventDefault();
             if (aiChatSending) return false;
 
-            if (aiChatListening && aiChatRecognition) {
+            if (aiChatListening && aiChatNativeSpeechBridge) {
+                aiChatDictationSuppressed = true;
+                window.webkit.messageHandlers.speechRecognition.postMessage('stop');
+                setAiChatListening(false);
+            } else if (aiChatListening && aiChatRecognition) {
                 aiChatDictationSuppressed = true;
                 aiChatRecognition.stop();
                 setAiChatListening(false);
