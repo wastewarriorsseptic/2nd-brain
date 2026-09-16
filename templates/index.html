@@ -495,9 +495,15 @@
             <textarea id="ai-chat-input" rows="1" placeholder="Ask or add a task…"
                    oninput="autoGrowAiChatInput()" onkeydown="handleAiChatInputKeydown(event)"
                    class="flex-1 bg-slate-100 border border-slate-200 rounded-2xl px-3.5 py-2.5 text-base text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white resize-none overflow-y-auto leading-relaxed" style="max-height: 140px;" autocomplete="off"></textarea>
+            <!-- w-11 h-11 (44x44pt), not the w-9 h-9 (36x36pt) this used to be - reported directly
+                 with a screen recording: taps meant for this button were landing on the textarea's
+                 own edge instead (visible in the recording as the textarea's blue focus ring
+                 appearing, never this button's own listening state), which tracks exactly with
+                 Apple's own Human Interface Guidelines minimum tap target of 44x44pt - 36px was
+                 genuinely too small and too close to a large flex-1 sibling to reliably hit. -->
             <button type="button" id="ai-chat-mic-btn" onclick="toggleAiChatDictation()"
                     onmousedown="event.preventDefault()" ontouchstart="event.preventDefault()" title="Dictate"
-                    class="hidden w-9 h-9 shrink-0 bg-slate-100 border border-slate-200 hover:border-indigo-500 rounded-full text-slate-500 text-sm transition">🎤</button>
+                    class="hidden w-11 h-11 shrink-0 bg-slate-100 border border-slate-200 hover:border-indigo-500 rounded-full text-slate-500 text-sm transition">🎤</button>
             <button type="submit" class="w-9 h-9 shrink-0 bg-indigo-600 hover:bg-indigo-500 rounded-full text-white text-sm transition">➤</button>
         </form>
     </div>
