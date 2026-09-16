@@ -60,7 +60,20 @@ struct WebView: UIViewRepresentable {
         // fixed this: it's the native WKWebView's own background paint, not page content.
         webView.backgroundColor = UIColor(red: 0.0588, green: 0.0902, blue: 0.1647, alpha: 1)
         context.coordinator.attach(webView: webView, url: url)
-        webView.load(URLRequest(url: url))
+        // .reloadIgnoringLocalCacheData, not the default .useProtocolCachePolicy - the site's own
+        // response carries no Cache-Control/Last-Modified headers at all, which is exactly the
+        // condition under which NSURLCache applies its own heuristic freshness lifetime instead of
+        // treating the response as always-revalidate. That meant a real risk of this WKWebView
+        // quietly serving yesterday's index.html/JS after a fresh TestFlight install - three
+        // separate real fixes in a row (the Speech Recognition permission, the native bridge
+        // replacing the browser API, the AVAudioEngine crash guard) each landed on the server with
+        // zero change in the reported symptom, which only makes sense if none of them were
+        // actually reaching the device at all. Every load this app ever does is of content that
+        // must be current - there's no scenario where a stale cached copy of this page is
+        // preferable to a fresh network fetch - so bypass the local cache unconditionally.
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        webView.load(request)
         return webView
     }
 
@@ -165,7 +178,9 @@ struct WebView: UIViewRepresentable {
         @objc private func retryTapped() {
             guard let webView, let url else { return }
             errorOverlay?.isHidden = true
-            webView.load(URLRequest(url: url))
+            var request = URLRequest(url: url)
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            webView.load(request)
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
