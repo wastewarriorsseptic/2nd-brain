@@ -5364,6 +5364,14 @@ actually called update_task for every single one of them. Each call is executed 
 to you individually, so your final reply to the user must be based on what those results actually \
 said happened, not on what you intended to do.
 
+You CAN move a task to a different Bucket, Realm, or even a different Universe entirely ("move \
+this to Bills", "put this under my Shopping list instead", "this actually belongs in Work") - use \
+update_task with bucket_id set to the destination bucket's id from the universe tree in context. \
+This works across Universes just as well as within one - there's no separate tool for it, moving \
+is just another field on the same update_task call. If more than one bucket in the tree plausibly \
+matches what the user named (e.g. two different Realms each have a "General" bucket), ask which \
+one instead of guessing, the same as you would for navigate_to_place.
+
 When the user asks to be taken to, shown, or brought to a task ("go to my dentist task", "show me \
 the fountain reminder"), first make sure exactly ONE task in list_tasks' results plausibly matches \
 what they described. If two or more tasks are a plausible match (e.g. the same title recurring on \
@@ -5454,7 +5462,7 @@ if GEMINI_ENABLED:
     )
     _ai_update_task_decl = genai_types.FunctionDeclaration(
         name="update_task",
-        description="Update one or more fields of a task the user already has. Only include the fields being changed.",
+        description="Update one or more fields of a task the user already has. Only include the fields being changed. To MOVE a task to a different Bucket/Realm/Universe (\"move this to Bills\", \"put this under Shopping instead\"), pass bucket_id - the id must come from the universe tree given in context (never invented), and can be any task-kind bucket the user owns, in any Realm or Universe, not just the one the task is currently in.",
         parameters={
             "type": "OBJECT",
             "properties": {
@@ -5462,6 +5470,7 @@ if GEMINI_ENABLED:
                 "title": {"type": "STRING"},
                 "due_date": {"type": "STRING", "description": "YYYY-MM-DD"},
                 "notes": {"type": "STRING"},
+                "bucket_id": {"type": "INTEGER", "description": "Moves the task to this bucket - from the universe tree in context. Only include this when the user actually asked to move/relocate the task somewhere else."},
             },
             "required": ["task_id"],
         },
@@ -5795,6 +5804,17 @@ def _ai_execute_update_task(session: Session, user: "User", args: dict) -> dict:
             return {"error": "That due date wasn't in a recognizable format."}
     if "notes" in args:
         item.description = args.get("notes") or None
+    if "bucket_id" in args and args.get("bucket_id"):
+        new_bucket_id = args["bucket_id"]
+        # Same re-validation create_task already does for a bucket_id the model supplies - never
+        # trust it just because it matched something in the context tree we handed the model
+        # ourselves; a confused model or an injected payload from an earlier task title could
+        # still try to move a task into a bucket the user doesn't actually own.
+        if not user_can_access_bucket(session, user, new_bucket_id):
+            return {"error": "That bucket doesn't exist or isn't yours."}
+        if get_bucket_universe_kind(session, new_bucket_id) != "task":
+            return {"error": "That bucket isn't a task bucket."}
+        item.bucket_id = new_bucket_id
 
     session.add(item)
     session.commit()
