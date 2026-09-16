@@ -355,6 +355,18 @@ struct WebView: UIViewRepresentable {
 
             let inputNode = speechAudioEngine.inputNode
             let recordingFormat = inputNode.outputFormat(forBus: 0)
+            // installTap crashes outright (a hard precondition inside AVAudioEngine, not a
+            // catchable Swift error) if the format it's given has a zero sample rate or channel
+            // count - a real, well-documented race where the input node's format hasn't finished
+            // settling yet right after the audio session was just activated above. Bailing out
+            // cleanly here instead of crashing matches "can't even tap the mic button anymore"
+            // reported directly - a crash here would leave the WebView's whole JS environment
+            // wedged until the app is force-quit and relaunched, which reads exactly like the
+            // button silently stopped responding at all, not just failing to transcribe.
+            guard recordingFormat.sampleRate > 0, recordingFormat.channelCount > 0 else {
+                sendSpeechEndedToPage()
+                return
+            }
             inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
                 request.append(buffer)
             }
@@ -389,9 +401,13 @@ struct WebView: UIViewRepresentable {
                 speechAudioEngine.stop()
                 speechRecognitionRequest?.endAudio()
             }
-            if speechAudioEngine.inputNode.numberOfInputs > 0 {
-                speechAudioEngine.inputNode.removeTap(onBus: 0)
-            }
+            // removeTap is documented as safe to call even when no tap is installed - always
+            // calling it (rather than trying to track "was one installed" separately) is simpler
+            // and guarantees a clean slate for the input node's format to be re-read fresh next
+            // time beginSpeechAudioCapture runs, which is exactly what the sampleRate/channelCount
+            // guard there is trying to protect against.
+            speechAudioEngine.inputNode.removeTap(onBus: 0)
+            speechAudioEngine.reset()
             speechRecognitionTask?.cancel()
             speechRecognitionTask = nil
             speechRecognitionRequest = nil
