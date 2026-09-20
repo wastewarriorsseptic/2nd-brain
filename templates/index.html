@@ -8341,6 +8341,14 @@
             const universeSortOrder = new Map(allUniversesData.map(u => [String(u.id), u.sort_order || 0]));
             lanes.sort((a, b) => (universeSortOrder.get(String(a.id)) ?? 0) - (universeSortOrder.get(String(b.id)) ?? 0));
 
+            // A 🌀 node above every Universe: its row is the full timeline of ALL tasks across every
+            // Universe (its own copies of each task, since layout state is written per task each
+            // frame), and tapping its circle steps out to the Universes picker.
+            const allTasksCopy = [];
+            lanes.forEach(l => l.tasks.forEach(t => allTasksCopy.push({ ...t, floatOffset: Math.random() * Math.PI * 2 })));
+            allTasksCopy.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+            lanes.unshift({ id: '__all_tasks__', name: 'All Tasks', icon: '🌀', tasks: allTasksCopy, isUniverseNode: true, isAllNode: true });
+
             const isMobile = window.innerWidth < 768;
             const laneSpacing = isMobile ? 460 : 400;
             const hubRadius = isMobile ? 90 : 70;
@@ -8851,7 +8859,9 @@
             const mabRadius = (lane._isMobile ? 22 : 19) * tk;
             const ups = lane._upcoming || [];
             const mabs = [];
-            if (ups.length === 0) {
+            if (lane.isAllNode) {
+                // no add buttons: a task added from here would have no obvious Universe
+            } else if (ups.length === 0) {
                 const fb = lane._emptyFallback;
                 if (fb && fb.bucketId != null) {
                     mabs.push({ x: lane.x + slot, y, bucketId: fb.bucketId, realmId: fb.realmId, universeId: fb.universeId, radius: mabRadius });
@@ -8930,7 +8940,7 @@
         }
 
         function mvInitFocus() {
-            let idx = isRealmTimelineView ? Math.max(0, mvLanes().findIndex(l => !l.isUniverseNode)) : 0;
+            let idx = Math.max(0, mvLanes().findIndex(l => !l.isUniverseNode));
             const savedFor = mvFocusStorageKey();
             if (mvSavedScroll.__for !== savedFor) {
                 Object.keys(mvSavedScroll).forEach(k => { delete mvSavedScroll[k]; });
@@ -9650,6 +9660,10 @@
                 const r = lane._namePillRect;
                 const hitPill = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
                 if (distToHub <= lane.hubRadius + 10 || hitPill) {
+                    if (lane.isAllNode) {
+                        openMultiverseView();
+                        return;
+                    }
                     if (focusOn && lane !== focusedLane) {
                         mvSetFocus(multiverseLanes.indexOf(lane));
                         return;
@@ -11182,6 +11196,7 @@
                     let pressedLane = null;
                     if (isMultiverseStackedView) {
                         multiverseLanes.forEach(lane => {
+                            if (lane.isAllNode) return;
                             const dist = Math.hypot(worldX - lane.x, worldY - lane.y);
                             if (dist <= lane.hubRadius + 10) pressedLane = lane;
                         });
@@ -11310,7 +11325,8 @@
 
                     const laneSpacing = window.innerWidth < 768 ? 460 : 400;
                     const currentIndex = multiverseLanes.indexOf(multiverseDraggingLane);
-                    const targetIndex = Math.max(0, Math.min(multiverseLanes.length - 1, Math.round(multiverseDraggingLane.y / laneSpacing)));
+                    const minTargetIndex = multiverseLanes[0] && multiverseLanes[0].isAllNode ? 1 : 0;
+                    const targetIndex = Math.max(minTargetIndex, Math.min(multiverseLanes.length - 1, Math.round(multiverseDraggingLane.y / laneSpacing)));
                     if (currentIndex !== -1 && targetIndex !== currentIndex) {
                         multiverseLanes.splice(currentIndex, 1);
                         multiverseLanes.splice(targetIndex, 0, multiverseDraggingLane);
@@ -11355,7 +11371,7 @@
                 if (multiverseDraggingLane) {
                     const laneSpacing = window.innerWidth < 768 ? 460 : 400;
                     multiverseLanes.forEach((lane, idx) => { lane.y = idx * laneSpacing; syncLaneTaskPositions(lane); });
-                    const order = multiverseLanes.map(lane => lane.id);
+                    const order = multiverseLanes.filter(lane => !lane.isAllNode).map(lane => lane.id);
                     fetch('/universes/reorder/', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
