@@ -5797,6 +5797,17 @@
         // "currently focused bucket" concept getting in the way.
         let isMultiverseStackedView = false;
         let multiverseLanes = [];
+        // Multiverse Timeline "focus" navigation state (see stepMultiverseFocus): one Universe lane is
+        // locked at screen center, swiping up/down moves the selection, swiping left/right scrolls only
+        // the selected lane's own tasks.
+        let mvFocusF = 0;
+        let mvFocusTarget = 0;
+        let mvFocusGesture = null;
+        let mvFocusModeWasActive = false;
+        let mvCamSettling = false;
+        let mvFocusLastFrameMs = 0;
+        let mvAddHubY = null;
+        let mvWheelAccX = 0, mvWheelAccY = 0, mvWheelLockUntil = 0, mvWheelLastMs = 0;
         let multiverseActiveLaneId = null;
         // Per-Universe Realm Timeline (see buildRealmLanes/renderMultiverseStackedLanes/
         // handleRealmTimelineClick) - the DEFAULT top-level view for a task-bearing Universe now,
@@ -8318,6 +8329,19 @@
                 lane.leftmostTaskX = overdueTasks.length ? overdueTasks[overdueTasks.length - 1].x : null;
                 lane.rightmostTaskX = upcomingTasks.length ? upcomingTasks[upcomingTasks.length - 1].x : null;
 
+                lane._baseHub = hubRadius;
+                lane._startGap = startGap;
+                lane._step = stepSpacing;
+                lane._spacing = laneSpacing;
+                lane._isMobile = isMobile;
+                lane._overdueCount = overdueTasks.length;
+                lane._upcomingCount = upcomingTasks.length;
+                lane._upcoming = upcomingTasks;
+                overdueTasks.forEach((task, idx) => { task._side = 'left'; task._sideIdx = idx; });
+                upcomingTasks.forEach((task, idx) => { task._side = 'right'; task._sideIdx = idx; });
+                lane._scroll = 0;
+                lane._scrollIdxTarget = 0;
+
                 // Only reached when this lane has no upcoming task of its own to source a
                 // bucketId/realmId from (see computeLaneMidAddButtons) - falls back to the
                 // Universe's own first Realm's first Bucket, from allUniversesData rather than any
@@ -8331,6 +8355,7 @@
                         emptyLaneFallback = { bucketId: fallbackBucket.id, realmId: fallbackRealm.id, universeId: lane.id };
                     }
                 }
+                lane._emptyFallback = emptyLaneFallback;
                 lane.midAddButtons = computeLaneMidAddButtons(lane, upcomingTasks, hubRadius, startGap, stepSpacing, isMobile, emptyLaneFallback);
             });
 
@@ -8574,6 +8599,7 @@
             updateDailyDigestVisibility();
 
             multiverseLanes = buildMultiverseLanes();
+            mvInitFocus();
 
             const isMobile = window.innerWidth < 768;
             const laneCount = Math.max(multiverseLanes.length, 1);
@@ -8608,6 +8634,315 @@
             };
         }
 
+        // ===================================================================================
+        // Multiverse Timeline "focus" navigation. Instead of free-panning a canvas of stacked lanes,
+        // exactly one Universe lane is locked at screen center: swipe up/down moves the selection
+        // (snapping lane to lane), swipe left/right slides ONLY the selected lane's tasks (snapping
+        // task to task). Circles scale up like a dock the closer a lane is to the selection.
+        // All positions/radii are written back onto the lane/task objects each frame, so every
+        // existing hit test (which reads task.x/y/radius, lane.y/hubRadius) stays correct untouched.
+        // ===================================================================================
+        function mvIsMobile() { return window.innerWidth < 768; }
+        function mvMaxScale() { return mvIsMobile() ? 2.2 : 2.1; }
+        function mvClamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+        function mvSmooth(cur, target, dt, rate) { return cur + (target - cur) * (1 - Math.exp(-rate * dt)); }
+        function mvSmoothstep(t) { t = mvClamp(t, 0, 1); return t * t * (3 - 2 * t); }
+        function mvRubber(v, min, max) {
+            if (v < min) return min + (v - min) * 0.35;
+            if (v > max) return max + (v - max) * 0.35;
+            return v;
+        }
+
+        function mvFocusActive() {
+            return isMultiverseStackedView && !isRealmTimelineView && !multiverseReorderMode
+                && !activeSwipeTaskId && multiverseLanes.length > 0;
+        }
+
+        function mvScrollRange(lane) {
+            const o = lane._overdueCount || 0, u = lane._upcomingCount || 0;
+            return { min: o > 1 ? -(o - 1) : 0, max: u > 1 ? (u - 1) : 0 };
+        }
+
+        function mvApplyLaneLayout(lane, y, s, tk, scrollIdx) {
+            lane.y = y;
+            lane._s = s;
+            lane._tk = tk;
+            lane.hubRadius = lane._baseHub * s;
+            const slot = lane.hubRadius + lane._startGap + 190 * (tk - 1);
+            const step = lane._step + 380 * (tk - 1);
+            lane._stepNow = step;
+            let minX = null, maxX = null;
+            lane.tasks.forEach(task => {
+                task.y = y;
+                task.radius = 18 * s;
+                task.x = task._side === 'right'
+                    ? lane.x + slot + (task._sideIdx - scrollIdx) * step
+                    : lane.x - slot - (task._sideIdx + scrollIdx) * step;
+                if (minX === null || task.x < minX) minX = task.x;
+                if (maxX === null || task.x > maxX) maxX = task.x;
+            });
+            lane.leftmostTaskX = minX;
+            lane.rightmostTaskX = maxX;
+
+            const mabRadius = (lane._isMobile ? 22 : 19) * tk;
+            const ups = lane._upcoming || [];
+            const mabs = [];
+            if (ups.length === 0) {
+                const fb = lane._emptyFallback;
+                if (fb && fb.bucketId != null) {
+                    mabs.push({ x: lane.x + slot, y, bucketId: fb.bucketId, realmId: fb.realmId, universeId: fb.universeId, radius: mabRadius });
+                }
+            } else {
+                mabs.push({ x: ups[0].x - step / 2, y, bucketId: ups[0].bucketId, realmId: ups[0].realmId, universeId: ups[0].universeId, radius: mabRadius });
+                for (let i = 0; i < ups.length - 1; i++) {
+                    mabs.push({ x: (ups[i].x + ups[i + 1].x) / 2, y, bucketId: ups[i + 1].bucketId, realmId: ups[i + 1].realmId, universeId: ups[i + 1].universeId, radius: mabRadius });
+                }
+                const last = ups[ups.length - 1];
+                mabs.push({ x: last.x + step, y, bucketId: last.bucketId, realmId: last.realmId, universeId: last.universeId, radius: mabRadius });
+            }
+            lane.midAddButtons = mabs;
+        }
+
+        function mvResetLayoutToBase() {
+            multiverseLanes.forEach((lane, i) => {
+                lane._scroll = 0;
+                lane._scrollIdxTarget = 0;
+                lane._alpha = 1;
+                mvApplyLaneLayout(lane, i * lane._spacing, 1, 1, 0);
+            });
+            mvAddHubY = null;
+        }
+
+        // Writes every lane's scale/position for the current mvFocusF and each lane's scroll; returns
+        // the world Y of the (possibly mid-animation, fractional) focus point for the camera.
+        function mvApplyLayout() {
+            const lanes = multiverseLanes, n = lanes.length;
+            if (!n) return 0;
+            const R = 2.6, S = mvMaxScale();
+            const ss = [], tks = [];
+            lanes.forEach((lane, i) => {
+                const w = mvSmoothstep(1 - Math.abs(i - mvFocusF) / R);
+                const sc = 1 + (S - 1) * w;
+                ss[i] = sc;
+                tks[i] = 1 + (sc - 1) * 0.5;
+                lane._alpha = 0.5 + 0.5 * w;
+            });
+            const base = lanes[0]._spacing;
+            const ys = [];
+            let y = 0;
+            for (let i = 0; i < n; i++) {
+                ys[i] = y;
+                const sNext = i + 1 < n ? ss[i + 1] : 1;
+                y += base * (1 + 0.6 * ((ss[i] + sNext) / 2 - 1));
+            }
+            mvAddHubY = y;
+            lanes.forEach((lane, i) => mvApplyLaneLayout(lane, ys[i], ss[i], tks[i], lane._scroll || 0));
+            const F = mvClamp(mvFocusF, 0, n - 1);
+            const lo = Math.floor(F), hi = Math.min(n - 1, lo + 1);
+            return ys[lo] + (ys[hi] - ys[lo]) * (F - lo);
+        }
+
+        function mvOverviewCamera() {
+            const mobile = mvIsMobile();
+            const laneCount = Math.max(multiverseLanes.length, 1);
+            const laneSpacing = mobile ? 460 : 400;
+            const totalHeight = (laneCount - 1) * laneSpacing;
+            const zoomVal = mobile ? 0.22 : 0.32;
+            const baseHub = (multiverseLanes[0] && multiverseLanes[0]._baseHub) || (mobile ? 90 : 70);
+            return {
+                zoom: zoomVal,
+                offset: {
+                    x: window.innerWidth * 0.5,
+                    y: mobile
+                        ? Math.max((window.innerHeight / 2) - ((totalHeight / 2) * zoomVal), minStackedLaneCameraY(baseHub, zoomVal))
+                        : 100
+                }
+            };
+        }
+
+        function mvInitFocus() {
+            let idx = 0;
+            try {
+                const id = localStorage.getItem('mv_focus_lane_id');
+                if (id !== null) {
+                    const found = multiverseLanes.findIndex(l => String(l.id) === id);
+                    if (found >= 0) idx = found;
+                }
+            } catch (e) {}
+            mvFocusF = idx;
+            mvFocusTarget = idx;
+            mvFocusGesture = null;
+            mvFocusModeWasActive = false;
+            multiverseLanes.forEach(l => { l._scroll = 0; l._scrollIdxTarget = 0; });
+            mvApplyLayout();
+        }
+
+        function mvSetFocus(idx) {
+            const n = multiverseLanes.length;
+            if (!n) return;
+            idx = mvClamp(idx, 0, n - 1);
+            if (idx !== mvFocusTarget) {
+                multiverseLanes.forEach(l => { l._scrollIdxTarget = 0; });
+                mvFocusTarget = idx;
+                try { localStorage.setItem('mv_focus_lane_id', String(multiverseLanes[idx].id)); } catch (e) {}
+                triggerHapticFeedback('light');
+            }
+        }
+
+        function mvStepScroll(dir) {
+            const lane = multiverseLanes[mvFocusTarget];
+            if (!lane) return;
+            const rng = mvScrollRange(lane);
+            const next = mvClamp((lane._scrollIdxTarget || 0) + dir, rng.min, rng.max);
+            if (next !== lane._scrollIdxTarget) {
+                lane._scrollIdxTarget = next;
+                triggerHapticFeedback('light');
+            }
+        }
+
+        function stepMultiverseFocus() {
+            const now = performance.now();
+            const dt = mvFocusLastFrameMs ? Math.min(0.05, (now - mvFocusLastFrameMs) / 1000) : 0.016;
+            mvFocusLastFrameMs = now;
+
+            if (!mvFocusActive()) {
+                mvFocusModeWasActive = false;
+                return;
+            }
+
+            const lanes = multiverseLanes, n = lanes.length;
+            const entering = !mvFocusModeWasActive;
+            if (entering) {
+                targetCameraZoom = mvOverviewCamera().zoom;
+                mvFocusModeWasActive = true;
+                mvCamSettling = true;
+            }
+
+            mvFocusTarget = mvClamp(mvFocusTarget, 0, n - 1);
+            const g = mvFocusGesture;
+            if (!(g && g.axis === 'v')) {
+                mvFocusF = mvSmooth(mvFocusF, mvFocusTarget, dt, 13);
+                if (Math.abs(mvFocusF - mvFocusTarget) < 0.0005) mvFocusF = mvFocusTarget;
+            }
+            lanes.forEach((lane, i) => {
+                const owner = i === mvFocusTarget;
+                if (!owner) lane._scrollIdxTarget = 0;
+                if (g && g.axis === 'h' && g.lane === lane) return;
+                const t = lane._scrollIdxTarget || 0;
+                lane._scroll = mvSmooth(lane._scroll || 0, t, dt, 13);
+                if (Math.abs(lane._scroll - t) < 0.0005) lane._scroll = t;
+            });
+
+            const fy = mvApplyLayout();
+            const desiredX = window.innerWidth / 2;
+            const desiredY = window.innerHeight * 0.48 - fy * cameraZoom;
+            targetCameraOffset = { x: desiredX, y: desiredY };
+            if (mvCamSettling) {
+                if (Math.hypot(cameraOffset.x - desiredX, cameraOffset.y - desiredY) < 1.5 && Math.abs(cameraZoom - targetCameraZoom) < 0.002) mvCamSettling = false;
+            } else {
+                cameraOffset.x = desiredX;
+                cameraOffset.y = desiredY;
+            }
+        }
+
+        function mvFocusBeginGesture(x, y) {
+            mvFocusGesture = null;
+            if (!mvFocusActive()) return;
+            const lane = multiverseLanes[mvFocusTarget];
+            mvFocusGesture = {
+                startX: x, startY: y, axis: null, lane,
+                startF: mvFocusF, startScroll: lane ? (lane._scroll || 0) : 0,
+                samples: []
+            };
+        }
+
+        function mvFocusMoveGesture(x, y) {
+            const g = mvFocusGesture;
+            if (!g) return;
+            const dx = x - g.startX, dy = y - g.startY;
+            if (!g.axis) {
+                if (Math.hypot(dx, dy) < 8) return;
+                g.axis = Math.abs(dy) > Math.abs(dx) ? 'v' : 'h';
+            }
+            const now = performance.now();
+            const n = multiverseLanes.length;
+            if (g.axis === 'v') {
+                const px = multiverseLanes[0]._spacing * 1.15 * cameraZoom;
+                const f = mvRubber(g.startF - dy / px, 0, n - 1);
+                mvFocusF = f;
+                const idx = mvClamp(Math.round(f), 0, n - 1);
+                if (idx !== mvFocusTarget) mvSetFocus(idx);
+                g.samples.push({ t: now, v: f });
+            } else {
+                const lane = g.lane;
+                if (!lane) return;
+                const stepPx = (lane._stepNow || lane._step) * cameraZoom;
+                const rng = mvScrollRange(lane);
+                const idx = mvRubber(g.startScroll - dx / stepPx, rng.min, rng.max);
+                lane._scroll = idx;
+                lane._scrollIdxTarget = mvClamp(Math.round(idx), rng.min, rng.max);
+                g.samples.push({ t: now, v: idx });
+            }
+            if (g.samples.length > 12) g.samples.shift();
+        }
+
+        function mvFocusEndGesture() {
+            const g = mvFocusGesture;
+            mvFocusGesture = null;
+            if (!g || !g.axis) return;
+            const now = performance.now();
+            const recent = g.samples.filter(sm => now - sm.t < 120);
+            let vel = 0;
+            if (recent.length >= 2) {
+                const a = recent[0], b = recent[recent.length - 1];
+                const dtS = (b.t - a.t) / 1000;
+                if (dtS > 0.01) vel = (b.v - a.v) / dtS;
+            }
+            if (g.axis === 'v') {
+                const proj = mvFocusF + mvClamp(vel * 0.07, -1.5, 1.5);
+                mvSetFocus(Math.round(mvClamp(proj, 0, multiverseLanes.length - 1)));
+            } else if (g.lane) {
+                const rng = mvScrollRange(g.lane);
+                const proj = (g.lane._scroll || 0) + mvClamp(vel * 0.08, -2, 2);
+                const next = mvClamp(Math.round(proj), rng.min, rng.max);
+                if (next !== g.lane._scrollIdxTarget) triggerHapticFeedback('light');
+                g.lane._scrollIdxTarget = next;
+            }
+        }
+
+        function mvHandleWheel(e) {
+            const now = performance.now();
+            if (now - mvWheelLastMs > 200) { mvWheelAccX = 0; mvWheelAccY = 0; }
+            mvWheelLastMs = now;
+            if (now < mvWheelLockUntil) return;
+            mvWheelAccX += e.deltaX;
+            mvWheelAccY += e.deltaY;
+            const TH = 50;
+            if (Math.abs(mvWheelAccY) >= Math.abs(mvWheelAccX)) {
+                if (Math.abs(mvWheelAccY) >= TH) {
+                    mvSetFocus(mvFocusTarget + (mvWheelAccY > 0 ? 1 : -1));
+                    mvWheelAccX = mvWheelAccY = 0;
+                    mvWheelLockUntil = now + 220;
+                }
+            } else if (Math.abs(mvWheelAccX) >= TH) {
+                mvStepScroll(mvWheelAccX > 0 ? 1 : -1);
+                mvWheelAccX = mvWheelAccY = 0;
+                mvWheelLockUntil = now + 220;
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (!isSpaceViewActive || !mvFocusActive()) return;
+            const tag = (document.activeElement && document.activeElement.tagName) || '';
+            if (/INPUT|TEXTAREA|SELECT/.test(tag) || e.metaKey || e.ctrlKey || e.altKey) return;
+            const modalOpen = document.querySelector('[id$="-modal"]:not(.hidden)');
+            if (modalOpen) return;
+            if (e.key === 'ArrowDown') { e.preventDefault(); mvSetFocus(mvFocusTarget + 1); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); mvSetFocus(mvFocusTarget - 1); }
+            else if (e.key === 'ArrowRight') { e.preventDefault(); mvStepScroll(1); }
+            else if (e.key === 'ArrowLeft') { e.preventDefault(); mvStepScroll(-1); }
+        });
+
         // Dedicated renderer for BOTH stacked-lane views - the Multiverse Timeline (one row per
         // Universe) and the per-Universe Realm Timeline (one row per Realm - see buildRealmLanes/
         // isRealmTimelineView), which share this exact same hub+horizontal-chain visual language on
@@ -8632,8 +8967,9 @@
                 // Two independent segments radiating from the hub - overdue tasks sit to its left,
                 // upcoming (today or later) to its right (see buildMultiverseLanes), so either side
                 // can be empty on its own.
-                if (lane.rightmostTaskX !== null) {
+                if (lane.rightmostTaskX !== null && lane.rightmostTaskX > lane.x + lane.hubRadius) {
                     spaceCtx.save();
+                    spaceCtx.globalAlpha = lane._alpha ?? 1;
                     spaceCtx.beginPath();
                     spaceCtx.moveTo(lane.x + lane.hubRadius + 5, lane.y);
                     spaceCtx.lineTo(lane.rightmostTaskX + 40, lane.y);
@@ -8645,8 +8981,9 @@
                     spaceCtx.restore();
                 }
 
-                if (lane.leftmostTaskX !== null) {
+                if (lane.leftmostTaskX !== null && lane.leftmostTaskX < lane.x - lane.hubRadius) {
                     spaceCtx.save();
+                    spaceCtx.globalAlpha = lane._alpha ?? 1;
                     spaceCtx.beginPath();
                     spaceCtx.moveTo(lane.x - lane.hubRadius - 5, lane.y);
                     spaceCtx.lineTo(lane.leftmostTaskX - 40, lane.y);
@@ -8673,6 +9010,7 @@
                     spaceCtx.translate(-lane.x, -lane.y);
                 }
 
+                spaceCtx.globalAlpha = lane._alpha ?? 1;
                 const hubDrawRadius = isDraggedLane ? lane.hubRadius * 1.08 : lane.hubRadius;
                 if (isDraggedLane) {
                     spaceCtx.beginPath();
@@ -8706,28 +9044,32 @@
                 spaceCtx.fillText(lane.icon, lane.x, lane.y);
                 spaceCtx.restore();
 
+                const nameTk = lane._tk || 1;
                 spaceCtx.save();
+                spaceCtx.globalAlpha = lane._alpha ?? 1;
+                spaceCtx.translate(lane.x, lane.y);
+                spaceCtx.scale(nameTk, nameTk);
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
                 spaceCtx.font = 'bold 34px sans-serif';
                 const nameText = lane.isUniverseNode ? `↩ ${lane.name}` : lane.name;
                 const nameWidth = spaceCtx.measureText(nameText).width + 36;
-                const pillY = lane.y + lane.hubRadius + 16;
+                const pillYLocal = (lane.hubRadius / nameTk) + 16;
                 const pillHeight = 46;
                 spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.92)';
                 spaceCtx.beginPath();
-                spaceCtx.roundRect(lane.x - nameWidth / 2, pillY, nameWidth, pillHeight, 23);
+                spaceCtx.roundRect(-nameWidth / 2, pillYLocal, nameWidth, pillHeight, 23);
                 spaceCtx.fill();
                 spaceCtx.strokeStyle = laneAccent;
                 spaceCtx.lineWidth = 1.5;
                 spaceCtx.stroke();
                 spaceCtx.fillStyle = '#ffffff';
-                spaceCtx.fillText(nameText, lane.x, pillY + pillHeight / 2);
+                spaceCtx.fillText(nameText, 0, pillYLocal + pillHeight / 2);
                 spaceCtx.restore();
 
                 // Stashed so a tap on the name pill (not just the hub circle itself) also drills
                 // into that Universe - see handleMultiverseStackedClick.
-                lane._namePillRect = { x: lane.x - nameWidth / 2, y: pillY, w: nameWidth, h: pillHeight };
+                lane._namePillRect = { x: lane.x - (nameWidth * nameTk) / 2, y: lane.y + pillYLocal * nameTk, w: nameWidth * nameTk, h: pillHeight * nameTk };
             });
 
             // One more equally-spaced slot below the lowest Universe lane - an empty hub, same look
@@ -8744,8 +9086,8 @@
             // renders (isRealmTimelineView) - "new Universe" has no equivalent meaning one level
             // down, where each lane is a Realm instead.
             if (isMultiverseStackedView && !isRealmTimelineView) {
-                const addHubY = lanes.length * (window.innerWidth < 768 ? 460 : 400);
-                const addHubRadius = lanes.length > 0 ? lanes[0].hubRadius : (window.innerWidth < 768 ? 90 : 70);
+                const addHubY = mvAddHubY !== null ? mvAddHubY : lanes.length * (window.innerWidth < 768 ? 460 : 400);
+                const addHubRadius = lanes.length > 0 ? (lanes[0]._baseHub || lanes[0].hubRadius) : (window.innerWidth < 768 ? 90 : 70);
                 multiverseAddUniverseHub = { x: 0, y: addHubY, radius: addHubRadius };
 
                 spaceCtx.save();
@@ -8771,8 +9113,18 @@
             }
 
             lanes.forEach(lane => {
+                const laneTk = lane._tk || 1;
                 lane.tasks.forEach(task => {
                     const isActiveSwipeNode = activeSwipeTaskId && String(task.id) === String(activeSwipeTaskId);
+
+                    // Tasks sliding under the hub (while their lane is scrolled) fade out instead of
+                    // drawing on top of it; the hub is opaque and drawn first.
+                    const fade = mvClamp((Math.abs(task.x - lane.x) - lane.hubRadius - 30) / 140, 0, 1);
+                    task._vis = fade * (lane._alpha ?? 1);
+                    if (fade <= 0.02) { task._labelRect = null; return; }
+
+                    spaceCtx.save();
+                    spaceCtx.globalAlpha = task._vis;
 
                     if (isActiveSwipeNode) {
                         spaceCtx.save();
@@ -8809,7 +9161,15 @@
                     spaceCtx.fill();
                     spaceCtx.shadowBlur = 0;
 
+                    // Labels are drawn in a local space scaled by the lane's (gentler) text scale and
+                    // anchored on the dot, so the dock-style growth reads without the wrapped title
+                    // ballooning into the neighboring lane. rLocal keeps the label the same visual
+                    // distance from the (larger) dot edge.
+                    const rLocal = task.radius / laneTk;
+
                     spaceCtx.save();
+                    spaceCtx.translate(task.x, task.y);
+                    spaceCtx.scale(laneTk, laneTk);
                     spaceCtx.textAlign = 'center';
                     spaceCtx.textBaseline = 'middle';
                     spaceCtx.font = isActiveSwipeNode ? 'bold 40px sans-serif' : '36px sans-serif';
@@ -8818,28 +9178,32 @@
                     spaceCtx.fillStyle = task.isOverdue ? '#fda4af' : (isSoon ? '#5eead4' : '#94a3b8');
                     spaceCtx.shadowColor = task.isOverdue ? '#f43f5e' : (isSoon ? '#2dd4bf' : 'transparent');
                     spaceCtx.shadowBlur = isSoon || task.isOverdue ? 10 : 0;
-                    spaceCtx.fillText(dateLabel, task.x, task.y - task.radius - 30);
+                    spaceCtx.fillText(dateLabel, 0, -rLocal - 30);
                     spaceCtx.restore();
 
                     spaceCtx.save();
+                    spaceCtx.translate(task.x, task.y);
+                    spaceCtx.scale(laneTk, laneTk);
                     spaceCtx.textAlign = 'center';
                     spaceCtx.textBaseline = 'middle';
                     spaceCtx.font = isActiveSwipeNode ? 'bold 44px sans-serif' : '40px sans-serif';
-                    const maxLabelWidth = 380;
+                    // Grown labels wrap to more lines instead of getting wider, so the selected lane's
+                    // titles don't run off the edge of a phone screen.
+                    const maxLabelWidth = 380 / Math.max(1, laneTk / 1.25);
                     const lineHeight = isActiveSwipeNode ? 50 : 46;
                     const lines = wrapTextToWidth(spaceCtx, task.title, maxLabelWidth, 6);
                     const widestLine = Math.max(...lines.map(l => spaceCtx.measureText(l).width));
                     const tWidth = widestLine + 24;
                     const tPillHeight = (lines.length * lineHeight) + (isActiveSwipeNode ? 14 : 10);
-                    const tPillY = task.y + task.radius + (isActiveSwipeNode ? 12 : 8);
+                    const tPillY = rLocal + (isActiveSwipeNode ? 12 : 8);
 
-                    // Stashed so tapping the label text does exactly what tapping the dot does - see
-                    // handleMultiverseStackedClick.
-                    task._labelRect = { x: task.x - tWidth / 2, y: tPillY, w: tWidth, h: tPillHeight };
+                    // Stashed (in world units) so tapping the label text does exactly what tapping the
+                    // dot does - see handleMultiverseStackedClick.
+                    task._labelRect = { x: task.x - (tWidth * laneTk) / 2, y: task.y + tPillY * laneTk, w: tWidth * laneTk, h: tPillHeight * laneTk };
 
                     spaceCtx.fillStyle = isActiveSwipeNode ? 'rgba(30, 41, 59, 0.98)' : 'rgba(15, 23, 42, 0.9)';
                     spaceCtx.beginPath();
-                    spaceCtx.roundRect(task.x - tWidth / 2, tPillY, tWidth, tPillHeight, 4);
+                    spaceCtx.roundRect(-tWidth / 2, tPillY, tWidth, tPillHeight, 4);
                     spaceCtx.fill();
                     if (isActiveSwipeNode) {
                         spaceCtx.strokeStyle = '#818cf8';
@@ -8849,8 +9213,9 @@
                     spaceCtx.fillStyle = isActiveSwipeNode ? '#ffffff' : '#e2e8f0';
                     const firstLineY = tPillY + (lineHeight / 2) + (isActiveSwipeNode ? 4 : 3);
                     lines.forEach((line, lineIdx) => {
-                        spaceCtx.fillText(line, task.x, firstLineY + (lineIdx * lineHeight));
+                        spaceCtx.fillText(line, 0, firstLineY + (lineIdx * lineHeight));
                     });
+                    spaceCtx.restore();
                     spaceCtx.restore();
                 });
             });
@@ -8858,9 +9223,13 @@
             // Same dashed-emerald "+" the single-bucket linear view draws for its own midAddButtons
             // (see the isSelectedBucket branch of renderSpaceFrame) - see computeLaneMidAddButtons
             // for why these exist here at all.
-            lanes.forEach(lane => {
+            lanes.forEach((lane, laneIdxForMab) => {
+                if (mvFocusActive() && !isRealmTimelineView && laneIdxForMab !== mvFocusTarget) return;
                 (lane.midAddButtons || []).forEach(mab => {
+                    const mabFade = mvClamp((Math.abs(mab.x - lane.x) - lane.hubRadius - 20) / 40, 0, 1);
+                    if (mabFade <= 0.02) return;
                     spaceCtx.save();
+                    spaceCtx.globalAlpha = mabFade;
                     spaceCtx.beginPath();
                     spaceCtx.arc(mab.x, mab.y, mab.radius, 0, Math.PI * 2);
                     spaceCtx.fillStyle = 'rgba(20, 40, 34, 0.9)';
@@ -8916,6 +9285,15 @@
 
         function enterMultiverseTimelineReorderMode() {
             multiverseReorderMode = true;
+            mvFocusGesture = null;
+            // Reordering works on the flat, evenly spaced stack (every lane the same size) so the
+            // drag-to-slot math stays simple - snap back to that layout and the overview camera.
+            mvResetLayoutToBase();
+            const overview = mvOverviewCamera();
+            targetCameraZoom = overview.zoom;
+            cameraZoom = overview.zoom;
+            targetCameraOffset = { ...overview.offset };
+            cameraOffset = { ...overview.offset };
             const doneBtn = document.getElementById('multiverse-timeline-reorder-done-btn');
             if (doneBtn) doneBtn.classList.remove('hidden');
         }
@@ -8954,11 +9332,20 @@
                 }
             }
 
+            // In focus mode only the selected lane is "live": tapping any other lane just selects it
+            // (scrolling it to center); tapping the selected lane's own hub opens that Universe.
+            const focusOn = mvFocusActive();
+            const focusedLane = focusOn ? multiverseLanes[mvFocusTarget] : null;
+
             for (const lane of multiverseLanes) {
                 const distToHub = Math.hypot(worldX - lane.x, worldY - lane.y);
                 const r = lane._namePillRect;
                 const hitPill = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
                 if (distToHub <= lane.hubRadius + 10 || hitPill) {
+                    if (focusOn && lane !== focusedLane) {
+                        mvSetFocus(multiverseLanes.indexOf(lane));
+                        return;
+                    }
                     suppressMultiverseTimelineRestoreOnce();
                     window.location.href = '/?universe_id=' + lane.id;
                     return;
@@ -8976,6 +9363,7 @@
             // pre-filled, once that fresh page load has ITS OWN Realms available) - same "leave this
             // view for that Universe" pattern the hub click above already uses.
             for (const lane of multiverseLanes) {
+                if (focusOn && lane !== focusedLane) continue;
                 for (const mab of (lane.midAddButtons || [])) {
                     const distMab = Math.hypot(worldX - mab.x, worldY - mab.y);
                     if (distMab <= mab.radius + 14) {
@@ -8996,6 +9384,7 @@
             let clickedLane = null;
             for (const lane of multiverseLanes) {
                 for (const task of lane.tasks) {
+                    if (task._vis !== undefined && task._vis < 0.35) continue;
                     const dist = Math.hypot(worldX - task.x, worldY - task.y);
                     const hitNode = dist <= task.radius + 18;
                     const r = task._labelRect;
@@ -9010,6 +9399,11 @@
             }
 
             if (!clickedTask) return;
+
+            if (focusOn && clickedLane !== focusedLane) {
+                mvSetFocus(multiverseLanes.indexOf(clickedLane));
+                return;
+            }
 
             if (String(activeSwipeTaskId) === String(clickedTask.id)) {
                 deselectBucketSwipeDock();
@@ -9340,6 +9734,8 @@
             cameraZoom += (targetCameraZoom - cameraZoom) * 0.1;
             cameraOffset.x += (targetCameraOffset.x - cameraOffset.x) * 0.1;
             cameraOffset.y += (targetCameraOffset.y - cameraOffset.y) * 0.1;
+
+            if (isMultiverseStackedView && !isRealmTimelineView) stepMultiverseFocus();
 
             spaceCtx.clearRect(0, 0, spaceCanvas.width, spaceCanvas.height);
 
@@ -10332,6 +10728,7 @@
                 gestureMoved = false;
                 mouseDownPos = { x: e.clientX, y: e.clientY };
                 dragStart = { x: e.clientX - cameraOffset.x, y: e.clientY - cameraOffset.y };
+                mvFocusBeginGesture(e.clientX, e.clientY);
             };
 
             spaceCanvas.onclick = (e) => {
@@ -10349,15 +10746,23 @@
                         const moveDist = Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y);
                         if (moveDist > TAP_MOVE_THRESHOLD) gestureMoved = true;
                     }
-                    targetCameraOffset = { x: e.clientX - dragStart.x, y: e.clientY - dragStart.y };
-                    cameraOffset = { ...targetCameraOffset };
+                    if (mvFocusGesture) {
+                        mvFocusMoveGesture(e.clientX, e.clientY);
+                    } else {
+                        targetCameraOffset = { x: e.clientX - dragStart.x, y: e.clientY - dragStart.y };
+                        cameraOffset = { ...targetCameraOffset };
+                    }
                 }
             };
 
-            window.onmouseup = () => { isDragging = false; };
+            window.onmouseup = () => { isDragging = false; mvFocusEndGesture(); };
 
             spaceCanvas.onwheel = (e) => {
                 e.preventDefault();
+                if (mvFocusActive() && !e.ctrlKey) {
+                    mvHandleWheel(e);
+                    return;
+                }
                 const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
                 const oldZoom = targetCameraZoom;
                 const newZoom = Math.min(Math.max(0.2, oldZoom * zoomFactor), 2.5);
@@ -10386,6 +10791,7 @@
                     gestureWasMultiTouch = false;
                     isDragging = true;
                     dragStart = { x: e.touches[0].clientX - cameraOffset.x, y: e.touches[0].clientY - cameraOffset.y };
+                    mvFocusBeginGesture(e.touches[0].clientX, e.touches[0].clientY);
 
                     // HOLD-TO-DELETE: if the touch lands on a (non add-button) realm, arm a timer;
                     // if the finger stays down long enough without moving/pinching, reveal a trash icon.
@@ -10487,6 +10893,7 @@
                     if (pressedTask) {
                         longPressTimer = setTimeout(() => {
                             longPressFired = true;
+                            mvFocusGesture = null;
                             longPressTaskForDelete = pressedTask;
                             isDragging = false;
                         }, 550);
@@ -10511,18 +10918,24 @@
                     } else if (pressedLane) {
                         longPressTimer = setTimeout(() => {
                             longPressFired = true;
+                            mvFocusGesture = null;
                             isDragging = false;
                             enterMultiverseTimelineReorderMode();
                             // The lane that was actually held becomes immediately draggable - no
                             // second press needed, matching how picking up an iOS icon after the
                             // jiggle starts lets you keep moving it in the same gesture.
                             multiverseDraggingLane = pressedLane;
-                            multiverseDragStartWorldY = worldY;
+                            // Entering reorder mode snaps the camera to the flat overview, so the
+                            // finger's world Y has to be re-derived from the NEW camera.
+                            multiverseDragStartWorldY = longPressStartPos
+                                ? (longPressStartPos.y - cameraOffset.y) / cameraZoom
+                                : worldY;
                             multiverseDragLaneStartY = pressedLane.y;
                         }, 550);
                     }
                 } else if (e.touches.length === 2) {
                     isDragging = false;
+                    mvFocusGesture = null;
                     gestureWasMultiTouch = true;
                     clearTimeout(longPressTimer);
                     initialPinchDistance = Math.hypot(
@@ -10565,8 +10978,12 @@
                         });
                     }
                 } else if (isDragging && e.touches.length === 1) {
-                    targetCameraOffset = { x: e.touches[0].clientX - dragStart.x, y: e.touches[0].clientY - dragStart.y };
-                    cameraOffset = { ...targetCameraOffset };
+                    if (mvFocusGesture) {
+                        mvFocusMoveGesture(e.touches[0].clientX, e.touches[0].clientY);
+                    } else {
+                        targetCameraOffset = { x: e.touches[0].clientX - dragStart.x, y: e.touches[0].clientY - dragStart.y };
+                        cameraOffset = { ...targetCameraOffset };
+                    }
                 } else if (e.touches.length === 2 && initialPinchDistance) {
                     const currentDist = Math.hypot(
                         e.touches[0].clientX - e.touches[1].clientX,
@@ -10583,6 +11000,7 @@
 
             spaceCanvas.ontouchend = (e) => {
                 isDragging = false;
+                mvFocusEndGesture();
                 initialPinchDistance = null;
                 clearTimeout(longPressTimer);
                 longPressStartPos = null;
@@ -11720,8 +12138,9 @@
         }
     </script>
 
+    <style>@media (max-width: 767px) { #app-store-badge { bottom: 140px !important; font-size: 12px !important; padding: 7px 10px 7px 12px !important; } }</style>
     <a id="app-store-badge" href="https://apps.apple.com/app/id6808784253" target="_blank" rel="noopener"
-       style="display:none;position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:40;align-items:center;gap:10px;padding:10px 14px 10px 16px;border-radius:999px;background:#0f172a;border:1px solid rgba(129,140,248,.5);color:#e2e8f0;font-size:14px;font-weight:600;text-decoration:none;box-shadow:0 6px 24px rgba(0,0,0,.5);">
+       style="display:none;position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:40;align-items:center;white-space:nowrap;gap:10px;padding:10px 14px 10px 16px;border-radius:999px;background:#0f172a;border:1px solid rgba(129,140,248,.5);color:#e2e8f0;font-size:14px;font-weight:600;text-decoration:none;box-shadow:0 6px 24px rgba(0,0,0,.5);">
         <span>Get the TaskMonster iPhone app</span>
         <span style="background:#6366f1;color:#fff;border-radius:999px;padding:4px 10px;font-size:13px;">App Store</span>
         <button type="button" id="app-store-badge-close" aria-label="Dismiss"
