@@ -191,7 +191,13 @@
         /* The task card doubles as the Multiverse Timeline's live "selected task" readout (see
            stepMultiverseFocus) - bigger and roomier than its usual compact self. */
         #space-hud-card.mv-focus-hud {
+            position: fixed;
+            left: 50%;
+            transform: translateX(-50%);
+            width: min(92vw, 26rem);
             max-width: 26rem;
+            margin: 0 !important;
+            z-index: 45;
             padding: 1rem 1.1rem;
         }
         #space-hud-card.mv-focus-hud > div:first-child { display: flex; align-items: center; gap: 0.5rem; }
@@ -5807,6 +5813,7 @@
         let mvAddHubY = null;
         let mvHudTaskId = null;
         let mvHudOwned = false;
+        let mvHudUp = false;
         let mvCenterFrac = 0.48;
         const mvSavedScroll = {};
         let mvWheelAccX = 0, mvWheelAccY = 0, mvWheelLockUntil = 0, mvWheelLastMs = 0;
@@ -8780,7 +8787,7 @@
             for (let i = 0; i < n; i++) {
                 ys[i] = y;
                 const sNext = i + 1 < n ? ss[i + 1] : 1;
-                y += base * (1 + 0.6 * ((ss[i] + sNext) / 2 - 1));
+                y += base * (1 + 0.75 * ((ss[i] + sNext) / 2 - 1));
             }
             mvAddHubY = y;
             lanes.forEach((lane, i) => mvApplyLaneLayout(lane, ys[i], ss[i], tks[i], lane._scroll || 0));
@@ -8853,11 +8860,25 @@
             }
         }
 
+        function mvOpenHud(task) {
+            const hud = document.getElementById('space-hud-card');
+            if (!hud || !task) return;
+            hud.classList.add('mv-focus-hud');
+            mvHudOwned = true;
+            mvHudTaskId = task.id;
+            showHudCard(task);
+        }
+
         function mvReleaseHud(hide) {
             mvHudOwned = false;
             mvHudTaskId = null;
+            mvHudUp = false;
             const hud = document.getElementById('space-hud-card');
-            if (hud) hud.classList.remove('mv-focus-hud');
+            if (hud) {
+                hud.classList.remove('mv-focus-hud');
+                hud.style.bottom = '';
+                hud.style.top = '';
+            }
             if (hide) hideHudCard();
         }
 
@@ -8910,20 +8931,21 @@
                 const selId = owner._selectedTask ? owner._selectedTask.id : null;
                 if (selId !== mvHudTaskId) {
                     mvHudTaskId = selId;
-                    const hud = document.getElementById('space-hud-card');
-                    if (owner._selectedTask) {
-                        if (hud) hud.classList.add('mv-focus-hud');
-                        mvHudOwned = true;
-                        showHudCard(owner._selectedTask);
-                    } else if (mvHudOwned) {
-                        hideHudCard();
+                    // The card only opens when the selected task's text is tapped (mvOpenHud); once
+                    // open it follows the selection as you scan, and closes if nothing is selected.
+                    const hudEl0 = document.getElementById('space-hud-card');
+                    const open = mvHudOwned && hudEl0 && !hudEl0.classList.contains('hidden');
+                    if (open) {
+                        if (owner._selectedTask) showHudCard(owner._selectedTask);
+                        else hideHudCard();
                     }
                 }
             }
 
             const hudEl = document.getElementById('space-hud-card');
             const hudUp = !!(hudEl && !hudEl.classList.contains('hidden') && mvHudOwned);
-            const fracTarget = hudUp ? (mvIsMobile() ? 0.30 : 0.40) : 0.48;
+            mvHudUp = hudUp;
+            const fracTarget = hudUp ? (mvIsMobile() ? 0.62 : 0.58) : 0.48;
             mvCenterFrac = mvSmooth(mvCenterFrac, fracTarget, dt, 9);
             const desiredX = window.innerWidth / 2;
             const desiredY = window.innerHeight * mvCenterFrac - fy * cameraZoom;
@@ -8933,6 +8955,11 @@
             } else {
                 cameraOffset.x = desiredX;
                 cameraOffset.y = desiredY;
+            }
+            if (hudUp) {
+                const hubTopScreen = cameraOffset.y + owner.y * cameraZoom - owner.hubRadius * cameraZoom;
+                hudEl.style.bottom = Math.max(0, window.innerHeight - hubTopScreen + 14) + 'px';
+                hudEl.style.top = 'auto';
             }
         }
 
@@ -9275,6 +9302,14 @@
                     spaceCtx.fillText(dateLabel, 0, -rLocal - 30);
                     spaceCtx.restore();
 
+                    // The selected task's title is drawn above its Universe's hub instead (see below),
+                    // clear of everything else on the row.
+                    if (lane._selectedTask === task && (lane._fw || 0) > 0.05) {
+                        task._labelRect = null;
+                        spaceCtx.restore();
+                        return;
+                    }
+
                     spaceCtx.save();
                     spaceCtx.translate(task.x, task.y);
                     spaceCtx.scale(tTk, tTk);
@@ -9313,6 +9348,45 @@
                     spaceCtx.restore();
                     spaceCtx.restore();
                 });
+
+                const selT = lane._selectedTask;
+                lane._selTextRect = null;
+                if (selT && (lane._fw || 0) > 0.05 && !(mvHudUp && lane === multiverseLanes[mvFocusTarget])) {
+                    const kk = lane._tk || 1;
+                    spaceCtx.save();
+                    spaceCtx.globalAlpha = mvClamp(((lane._fw || 0) - 0.05) / 0.5, 0, 1);
+                    spaceCtx.translate(lane.x, lane.y);
+                    spaceCtx.scale(kk, kk);
+                    spaceCtx.textAlign = 'center';
+                    spaceCtx.textBaseline = 'middle';
+                    spaceCtx.font = 'bold 50px sans-serif';
+                    const maxW = Math.min(900, ((window.innerWidth / cameraZoom) * 0.84) / kk);
+                    const selLines = wrapTextToWidth(spaceCtx, selT.title, maxW, 3);
+                    const selWidest = Math.max(...selLines.map(l => spaceCtx.measureText(l).width));
+                    const selLineH = 58;
+                    const selW = selWidest + 52;
+                    const selH = selLines.length * selLineH + 62;
+                    const selY0 = -(lane.hubRadius / kk) - 26 - selH;
+                    spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.96)';
+                    spaceCtx.strokeStyle = '#818cf8';
+                    spaceCtx.lineWidth = 2.5;
+                    spaceCtx.shadowColor = '#818cf8';
+                    spaceCtx.shadowBlur = 18;
+                    spaceCtx.beginPath();
+                    spaceCtx.roundRect(-selW / 2, selY0, selW, selH, 22);
+                    spaceCtx.fill();
+                    spaceCtx.stroke();
+                    spaceCtx.shadowBlur = 0;
+                    spaceCtx.fillStyle = '#ffffff';
+                    selLines.forEach((line, li) => {
+                        spaceCtx.fillText(line, 0, selY0 + 14 + selLineH / 2 + li * selLineH);
+                    });
+                    spaceCtx.font = '28px sans-serif';
+                    spaceCtx.fillStyle = '#94a3b8';
+                    spaceCtx.fillText('Tap for details', 0, selY0 + selH - 24);
+                    spaceCtx.restore();
+                    lane._selTextRect = { x: lane.x - (selW * kk) / 2, y: lane.y + selY0 * kk, w: selW * kk, h: selH * kk };
+                }
             });
 
             // Same dashed-emerald "+" the single-bucket linear view draws for its own midAddButtons
@@ -9432,6 +9506,15 @@
             const focusOn = mvFocusActive();
             const focusedLane = focusOn ? multiverseLanes[mvFocusTarget] : null;
 
+            if (focusOn && focusedLane && focusedLane._selectedTask && focusedLane._selTextRect) {
+                const tr = focusedLane._selTextRect;
+                if (worldX >= tr.x && worldX <= tr.x + tr.w && worldY >= tr.y && worldY <= tr.y + tr.h) {
+                    mvOpenHud(focusedLane._selectedTask);
+                    triggerHapticFeedback('light');
+                    return;
+                }
+            }
+
             for (const lane of multiverseLanes) {
                 const distToHub = Math.hypot(worldX - lane.x, worldY - lane.y);
                 const r = lane._namePillRect;
@@ -9500,10 +9583,11 @@
                 return;
             }
             if (focusOn) {
-                // Tapping the selected task opens it for editing; tapping a neighbor scrolls to it.
+                // Tapping the selected task opens its card; tapping a neighbor scrolls to it.
                 const selected = mvSelectedTaskFor(focusedLane, focusedLane._scrollIdxTarget || 0);
                 if (clickedTask === selected) {
-                    openEditItemFromTask(clickedTask);
+                    mvOpenHud(clickedTask);
+                    triggerHapticFeedback('light');
                 } else {
                     const rng = mvScrollRange(focusedLane);
                     focusedLane._scrollIdxTarget = mvClamp(mvTaskL(clickedTask), rng.min, rng.max);
