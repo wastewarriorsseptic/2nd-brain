@@ -9,6 +9,7 @@ import json as _json
 import re
 import difflib
 import httpx
+import iap
 from urllib.parse import quote, urlparse
 from datetime import datetime, timedelta, timezone
 from calendar import monthrange
@@ -225,6 +226,8 @@ def safe_apply_migrations():
             conn.execute(text('ALTER TABLE IF EXISTS note ADD COLUMN IF NOT EXISTS realm_id INTEGER;'))
             conn.execute(text('ALTER TABLE IF EXISTS note ADD COLUMN IF NOT EXISTS source_item_id INTEGER;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT \'UTC\';'))
+            conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS pro_until TIMESTAMP;'))
+            conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_original_transaction_id VARCHAR;'))
             conn.execute(text('ALTER TABLE realm ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
             # "IF EXISTS" on the table guards the case where this runs before create_all() has
             # ever created the person table (a brand-new DB) - ADD COLUMN IF NOT EXISTS alone
@@ -300,6 +303,10 @@ def safe_apply_migrations():
             user_cols = [col[1] for col in cursor.fetchall()]
             if 'timezone' not in user_cols:
                 cursor.execute('ALTER TABLE users ADD COLUMN "timezone" VARCHAR DEFAULT "UTC";')
+            if 'pro_until' not in user_cols:
+                cursor.execute('ALTER TABLE users ADD COLUMN "pro_until" TIMESTAMP;')
+            if 'apple_original_transaction_id' not in user_cols:
+                cursor.execute('ALTER TABLE users ADD COLUMN "apple_original_transaction_id" VARCHAR;')
 
             # Only ALTER the person table if create_all() has already created it in a prior run -
             # on a brand-new DB it won't exist yet at this point, and create_all() (which runs
@@ -339,6 +346,10 @@ class User(SQLModel, table=True):
     email: str = Field(unique=True, index=True)
     name: str = "User"
     timezone: str = Field(default="UTC")
+    # TaskMonster Pro (auto-renewing Apple subscription): active while pro_until is in the future.
+    # Set/extended only from a signature-verified Apple transaction - see iap.py / /iap/verify/.
+    pro_until: Optional[datetime] = Field(default=None)
+    apple_original_transaction_id: Optional[str] = Field(default=None, index=True)
     realms: List["Realm"] = Relationship(back_populates="user")
     universes: List["Universe"] = Relationship(back_populates="user")
 
@@ -645,7 +656,7 @@ def _same_site_return_url(request: Request) -> str:
             return (u.path or "/") + (("?" + u.query) if u.query else "")
     return "/"
 
-CSRF_EXEMPT_PATHS = {"/auth/callback/apple", "/api/events/"}
+CSRF_EXEMPT_PATHS = {"/auth/callback/apple", "/api/events/", "/iap/notifications"}
 
 class CsrfOriginMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -6354,6 +6365,109 @@ def ai_chat_migrate_local(request: Request, payload: dict = Body(...)):
 
         return JSONResponse({"ok": True, "saved": len(valid)})
 
+# --- AI plans: Free vs TaskMonster Pro ---
+# Free gets a small daily allowance; Pro (an Apple auto-renewing subscription bought in the iPhone
+# app, verified server-side - see iap.py) gets a much bigger one. Limits only bite once
+# AI_QUOTA_ENFORCED is switched on (env var) - left off until the app version that can actually sell
+# Pro is live, so nobody hits a wall they have no way to get past.
+AI_FREE_DAILY_LIMIT = int(os.getenv("AI_FREE_DAILY_LIMIT", "10"))
+AI_PRO_DAILY_LIMIT = int(os.getenv("AI_PRO_DAILY_LIMIT", "100"))
+AI_QUOTA_ENFORCED = os.getenv("AI_QUOTA_ENFORCED", "").strip().lower() in ("1", "true", "yes")
+
+def user_is_pro(user: "User") -> bool:
+    return bool(user and user.pro_until and user.pro_until > datetime.utcnow())
+
+def _ai_quota_status(session: Session, user: "User") -> dict:
+    """How many AI messages the user has used today (in THEIR timezone's day) vs their plan's limit.
+    Counted from the persisted chat history, so it survives restarts and multiple instances."""
+    try:
+        tz = ZoneInfo(user.timezone or "UTC")
+    except Exception:
+        tz = ZoneInfo("UTC")
+    now_local = datetime.now(tz)
+    start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_utc = start_local.astimezone(timezone.utc).replace(tzinfo=None)
+    used = len(session.exec(
+        select(AiChatMessage.id).where(
+            AiChatMessage.user_id == user.id, AiChatMessage.role == "user", AiChatMessage.created_at >= start_utc
+        )
+    ).all())
+    pro = user_is_pro(user)
+    limit = AI_PRO_DAILY_LIMIT if pro else AI_FREE_DAILY_LIMIT
+    return {
+        "plan": "pro" if pro else "free",
+        "limit": limit,
+        "used": used,
+        "remaining": max(0, limit - used),
+        "enforced": AI_QUOTA_ENFORCED,
+        "resets_at": (start_local + timedelta(days=1)).astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "pro_until": user.pro_until.isoformat() + "Z" if pro else None,
+    }
+
+@app.get("/ai/quota/")
+def ai_quota(request: Request):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return JSONResponse({"ok": False, "code": "login_required"}, status_code=401)
+        return JSONResponse({"ok": True, **_ai_quota_status(session, user)})
+
+def _apply_apple_entitlement(session: Session, user: "User", ent: dict) -> None:
+    user.apple_original_transaction_id = ent["original_transaction_id"]
+    user.pro_until = datetime.utcnow() if ent["revoked"] else ent["expires_at"]
+    session.add(user)
+    session.commit()
+
+@app.post("/iap/verify/")
+def iap_verify(request: Request, payload: dict = Body(...)):
+    """The iPhone app sends the signed StoreKit transaction after a purchase, on restore, and on
+    launch. Verified against Apple's root certificate (iap.py) - nothing from the payload is trusted
+    otherwise - then Pro is switched on/extended for the signed-in user."""
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return JSONResponse({"ok": False, "code": "login_required"}, status_code=401)
+        try:
+            ent = iap.entitlement_from_transaction(iap.verify_signed_data(str(payload.get("jws") or "")))
+        except iap.IapError as e:
+            print(f"IAP verify rejected: {e}", flush=True)
+            return JSONResponse({"ok": False, "error": "Couldn't verify that purchase."}, status_code=400)
+
+        # One subscription belongs to one TaskMonster account: don't let a second account claim a
+        # still-active subscription that's already attached to someone else.
+        holder = session.exec(
+            select(User).where(User.apple_original_transaction_id == ent["original_transaction_id"], User.id != user.id)
+        ).first()
+        if holder and user_is_pro(holder) and not ent["revoked"]:
+            return JSONResponse({"ok": False, "code": "already_linked",
+                                 "error": "That subscription is already in use on another TaskMonster account."}, status_code=409)
+        if holder:
+            holder.apple_original_transaction_id = None
+            session.add(holder)
+        _apply_apple_entitlement(session, user, ent)
+        session.refresh(user)
+        return JSONResponse({"ok": True, **_ai_quota_status(session, user)})
+
+@app.post("/iap/notifications")
+def iap_notifications(payload: dict = Body(...)):
+    """App Store Server Notifications (V2): Apple calls this when a subscription renews, expires,
+    is refunded, etc., so Pro stays accurate even if the app is never opened again. Signature-
+    verified exactly like a client transaction; the account is found by its original transaction id."""
+    try:
+        note = iap.verify_signed_data(str(payload.get("signedPayload") or ""))
+        signed_tx = (note.get("data") or {}).get("signedTransactionInfo")
+        if not signed_tx:
+            return JSONResponse({"ok": True})
+        ent = iap.entitlement_from_transaction(iap.verify_signed_data(signed_tx))
+    except iap.IapError as e:
+        print(f"IAP notification rejected: {e}", flush=True)
+        return JSONResponse({"ok": False}, status_code=400)
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.apple_original_transaction_id == ent["original_transaction_id"])).first()
+        if user:
+            _apply_apple_entitlement(session, user, ent)
+    return JSONResponse({"ok": True})
+
 @app.post("/ai/chat/")
 def ai_chat(request: Request, payload: dict = Body(...)):
     if not GEMINI_ENABLED:
@@ -6372,6 +6486,18 @@ def ai_chat(request: Request, payload: dict = Body(...)):
 
         if _ai_chat_rate_limited(user.id):
             return JSONResponse({"ok": False, "error": "Too many requests - try again in a bit."}, status_code=429)
+
+        if AI_QUOTA_ENFORCED:
+            quota = _ai_quota_status(session, user)
+            if quota["remaining"] <= 0:
+                pro = quota["plan"] == "pro"
+                return JSONResponse({
+                    "ok": False,
+                    "code": "quota_exceeded",
+                    "quota": quota,
+                    "error": ("You've used all %d of today's AI messages - they reset tomorrow. 😈" % quota["limit"]) if pro
+                             else ("That's your %d free AI messages for today! Upgrade to TaskMonster Pro for %d a day, or come back tomorrow. 😈" % (quota["limit"], AI_PRO_DAILY_LIMIT)),
+                }, status_code=429)
 
         message = (payload.get("message") or "").strip()
         if not message:
