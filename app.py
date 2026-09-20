@@ -5495,7 +5495,7 @@ def delete_note(request: Request, note_id: int):
 AI_CHAT_SYSTEM_PROMPT = """You are TaskMonster's task assistant. You can create tasks, update \
 existing tasks, create new Universes/Realms/Buckets, bring the user's screen to a specific task \
 (or a specific Universe/Realm/Bucket), and answer questions about the current user's existing \
-tasks, via the eight tools you have. You cannot call, email, or message anyone, and you have no \
+tasks, via the nine tools you have. You cannot call, email, or message anyone, and you have no \
 tools for that - if asked, say that's not supported yet.
 
 Your voice: warm and a little playful, like a genuinely helpful friend texting back - not a \
@@ -5545,6 +5545,11 @@ is just another field on the same update_task call. If more than one bucket in t
 matches what the user named (e.g. two different Realms each have a "General" bucket), ask which \
 one instead of guessing, the same as you would for navigate_to_place.
 
+You CAN favorite a task (and un-favorite it) - "favorite this", "star my dentist task", "pin that to \
+my notes", "remove the favorite from it". Use favorite_task with the task's task_id. A favorite is \
+the star on a task's card, which adds the task to the user's Notes; it doesn't change the task \
+itself. Never say favoriting isn't supported and never fake it by editing the task's notes.
+
 When the user asks to be taken to, shown, or brought to a task ("go to my dentist task", "show me \
 the fountain reminder"), first make sure exactly ONE task in list_tasks' results plausibly matches \
 what they described. If two or more tasks are a plausible match (e.g. the same title recurring on \
@@ -5586,6 +5591,7 @@ this conversation if any):
 
 _ai_create_task_decl = None
 _ai_update_task_decl = None
+_ai_favorite_task_decl = None
 _ai_list_tasks_decl = None
 _ai_navigate_task_decl = None
 _ai_navigate_place_decl = None
@@ -5644,6 +5650,18 @@ if GEMINI_ENABLED:
                 "due_date": {"type": "STRING", "description": "YYYY-MM-DD"},
                 "notes": {"type": "STRING"},
                 "bucket_id": {"type": "INTEGER", "description": "Moves the task to this bucket - from the universe tree in context. Only include this when the user actually asked to move/relocate the task somewhere else."},
+            },
+            "required": ["task_id"],
+        },
+    )
+    _ai_favorite_task_decl = genai_types.FunctionDeclaration(
+        name="favorite_task",
+        description="Favorite (star) a task the user already has, or un-favorite it. Favoriting is the star on a task's card - it pins the task to the user's Notes. Use this whenever the user says favorite/star/pin/save-to-notes a task, or asks to remove the favorite/star. It does NOT change the task itself.",
+        parameters={
+            "type": "OBJECT",
+            "properties": {
+                "task_id": {"type": "INTEGER", "description": "The id of the task - from list_tasks results or last_referenced_task in context."},
+                "favorited": {"type": "BOOLEAN", "description": "true to favorite/star it, false to remove the favorite. Defaults to true."},
             },
             "required": ["task_id"],
         },
@@ -5722,7 +5740,7 @@ if GEMINI_ENABLED:
         },
     )
     _ai_tools = [genai_types.Tool(function_declarations=[
-        _ai_create_task_decl, _ai_update_task_decl, _ai_list_tasks_decl, _ai_navigate_task_decl, _ai_navigate_place_decl,
+        _ai_create_task_decl, _ai_update_task_decl, _ai_favorite_task_decl, _ai_list_tasks_decl, _ai_navigate_task_decl, _ai_navigate_place_decl,
         _ai_create_universe_decl, _ai_create_realm_decl, _ai_create_bucket_decl,
     ])]
 
@@ -6000,6 +6018,48 @@ def _ai_execute_update_task(session: Session, user: "User", args: dict) -> dict:
     return {
         "id": item.id,
         "title": item.title,
+        "bucket_id": item.bucket_id,
+        "realm_id": bucket.realm_id if bucket else None,
+        "bucket_name": bucket.name if bucket else "",
+        "realm_name": realm.name if realm else "",
+        "universe_icon": universe.icon if universe else "😈",
+        "due_date": item.due_date.strftime("%Y-%m-%d"),
+        "due_date_formatted": item.due_date.strftime("%b %d, %Y"),
+    }
+
+def _ai_execute_favorite_task(session: Session, user: "User", args: dict) -> dict:
+    """Favorite = the task card's star = a Note linked to the task (see toggle_note_from_task, which
+    this mirrors). Idempotent: asking to favorite an already-favorited task (or un-favorite one that
+    isn't) is reported as such instead of flipping it back. Ownership re-checked, never trusted."""
+    task_id = args.get("task_id")
+    if not user_can_access_item(session, user, task_id):
+        return {"error": "That task doesn't exist or isn't yours."}
+    want = args.get("favorited")
+    want = True if want is None else bool(want)
+
+    item = session.get(Item, task_id)
+    existing = session.exec(select(Note).where(Note.source_item_id == task_id, Note.user_id == user.id)).first()
+    already = (existing is not None) == want
+    if want and not existing:
+        bucket = session.get(Bucket, item.bucket_id)
+        realm = session.get(Realm, bucket.realm_id) if bucket else None
+        session.add(Note(
+            user_id=user.id, title="", content=item.description or "",
+            universe_id=realm.universe_id if realm else None, source_item_id=task_id,
+        ))
+        session.commit()
+    elif not want and existing:
+        session.delete(existing)
+        session.commit()
+
+    bucket = session.get(Bucket, item.bucket_id)
+    realm = session.get(Realm, bucket.realm_id) if bucket else None
+    universe = session.get(Universe, realm.universe_id) if realm and realm.universe_id else None
+    return {
+        "id": item.id,
+        "title": item.title,
+        "favorited": want,
+        "already_that_way": already,
         "bucket_id": item.bucket_id,
         "realm_id": bucket.realm_id if bucket else None,
         "bucket_name": bucket.name if bucket else "",
@@ -6385,6 +6445,7 @@ def ai_chat(request: Request, payload: dict = Body(...)):
 
         task_created = None
         task_updated = None
+        task_favorite = None
         task_navigated = None
         place_navigated = None
         place_created = None
@@ -6407,6 +6468,7 @@ def ai_chat(request: Request, payload: dict = Body(...)):
                 "ok": True, "reply": reply_text,
                 "task_created": task_created, "task_updated": task_updated, "navigate": task_navigated,
                 "navigate_place": place_navigated, "place_created": place_created,
+                "task_favorite": task_favorite,
             })
 
         try:
@@ -6453,6 +6515,11 @@ def ai_chat(request: Request, payload: dict = Body(...)):
                         result = _ai_execute_update_task(session, user, args)
                         if "error" not in result:
                             task_updated = result
+                    elif name == "favorite_task":
+                        result = _ai_execute_favorite_task(session, user, args)
+                        if "error" not in result:
+                            task_updated = result
+                            task_favorite = {"id": result["id"], "favorited": result["favorited"]}
                     elif name == "list_tasks":
                         result = {"tasks": _ai_execute_list_tasks(session, user, args)}
                     elif name == "navigate_to_task":

@@ -5326,6 +5326,7 @@
                 aiChatHistory.push({ role: 'user', content: text });
                 aiChatHistory.push({ role: 'assistant', content: data.reply });
 
+                if (data.task_favorite) syncTaskNoteStateEverywhere(data.task_favorite.id, !!data.task_favorite.favorited);
                 const touchedTask = data.task_created || data.task_updated || data.navigate;
                 const touchedPlace = data.navigate_place || data.place_created;
 
