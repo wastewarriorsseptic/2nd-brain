@@ -9,14 +9,14 @@ import json as _json
 import re
 import difflib
 import httpx
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 from datetime import datetime, timedelta, timezone
 from calendar import monthrange
 from typing import Optional, List
 from zoneinfo import ZoneInfo  # Built-in IANA timezone support
 
 from fastapi import FastAPI, Request, Form, Body
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
@@ -102,7 +102,21 @@ def send_email_alert(
 # --- OAuth & Session Configuration ---
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-brain-key-2026")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    # This repo is public, so a hardcoded fallback would let anyone forge a login cookie. If the
+    # deploy forgot to set SECRET_KEY, derive a key from other secrets that ARE only in the
+    # environment (stable across restarts and overlapping instances) rather than a known string -
+    # and say so loudly, since setting SECRET_KEY explicitly is still the right fix.
+    _key_seed = "|".join(v for v in (
+        os.getenv("DATABASE_URL"), os.getenv("GOOGLE_CLIENT_SECRET"), os.getenv("RESEND_API_KEY"),
+        os.getenv("GEMINI_API_KEY"), os.getenv("APPLE_PRIVATE_KEY"),
+    ) if v)
+    if _key_seed:
+        SECRET_KEY = hashlib.sha256(("taskmonster-session-key|" + _key_seed).encode("utf-8")).hexdigest()
+        print("WARNING: SECRET_KEY is not set - using a key derived from other secrets. Set SECRET_KEY in the environment.", flush=True)
+    else:
+        SECRET_KEY = "dev-only-insecure-session-key"  # local development only (no secrets configured)
 
 # --- Apple Sign In Configuration ---
 # Apple doesn't use a static client secret like Google - it requires a short-lived JWT signed with
@@ -612,6 +626,40 @@ class NoCacheMiddleware(BaseHTTPMiddleware):
         return response
 
 app.add_middleware(NoCacheMiddleware)
+
+# --- CSRF protection ---
+# Session cookies are SameSite=None (Sign in with Apple's cross-site POST callback needs the session
+# cookie back), so a browser attaches them to requests fired from ANY website - without this, a
+# malicious page could silently POST to /items/delete/, /settings/account/delete, etc. as the
+# logged-in visitor. Browsers always send an Origin (or at least Sec-Fetch-Site) on cross-site POSTs,
+# so every state-changing request must come from this site itself. Exempt: Apple's callback (POSTed
+# from appleid.apple.com) and the API-key endpoint (authenticated by Bearer key, not the cookie).
+CSRF_EXEMPT_PATHS = {"/auth/callback/apple", "/api/events/"}
+
+class CsrfOriginMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.method in ("POST", "PUT", "PATCH", "DELETE") and request.url.path not in CSRF_EXEMPT_PATHS:
+            own_hosts = {h for h in (
+                request.headers.get("host"),
+                request.headers.get("x-forwarded-host"),
+                "usetaskmonster.app",
+            ) if h}
+            origin = request.headers.get("origin")
+            fetch_site = request.headers.get("sec-fetch-site")
+            referer = request.headers.get("referer")
+            if origin is not None:
+                allowed = origin != "null" and urlparse(origin).netloc in own_hosts
+            elif fetch_site is not None:
+                allowed = fetch_site in ("same-origin", "none")
+            elif referer:
+                allowed = urlparse(referer).netloc in own_hosts
+            else:
+                allowed = True  # no browser markers at all: not a cross-site browser request
+            if not allowed:
+                return PlainTextResponse("Cross-site request blocked.", status_code=403)
+        return await call_next(request)
+
+app.add_middleware(CsrfOriginMiddleware)
 app.add_middleware(
     SessionMiddleware,
     secret_key=SECRET_KEY,
