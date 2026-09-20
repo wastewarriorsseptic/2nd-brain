@@ -5814,6 +5814,7 @@
         let mvHudTaskId = null;
         let mvHudOwned = false;
         let mvHudUp = false;
+        let mvCardGap = 0;
         let mvCenterFrac = 0.48;
         const mvSavedScroll = {};
         let mvWheelAccX = 0, mvWheelAccY = 0, mvWheelLockUntil = 0, mvWheelLastMs = 0;
@@ -8788,6 +8789,7 @@
                 ys[i] = y;
                 const sNext = i + 1 < n ? ss[i + 1] : 1;
                 y += base * (1 + 0.75 * ((ss[i] + sNext) / 2 - 1));
+                if (i + 1 < n) y += mvCardGap * (lanes[i + 1]._fw || 0);
             }
             mvAddHubY = y;
             lanes.forEach((lane, i) => mvApplyLaneLayout(lane, ys[i], ss[i], tks[i], lane._scroll || 0));
@@ -8916,6 +8918,14 @@
                 if (Math.abs(lane._scroll - t) < 0.0005) lane._scroll = t;
             });
 
+            const hudEl = document.getElementById('space-hud-card');
+            const hudUp = !!(hudEl && !hudEl.classList.contains('hidden') && mvHudOwned);
+            // Extra room between the selected Universe and the one above it while the card (which
+            // floats above the selected circle) is showing, so the card never covers that circle.
+            const gapNeeded = hudUp ? Math.max(0, (hudEl.offsetHeight + 147) / cameraZoom - lanes[0]._spacing * 1.75) : 0;
+            mvCardGap = mvSmooth(mvCardGap, gapNeeded, dt, 9);
+            if (Math.abs(mvCardGap - gapNeeded) < 0.5) mvCardGap = gapNeeded;
+
             const fy = mvApplyLayout();
 
             // Selected task of the selected lane: mirrors it onto the HUD card (auto-updating as you
@@ -8931,19 +8941,13 @@
                 const selId = owner._selectedTask ? owner._selectedTask.id : null;
                 if (selId !== mvHudTaskId) {
                     mvHudTaskId = selId;
-                    // The card only opens when the selected task's text is tapped (mvOpenHud); once
-                    // open it follows the selection as you scan, and closes if nothing is selected.
-                    const hudEl0 = document.getElementById('space-hud-card');
-                    const open = mvHudOwned && hudEl0 && !hudEl0.classList.contains('hidden');
-                    if (open) {
-                        if (owner._selectedTask) showHudCard(owner._selectedTask);
-                        else hideHudCard();
-                    }
+                    // The selected task IS the card: it shows above the Universe node and follows the
+                    // selection as you scan (closing it with the X only lasts until the selection changes).
+                    if (owner._selectedTask) mvOpenHud(owner._selectedTask);
+                    else if (mvHudOwned) hideHudCard();
                 }
             }
 
-            const hudEl = document.getElementById('space-hud-card');
-            const hudUp = !!(hudEl && !hudEl.classList.contains('hidden') && mvHudOwned);
             mvHudUp = hudUp;
             const fracTarget = hudUp ? (mvIsMobile() ? 0.62 : 0.58) : 0.48;
             mvCenterFrac = mvSmooth(mvCenterFrac, fracTarget, dt, 9);
@@ -9304,7 +9308,7 @@
 
                     // The selected task's title is drawn above its Universe's hub instead (see below),
                     // clear of everything else on the row.
-                    if (lane._selectedTask === task && (lane._fw || 0) > 0.05) {
+                    if (lane._selectedTask === task && mvHudUp && lane === multiverseLanes[mvFocusTarget]) {
                         task._labelRect = null;
                         spaceCtx.restore();
                         return;
@@ -9349,44 +9353,6 @@
                     spaceCtx.restore();
                 });
 
-                const selT = lane._selectedTask;
-                lane._selTextRect = null;
-                if (selT && (lane._fw || 0) > 0.05 && !(mvHudUp && lane === multiverseLanes[mvFocusTarget])) {
-                    const kk = lane._tk || 1;
-                    spaceCtx.save();
-                    spaceCtx.globalAlpha = mvClamp(((lane._fw || 0) - 0.05) / 0.5, 0, 1);
-                    spaceCtx.translate(lane.x, lane.y);
-                    spaceCtx.scale(kk, kk);
-                    spaceCtx.textAlign = 'center';
-                    spaceCtx.textBaseline = 'middle';
-                    spaceCtx.font = 'bold 50px sans-serif';
-                    const maxW = Math.min(900, ((window.innerWidth / cameraZoom) * 0.84) / kk);
-                    const selLines = wrapTextToWidth(spaceCtx, selT.title, maxW, 3);
-                    const selWidest = Math.max(...selLines.map(l => spaceCtx.measureText(l).width));
-                    const selLineH = 58;
-                    const selW = selWidest + 52;
-                    const selH = selLines.length * selLineH + 62;
-                    const selY0 = -(lane.hubRadius / kk) - 26 - selH;
-                    spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.96)';
-                    spaceCtx.strokeStyle = '#818cf8';
-                    spaceCtx.lineWidth = 2.5;
-                    spaceCtx.shadowColor = '#818cf8';
-                    spaceCtx.shadowBlur = 18;
-                    spaceCtx.beginPath();
-                    spaceCtx.roundRect(-selW / 2, selY0, selW, selH, 22);
-                    spaceCtx.fill();
-                    spaceCtx.stroke();
-                    spaceCtx.shadowBlur = 0;
-                    spaceCtx.fillStyle = '#ffffff';
-                    selLines.forEach((line, li) => {
-                        spaceCtx.fillText(line, 0, selY0 + 14 + selLineH / 2 + li * selLineH);
-                    });
-                    spaceCtx.font = '28px sans-serif';
-                    spaceCtx.fillStyle = '#94a3b8';
-                    spaceCtx.fillText('Tap for details', 0, selY0 + selH - 24);
-                    spaceCtx.restore();
-                    lane._selTextRect = { x: lane.x - (selW * kk) / 2, y: lane.y + selY0 * kk, w: selW * kk, h: selH * kk };
-                }
             });
 
             // Same dashed-emerald "+" the single-bucket linear view draws for its own midAddButtons
@@ -9505,15 +9471,6 @@
             // (scrolling it to center); tapping the selected lane's own hub opens that Universe.
             const focusOn = mvFocusActive();
             const focusedLane = focusOn ? multiverseLanes[mvFocusTarget] : null;
-
-            if (focusOn && focusedLane && focusedLane._selectedTask && focusedLane._selTextRect) {
-                const tr = focusedLane._selTextRect;
-                if (worldX >= tr.x && worldX <= tr.x + tr.w && worldY >= tr.y && worldY <= tr.y + tr.h) {
-                    mvOpenHud(focusedLane._selectedTask);
-                    triggerHapticFeedback('light');
-                    return;
-                }
-            }
 
             for (const lane of multiverseLanes) {
                 const distToHub = Math.hypot(worldX - lane.x, worldY - lane.y);
