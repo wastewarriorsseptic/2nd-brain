@@ -22,6 +22,8 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 from sqlmodel import SQLModel, Field, Relationship, Session, create_engine, select
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
+from contextlib import contextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
 import resend
 from resend.exceptions import ResendError
@@ -1381,14 +1383,49 @@ def backfill_default_universes():
                 realm.universe_id = default_universe.id
             session.commit()
 
+STARTUP_SCHEMA_LOCK_ID = 727272001
+
+@contextmanager
+def startup_schema_lock():
+    # During a deploy the old and new instances briefly overlap, and both run the ALTER TABLE
+    # migrations below on boot - Postgres detected a deadlock between them and killed one
+    # (deploy "failed", exit status 3). A session-level advisory lock on its own dedicated
+    # connection makes them take turns instead; the second one just waits, then finds everything
+    # already applied (every statement is idempotent). SQLite (local dev) has no concurrent
+    # instances, so it's a no-op there.
+    if not os.getenv("DATABASE_URL"):
+        yield
+        return
+    conn = engine.connect().execution_options(isolation_level="AUTOCOMMIT")
+    try:
+        conn.execute(text("SELECT pg_advisory_lock(:id)"), {"id": STARTUP_SCHEMA_LOCK_ID})
+        yield
+    finally:
+        try:
+            conn.execute(text("SELECT pg_advisory_unlock(:id)"), {"id": STARTUP_SCHEMA_LOCK_ID})
+        finally:
+            conn.close()
+
+def run_startup_schema_setup():
+    for attempt in range(4):
+        try:
+            with startup_schema_lock():
+                safe_apply_migrations()
+                SQLModel.metadata.create_all(engine)
+                backfill_default_universes()
+                backfill_important_dates_universes()
+                backfill_pending_invite_tokens()
+            return
+        except OperationalError as e:
+            if "deadlock" in str(e).lower() and attempt < 3:
+                time.sleep(2 * (attempt + 1))
+                continue
+            raise
+
 @app.on_event("startup")
 def on_startup():
     run_automated_backup()
-    safe_apply_migrations()
-    SQLModel.metadata.create_all(engine)
-    backfill_default_universes()
-    backfill_important_dates_universes()
-    backfill_pending_invite_tokens()
+    run_startup_schema_setup()
     run_expire_stale_invites()
     scheduler.add_job(run_expire_stale_invites, 'interval', minutes=30)
 
