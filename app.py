@@ -87,10 +87,10 @@ def send_email_alert(
                 "subject": title,
                 "html": f"""
                 <h3>😈 TaskMonster Notification</h3>
-                <p><strong>Item:</strong> {title}</p>
-                <p><strong>Due Date:</strong> {due_date}</p>
+                <p><strong>Item:</strong> {escape(title)}</p>
+                <p><strong>Due Date:</strong> {escape(due_date)}</p>
                 {amount_str}
-                <p><strong>Notes:</strong> {description or 'None'}</p>
+                <p><strong>Notes:</strong> {escape(description or 'None')}</p>
             """,
             }
         )
@@ -634,6 +634,17 @@ app.add_middleware(NoCacheMiddleware)
 # logged-in visitor. Browsers always send an Origin (or at least Sec-Fetch-Site) on cross-site POSTs,
 # so every state-changing request must come from this site itself. Exempt: Apple's callback (POSTed
 # from appleid.apple.com) and the API-key endpoint (authenticated by Bearer key, not the cookie).
+def _same_site_return_url(request: Request) -> str:
+    """Where to send the user back to after a form action: the page they were on, but only if the
+    Referer is this site (as a path+query, never an absolute URL) - never an attacker-supplied host."""
+    referer = request.headers.get("referer")
+    if referer:
+        u = urlparse(referer)
+        own_hosts = {h for h in (request.headers.get("host"), request.headers.get("x-forwarded-host"), "usetaskmonster.app") if h}
+        if u.netloc in own_hosts:
+            return (u.path or "/") + (("?" + u.query) if u.query else "")
+    return "/"
+
 CSRF_EXEMPT_PATHS = {"/auth/callback/apple", "/api/events/"}
 
 class CsrfOriginMiddleware(BaseHTTPMiddleware):
@@ -660,6 +671,59 @@ class CsrfOriginMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 app.add_middleware(CsrfOriginMiddleware)
+
+# --- Abuse limits (in-memory, per user - or per IP when signed out) ---
+# Anything that sends email to a third party or calls a metered outside service. Invites in
+# particular could otherwise be used to spam arbitrary addresses from TaskMonster's own sending
+# domain. (AI chat has its own per-user limit - see AI_CHAT_RATE_LIMIT.) Counts reset on restart,
+# which is fine for this purpose.
+RATE_RULES = [
+    ("POST", re.compile(r"^/(realms|universes)/share/$"), "invite", 10, 3600),
+    ("POST", re.compile(r"^/events/(quick)?$"), "event-send", 20, 3600),
+    ("POST", re.compile(r"^/events/[^/]+/(edit|send)$"), "event-send", 20, 3600),
+    ("POST", re.compile(r"^/api/events/$"), "api-event", 60, 3600),
+    ("POST", re.compile(r"^/events/[^/]+/respond$"), "rsvp", 30, 3600),
+    ("GET", re.compile(r"^/api/places/search$"), "places", 60, 60),
+]
+_rate_hits: dict = {}
+
+def _rate_limit_hit(key: str, limit: int, window: int) -> bool:
+    now = time.time()
+    hits = [t for t in _rate_hits.get(key, []) if now - t < window]
+    if len(hits) >= limit:
+        _rate_hits[key] = hits
+        return True
+    hits.append(now)
+    _rate_hits[key] = hits
+    if len(_rate_hits) > 5000:  # drop keys with no recent activity so this can't grow forever
+        for k in [k for k, v in _rate_hits.items() if not v or now - v[-1] > 3600]:
+            _rate_hits.pop(k, None)
+    return False
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        for method, pattern, name, limit, window in RATE_RULES:
+            if request.method == method and pattern.match(request.url.path):
+                uid = request.session.get("user_id") if "session" in request.scope else None
+                auth = request.headers.get("authorization")
+                who = (f"user{uid}" if uid else
+                       f"key{hashlib.sha256(auth.encode()).hexdigest()[:16]}" if auth else
+                       "ip" + (request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+                               or (request.client.host if request.client else "?")))
+                if _rate_limit_hit(f"{name}:{who}", limit, window):
+                    if name == "places":
+                        return JSONResponse({"results": []}, status_code=429)
+                    if request.url.path.startswith("/api/"):
+                        return JSONResponse({"error": "Too many requests - slow down."}, status_code=429)
+                    return HTMLResponse(_invite_status_page(
+                        "Slow down a little",
+                        "That's happening too quickly - please wait a few minutes and try again.",
+                        redirect_url="/", redirect_label="Back to TaskMonster",
+                    ), status_code=429)
+                break
+        return await call_next(request)
+
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
     SessionMiddleware,
     secret_key=SECRET_KEY,
@@ -802,14 +866,14 @@ def send_daily_snapshot_emails():
                 html = "<ul style='padding-left: 20px; margin: 8px 0; color: #374151; font-size: 14px;'>"
                 for item in items:
                     amount_str = f" (${item.amount:.2f})" if item.amount else ""
-                    realm_str = f" <span style='color: #6b7280; font-size: 12px;'>[{item.bucket.realm.name} / {item.bucket.name}]</span>" if item.bucket else ""
+                    realm_str = f" <span style='color: #6b7280; font-size: 12px;'>[{escape(item.bucket.realm.name)} / {escape(item.bucket.name)}]</span>" if item.bucket else ""
                     
                     extra_tag = ""
                     if show_overdue_days:
                         days_late = (user_today - item.due_date.date()).days
                         extra_tag = f" <span style='color: #dc2626; font-weight: 600; font-size: 12px;'>(Overdue {days_late}d)</span>"
                     
-                    html += f"<li style='margin-bottom: 6px;'><strong>{item.title}</strong>{amount_str}{extra_tag}{realm_str}</li>"
+                    html += f"<li style='margin-bottom: 6px;'><strong>{escape(item.title)}</strong>{amount_str}{extra_tag}{realm_str}</li>"
                 html += "</ul>"
                 return html
 
@@ -1621,6 +1685,11 @@ def find_or_create_user_and_log_in(request: Request, email: str, name: str):
                 f"&invited_realm_name={_quote(realm_name)}&invited_by_name={_quote(inviter_name)}"
             )
 
+def _email_is_verified(user_info) -> bool:
+    """Accounts are matched by email, so only trust an address the provider says it verified
+    (Google gives a boolean, Apple the string "true")."""
+    return str(user_info.get('email_verified')).lower() == 'true'
+
 @app.get("/login")
 async def login(request: Request):
     redirect_uri = request.url_for("auth_callback")
@@ -1635,6 +1704,9 @@ async def auth_callback(request: Request):
     token = await oauth.google.authorize_access_token(request)
     user_info = token.get('userinfo')
     if not user_info or not user_info.get('email'):
+        return RedirectResponse(url="/")
+
+    if not _email_is_verified(user_info):
         return RedirectResponse(url="/")
 
     email = user_info['email'].lower()
@@ -1672,6 +1744,10 @@ async def auth_callback_apple(request: Request):
         print(f"Apple sign-in: no usable userinfo in token response (keys={list(token.keys())})", flush=True)
         return RedirectResponse(url="/", status_code=303)
 
+    if not _email_is_verified(user_info):
+        print("Apple sign-in: email not verified", flush=True)
+        return RedirectResponse(url="/", status_code=303)
+
     email = user_info['email'].lower()
 
     # Apple sends the user's name only ONCE - on the very first authorization - as a separate "user"
@@ -1700,6 +1776,8 @@ async def auth_callback_apple(request: Request):
 
 @app.get("/logout")
 def logout(request: Request):
+    if request.headers.get("sec-fetch-site") == "cross-site":
+        return RedirectResponse(url="/", status_code=303)  # a link on another site must not sign you out
     request.session.clear()
     return RedirectResponse(url="/", status_code=303)
 
@@ -2395,12 +2473,12 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
         invitation_body = f"""
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 8px;">
             <p>Hi there,</p>
-            <p><strong>{current_user.name}</strong> ({current_user.email}) invited you to join the <strong>{realm.name}</strong> realm on TaskMonster so you can manage shared tasks and timelines together.</p>
+            <p><strong>{escape(current_user.name)}</strong> ({escape(current_user.email)}) invited you to join the <strong>{escape(realm.name)}</strong> realm on TaskMonster so you can manage shared tasks and timelines together.</p>
             <div style="margin: 24px 0;">
                 <a href="{accept_url}" style="background-color: #22c55e; color: #ffffff; padding: 14px 26px; text-decoration: none; border-radius: 6px; font-weight: 700; display: inline-block; font-size: 15px;">✅ Accept Invite</a>
             </div>
             <p style="font-size: 13px; color: #4b5563;">
-                Click the button above and sign in with <strong>{target_email}</strong> - that's the exact address this invite was sent to, so it's the one to sign in with.
+                Click the button above and sign in with <strong>{escape(target_email)}</strong> - that's the exact address this invite was sent to, so it's the one to sign in with.
             </p>
             <p style="font-size: 13px; color: #4b5563;">
                 Or copy and paste this link into your browser:<br>
@@ -2410,7 +2488,7 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
                 ⏳ This invite expires in {INVITE_EXPIRY_HOURS} hours if not accepted.
             </p>
             <p style="font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 28px;">
-                Sent via TaskMonster. You received this because {current_user.email} added your address.
+                Sent via TaskMonster. You received this because {escape(current_user.email)} added your address.
             </p>
         </div>
         """
@@ -2431,9 +2509,9 @@ def share_realm(request: Request, realm_id: int = Form(...), email: str = Form(.
         confirmation_body = f"""
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
             <h2 style="color: #4f46e5; margin-top: 0;">Invitation Dispatched</h2>
-            <p>Hi {current_user.name},</p>
-            <p>Your invitation to <strong>{target_email}</strong> for the <strong>{realm.name}</strong> realm has been successfully sent, with an "Accept Invite" button they can click directly.</p>
-            <p>You'll see a "⏳ Pending Invite" note on {realm.name} until they accept. If they don't accept within {INVITE_EXPIRY_HOURS} hours, the invite expires automatically and you can send a new one.</p>
+            <p>Hi {escape(current_user.name)},</p>
+            <p>Your invitation to <strong>{escape(target_email)}</strong> for the <strong>{escape(realm.name)}</strong> realm has been successfully sent, with an "Accept Invite" button they can click directly.</p>
+            <p>You'll see a "⏳ Pending Invite" note on {escape(realm.name)} until they accept. If they don't accept within {INVITE_EXPIRY_HOURS} hours, the invite expires automatically and you can send a new one.</p>
             <p style="font-size: 13px; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 32px;">
                 TaskMonster System Notification
             </p>
@@ -2585,12 +2663,12 @@ def share_universe(request: Request, universe_id: int = Form(...), email: str = 
         invitation_body = f"""
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 8px;">
             <p>Hi there,</p>
-            <p><strong>{current_user.name}</strong> ({current_user.email}) invited you to join the <strong>{universe.name}</strong> universe on TaskMonster so you can manage shared tasks and timelines together.</p>
+            <p><strong>{escape(current_user.name)}</strong> ({escape(current_user.email)}) invited you to join the <strong>{escape(universe.name)}</strong> universe on TaskMonster so you can manage shared tasks and timelines together.</p>
             <div style="margin: 24px 0;">
                 <a href="{accept_url}" style="background-color: #22c55e; color: #ffffff; padding: 14px 26px; text-decoration: none; border-radius: 6px; font-weight: 700; display: inline-block; font-size: 15px;">✅ Accept Invite</a>
             </div>
             <p style="font-size: 13px; color: #4b5563;">
-                Click the button above and sign in with <strong>{target_email}</strong> - that's the exact address this invite was sent to, so it's the one to sign in with.
+                Click the button above and sign in with <strong>{escape(target_email)}</strong> - that's the exact address this invite was sent to, so it's the one to sign in with.
             </p>
             <p style="font-size: 13px; color: #4b5563;">
                 Or copy and paste this link into your browser:<br>
@@ -2600,7 +2678,7 @@ def share_universe(request: Request, universe_id: int = Form(...), email: str = 
                 ⏳ This invite expires in {INVITE_EXPIRY_HOURS} hours if not accepted.
             </p>
             <p style="font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 28px;">
-                Sent via TaskMonster. You received this because {current_user.email} added your address.
+                Sent via TaskMonster. You received this because {escape(current_user.email)} added your address.
             </p>
         </div>
         """
@@ -2621,9 +2699,9 @@ def share_universe(request: Request, universe_id: int = Form(...), email: str = 
         confirmation_body = f"""
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
             <h2 style="color: #4f46e5; margin-top: 0;">Invitation Dispatched</h2>
-            <p>Hi {current_user.name},</p>
-            <p>Your invitation to <strong>{target_email}</strong> for the <strong>{universe.name}</strong> universe has been successfully sent, with an "Accept Invite" button they can click directly.</p>
-            <p>You'll see a "⏳ Invite pending" badge on the {universe.name} circle until they accept. If they don't accept within {INVITE_EXPIRY_HOURS} hours, the invite expires automatically and you can send a new one.</p>
+            <p>Hi {escape(current_user.name)},</p>
+            <p>Your invitation to <strong>{escape(target_email)}</strong> for the <strong>{escape(universe.name)}</strong> universe has been successfully sent, with an "Accept Invite" button they can click directly.</p>
+            <p>You'll see a "⏳ Invite pending" badge on the {escape(universe.name)} circle until they accept. If they don't accept within {INVITE_EXPIRY_HOURS} hours, the invite expires automatically and you can send a new one.</p>
             <p style="font-size: 13px; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 32px;">
                 TaskMonster System Notification
             </p>
@@ -3239,8 +3317,7 @@ def delete_item(request: Request, item_id: int = Form(...), delete_series: bool 
 
 @app.post("/items/toggle-complete/")
 def toggle_item_complete(request: Request, item_id: int = Form(...)):
-    referer = request.headers.get("referer")
-    redirect_url = referer if referer else "/"
+    redirect_url = _same_site_return_url(request)
     # Space View calls this via fetch() instead of a real form submit, specifically so completing
     # a task never triggers a full page reload there - that reload was the whole reason the camera
     # (and whichever bucket/lane/HUD card was open) reset every single time. Timeline View still
@@ -3411,8 +3488,7 @@ def update_item(
     update_series: bool = Form(False),
     from_multiverse_timeline: Optional[str] = Form(None)
 ):
-    referer = request.headers.get("referer")
-    redirect_url = referer if referer else "/"
+    redirect_url = _same_site_return_url(request)
     # The Multiverse Timeline is a client-side canvas overlay with no URL of its own, so the
     # Referer above is just whatever Universe happened to be active underneath it - saving an
     # edit landed the user on that Universe's plain realm view instead of back in the Multiverse
@@ -3585,7 +3661,7 @@ def cancel_pending_invite(request: Request, invite_id: int = Form(...), realm_id
         # Ensure only the realm owner can cancel pending invites
         if current_user and realm and realm.user_id == current_user.id:
             invite = session.get(PendingInvite, invite_id)
-            if invite:
+            if invite and invite.realm_id == realm_id:
                 session.delete(invite)
                 session.commit()
 
@@ -3621,7 +3697,7 @@ def cancel_pending_universe_invite(request: Request, invite_id: int = Form(...),
         # Ensure only the universe owner can cancel pending invites
         if current_user and universe and universe.user_id == current_user.id:
             invite = session.get(PendingUniverseInvite, invite_id)
-            if invite:
+            if invite and invite.universe_id == universe_id:
                 session.delete(invite)
                 session.commit()
 
@@ -3741,8 +3817,8 @@ def send_rsvp_reminder_email(guest_id: int, kind: str):
                 "to": [guest.email],
                 "subject": subject,
                 "html": f"""
-                <h3>{event.emoji} {heading}</h3>
-                <p>{user.name} invited you to <strong>{item.title}</strong> on {due_str}{f' at {event.location}' if event.location else ''}, and hasn't heard back from you yet.</p>
+                <h3>{escape(event.emoji)} {heading}</h3>
+                <p>{escape(user.name)} invited you to <strong>{escape(item.title)}</strong> on {due_str}{f' at {escape(event.location)}' if event.location else ''}, and hasn't heard back from you yet.</p>
                 {_email_cta_button_html(invite_url, "✨ RSVP Now →")}
                 """,
             })
@@ -4081,10 +4157,10 @@ def _send_event_guest_email(user: "User", new_event: "Event", title: str, base_d
             "to": [guest_email],
             "subject": subject,
             "html": f"""
-            <h3>{new_event.emoji} {user.name} {verb} {title}</h3>
+            <h3>{escape(new_event.emoji)} {escape(user.name)} {verb} {escape(title)}</h3>
             <p><strong>When:</strong> {base_due_date.strftime('%A, %B %d, %Y at %I:%M %p')}</p>
-            {f'<p><strong>Where:</strong> {location}</p>' if location else ''}
-            {f'<p>{description}</p>' if description else ''}
+            {f'<p><strong>Where:</strong> {escape(location)}</p>' if location else ''}
+            {f'<p>{escape(description)}</p>' if description else ''}
             {_email_cta_button_html(invite_url, "✨ View Invite &amp; RSVP →" if new_event.requires_rsvp else "✨ View Invite →")}
             <p style="color:#94a3b8;font-size:12px;text-align:center;">📎 A calendar invite is attached - open it to add this straight to your calendar.</p>
             """,
@@ -4113,7 +4189,7 @@ def _send_event_creator_confirmation(user: "User", event: "Event", item: "Item",
 
     due_str = item.due_date.strftime("%A, %B %d, %Y at %I:%M %p")
     verb = "resent" if is_resend else "sent"
-    recipients_html = "".join(f"<p style='margin:2px 0;'>{email}</p>" for email in recipient_emails)
+    recipients_html = "".join(f"<p style='margin:2px 0;'>{escape(email)}</p>" for email in recipient_emails)
 
     try:
         resend.Emails.send({
@@ -4121,9 +4197,9 @@ def _send_event_creator_confirmation(user: "User", event: "Event", item: "Item",
             "to": [user.email],
             "subject": f"{event.emoji} You {verb} an invite: {item.title}",
             "html": f"""
-            <h3>{event.emoji} Your invite to "{item.title}" went out</h3>
+            <h3>{escape(event.emoji)} Your invite to "{escape(item.title)}" went out</h3>
             <p><strong>When:</strong> {due_str}</p>
-            {f'<p><strong>Where:</strong> {event.location}</p>' if event.location else ''}
+            {f'<p><strong>Where:</strong> {escape(event.location)}</p>' if event.location else ''}
             <p style="margin-top:16px;"><strong>{verb.capitalize()} to ({len(recipient_emails)}):</strong></p>
             {recipients_html}
             """,
@@ -4150,8 +4226,8 @@ def _send_rsvp_accept_emails(user: Optional["User"], event: "Event", item: "Item
                 "to": [user.email],
                 "subject": f"{event.emoji} {who} accepted: {item.title}",
                 "html": f"""
-                <h3>{event.emoji} {who} is in!</h3>
-                <p>They accepted your invite to <strong>{item.title}</strong> on {due_str}.</p>
+                <h3>{escape(event.emoji)} {escape(who)} is in!</h3>
+                <p>They accepted your invite to <strong>{escape(item.title)}</strong> on {due_str}.</p>
                 """,
             })
         except (ResendError, Exception) as e:
@@ -4163,8 +4239,8 @@ def _send_rsvp_accept_emails(user: Optional["User"], event: "Event", item: "Item
             "to": [guest.email],
             "subject": f"{event.emoji} You're confirmed: {item.title}",
             "html": f"""
-            <h3>{event.emoji} You're confirmed!</h3>
-            <p>You're all set for <strong>{item.title}</strong> on {due_str}{f' at {event.location}' if event.location else ''}.</p>
+            <h3>{escape(event.emoji)} You're confirmed!</h3>
+            <p>You're all set for <strong>{escape(item.title)}</strong> on {due_str}{f' at {escape(event.location)}' if event.location else ''}.</p>
             """,
         })
     except (ResendError, Exception) as e:
@@ -4904,6 +4980,18 @@ def _event_back_url(session: Session, item: "Item") -> str:
 # routes in registration order, and {share_token} greedily matches any string with no '/' in it,
 # dots included, so ".ics" would otherwise be swallowed into share_token itself (share_token ends
 # up literally "<token>.ics", matching no real Event) instead of ever reaching this route.
+def _ics_text(value: Optional[str]) -> str:
+    """RFC 5545 TEXT escaping - backslash, semicolon, comma and newlines - so a title/description/
+    location can never end its own line and smuggle in extra calendar properties."""
+    v = (value or "").replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,")
+    return v.replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "\\n")
+
+def _ics_param(value: Optional[str]) -> str:
+    return re.sub(r'[\r\n";:,]', " ", value or "").strip()
+
+def _ics_addr(value: Optional[str]) -> str:
+    return re.sub(r'[\s<>"]', "", value or "")
+
 def _build_event_ics(
     event_id: int,
     emoji: str,
@@ -4929,8 +5017,8 @@ def _build_event_ics(
     dtstart = due_date.strftime("%Y%m%dT%H%M%S")
     dtend = (due_date + timedelta(hours=1)).strftime("%Y%m%dT%H%M%S")
     dtstamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    description_line = (description or "").replace("\n", " ").replace(",", "\\,")
-    location_line = (location or "").replace("\n", " ").replace(",", "\\,")
+    description_line = _ics_text(description)
+    location_line = _ics_text(location)
 
     lines = [
         "BEGIN:VCALENDAR",
@@ -4944,17 +5032,17 @@ def _build_event_ics(
         f"DTEND:{dtend}",
         f"SEQUENCE:{sequence}",
         "STATUS:CONFIRMED",
-        f"SUMMARY:{emoji} {title}",
+        f"SUMMARY:{_ics_text(f'{emoji} {title}')}",
         f"DESCRIPTION:{description_line}",
     ]
     if location_line:
         lines.append(f"LOCATION:{location_line}")
     if organizer_email:
-        cn = f";CN={organizer_name}" if organizer_name else ""
-        lines.append(f"ORGANIZER{cn}:mailto:{organizer_email}")
+        cn = f';CN="{_ics_param(organizer_name)}"' if organizer_name else ""
+        lines.append(f"ORGANIZER{cn}:mailto:{_ics_addr(organizer_email)}")
     if attendee_email:
-        cn = f";CN={attendee_name}" if attendee_name else ""
-        lines.append(f"ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP={'TRUE' if rsvp else 'FALSE'}{cn}:mailto:{attendee_email}")
+        cn = f';CN="{_ics_param(attendee_name)}"' if attendee_name else ""
+        lines.append(f"ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP={'TRUE' if rsvp else 'FALSE'}{cn}:mailto:{_ics_addr(attendee_email)}")
     lines += ["END:VEVENT", "END:VCALENDAR"]
     return "\r\n".join(lines)
 
