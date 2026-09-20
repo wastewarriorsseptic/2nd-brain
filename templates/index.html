@@ -9025,10 +9025,17 @@
 
             const lanes = mvLanes(), n = lanes.length;
             const entering = !mvFocusModeWasActive;
+            let snapCamera = false;
             if (entering) {
                 targetCameraZoom = mvOverviewCamera().zoom;
                 mvFocusModeWasActive = true;
                 mvCamSettling = true;
+                // Coming in from a very different zoom (e.g. straight from a page load) - start in
+                // place instead of visibly swooshing across the whole scene.
+                if (cameraZoom / targetCameraZoom > 1.6 || cameraZoom / targetCameraZoom < 0.625) {
+                    cameraZoom = targetCameraZoom;
+                    snapCamera = true;
+                }
             }
 
             mvFocusTarget = mvClamp(mvFocusTarget, 0, n - 1);
@@ -9082,7 +9089,11 @@
             const desiredX = window.innerWidth / 2;
             const desiredY = window.innerHeight * mvCenterFrac - fy * cameraZoom;
             targetCameraOffset = { x: desiredX, y: desiredY };
-            if (mvCamSettling) {
+            if (snapCamera) {
+                cameraOffset.x = desiredX;
+                cameraOffset.y = desiredY;
+                mvCamSettling = false;
+            } else if (mvCamSettling) {
                 if (Math.hypot(cameraOffset.x - desiredX, cameraOffset.y - desiredY) < 1.5 && Math.abs(cameraZoom - targetCameraZoom) < 0.002) mvCamSettling = false;
             } else {
                 cameraOffset.x = desiredX;
@@ -9489,6 +9500,14 @@
                     spaceCtx.fillText(dateLabel, 0, -rLocal - 30);
                     spaceCtx.restore();
 
+                    // The selected task's title is drawn centered below its lane's circle instead (see
+                    // after this loop), with the task card above the circle.
+                    if (lane._selectedTask === task && (lane._fw || 0) > 0.05) {
+                        task._labelRect = null;
+                        spaceCtx.restore();
+                        return;
+                    }
+
                     spaceCtx.save();
                     spaceCtx.translate(task.x, task.y);
                     spaceCtx.scale(tTk, tTk);
@@ -9508,7 +9527,7 @@
 
                     // Stashed (in world units) so tapping the label text does exactly what tapping the
                     // dot does - see handleMultiverseStackedClick.
-                    task._labelRect = { x: task.x - (tWidth * tTk) / 2, y: task.y + tPillY * tTk, w: tWidth * laneTk, h: tPillHeight * tTk };
+                    task._labelRect = { x: task.x - (tWidth * tTk) / 2, y: task.y + tPillY * tTk, w: tWidth * tTk, h: tPillHeight * tTk };
 
                     spaceCtx.fillStyle = isActiveSwipeNode ? 'rgba(30, 41, 59, 0.98)' : 'rgba(15, 23, 42, 0.9)';
                     spaceCtx.beginPath();
@@ -9528,6 +9547,38 @@
                     spaceCtx.restore();
                 });
 
+                const selT = lane._selectedTask;
+                lane._selTextRect = null;
+                if (selT && (lane._fw || 0) > 0.05 && lane._namePillRect) {
+                    const kk = lane._tk || 1;
+                    const pr = lane._namePillRect;
+                    spaceCtx.save();
+                    spaceCtx.globalAlpha = mvClamp(((lane._fw || 0) - 0.05) / 0.5, 0, 1);
+                    spaceCtx.translate(lane.x, pr.y + pr.h + 46 * kk);
+                    spaceCtx.scale(kk, kk);
+                    spaceCtx.textAlign = 'center';
+                    spaceCtx.textBaseline = 'middle';
+                    spaceCtx.font = 'bold 46px sans-serif';
+                    const maxW = Math.min(900, ((window.innerWidth / cameraZoom) * 0.84) / kk);
+                    const selLines = wrapTextToWidth(spaceCtx, selT.title, maxW, 3);
+                    const selWidest = Math.max(...selLines.map(l => spaceCtx.measureText(l).width));
+                    const selLineH = 56;
+                    const selW = selWidest + 48;
+                    const selH = selLines.length * selLineH + 24;
+                    spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+                    spaceCtx.strokeStyle = '#818cf8';
+                    spaceCtx.lineWidth = 2;
+                    spaceCtx.beginPath();
+                    spaceCtx.roundRect(-selW / 2, 0, selW, selH, 20);
+                    spaceCtx.fill();
+                    spaceCtx.stroke();
+                    spaceCtx.fillStyle = '#ffffff';
+                    selLines.forEach((line, li) => {
+                        spaceCtx.fillText(line, 0, 12 + selLineH / 2 + li * selLineH);
+                    });
+                    spaceCtx.restore();
+                    lane._selTextRect = { x: lane.x - (selW * kk) / 2, y: pr.y + pr.h + 46 * kk, w: selW * kk, h: selH * kk };
+                }
             });
 
             // Same dashed-emerald "+" the single-bucket linear view draws for its own midAddButtons
@@ -9646,6 +9697,15 @@
             // (scrolling it to center); tapping the selected lane's own hub opens that Universe.
             const focusOn = mvFocusActive();
             const focusedLane = focusOn ? multiverseLanes[mvFocusTarget] : null;
+
+            if (focusOn && focusedLane && focusedLane._selectedTask && focusedLane._selTextRect) {
+                const tr = focusedLane._selTextRect;
+                if (worldX >= tr.x && worldX <= tr.x + tr.w && worldY >= tr.y && worldY <= tr.y + tr.h) {
+                    mvOpenHud(focusedLane._selectedTask);
+                    triggerHapticFeedback('light');
+                    return;
+                }
+            }
 
             for (const lane of multiverseLanes) {
                 const distToHub = Math.hypot(worldX - lane.x, worldY - lane.y);
@@ -9862,6 +9922,15 @@
             // lane just selects it.
             const focusOn = mvFocusActive();
             const focusedLane = focusOn ? realmLanes[mvFocusTarget] : null;
+
+            if (focusOn && focusedLane && focusedLane._selectedTask && focusedLane._selTextRect) {
+                const tr = focusedLane._selTextRect;
+                if (worldX >= tr.x && worldX <= tr.x + tr.w && worldY >= tr.y && worldY <= tr.y + tr.h) {
+                    mvOpenHud(focusedLane._selectedTask);
+                    triggerHapticFeedback('light');
+                    return;
+                }
+            }
 
             for (const lane of hitTestLanes) {
                 const distToHub = Math.hypot(worldX - lane.x, worldY - lane.y);
