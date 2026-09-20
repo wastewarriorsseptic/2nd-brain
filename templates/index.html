@@ -2849,7 +2849,7 @@
                 sharedByName: "{% if r.user_id != user.id %}{{ r.user.name if r.user else 'Owner' }}{% elif collaborators_map and collaborators_map.get(r.id) %}{{ collaborators_map.get(r.id)[0].name }}{% if collaborators_map.get(r.id)|length > 1 %} +{{ collaborators_map.get(r.id)|length - 1 }}{% endif %}{% endif %}",
                 buckets: [
                     {% for b in r.buckets %}
-                    { id: {{ b.id }}, name: "{{ b.name }}" },
+                    { id: {{ b.id }}, name: "{{ b.name }}", icon: "{{ b.icon or '📌' }}", sortOrder: {{ b.sort_order or 0 }} },
                     {% endfor %}
                 ]
             },
@@ -5828,6 +5828,12 @@
         // this (see recenterSpace).
         let isRealmTimelineView = false;
         let realmLanes = [];
+        // Which layer the lane-based Space View is showing (all of them use the same locked-center swipe
+        // experience): 'universe' = one lane per Realm, 'realm' = one lane per Bucket of layerRealmId,
+        // 'bucket' = layerBucketId's own tasks on a single lane.
+        let realmLayer = 'universe';
+        let layerRealmId = null;
+        let layerBucketId = null;
         // Which lane (if any) is currently zoomed-in-on within the Realm Timeline - see
         // focusRealmTimelineLane/unfocusRealmTimelineLane. Tapping a lane's hub a second time, or
         // tapping blank canvas space, zooms back out (see handleRealmTimelineClick) rather than
@@ -6301,6 +6307,21 @@
             dailyDigestExpanded = false;
             applyDailyDigestExpandedState();
 
+            if (!isContactUniverse && !isEventUniverse) {
+                mvSetLayer('realm', realm.id, null);
+                if (bucketId) {
+                    mvSetLayer('bucket', realm.id, bucketId);
+                    const only = realmLanes.find(l => !!l.tasks) ;
+                    const target = only && only.tasks.find(t => String(t.id) === String(itemId));
+                    if (target) {
+                        const rng = mvScrollRange(only);
+                        only._scrollIdxTarget = mvClamp(mvTaskL(target), rng.min, rng.max);
+                        only._scroll = only._scrollIdxTarget;
+                    }
+                }
+                return;
+            }
+
             activeSelectedBucket = null;
             activeSwipeTaskId = null;
             deselectBucketSwipeDock();
@@ -6582,6 +6603,7 @@
         // (recenterSpace), and the top-level ring itself - or the Multiverse Timeline, which has
         // nothing "under" it to step out to within Space View - steps out to the Multiverse picker.
         function stepOutSpaceView() {
+            if (isRealmTimelineView && realmLayer !== 'universe') { mvBack(); return; }
             if (isMultiverseStackedView) {
                 openMultiverseView();
                 return;
@@ -7836,6 +7858,16 @@
         // deep inside a realm/bucket when you hit "Create". This restores that exact spot instead,
         // falling back to the normal full-universe view if nothing was saved (or it no longer exists).
         function restoreOrRecenterSpace() {
+            // Task Universes use the lane-based layers (Realms -> Buckets -> tasks) instead of the
+            // classic orbit ring, so restore straight into whichever layer was last open.
+            if (!isContactUniverse && !isEventUniverse) {
+                // Read BEFORE recenterSpace(), which resets to the top layer and clears the saved one.
+                let savedLayer = null;
+                try { savedLayer = JSON.parse(localStorage.getItem('space_view_layer') || 'null'); } catch (e) {}
+                recenterSpace();
+                mvRestoreSavedLayer(savedLayer);
+                return;
+            }
             let savedRealmId = null;
             let savedBucketId = null;
             try {
@@ -7926,6 +7958,10 @@
             // top-level view.
             if (!isContactUniverse && !isEventUniverse) {
                 isRealmTimelineView = true;
+                realmLayer = 'universe';
+                layerRealmId = null;
+                layerBucketId = null;
+                mvPersistLayer();
                 realmLanes = buildRealmLanes();
                 mvDecorateRealmLanes(realmLanes);
                 realmTimelineFocusedLaneId = null;
@@ -8386,7 +8422,7 @@
         // realmsData (server-rendered, already scoped to the active Universe) supplies each Realm's
         // own icon/sort order, including Realms with zero tasks (still get an empty lane, so the
         // view reads as a genuine snapshot of every Realm here, not just the ones with due dates).
-        function buildRealmLanes() {
+        function buildRealmLanes(layer = realmLayer, layerRealm = layerRealmId, layerBucket = layerBucketId) {
             const processedGroupIds = new Map();
             const RECURRING_LOOKAHEAD_MONTHS = 6;
             const RECURRING_LOOKAHEAD_MONTHS_YEARLY = 13;
@@ -8400,9 +8436,13 @@
 
             const byRealm = new Map();
             const realmIconById = new Map(realmsData.map(r => [String(r.id), r.icon || '🔮']));
+            const bucketIconById = new Map();
+            realmsData.forEach(r => (r.buckets || []).forEach(b => bucketIconById.set(String(b.id), b.icon || '📌')));
 
             const sortedTasksData = multiverseTasksData
-                .filter(t => String(t.universeId) === String(activeUniverseId))
+                .filter(t => String(t.universeId) === String(activeUniverseId)
+                    && (layer === 'universe' || String(t.realmId) === String(layerRealm))
+                    && (layer !== 'bucket' || String(t.bucketId) === String(layerBucket)))
                 .slice()
                 .sort((a, b) => (a.dueDate || '9999-12-31').localeCompare(b.dueDate || '9999-12-31'));
 
@@ -8421,9 +8461,13 @@
                     processedGroupIds.set(seriesKey, seenCount + 1);
                 }
 
-                const key = String(t.realmId);
+                const key = String(layer === 'universe' ? t.realmId : t.bucketId);
                 if (!byRealm.has(key)) {
-                    byRealm.set(key, { id: t.realmId, name: t.realmName || 'Realm', icon: realmIconById.get(key) || '🔮', tasks: [] });
+                    if (layer === 'universe') {
+                        byRealm.set(key, { id: t.realmId, name: t.realmName || 'Realm', icon: realmIconById.get(key) || '🔮', tasks: [] });
+                    } else {
+                        byRealm.set(key, { id: t.bucketId, name: t.bucketName || 'Bucket', icon: bucketIconById.get(key) || '📌', tasks: [] });
+                    }
                 }
 
                 const dueDate = t.dueDate ? new Date(t.dueDate + 'T00:00:00') : null;
@@ -8456,32 +8500,63 @@
             lanes.forEach(lane => lane.tasks.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)));
 
             const existingIds = new Set(lanes.map(l => String(l.id)));
-            realmsData.forEach(r => {
-                if (!existingIds.has(String(r.id))) {
-                    lanes.push({ id: r.id, name: r.name, icon: r.icon || '🔮', tasks: [] });
-                }
-            });
+            const layerRealmMeta = realmsData.find(r => String(r.id) === String(layerRealm));
+            const layerBucketsMeta = (layerRealmMeta && layerRealmMeta.buckets ? layerRealmMeta.buckets : [])
+                .slice().sort((x, y) => (x.sortOrder || 0) - (y.sortOrder || 0));
 
-            // Matches realmsData's own order - already server-sorted by sort_order, the same order
-            // the sidebar list uses, rather than any auto-sort here that could feel arbitrary or
-            // shuffle every time the view rebuilds.
-            const realmOrderById = new Map(realmsData.map((r, idx) => [String(r.id), idx]));
-            lanes.sort((a, b) => (realmOrderById.get(String(a.id)) ?? 0) - (realmOrderById.get(String(b.id)) ?? 0));
+            if (layer === 'universe') {
+                realmsData.forEach(r => {
+                    if (!existingIds.has(String(r.id))) {
+                        lanes.push({ id: r.id, name: r.name, icon: r.icon || '🔮', tasks: [] });
+                    }
+                });
 
-            // A standalone, always-first "this Universe" hub, purely as a way back out to the
-            // Multiverse Timeline - reported directly, wanting an actual circle to tap for this
-            // (the earlier "tap blank canvas space" fallback wasn't discoverable/obvious enough,
-            // and easy to mistake for just another empty Realm lane like the ones this same report
-            // was originally about). No tasks, no +, no hold-to-edit/delete - see the isUniverseNode
-            // checks in handleRealmTimelineClick and ontouchstart's pressedRealmLane guard.
-            const activeUniverseMeta = allUniversesData.find(u => String(u.id) === String(activeUniverseId));
-            lanes.unshift({
-                id: '__universe_self__',
-                name: activeUniverseMeta ? activeUniverseMeta.name : 'Universe',
-                icon: activeUniverseIcon,
-                tasks: [],
-                isUniverseNode: true
-            });
+                // Matches realmsData's own order - already server-sorted by sort_order, the same order
+                // the sidebar list uses, rather than any auto-sort here that could feel arbitrary or
+                // shuffle every time the view rebuilds.
+                const realmOrderById = new Map(realmsData.map((r, idx) => [String(r.id), idx]));
+                lanes.sort((a, b) => (realmOrderById.get(String(a.id)) ?? 0) - (realmOrderById.get(String(b.id)) ?? 0));
+
+                // A standalone, always-first "this Universe" hub, purely as a way back out to the
+                // Multiverse Timeline. No tasks, no +, no hold-to-edit/delete - see the isUniverseNode
+                // checks in handleRealmTimelineClick and ontouchstart's pressedRealmLane guard.
+                const activeUniverseMeta = allUniversesData.find(u => String(u.id) === String(activeUniverseId));
+                lanes.unshift({
+                    id: '__universe_self__',
+                    name: activeUniverseMeta ? activeUniverseMeta.name : 'Universe',
+                    icon: activeUniverseIcon,
+                    tasks: [],
+                    isUniverseNode: true,
+                    isPureParent: true
+                });
+            } else if (layer === 'realm') {
+                // One lane per Bucket of the entered Realm, headed by a "back" circle for the Realm
+                // you're in (tap it to step back up to the Universe's Realms).
+                layerBucketsMeta.forEach(b => {
+                    if (!existingIds.has(String(b.id))) {
+                        lanes.push({ id: b.id, name: b.name, icon: b.icon || '📌', tasks: [] });
+                    }
+                });
+                const bucketOrderById = new Map(layerBucketsMeta.map((b, idx) => [String(b.id), idx]));
+                lanes.sort((a, b) => (bucketOrderById.get(String(a.id)) ?? 0) - (bucketOrderById.get(String(b.id)) ?? 0));
+                lanes.unshift({
+                    id: '__realm_self__',
+                    name: layerRealmMeta ? layerRealmMeta.name : 'Realm',
+                    icon: layerRealmMeta ? (layerRealmMeta.icon || '🔮') : '🔮',
+                    tasks: [],
+                    isUniverseNode: true,
+                    isPureParent: true
+                });
+            } else {
+                // Inside one Bucket: a single lane of its own tasks whose circle doubles as the way
+                // back out (tap it to return to the Realm's Buckets).
+                const bMeta = layerBucketsMeta.find(b => String(b.id) === String(layerBucket));
+                let only = lanes.find(l => String(l.id) === String(layerBucket));
+                if (!only) only = { id: layerBucket, name: bMeta ? bMeta.name : 'Bucket', icon: bMeta ? (bMeta.icon || '📌') : '📌', tasks: [] };
+                only.isUniverseNode = true;
+                lanes.length = 0;
+                lanes.push(only);
+            }
 
             const isMobile = window.innerWidth < 768;
             const laneSpacing = isMobile ? 460 : 400;
@@ -8515,11 +8590,15 @@
                 // lane still gets a working "+". Reported directly with a screenshot of two such
                 // Realms sitting bare next to populated ones.
                 let emptyLaneFallback = null;
-                if (upcomingTasks.length === 0) {
-                    const realmMeta = realmsData.find(r => String(r.id) === String(lane.id));
-                    const fallbackBucket = realmMeta && realmMeta.buckets && realmMeta.buckets[0];
-                    if (fallbackBucket) {
-                        emptyLaneFallback = { bucketId: fallbackBucket.id, realmId: lane.id, universeId: activeUniverseId };
+                if (upcomingTasks.length === 0 && !lane.isPureParent) {
+                    if (layer === 'universe') {
+                        const realmMeta = realmsData.find(r => String(r.id) === String(lane.id));
+                        const fallbackBucket = realmMeta && realmMeta.buckets && realmMeta.buckets[0];
+                        if (fallbackBucket) {
+                            emptyLaneFallback = { bucketId: fallbackBucket.id, realmId: lane.id, universeId: activeUniverseId };
+                        }
+                    } else {
+                        emptyLaneFallback = { bucketId: lane.id, realmId: layerRealm, universeId: activeUniverseId };
                     }
                 }
                 lane.midAddButtons = computeLaneMidAddButtons(lane, upcomingTasks, hubRadius, startGap, stepSpacing, isMobile, emptyLaneFallback);
@@ -8593,6 +8672,10 @@
             activeSelectedRealm = null;
             activeSelectedBucket = null;
             multiverseActiveLaneId = null;
+            realmLayer = 'universe';
+            layerRealmId = null;
+            layerBucketId = null;
+            mvPersistLayer();
             // Reachable from the launcher cluster's own 🌀 badge from anywhere, not just from
             // inside an already-open Realm Timeline - if a lane there was zoomed-in-on (see
             // focusRealmTimelineLane) when this fires, clean that state up too rather than leaving
@@ -8854,10 +8937,10 @@
                 mvSavedScroll.__for = savedFor;
             }
             try {
-                const id = localStorage.getItem(mvFocusStorageKey());
+                const id = (isRealmTimelineView && realmLayer !== 'universe') ? null : localStorage.getItem(mvFocusStorageKey());
                 if (id !== null) {
                     const found = mvLanes().findIndex(l => String(l.id) === id);
-                    if (found >= 0) idx = found;
+                    if (found >= 0 && !(mvLanes()[found].isUniverseNode && mvLanes().length > 1)) idx = found;
                 }
             } catch (e) {}
             mvFocusF = idx;
@@ -8881,7 +8964,7 @@
             if (idx !== mvFocusTarget) {
                 mvLanes().forEach(l => { l._scrollIdxTarget = 0; });
                 mvFocusTarget = idx;
-                try { localStorage.setItem(mvFocusStorageKey(), String(mvLanes()[idx].id)); } catch (e) {}
+                if (!(isRealmTimelineView && realmLayer !== 'universe') && !mvLanes()[idx].isUniverseNode) { try { localStorage.setItem(mvFocusStorageKey(), String(mvLanes()[idx].id)); } catch (e) {} }
                 triggerHapticFeedback('light');
             }
         }
@@ -9099,6 +9182,61 @@
             else if (e.key === 'ArrowRight') { e.preventDefault(); mvStepScroll(1); }
             else if (e.key === 'ArrowLeft') { e.preventDefault(); mvStepScroll(-1); }
         });
+
+        // ===================================================================================
+        // Layers below a Universe (all use the same locked-center swipe experience): tapping the
+        // selected Realm enters it (its Buckets become the lanes), tapping the selected Bucket enters it
+        // (its tasks on a single lane). The circle at the top of each layer is the way back out.
+        // ===================================================================================
+        function mvPersistLayer() {
+            try {
+                if (realmLayer === 'universe') localStorage.removeItem('space_view_layer');
+                else localStorage.setItem('space_view_layer', JSON.stringify({ u: activeUniverseId, r: layerRealmId, b: layerBucketId }));
+            } catch (e) {}
+        }
+
+        function mvSetLayer(layer, realmId, bucketId) {
+            realmLayer = layer;
+            layerRealmId = realmId;
+            layerBucketId = bucketId;
+            isRealmTimelineView = true;
+            isMultiverseStackedView = false;
+            realmTimelineFocusedLaneId = null;
+            activeSwipeTaskId = null;
+            deselectBucketSwipeDock();
+            mvReleaseHud(true);
+            realmLanes = buildRealmLanes();
+            mvDecorateRealmLanes(realmLanes);
+            mvInitFocus();
+            mvFocusModeWasActive = false;
+            if (layer === 'universe') hideRealmTimelineOpenCardViewPill();
+            else showRealmTimelineOpenCardViewPill({ id: realmId });
+            mvPersistLayer();
+            updateSpaceTopPillLabel();
+        }
+
+        function mvEnterLane(lane) {
+            if (lane.isUniverseNode) return;
+            if (realmLayer === 'universe') mvSetLayer('realm', lane.id, null);
+            else if (realmLayer === 'realm') mvSetLayer('bucket', layerRealmId, lane.id);
+        }
+
+        function mvBack() {
+            if (!isRealmTimelineView) return;
+            if (realmLayer === 'bucket') mvSetLayer('realm', layerRealmId, null);
+            else if (realmLayer === 'realm') mvSetLayer('universe', null, null);
+            else openMultiverseTimeline();
+        }
+
+        function mvRestoreSavedLayer(saved) {
+            if (!saved || String(saved.u) !== String(activeUniverseId)) return;
+            const realm = realmsData.find(r => String(r.id) === String(saved.r));
+            if (!realm) return;
+            mvSetLayer('realm', realm.id, null);
+            if (saved.b && (realm.buckets || []).some(b => String(b.id) === String(saved.b))) {
+                mvSetLayer('bucket', realm.id, saved.b);
+            }
+        }
 
         // Dedicated renderer for BOTH stacked-lane views - the Multiverse Timeline (one row per
         // Universe) and the per-Universe Realm Timeline (one row per Realm - see buildRealmLanes/
@@ -9727,11 +9865,15 @@
                     // The synthetic "go back" Universe hub always steps out on a single tap, whether
                     // or not it's the selected lane.
                     if (lane.isUniverseNode) {
-                        openMultiverseTimeline();
+                        mvBack();
                         return;
                     }
                     if (focusOn && lane !== focusedLane) {
                         mvSetFocus(realmLanes.indexOf(lane));
+                        return;
+                    }
+                    if (focusOn) {
+                        mvEnterLane(lane);
                         return;
                     }
                     // The synthetic "go back" Universe hub (see buildRealmLanes) always steps out
@@ -11051,7 +11193,7 @@
                     // mode (reported directly - "if I hold down on a realm I should be able to edit
                     // it"; these lane hubs had no long-press handling at all before this).
                     let pressedRealmLane = null;
-                    if (isRealmTimelineView) {
+                    if (isRealmTimelineView && realmLayer === 'universe') {
                         realmLanes.forEach(lane => {
                             if (lane.isUniverseNode) return; // no delete/edit for the synthetic "go back" hub
                             const dist = Math.hypot(worldX - lane.x, worldY - lane.y);
