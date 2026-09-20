@@ -5091,7 +5091,6 @@
             // (permission denied, recognizer unavailable) - same "always reset the button" contract
             // the browser API's onerror/onend already had below.
             window.__nativeSpeechEnded = () => {
-                if (window.__micDbg) window.__micDbg('native ended');
                 setAiChatListening(false);
             };
         } else if (AiSpeechRecognition) {
@@ -5166,20 +5165,6 @@
             if (now - aiChatMicLastActivate < 250) return;
             aiChatMicLastActivate = now;
             toggleAiChatDictation();
-        }
-
-        // TEMP DEBUG (native app only): on-screen log of touches/toggles to diagnose mic-won't-stop.
-        if (aiChatNativeSpeechBridge) {
-            const dbgEl = document.createElement('div');
-            dbgEl.id = 'mic-debug-strip';
-            dbgEl.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;background:rgba(0,0,0,.85);color:#0f0;font:11px/1.3 monospace;padding:34px 6px 4px;pointer-events:none;white-space:pre-wrap;';
-            document.addEventListener('DOMContentLoaded', () => document.body.appendChild(dbgEl));
-            const dbgLog = [];
-            window.__micDbg = (m) => { dbgLog.push(m); if (dbgLog.length > 7) dbgLog.shift(); dbgEl.textContent = dbgLog.join('\n'); };
-            ['touchstart','touchend','click'].forEach(t => document.addEventListener(t, (e) => {
-                const el = e.target;
-                window.__micDbg(t + ' -> ' + (el.id || el.tagName) + ' L=' + aiChatListening);
-            }, true));
         }
 
         function toggleAiChatDictation() {
