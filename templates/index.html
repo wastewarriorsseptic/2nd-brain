@@ -11704,5 +11704,29 @@
         }
     </script>
 
+    <a id="app-store-badge" href="https://apps.apple.com/app/id6808784253" target="_blank" rel="noopener"
+       style="display:none;position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:40;align-items:center;gap:10px;padding:10px 14px 10px 16px;border-radius:999px;background:#0f172a;border:1px solid rgba(129,140,248,.5);color:#e2e8f0;font-size:14px;font-weight:600;text-decoration:none;box-shadow:0 6px 24px rgba(0,0,0,.5);">
+        <span>Get the TaskMonster iPhone app</span>
+        <span style="background:#6366f1;color:#fff;border-radius:999px;padding:4px 10px;font-size:13px;">App Store</span>
+        <button type="button" id="app-store-badge-close" aria-label="Dismiss"
+                style="background:none;border:none;color:#94a3b8;font-size:18px;line-height:1;cursor:pointer;padding:0 2px;">&times;</button>
+    </a>
+    <script>
+        (function () {
+            // The native iOS wrapper registers these WKScriptMessageHandlers; a normal browser never has them.
+            var mh = window.webkit && window.webkit.messageHandlers;
+            var inApp = !!(mh && (mh.haptics || mh.speechRecognition));
+            var badge = document.getElementById('app-store-badge');
+            if (!badge || inApp) return;
+            try { if (localStorage.getItem('appStoreBadgeDismissed') === '1') return; } catch (e) {}
+            badge.style.display = 'flex';
+            document.getElementById('app-store-badge-close').addEventListener('click', function (e) {
+                e.preventDefault(); e.stopPropagation();
+                badge.style.display = 'none';
+                try { localStorage.setItem('appStoreBadgeDismissed', '1'); } catch (err) {}
+            });
+        })();
+    </script>
+
 </body>
 </html>
