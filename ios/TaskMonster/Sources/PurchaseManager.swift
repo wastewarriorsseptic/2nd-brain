@@ -9,7 +9,7 @@ import StoreKit
 final class PurchaseManager {
     static let shared = PurchaseManager()
 
-    static let productIDs = ["com.usetaskmonster.pro.yearly", "com.usetaskmonster.pro.monthly"]
+    static let productIDs = ["com.usetaskmonster.pro.monthly"]
 
     weak var webView: WKWebView?
     private var products: [Product] = []

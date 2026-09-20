@@ -16,8 +16,7 @@ from cryptography.hazmat.primitives import hashes
 
 BUNDLE_ID = "com.usetaskmonster.ios"
 PRODUCT_MONTHLY = "com.usetaskmonster.pro.monthly"
-PRODUCT_YEARLY = "com.usetaskmonster.pro.yearly"
-PRODUCT_IDS = {PRODUCT_MONTHLY, PRODUCT_YEARLY}
+PRODUCT_IDS = {PRODUCT_MONTHLY}
 
 # Apple's marker extensions: the leaf must be an "App Store receipt signing" cert issued by the
 # WWDR-style intermediate - stops any other Apple-issued certificate from being used to sign data.

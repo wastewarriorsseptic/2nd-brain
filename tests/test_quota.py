@@ -40,7 +40,7 @@ x5c = [base64.b64encode(c.public_bytes(serialization.Encoding.DER)).decode() for
 iap._default_roots = lambda: [root]
 
 def signed(**over):
-    tx = {"bundleId": iap.BUNDLE_ID, "productId": iap.PRODUCT_YEARLY, "type": "Auto-Renewable Subscription",
+    tx = {"bundleId": iap.BUNDLE_ID, "productId": iap.PRODUCT_MONTHLY, "type": "Auto-Renewable Subscription",
           "originalTransactionId": "777", "environment": "Sandbox",
           "expiresDate": int((now + timedelta(days=365)).timestamp() * 1000)}
     tx.update(over)
