@@ -9724,6 +9724,12 @@
                 const r = lane._namePillRect;
                 const hitPill = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
                 if (distToHub <= lane.hubRadius + 10 || hitPill) {
+                    // The synthetic "go back" Universe hub always steps out on a single tap, whether
+                    // or not it's the selected lane.
+                    if (lane.isUniverseNode) {
+                        openMultiverseTimeline();
+                        return;
+                    }
                     if (focusOn && lane !== focusedLane) {
                         mvSetFocus(realmLanes.indexOf(lane));
                         return;
@@ -9790,26 +9796,10 @@
             }
 
             if (!clickedTask) {
-                // In focus mode a stray tap on empty space shouldn't kick you out of the Universe
-                // (the Universe circle at the top is the deliberate way back out).
-                if (focusOn) return;
-                // Tapping blank canvas space while a lane is zoomed-in-on zooms back out - same
-                // "tap outside to dismiss" convention the rest of Space View already uses.
-                if (realmTimelineFocusedLaneId !== null) {
-                    unfocusRealmTimelineLane();
-                    return;
-                }
-                // Already at the TOP of Realm Timeline (nothing focused) - one more "tap outside"
-                // steps back out of this Universe entirely, into the Multiverse Timeline (the
-                // cross-Universe view one level up, same one the launcher cluster's own hourglass
-                // badge opens). Reported directly, wanting every layer of Space View - Multiverse
-                // Timeline down into a Universe's Realms, and a Realm's own lane down into its
-                // tasks - to open and close symmetrically, not just the Realm-lane toggle this view
-                // already had. multiverseTasksData/allUniversesData are already loaded on every
-                // page regardless of which Universe it rendered for, so this is a pure in-page
-                // state change, no navigation needed - the exact "tap to go back" the Realm lane
-                // toggle already does, just one level higher.
-                openMultiverseTimeline();
+                // Empty space never leaves this Universe: the only way back out to the Multiverse
+                // Timeline is tapping the Universe circle at the top. (While a Realm lane is
+                // zoomed-in-on, a blank tap still just zooms that lane back out.)
+                if (realmTimelineFocusedLaneId !== null) unfocusRealmTimelineLane();
                 return;
             }
 
