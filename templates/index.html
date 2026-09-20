@@ -501,8 +501,8 @@
                  appearing, never this button's own listening state), which tracks exactly with
                  Apple's own Human Interface Guidelines minimum tap target of 44x44pt - 36px was
                  genuinely too small and too close to a large flex-1 sibling to reliably hit. -->
-            <button type="button" id="ai-chat-mic-btn" onclick="toggleAiChatDictation()"
-                    onmousedown="event.preventDefault()" ontouchstart="event.preventDefault()" title="Dictate"
+            <button type="button" id="ai-chat-mic-btn" onclick="handleAiChatMicActivate(event)"
+                    onmousedown="event.preventDefault()" ontouchstart="event.preventDefault()" ontouchend="handleAiChatMicActivate(event)" title="Dictate"
                     class="hidden w-11 h-11 shrink-0 bg-slate-100 border border-slate-200 hover:border-indigo-500 rounded-full text-slate-500 text-sm transition">🎤</button>
             <button type="submit" class="w-9 h-9 shrink-0 bg-indigo-600 hover:bg-indigo-500 rounded-full text-white text-sm transition">➤</button>
         </form>
@@ -5149,6 +5149,22 @@
                 // while that was frozen.
                 syncAiChatPanelToViewportSoon();
             }
+        }
+
+        // touchstart is preventDefault()ed on the mic button (so it can't steal focus), which on iOS can
+        // suppress the synthesized click - so a real tap is handled on touchend and the click that may
+        // or may not follow is ignored if it lands right after, so one tap never toggles twice.
+        let aiChatMicLastActivate = 0;
+        function handleAiChatMicActivate(event) {
+            const now = Date.now();
+            if (event.type === 'touchend') {
+                event.preventDefault();
+            } else if (now - aiChatMicLastActivate < 600) {
+                return;
+            }
+            if (now - aiChatMicLastActivate < 250) return;
+            aiChatMicLastActivate = now;
+            toggleAiChatDictation();
         }
 
         function toggleAiChatDictation() {
