@@ -9340,6 +9340,59 @@
         // draws every lane's chain simultaneously every frame. Called from renderSpaceFrame while
         // isMultiverseStackedView or isRealmTimelineView is true, in place of (not in addition to)
         // the normal realm/bucket render pipeline.
+        // Lanes that aren't the one being scanned are drawn softly blurred (into an offscreen layer,
+        // composited under the crisp selected lane) so it's obvious which row a swipe will scroll.
+        // A pure "back" circle (no tasks) stays sharp - it's the way out.
+        let mvBlurLayer = null, mvBlurMid = null, mvBlurSmall = null;
+        function mvRenderBlurredLayer(blurLanes, allLanes) {
+            const W = spaceCanvas.width, H = spaceCanvas.height;
+            const mw = Math.max(1, Math.ceil(W / 2)), mh = Math.max(1, Math.ceil(H / 2));
+            const sw = Math.max(1, Math.ceil(W / 4)), sh = Math.max(1, Math.ceil(H / 4));
+            if (!mvBlurLayer) {
+                mvBlurLayer = document.createElement('canvas');
+                mvBlurMid = document.createElement('canvas');
+                mvBlurSmall = document.createElement('canvas');
+            }
+            if (mvBlurLayer.width !== W || mvBlurLayer.height !== H) { mvBlurLayer.width = W; mvBlurLayer.height = H; }
+            if (mvBlurMid.width !== mw || mvBlurMid.height !== mh) { mvBlurMid.width = mw; mvBlurMid.height = mh; }
+            if (mvBlurSmall.width !== sw || mvBlurSmall.height !== sh) { mvBlurSmall.width = sw; mvBlurSmall.height = sh; }
+            const layerCtx = mvBlurLayer.getContext('2d');
+            layerCtx.setTransform(1, 0, 0, 1, 0, 0);
+            layerCtx.clearRect(0, 0, W, H);
+            const mainCtx = spaceCtx;
+            spaceCtx = layerCtx;
+            spaceCtx.save();
+            spaceCtx.scale(deviceDPR, deviceDPR);
+            spaceCtx.translate(cameraOffset.x, cameraOffset.y);
+            spaceCtx.scale(cameraZoom, cameraZoom);
+            try {
+                renderStackedLanesCore(blurLanes, true, allLanes);
+            } finally {
+                spaceCtx.restore();
+                spaceCtx = mainCtx;
+            }
+            // Down- then up-sampling with smoothing = a cheap blur that works in every WebView
+            // (canvas ctx.filter isn't reliable in Safari).
+            const midCtx = mvBlurMid.getContext('2d');
+            midCtx.setTransform(1, 0, 0, 1, 0, 0);
+            midCtx.clearRect(0, 0, mw, mh);
+            midCtx.imageSmoothingEnabled = true;
+            midCtx.imageSmoothingQuality = 'high';
+            midCtx.drawImage(mvBlurLayer, 0, 0, mw, mh);
+            const smallCtx = mvBlurSmall.getContext('2d');
+            smallCtx.setTransform(1, 0, 0, 1, 0, 0);
+            smallCtx.clearRect(0, 0, sw, sh);
+            smallCtx.imageSmoothingEnabled = true;
+            smallCtx.imageSmoothingQuality = 'high';
+            smallCtx.drawImage(mvBlurMid, 0, 0, sw, sh);
+            spaceCtx.save();
+            spaceCtx.setTransform(1, 0, 0, 1, 0, 0);
+            spaceCtx.imageSmoothingEnabled = true;
+            spaceCtx.imageSmoothingQuality = 'high';
+            spaceCtx.drawImage(mvBlurSmall, 0, 0, sw, sh, 0, 0, W, H);
+            spaceCtx.restore();
+        }
+
         function renderMultiverseStackedLanes() {
             let lanes = isRealmTimelineView ? realmLanes : multiverseLanes;
             // Zoomed in on one Realm's lane (see focusRealmTimelineLane) - the other lanes are
@@ -9349,6 +9402,19 @@
             if (isRealmTimelineView && realmTimelineFocusedLaneId !== null) {
                 lanes = lanes.filter(l => l.id === realmTimelineFocusedLaneId);
             }
+            let crisp = lanes;
+            if (mvFocusActive()) {
+                const focusLane = mvLanes()[mvFocusTarget];
+                const blurred = lanes.filter(l => l !== focusLane && !(l.isUniverseNode && l.tasks.length === 0));
+                if (blurred.length) {
+                    mvRenderBlurredLayer(blurred, lanes);
+                    crisp = lanes.filter(l => !blurred.includes(l));
+                }
+            }
+            renderStackedLanesCore(crisp, false, lanes);
+        }
+
+        function renderStackedLanesCore(lanes, isBlurLayer, allLanes) {
             lanes.forEach(lane => {
                 if (lane.tasks.length === 0) return;
 
@@ -9473,9 +9539,9 @@
             // Multiverse Timeline, not the per-Universe Realm Timeline this same function also
             // renders (isRealmTimelineView) - "new Universe" has no equivalent meaning one level
             // down, where each lane is a Realm instead.
-            if (isMultiverseStackedView && !isRealmTimelineView) {
-                const addHubY = mvAddHubY !== null ? mvAddHubY : lanes.length * (window.innerWidth < 768 ? 460 : 400);
-                const addHubRadius = lanes.length > 0 ? (lanes[0]._baseHub || lanes[0].hubRadius) : (window.innerWidth < 768 ? 90 : 70);
+            if (!isBlurLayer && isMultiverseStackedView && !isRealmTimelineView) {
+                const addHubY = mvAddHubY !== null ? mvAddHubY : allLanes.length * (window.innerWidth < 768 ? 460 : 400);
+                const addHubRadius = allLanes.length > 0 ? (allLanes[0]._baseHub || allLanes[0].hubRadius) : (window.innerWidth < 768 ? 90 : 70);
                 multiverseAddUniverseHub = { x: 0, y: addHubY, radius: addHubRadius };
 
                 spaceCtx.save();
@@ -9496,7 +9562,7 @@
                 spaceCtx.fillStyle = '#818cf8';
                 spaceCtx.fillText('+', 0, addHubY);
                 spaceCtx.restore();
-            } else {
+            } else if (!isBlurLayer) {
                 multiverseAddUniverseHub = null;
             }
 
@@ -9656,8 +9722,8 @@
             // Same dashed-emerald "+" the single-bucket linear view draws for its own midAddButtons
             // (see the isSelectedBucket branch of renderSpaceFrame) - see computeLaneMidAddButtons
             // for why these exist here at all.
-            lanes.forEach((lane, laneIdxForMab) => {
-                if (mvFocusActive() && laneIdxForMab !== mvFocusTarget) return;
+            lanes.forEach((lane) => {
+                if (mvFocusActive() && lane !== mvLanes()[mvFocusTarget]) return;
                 (lane.midAddButtons || []).forEach(mab => {
                     const mabFade = mvClamp((Math.abs(mab.x - lane.x) - lane.hubRadius - 20) / 40, 0, 1);
                     if (mabFade <= 0.02) return;
@@ -9684,6 +9750,8 @@
                     spaceCtx.restore();
                 });
             });
+
+            if (isBlurLayer) return;
 
             if (longPressTaskForDelete) {
                 drawTaskDeleteIcon(longPressTaskForDelete);
