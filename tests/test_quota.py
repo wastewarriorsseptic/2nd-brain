@@ -84,4 +84,10 @@ with Session(engine) as s:
 # ...and an unsigned notification is refused
 assert A.iap_notifications({"signedPayload": "junk"}).status_code == 400
 
+# the App Review demo account is enforced even while enforcement is off for everyone else
+with Session(engine) as s:
+    demo = A.User(name="Demo", email="usetaskmonsterapp@gmail.com"); s.add(demo); s.commit(); s.refresh(demo)
+    assert A._ai_quota_status(s, demo)["enforced"] is True
+    assert A._ai_quota_status(s, s.get(A.User, bid))["enforced"] is A.AI_QUOTA_ENFORCED
+
 print("ALL TESTS PASSED")

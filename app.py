@@ -6373,6 +6373,14 @@ def ai_chat_migrate_local(request: Request, payload: dict = Body(...)):
 AI_FREE_DAILY_LIMIT = int(os.getenv("AI_FREE_DAILY_LIMIT", "10"))
 AI_PRO_DAILY_LIMIT = int(os.getenv("AI_PRO_DAILY_LIMIT", "100"))
 AI_QUOTA_ENFORCED = os.getenv("AI_QUOTA_ENFORCED", "").strip().lower() in ("1", "true", "yes")
+# Accounts that always get the limit + Pro paywall even while it's off for everyone else - the App
+# Review demo account, so App Review can see and test the subscription before it's switched on.
+AI_QUOTA_ENFORCED_EMAILS = {
+    e.strip().lower() for e in os.getenv("AI_QUOTA_ENFORCED_EMAILS", "usetaskmonsterapp@gmail.com").split(",") if e.strip()
+}
+
+def ai_quota_enforced_for(user: "User") -> bool:
+    return AI_QUOTA_ENFORCED or (user.email or "").lower() in AI_QUOTA_ENFORCED_EMAILS
 
 def user_is_pro(user: "User") -> bool:
     return bool(user and user.pro_until and user.pro_until > datetime.utcnow())
@@ -6399,7 +6407,7 @@ def _ai_quota_status(session: Session, user: "User") -> dict:
         "limit": limit,
         "used": used,
         "remaining": max(0, limit - used),
-        "enforced": AI_QUOTA_ENFORCED,
+        "enforced": ai_quota_enforced_for(user),
         "resets_at": (start_local + timedelta(days=1)).astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
         "pro_until": user.pro_until.isoformat() + "Z" if pro else None,
     }
@@ -6487,7 +6495,7 @@ def ai_chat(request: Request, payload: dict = Body(...)):
         if _ai_chat_rate_limited(user.id):
             return JSONResponse({"ok": False, "error": "Too many requests - try again in a bit."}, status_code=429)
 
-        if AI_QUOTA_ENFORCED:
+        if ai_quota_enforced_for(user):
             quota = _ai_quota_status(session, user)
             if quota["remaining"] <= 0:
                 pro = quota["plan"] == "pro"
