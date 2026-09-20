@@ -7927,7 +7927,9 @@
             if (!isContactUniverse && !isEventUniverse) {
                 isRealmTimelineView = true;
                 realmLanes = buildRealmLanes();
+                mvDecorateRealmLanes(realmLanes);
                 realmTimelineFocusedLaneId = null;
+                mvInitFocus();
                 hideRealmTimelineOpenCardViewPill();
                 frameAllRealmLanes();
                 updateDailyDigestVisibility();
@@ -8664,9 +8666,37 @@
             return v;
         }
 
+        // The Multiverse Timeline (one lane per Universe) and a Universe's own Realm Timeline (one lane
+        // per Realm) share this focus experience; mvLanes() is whichever one is on screen.
+        function mvLanes() { return isRealmTimelineView ? realmLanes : multiverseLanes; }
+
         function mvFocusActive() {
-            return isMultiverseStackedView && !isRealmTimelineView && !multiverseReorderMode
-                && !activeSwipeTaskId && multiverseLanes.length > 0;
+            if (activeSwipeTaskId) return false;
+            if (isRealmTimelineView) return realmTimelineFocusedLaneId === null && realmLanes.length > 0;
+            return isMultiverseStackedView && !multiverseReorderMode && multiverseLanes.length > 0;
+        }
+
+        function mvFocusStorageKey() {
+            return isRealmTimelineView ? ('rt_focus_lane_' + activeUniverseId) : 'mv_focus_lane_id';
+        }
+
+        // The Realm Timeline's lanes are built by buildRealmLanes with the same geometry and task shape
+        // as the Multiverse ones; this adds the per-lane fields the focus layout needs.
+        function mvDecorateRealmLanes(lanes) {
+            const mobile = mvIsMobile();
+            lanes.forEach(lane => {
+                lane._baseHub = lane.hubRadius;
+                lane._startGap = 300;
+                lane._step = 420;
+                lane._spacing = mobile ? 460 : 400;
+                lane._isMobile = mobile;
+                lane._scroll = 0;
+                lane._scrollIdxTarget = 0;
+                const hasUp = lane.tasks.some(t => !t.isOverdue);
+                const fb = (!hasUp && lane.midAddButtons && lane.midAddButtons[0]) ? lane.midAddButtons[0] : null;
+                lane._emptyFallback = fb ? { bucketId: fb.bucketId, realmId: fb.realmId, universeId: fb.universeId } : null;
+                mvReindexLane(lane);
+            });
         }
 
         function mvScrollRange(lane) {
@@ -8769,7 +8799,7 @@
         // Writes every lane's scale/position for the current mvFocusF and each lane's scroll; returns
         // the world Y of the (possibly mid-animation, fractional) focus point for the camera.
         function mvApplyLayout() {
-            const lanes = multiverseLanes, n = lanes.length;
+            const lanes = mvLanes(), n = lanes.length;
             if (!n) return 0;
             const R = 2.6, S = mvMaxScale();
             const ss = [], tks = [];
@@ -8800,11 +8830,11 @@
 
         function mvOverviewCamera() {
             const mobile = mvIsMobile();
-            const laneCount = Math.max(multiverseLanes.length, 1);
+            const laneCount = Math.max(mvLanes().length, 1);
             const laneSpacing = mobile ? 460 : 400;
             const totalHeight = (laneCount - 1) * laneSpacing;
             const zoomVal = mobile ? 0.22 : 0.32;
-            const baseHub = (multiverseLanes[0] && multiverseLanes[0]._baseHub) || (mobile ? 90 : 70);
+            const baseHub = (mvLanes()[0] && mvLanes()[0]._baseHub) || (mobile ? 90 : 70);
             return {
                 zoom: zoomVal,
                 offset: {
@@ -8817,11 +8847,16 @@
         }
 
         function mvInitFocus() {
-            let idx = 0;
+            let idx = isRealmTimelineView ? Math.max(0, mvLanes().findIndex(l => !l.isUniverseNode)) : 0;
+            const savedFor = mvFocusStorageKey();
+            if (mvSavedScroll.__for !== savedFor) {
+                Object.keys(mvSavedScroll).forEach(k => { delete mvSavedScroll[k]; });
+                mvSavedScroll.__for = savedFor;
+            }
             try {
-                const id = localStorage.getItem('mv_focus_lane_id');
+                const id = localStorage.getItem(mvFocusStorageKey());
                 if (id !== null) {
-                    const found = multiverseLanes.findIndex(l => String(l.id) === id);
+                    const found = mvLanes().findIndex(l => String(l.id) === id);
                     if (found >= 0) idx = found;
                 }
             } catch (e) {}
@@ -8829,7 +8864,7 @@
             mvFocusTarget = idx;
             mvFocusGesture = null;
             mvFocusModeWasActive = false;
-            multiverseLanes.forEach((l, i) => {
+            mvLanes().forEach((l, i) => {
                 const saved = i === idx ? (mvSavedScroll[l.id] || 0) : 0;
                 const rng = mvScrollRange(l);
                 l._scrollIdxTarget = mvClamp(saved, rng.min, rng.max);
@@ -8840,19 +8875,19 @@
         }
 
         function mvSetFocus(idx) {
-            const n = multiverseLanes.length;
+            const n = mvLanes().length;
             if (!n) return;
             idx = mvClamp(idx, 0, n - 1);
             if (idx !== mvFocusTarget) {
-                multiverseLanes.forEach(l => { l._scrollIdxTarget = 0; });
+                mvLanes().forEach(l => { l._scrollIdxTarget = 0; });
                 mvFocusTarget = idx;
-                try { localStorage.setItem('mv_focus_lane_id', String(multiverseLanes[idx].id)); } catch (e) {}
+                try { localStorage.setItem(mvFocusStorageKey(), String(mvLanes()[idx].id)); } catch (e) {}
                 triggerHapticFeedback('light');
             }
         }
 
         function mvStepScroll(dir) {
-            const lane = multiverseLanes[mvFocusTarget];
+            const lane = mvLanes()[mvFocusTarget];
             if (!lane) return;
             const rng = mvScrollRange(lane);
             const next = mvClamp((lane._scrollIdxTarget || 0) + dir, rng.min, rng.max);
@@ -8891,11 +8926,11 @@
 
             if (!mvFocusActive()) {
                 mvFocusModeWasActive = false;
-                if (mvHudOwned) mvReleaseHud(!(isMultiverseStackedView && !isRealmTimelineView && !multiverseReorderMode));
+                if (mvHudOwned) mvReleaseHud(true);
                 return;
             }
 
-            const lanes = multiverseLanes, n = lanes.length;
+            const lanes = mvLanes(), n = lanes.length;
             const entering = !mvFocusModeWasActive;
             if (entering) {
                 targetCameraZoom = mvOverviewCamera().zoom;
@@ -8936,7 +8971,7 @@
             if (!(g && g.axis === 'v')) {
                 const cSel = scanning ? Math.round(owner._scroll || 0) : (owner._scrollIdxTarget || 0);
                 owner._selectedTask = mvSelectedTaskFor(owner, cSel);
-                Object.keys(mvSavedScroll).forEach(k => { delete mvSavedScroll[k]; });
+                Object.keys(mvSavedScroll).forEach(k => { if (k !== '__for') delete mvSavedScroll[k]; });
                 if (owner._scrollIdxTarget) mvSavedScroll[owner.id] = owner._scrollIdxTarget;
                 const selId = owner._selectedTask ? owner._selectedTask.id : null;
                 if (selId !== mvHudTaskId) {
@@ -8970,7 +9005,7 @@
         function mvFocusBeginGesture(x, y) {
             mvFocusGesture = null;
             if (!mvFocusActive()) return;
-            const lane = multiverseLanes[mvFocusTarget];
+            const lane = mvLanes()[mvFocusTarget];
             mvFocusGesture = {
                 startX: x, startY: y, axis: null, lane,
                 startF: mvFocusF, startScroll: lane ? (lane._scroll || 0) : 0,
@@ -8987,9 +9022,9 @@
                 g.axis = Math.abs(dy) > Math.abs(dx) ? 'v' : 'h';
             }
             const now = performance.now();
-            const n = multiverseLanes.length;
+            const n = mvLanes().length;
             if (g.axis === 'v') {
-                const px = multiverseLanes[0]._spacing * 1.15 * cameraZoom;
+                const px = mvLanes()[0]._spacing * 1.15 * cameraZoom;
                 const f = mvRubber(g.startF - dy / px, 0, n - 1);
                 mvFocusF = f;
                 const idx = mvClamp(Math.round(f), 0, n - 1);
@@ -9022,7 +9057,7 @@
             }
             if (g.axis === 'v') {
                 const proj = mvFocusF + mvClamp(vel * 0.07, -1.5, 1.5);
-                mvSetFocus(Math.round(mvClamp(proj, 0, multiverseLanes.length - 1)));
+                mvSetFocus(Math.round(mvClamp(proj, 0, mvLanes().length - 1)));
             } else if (g.lane) {
                 const rng = mvScrollRange(g.lane);
                 const proj = (g.lane._scroll || 0) + mvClamp(vel * 0.08, -2, 2);
@@ -9308,7 +9343,7 @@
 
                     // The selected task's title is drawn above its Universe's hub instead (see below),
                     // clear of everything else on the row.
-                    if (lane._selectedTask === task && mvHudUp && lane === multiverseLanes[mvFocusTarget]) {
+                    if (lane._selectedTask === task && mvHudUp && lane === mvLanes()[mvFocusTarget]) {
                         task._labelRect = null;
                         spaceCtx.restore();
                         return;
@@ -9359,7 +9394,7 @@
             // (see the isSelectedBucket branch of renderSpaceFrame) - see computeLaneMidAddButtons
             // for why these exist here at all.
             lanes.forEach((lane, laneIdxForMab) => {
-                if (mvFocusActive() && !isRealmTimelineView && laneIdxForMab !== mvFocusTarget) return;
+                if (mvFocusActive() && laneIdxForMab !== mvFocusTarget) return;
                 (lane.midAddButtons || []).forEach(mab => {
                     const mabFade = mvClamp((Math.abs(mab.x - lane.x) - lane.hubRadius - 20) / 40, 0, 1);
                     if (mabFade <= 0.02) return;
@@ -9679,11 +9714,20 @@
                 ? realmLanes.filter(l => l.id === realmTimelineFocusedLaneId)
                 : realmLanes;
 
+            // Focus mode (see stepMultiverseFocus): only the selected lane is live - tapping any other
+            // lane just selects it.
+            const focusOn = mvFocusActive();
+            const focusedLane = focusOn ? realmLanes[mvFocusTarget] : null;
+
             for (const lane of hitTestLanes) {
                 const distToHub = Math.hypot(worldX - lane.x, worldY - lane.y);
                 const r = lane._namePillRect;
                 const hitPill = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
                 if (distToHub <= lane.hubRadius + 10 || hitPill) {
+                    if (focusOn && lane !== focusedLane) {
+                        mvSetFocus(realmLanes.indexOf(lane));
+                        return;
+                    }
                     // The synthetic "go back" Universe hub (see buildRealmLanes) always steps out
                     // to the Multiverse Timeline - it has no Realm of its own to focus/unfocus.
                     if (lane.isUniverseNode) {
@@ -9702,6 +9746,7 @@
             // Same "+" hit-test handleMultiverseStackedClick does for its own lanes - see
             // computeLaneMidAddButtons for why these exist on a lane at all.
             for (const lane of hitTestLanes) {
+                if (focusOn && lane !== focusedLane) continue;
                 for (const mab of (lane.midAddButtons || [])) {
                     const distMab = Math.hypot(worldX - mab.x, worldY - mab.y);
                     if (distMab <= mab.radius + 14) {
@@ -9717,6 +9762,7 @@
             let clickedLane = null;
             for (const lane of hitTestLanes) {
                 for (const task of lane.tasks) {
+                    if (task._vis !== undefined && task._vis < 0.35) continue;
                     const dist = Math.hypot(worldX - task.x, worldY - task.y);
                     const hitNode = dist <= task.radius + 18;
                     const r = task._labelRect;
@@ -9730,7 +9776,23 @@
                 if (clickedTask) break;
             }
 
+            if (focusOn && clickedTask) {
+                if (clickedLane !== focusedLane) {
+                    mvSetFocus(realmLanes.indexOf(clickedLane));
+                } else if (clickedTask === mvSelectedTaskFor(focusedLane, focusedLane._scrollIdxTarget || 0)) {
+                    mvOpenHud(clickedTask);
+                } else {
+                    const rng = mvScrollRange(focusedLane);
+                    focusedLane._scrollIdxTarget = mvClamp(mvTaskL(clickedTask), rng.min, rng.max);
+                    triggerHapticFeedback('light');
+                }
+                return;
+            }
+
             if (!clickedTask) {
+                // In focus mode a stray tap on empty space shouldn't kick you out of the Universe
+                // (the Universe circle at the top is the deliberate way back out).
+                if (focusOn) return;
                 // Tapping blank canvas space while a lane is zoomed-in-on zooms back out - same
                 // "tap outside to dismiss" convention the rest of Space View already uses.
                 if (realmTimelineFocusedLaneId !== null) {
@@ -9883,7 +9945,7 @@
             cameraOffset.x += (targetCameraOffset.x - cameraOffset.x) * 0.1;
             cameraOffset.y += (targetCameraOffset.y - cameraOffset.y) * 0.1;
 
-            if (isMultiverseStackedView && !isRealmTimelineView) stepMultiverseFocus();
+            if (isMultiverseStackedView || isRealmTimelineView) stepMultiverseFocus();
             else if (mvHudOwned) mvReleaseHud(true);
 
             spaceCtx.clearRect(0, 0, spaceCanvas.width, spaceCanvas.height);
@@ -11061,6 +11123,7 @@
                     } else if (pressedRealmLane) {
                         longPressTimer = setTimeout(() => {
                             longPressFired = true;
+                            mvFocusGesture = null;
                             longPressRealmForDelete = pressedRealmLane;
                             isDragging = false;
                         }, 550);
