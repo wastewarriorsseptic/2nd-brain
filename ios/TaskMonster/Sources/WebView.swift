@@ -37,6 +37,8 @@ struct WebView: UIViewRepresentable {
         // handler lets the page hand recognition off to this bridge instead, which drives Apple's
         // own Speech framework directly - see startSpeechRecognition/stopSpeechRecognition below.
         config.userContentController.add(context.coordinator, name: "speechRecognition")
+        // TaskMonster Pro subscription (StoreKit 2) - see PurchaseManager.
+        config.userContentController.add(context.coordinator, name: "purchases")
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
@@ -60,6 +62,7 @@ struct WebView: UIViewRepresentable {
         // fixed this: it's the native WKWebView's own background paint, not page content.
         webView.backgroundColor = UIColor(red: 0.0588, green: 0.0902, blue: 0.1647, alpha: 1)
         context.coordinator.attach(webView: webView, url: url)
+        PurchaseManager.shared.webView = webView
         // .reloadIgnoringLocalCacheData, not the default .useProtocolCachePolicy - the site's own
         // response carries no Cache-Control/Last-Modified headers at all, which is exactly the
         // condition under which NSURLCache applies its own heuristic freshness lifetime instead of
@@ -296,6 +299,9 @@ struct WebView: UIViewRepresentable {
                     impactGeneratorMedium.impactOccurred()
                     impactGeneratorMedium.prepare()
                 }
+
+            case "purchases":
+                Task { @MainActor in PurchaseManager.shared.handleMessage(message.body) }
 
             case "speechRecognition":
                 let command = (message.body as? String) ?? ""
