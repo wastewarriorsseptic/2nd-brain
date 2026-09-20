@@ -9489,14 +9489,6 @@
                     spaceCtx.fillText(dateLabel, 0, -rLocal - 30);
                     spaceCtx.restore();
 
-                    // The selected task's title is drawn above its Universe's hub instead (see below),
-                    // clear of everything else on the row.
-                    if (lane._selectedTask === task && mvHudUp && lane === mvLanes()[mvFocusTarget]) {
-                        task._labelRect = null;
-                        spaceCtx.restore();
-                        return;
-                    }
-
                     spaceCtx.save();
                     spaceCtx.translate(task.x, task.y);
                     spaceCtx.scale(tTk, tTk);
