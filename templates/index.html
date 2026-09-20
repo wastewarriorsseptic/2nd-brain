@@ -12756,20 +12756,18 @@
             setProStatus('');
             wrap.innerHTML = '';
             (products || []).forEach((p) => {
-                const yearly = p.period === 'year';
                 const btn = document.createElement('button');
                 btn.type = 'button';
-                btn.className = 'w-full text-left rounded-2xl border px-4 py-3 transition ' +
-                    (yearly ? 'border-indigo-400 bg-indigo-500/15 hover:bg-indigo-500/25' : 'border-slate-600 bg-slate-800/70 hover:bg-slate-800');
+                btn.className = 'w-full text-left rounded-2xl border border-indigo-400 bg-indigo-500/15 hover:bg-indigo-500/25 px-4 py-3 transition';
                 const title = document.createElement('div');
                 title.className = 'flex items-center justify-between font-bold text-white';
-                title.textContent = yearly ? 'Yearly' : 'Monthly';
+                title.textContent = 'Monthly';
                 const price = document.createElement('span');
-                price.textContent = p.displayPrice + (yearly ? ' / year' : ' / month');
+                price.textContent = p.displayPrice + ' / month';
                 title.appendChild(price);
                 const sub = document.createElement('div');
                 sub.className = 'text-xs text-slate-400 mt-0.5';
-                sub.textContent = [yearly ? 'Best value' : '', p.trial || ''].filter(Boolean).join(' · ') || 'Cancel any time';
+                sub.textContent = [p.trial || '', 'Cancel any time'].filter(Boolean).join(' · ');
                 btn.appendChild(title);
                 btn.appendChild(sub);
                 btn.onclick = () => buyProPlan(p.id);
