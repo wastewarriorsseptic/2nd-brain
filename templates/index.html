@@ -188,6 +188,19 @@
         .universe-card-float:hover {
             animation-play-state: paused;
         }
+        /* The task card doubles as the Multiverse Timeline's live "selected task" readout (see
+           stepMultiverseFocus) - bigger and roomier than its usual compact self. */
+        #space-hud-card.mv-focus-hud {
+            max-width: 26rem;
+            padding: 1rem 1.1rem;
+        }
+        #space-hud-card.mv-focus-hud > div:first-child { display: flex; align-items: center; gap: 0.5rem; }
+        #space-hud-card.mv-focus-hud #hud-category-badge { flex: 1 1 0; min-width: 0; }
+        #space-hud-card.mv-focus-hud #hud-note-btn { flex: 0 0 auto; }
+        #space-hud-card.mv-focus-hud #hud-task-title { font-size: 1.2rem; line-height: 1.3; }
+        #space-hud-card.mv-focus-hud #hud-task-date { font-size: 0.85rem; }
+        #space-hud-card.mv-focus-hud #hud-task-notes { font-size: 0.85rem; max-height: 4.5rem; overflow: hidden; }
+        #space-hud-card.mv-focus-hud #hud-checkbox-btn { width: 1.75rem; height: 1.75rem; }
         /* Devil launcher, "+" quick-task badge, and 🌀 Multiverse badge all share the exact same
            timing/easing/duration with no per-element delay, so the three circles still bob and
            pulse as one synced unit - independently staggering them (as the "+" and 🌀 briefly were)
@@ -220,10 +233,6 @@
             0%, 100% { transform: translate(0, 0) scale(1); }
             50% { transform: translate(7px, -3px) scale(1.06); }
         }
-        @keyframes ai-chat-multiverse-repel-breathe {
-            0%, 100% { transform: translate(0, 0) scale(1); }
-            50% { transform: translate(-7px, -3px) scale(1.06); }
-        }
         /* The ⏳ Multiverse Timeline badge sits centered below the devil (left-1/2 -translate-x-1/2
            statically), so its own repel nudge is straight down instead of sideways - keeping the
            translateX(-50%) constant at every keyframe stop preserves that centering while still
@@ -238,15 +247,11 @@
         #ai-chat-quick-task-btn {
             animation: ai-chat-plus-repel-breathe 3.2s ease-in-out infinite;
         }
-        #multiverse-quick-btn {
-            animation: ai-chat-multiverse-repel-breathe 3.2s ease-in-out infinite;
-        }
         #multiverse-timeline-quick-btn {
             animation: ai-chat-timeline-repel-breathe 3.2s ease-in-out infinite;
         }
         #ai-chat-launcher:hover,
         #ai-chat-quick-task-btn:hover,
-        #multiverse-quick-btn:hover,
         #multiverse-timeline-quick-btn:hover {
             animation-play-state: paused;
         }
@@ -435,14 +440,6 @@
                 +
             </button>
             {% if user %}
-            <!-- Third tangent circle off the launcher, mirroring the "+" quick-task badge on the
-                 opposite side - jumps straight to the Multiverse picker (Space View's own Home,
-                 see openMultiverseView()) from anywhere in the app instead of only via the
-                 sidebar's Universe pill or Space View's own top-left pill. -->
-            <button type="button" id="multiverse-quick-btn" onclick="openMultiverseView()" title="Universes Home"
-                    class="absolute -bottom-6 -left-10 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 border border-indigo-400/30 text-white text-xl flex items-center justify-center shadow-lg transition">
-                🏡
-            </button>
             <!-- Fourth tangent circle, centered below the devil between the "+" and 🌀 badges -
                  replaces the standalone "🌌 Multiverse Timeline" button/pill that used to live in
                  Space View's bottom HUD and the Multiverse picker's own footer (both removed) with
@@ -450,7 +447,7 @@
                  timeline, same as the other two launcher badges. -->
             <button type="button" id="multiverse-timeline-quick-btn" onclick="openMultiverseTimeline()" title="Multiverse Timeline"
                     class="absolute -bottom-11 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full bg-amber-500 hover:bg-amber-400 border border-amber-300/40 text-white text-xl flex items-center justify-center shadow-lg transition">
-                ⏳
+                🏡
             </button>
             {% endif %}
         </div>
@@ -1375,6 +1372,7 @@
                     <div class="flex-1 min-w-0">
                         <h3 id="hud-task-title" class="text-sm font-bold text-white break-words leading-snug">Task Title</h3>
                         <p id="hud-task-date" class="text-[11px] text-indigo-300 font-mono mt-0.5">📅 Due Date</p>
+                        <p id="hud-task-notes" class="hidden text-slate-300 mt-1.5 break-words leading-snug"></p>
                     </div>
 
                     <button id="hud-shop-btn" onclick="openAmazonShopFromHud()" title="Shop on Amazon"
@@ -5807,6 +5805,10 @@
         let mvCamSettling = false;
         let mvFocusLastFrameMs = 0;
         let mvAddHubY = null;
+        let mvHudTaskId = null;
+        let mvHudOwned = false;
+        let mvCenterFrac = 0.48;
+        const mvSavedScroll = {};
         let mvWheelAccX = 0, mvWheelAccY = 0, mvWheelLockUntil = 0, mvWheelLastMs = 0;
         let multiverseActiveLaneId = null;
         // Per-Universe Realm Timeline (see buildRealmLanes/renderMultiverseStackedLanes/
@@ -8336,6 +8338,7 @@
                 lane._isMobile = isMobile;
                 lane._overdueCount = overdueTasks.length;
                 lane._upcomingCount = upcomingTasks.length;
+                lane._taskCountSeen = lane.tasks.length;
                 lane._upcoming = upcomingTasks;
                 overdueTasks.forEach((task, idx) => { task._side = 'left'; task._sideIdx = idx; });
                 upcomingTasks.forEach((task, idx) => { task._side = 'right'; task._sideIdx = idx; });
@@ -8660,7 +8663,36 @@
 
         function mvScrollRange(lane) {
             const o = lane._overdueCount || 0, u = lane._upcomingCount || 0;
-            return { min: o > 1 ? -(o - 1) : 0, max: u > 1 ? (u - 1) : 0 };
+            return { min: -o, max: Math.max(u - 1, 0) };
+        }
+
+        // Linear position of a task in its lane's timeline: upcoming tasks are 0, 1, 2...; overdue
+        // tasks run backwards from -1 (newest overdue) to -N (oldest). The scroll cursor c selects
+        // whichever task has L === round(c).
+        function mvTaskL(task) { return task._side === 'right' ? task._sideIdx : -(task._sideIdx + 1); }
+
+        function mvSelectedTaskFor(lane, c) {
+            if (!lane || !lane.tasks.length) return null;
+            let L = Math.round(c);
+            const hasUp = (lane._upcomingCount || 0) > 0, hasOver = (lane._overdueCount || 0) > 0;
+            if (L === 0 && !hasUp && hasOver) L = -1;
+            return lane.tasks.find(t => mvTaskL(t) === L) || null;
+        }
+
+        // A task got completed/added out from under us (HUD complete, undo toast) - rebuild the
+        // per-lane indexes the layout depends on.
+        function mvReindexLane(lane) {
+            lane.tasks.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+            const ups = lane.tasks.filter(t => !t.isOverdue);
+            const overs = lane.tasks.filter(t => t.isOverdue).reverse();
+            ups.forEach((t, i) => { t._side = 'right'; t._sideIdx = i; });
+            overs.forEach((t, i) => { t._side = 'left'; t._sideIdx = i; });
+            lane._upcoming = ups;
+            lane._upcomingCount = ups.length;
+            lane._overdueCount = overs.length;
+            lane._taskCountSeen = lane.tasks.length;
+            const rng = mvScrollRange(lane);
+            lane._scrollIdxTarget = mvClamp(lane._scrollIdxTarget || 0, rng.min, rng.max);
         }
 
         function mvApplyLaneLayout(lane, y, s, tk, scrollIdx) {
@@ -8668,16 +8700,27 @@
             lane._s = s;
             lane._tk = tk;
             lane.hubRadius = lane._baseHub * s;
+            const fw = lane._fw || 0;
             const slot = lane.hubRadius + lane._startGap + 190 * (tk - 1);
-            const step = lane._step + 380 * (tk - 1);
+            const step = (lane._step + 380 * (tk - 1)) * (1 + 0.15 * fw);
             lane._stepNow = step;
             let minX = null, maxX = null;
             lane.tasks.forEach(task => {
+                const L = mvTaskL(task);
+                const d = L - scrollIdx;
+                // Piecewise so every task is selectable and the strip stays continuous: the selected
+                // task (d = 0) rests at the right slot, the one before it (d = -1) at the left slot,
+                // and anything between them sweeps across the hub while scrolling.
+                const off = d >= 0 ? slot + d * step
+                    : (d >= -1 ? slot + d * 2 * slot : -slot + (d + 1) * step);
+                const wt = mvSmoothstep(1 - Math.abs(d) / 2.2) * fw;
+                const ts = 1 + 0.6 * wt;
+                task._ts = ts;
+                task._wt = wt;
+                task._tk = tk * (1 + (ts - 1) * 0.22);
                 task.y = y;
-                task.radius = 18 * s;
-                task.x = task._side === 'right'
-                    ? lane.x + slot + (task._sideIdx - scrollIdx) * step
-                    : lane.x - slot - (task._sideIdx + scrollIdx) * step;
+                task.radius = 18 * s * ts;
+                task.x = lane.x + off;
                 if (minX === null || task.x < minX) minX = task.x;
                 if (maxX === null || task.x > maxX) maxX = task.x;
             });
@@ -8708,6 +8751,8 @@
                 lane._scroll = 0;
                 lane._scrollIdxTarget = 0;
                 lane._alpha = 1;
+                lane._fw = 0;
+                lane._selectedTask = null;
                 mvApplyLaneLayout(lane, i * lane._spacing, 1, 1, 0);
             });
             mvAddHubY = null;
@@ -8721,11 +8766,13 @@
             const R = 2.6, S = mvMaxScale();
             const ss = [], tks = [];
             lanes.forEach((lane, i) => {
+                if (lane._taskCountSeen !== lane.tasks.length) mvReindexLane(lane);
                 const w = mvSmoothstep(1 - Math.abs(i - mvFocusF) / R);
                 const sc = 1 + (S - 1) * w;
                 ss[i] = sc;
                 tks[i] = 1 + (sc - 1) * 0.5;
                 lane._alpha = 0.5 + 0.5 * w;
+                lane._fw = w * w * w;
             });
             const base = lanes[0]._spacing;
             const ys = [];
@@ -8773,7 +8820,13 @@
             mvFocusTarget = idx;
             mvFocusGesture = null;
             mvFocusModeWasActive = false;
-            multiverseLanes.forEach(l => { l._scroll = 0; l._scrollIdxTarget = 0; });
+            multiverseLanes.forEach((l, i) => {
+                const saved = i === idx ? (mvSavedScroll[l.id] || 0) : 0;
+                const rng = mvScrollRange(l);
+                l._scrollIdxTarget = mvClamp(saved, rng.min, rng.max);
+                l._scroll = l._scrollIdxTarget;
+            });
+            mvHudTaskId = null;
             mvApplyLayout();
         }
 
@@ -8800,6 +8853,14 @@
             }
         }
 
+        function mvReleaseHud(hide) {
+            mvHudOwned = false;
+            mvHudTaskId = null;
+            const hud = document.getElementById('space-hud-card');
+            if (hud) hud.classList.remove('mv-focus-hud');
+            if (hide) hideHudCard();
+        }
+
         function stepMultiverseFocus() {
             const now = performance.now();
             const dt = mvFocusLastFrameMs ? Math.min(0.05, (now - mvFocusLastFrameMs) / 1000) : 0.016;
@@ -8807,6 +8868,7 @@
 
             if (!mvFocusActive()) {
                 mvFocusModeWasActive = false;
+                if (mvHudOwned) mvReleaseHud(!(isMultiverseStackedView && !isRealmTimelineView && !multiverseReorderMode));
                 return;
             }
 
@@ -8834,8 +8896,37 @@
             });
 
             const fy = mvApplyLayout();
+
+            // Selected task of the selected lane: mirrors it onto the HUD card (auto-updating as you
+            // scan) and highlights it on the canvas.
+            const owner = lanes[mvFocusTarget];
+            lanes.forEach(l => { if (l !== owner) l._selectedTask = null; });
+            const scanning = g && g.axis === 'h' && g.lane === owner;
+            if (!(g && g.axis === 'v')) {
+                const cSel = scanning ? Math.round(owner._scroll || 0) : (owner._scrollIdxTarget || 0);
+                owner._selectedTask = mvSelectedTaskFor(owner, cSel);
+                Object.keys(mvSavedScroll).forEach(k => { delete mvSavedScroll[k]; });
+                if (owner._scrollIdxTarget) mvSavedScroll[owner.id] = owner._scrollIdxTarget;
+                const selId = owner._selectedTask ? owner._selectedTask.id : null;
+                if (selId !== mvHudTaskId) {
+                    mvHudTaskId = selId;
+                    const hud = document.getElementById('space-hud-card');
+                    if (owner._selectedTask) {
+                        if (hud) hud.classList.add('mv-focus-hud');
+                        mvHudOwned = true;
+                        showHudCard(owner._selectedTask);
+                    } else if (mvHudOwned) {
+                        hideHudCard();
+                    }
+                }
+            }
+
+            const hudEl = document.getElementById('space-hud-card');
+            const hudUp = !!(hudEl && !hudEl.classList.contains('hidden') && mvHudOwned);
+            const fracTarget = hudUp ? (mvIsMobile() ? 0.30 : 0.40) : 0.48;
+            mvCenterFrac = mvSmooth(mvCenterFrac, fracTarget, dt, 9);
             const desiredX = window.innerWidth / 2;
-            const desiredY = window.innerHeight * 0.48 - fy * cameraZoom;
+            const desiredY = window.innerHeight * mvCenterFrac - fy * cameraZoom;
             targetCameraOffset = { x: desiredX, y: desiredY };
             if (mvCamSettling) {
                 if (Math.hypot(cameraOffset.x - desiredX, cameraOffset.y - desiredY) < 1.5 && Math.abs(cameraZoom - targetCameraZoom) < 0.002) mvCamSettling = false;
@@ -9115,12 +9206,14 @@
             lanes.forEach(lane => {
                 const laneTk = lane._tk || 1;
                 lane.tasks.forEach(task => {
-                    const isActiveSwipeNode = activeSwipeTaskId && String(task.id) === String(activeSwipeTaskId);
+                    const isActiveSwipeNode = (activeSwipeTaskId && String(task.id) === String(activeSwipeTaskId))
+                        || lane._selectedTask === task;
 
                     // Tasks sliding under the hub (while their lane is scrolled) fade out instead of
                     // drawing on top of it; the hub is opaque and drawn first.
                     const fade = mvClamp((Math.abs(task.x - lane.x) - lane.hubRadius - 30) / 140, 0, 1);
-                    task._vis = fade * (lane._alpha ?? 1);
+                    const scanDim = (lane._fw || 0) > 0.3 ? (0.55 + 0.45 * (task._wt / Math.max(lane._fw, 0.0001))) : 1;
+                    task._vis = fade * (lane._alpha ?? 1) * Math.min(1, scanDim);
                     if (fade <= 0.02) { task._labelRect = null; return; }
 
                     spaceCtx.save();
@@ -9165,11 +9258,12 @@
                     // anchored on the dot, so the dock-style growth reads without the wrapped title
                     // ballooning into the neighboring lane. rLocal keeps the label the same visual
                     // distance from the (larger) dot edge.
-                    const rLocal = task.radius / laneTk;
+                    const tTk = task._tk || laneTk;
+                    const rLocal = task.radius / tTk;
 
                     spaceCtx.save();
                     spaceCtx.translate(task.x, task.y);
-                    spaceCtx.scale(laneTk, laneTk);
+                    spaceCtx.scale(tTk, tTk);
                     spaceCtx.textAlign = 'center';
                     spaceCtx.textBaseline = 'middle';
                     spaceCtx.font = isActiveSwipeNode ? 'bold 40px sans-serif' : '36px sans-serif';
@@ -9183,15 +9277,16 @@
 
                     spaceCtx.save();
                     spaceCtx.translate(task.x, task.y);
-                    spaceCtx.scale(laneTk, laneTk);
+                    spaceCtx.scale(tTk, tTk);
                     spaceCtx.textAlign = 'center';
                     spaceCtx.textBaseline = 'middle';
                     spaceCtx.font = isActiveSwipeNode ? 'bold 44px sans-serif' : '40px sans-serif';
                     // Grown labels wrap to more lines instead of getting wider, so the selected lane's
                     // titles don't run off the edge of a phone screen.
-                    const maxLabelWidth = 380 / Math.max(1, laneTk / 1.25);
+                    const maxLabelWidth = 380 / Math.max(1, tTk / 1.25);
                     const lineHeight = isActiveSwipeNode ? 50 : 46;
-                    const lines = wrapTextToWidth(spaceCtx, task.title, maxLabelWidth, 6);
+                    // The task card carries the full text now, so the focused lane's labels stay short.
+                    const lines = wrapTextToWidth(spaceCtx, task.title, maxLabelWidth, (lane._fw || 0) > 0.3 ? 3 : 6);
                     const widestLine = Math.max(...lines.map(l => spaceCtx.measureText(l).width));
                     const tWidth = widestLine + 24;
                     const tPillHeight = (lines.length * lineHeight) + (isActiveSwipeNode ? 14 : 10);
@@ -9199,7 +9294,7 @@
 
                     // Stashed (in world units) so tapping the label text does exactly what tapping the
                     // dot does - see handleMultiverseStackedClick.
-                    task._labelRect = { x: task.x - (tWidth * laneTk) / 2, y: task.y + tPillY * laneTk, w: tWidth * laneTk, h: tPillHeight * laneTk };
+                    task._labelRect = { x: task.x - (tWidth * tTk) / 2, y: task.y + tPillY * tTk, w: tWidth * laneTk, h: tPillHeight * tTk };
 
                     spaceCtx.fillStyle = isActiveSwipeNode ? 'rgba(30, 41, 59, 0.98)' : 'rgba(15, 23, 42, 0.9)';
                     spaceCtx.beginPath();
@@ -9402,6 +9497,18 @@
 
             if (focusOn && clickedLane !== focusedLane) {
                 mvSetFocus(multiverseLanes.indexOf(clickedLane));
+                return;
+            }
+            if (focusOn) {
+                // Tapping the selected task opens it for editing; tapping a neighbor scrolls to it.
+                const selected = mvSelectedTaskFor(focusedLane, focusedLane._scrollIdxTarget || 0);
+                if (clickedTask === selected) {
+                    openEditItemFromTask(clickedTask);
+                } else {
+                    const rng = mvScrollRange(focusedLane);
+                    focusedLane._scrollIdxTarget = mvClamp(mvTaskL(clickedTask), rng.min, rng.max);
+                    triggerHapticFeedback('light');
+                }
                 return;
             }
 
@@ -9736,6 +9843,7 @@
             cameraOffset.y += (targetCameraOffset.y - cameraOffset.y) * 0.1;
 
             if (isMultiverseStackedView && !isRealmTimelineView) stepMultiverseFocus();
+            else if (mvHudOwned) mvReleaseHud(true);
 
             spaceCtx.clearRect(0, 0, spaceCanvas.width, spaceCanvas.height);
 
@@ -12056,6 +12164,12 @@
             title.innerHTML = linkifyTitle(task.title);
             if (completeForm) completeForm.classList.remove('hidden');
             date.innerText = `📅 ${task.dueDateFormatted}`;
+            const notesEl = document.getElementById('hud-task-notes');
+            if (notesEl) {
+                const showNotes = card.classList.contains('mv-focus-hud') && !!task.description;
+                notesEl.classList.toggle('hidden', !showNotes);
+                notesEl.textContent = showNotes ? task.description : '';
+            }
             if (shopBtn) shopBtn.classList.toggle('hidden', !task.isShoppable);
             if (noteBtn) {
                 noteBtn.classList.remove('hidden');
@@ -12140,7 +12254,7 @@
 
     <style>@media (max-width: 767px) { #app-store-badge { bottom: 140px !important; font-size: 12px !important; padding: 7px 10px 7px 12px !important; } }</style>
     <a id="app-store-badge" href="https://apps.apple.com/app/id6808784253" target="_blank" rel="noopener"
-       style="display:none;position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:40;align-items:center;white-space:nowrap;gap:10px;padding:10px 14px 10px 16px;border-radius:999px;background:#0f172a;border:1px solid rgba(129,140,248,.5);color:#e2e8f0;font-size:14px;font-weight:600;text-decoration:none;box-shadow:0 6px 24px rgba(0,0,0,.5);">
+       style="display:none;position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:35;align-items:center;white-space:nowrap;gap:10px;padding:10px 14px 10px 16px;border-radius:999px;background:#0f172a;border:1px solid rgba(129,140,248,.5);color:#e2e8f0;font-size:14px;font-weight:600;text-decoration:none;box-shadow:0 6px 24px rgba(0,0,0,.5);">
         <span>Get the TaskMonster iPhone app</span>
         <span style="background:#6366f1;color:#fff;border-radius:999px;padding:4px 10px;font-size:13px;">App Store</span>
         <button type="button" id="app-store-badge-close" aria-label="Dismiss"
