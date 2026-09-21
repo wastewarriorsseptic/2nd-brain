@@ -8818,6 +8818,8 @@
             ctx.fillText(emoji, cx - off.x * fontSize, cy - off.y * fontSize);
         }
 
+        // How much extra room opens up around the selected row (1 = the row spacing triples).
+        const MV_FOCUS_GAP_K = 2.6;
         function mvIsMobile() { return window.innerWidth < 768; }
         function mvMaxScale() { return mvIsMobile() ? 2.2 : 2.1; }
         function mvClamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
@@ -8983,7 +8985,7 @@
             for (let i = 0; i < n; i++) {
                 ys[i] = y;
                 const sNext = i + 1 < n ? ss[i + 1] : 1;
-                y += base * (1 + 0.75 * ((ss[i] + sNext) / 2 - 1));
+                y += base * (1 + MV_FOCUS_GAP_K * Math.max(lanes[i]._fw || 0, i + 1 < n ? (lanes[i + 1]._fw || 0) : 0));
                 if (i + 1 < n) y += mvCardGap * (lanes[i + 1]._fw || 0);
             }
             mvAddHubY = y;
@@ -9129,7 +9131,7 @@
             const hudUp = !!(hudEl && !hudEl.classList.contains('hidden') && mvHudOwned);
             // Extra room between the selected Universe and the one above it while the card (which
             // floats above the selected circle) is showing, so the card never covers that circle.
-            const gapNeeded = hudUp ? Math.max(0, (hudEl.offsetHeight + 147) / cameraZoom - lanes[0]._spacing * 1.75) : 0;
+            const gapNeeded = hudUp ? Math.max(0, (hudEl.offsetHeight + 147) / cameraZoom - lanes[0]._spacing * (1 + MV_FOCUS_GAP_K)) : 0;
             mvCardGap = mvSmooth(mvCardGap, gapNeeded, dt, 9);
             if (Math.abs(mvCardGap - gapNeeded) < 0.5) mvCardGap = gapNeeded;
 
