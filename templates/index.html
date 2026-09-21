@@ -9156,7 +9156,15 @@
             }
 
             mvHudUp = hudUp;
-            const fracTarget = hudUp ? (mvIsMobile() ? 0.62 : 0.58) : 0.48;
+            // With the card up, the scanned row sits at mid-screen; it only drops lower when the card is
+            // tall enough that it would otherwise run up under the Daily Digest pill.
+            let fracTarget = 0.48;
+            if (hudUp) {
+                const digest = document.getElementById('daily-digest-hud');
+                const digestBottom = (digest && !digest.classList.contains('hidden')) ? digest.getBoundingClientRect().bottom : 60;
+                const neededY = digestBottom + 16 + hudEl.offsetHeight + 14 + owner.hubRadius * cameraZoom;
+                fracTarget = Math.max(0.5, neededY / window.innerHeight);
+            }
             mvCenterFrac = mvSmooth(mvCenterFrac, fracTarget, dt, 9);
             const desiredX = window.innerWidth / 2;
             const desiredY = window.innerHeight * mvCenterFrac - fy * cameraZoom;
@@ -9343,16 +9351,19 @@
         // Lanes that aren't the one being scanned are drawn softly blurred (into an offscreen layer,
         // composited under the crisp selected lane) so it's obvious which row a swipe will scroll.
         // A pure "back" circle (no tasks) stays sharp - it's the way out.
-        let mvBlurLayer = null, mvBlurMid = null, mvBlurSmall = null;
+        let mvBlurLayer = null, mvBlurMid = null, mvBlurSmall = null, mvBlurTiny = null;
         function mvRenderBlurredLayer(blurLanes, allLanes) {
             const W = spaceCanvas.width, H = spaceCanvas.height;
             const mw = Math.max(1, Math.ceil(W / 2)), mh = Math.max(1, Math.ceil(H / 2));
             const sw = Math.max(1, Math.ceil(W / 4)), sh = Math.max(1, Math.ceil(H / 4));
+            const tw = Math.max(1, Math.ceil(W / 8)), th = Math.max(1, Math.ceil(H / 8));
             if (!mvBlurLayer) {
                 mvBlurLayer = document.createElement('canvas');
                 mvBlurMid = document.createElement('canvas');
                 mvBlurSmall = document.createElement('canvas');
+                mvBlurTiny = document.createElement('canvas');
             }
+            if (mvBlurTiny.width !== tw || mvBlurTiny.height !== th) { mvBlurTiny.width = tw; mvBlurTiny.height = th; }
             if (mvBlurLayer.width !== W || mvBlurLayer.height !== H) { mvBlurLayer.width = W; mvBlurLayer.height = H; }
             if (mvBlurMid.width !== mw || mvBlurMid.height !== mh) { mvBlurMid.width = mw; mvBlurMid.height = mh; }
             if (mvBlurSmall.width !== sw || mvBlurSmall.height !== sh) { mvBlurSmall.width = sw; mvBlurSmall.height = sh; }
@@ -9385,11 +9396,19 @@
             smallCtx.imageSmoothingEnabled = true;
             smallCtx.imageSmoothingQuality = 'high';
             smallCtx.drawImage(mvBlurMid, 0, 0, sw, sh);
+            const tinyCtx = mvBlurTiny.getContext('2d');
+            tinyCtx.setTransform(1, 0, 0, 1, 0, 0);
+            tinyCtx.clearRect(0, 0, tw, th);
+            tinyCtx.imageSmoothingEnabled = true;
+            tinyCtx.imageSmoothingQuality = 'high';
+            tinyCtx.drawImage(mvBlurSmall, 0, 0, tw, th);
             spaceCtx.save();
             spaceCtx.setTransform(1, 0, 0, 1, 0, 0);
             spaceCtx.imageSmoothingEnabled = true;
             spaceCtx.imageSmoothingQuality = 'high';
-            spaceCtx.drawImage(mvBlurSmall, 0, 0, sw, sh, 0, 0, W, H);
+            // Heavier blur plus a little transparency = a foggy haze over everything not being scanned.
+            spaceCtx.globalAlpha = 0.72;
+            spaceCtx.drawImage(mvBlurTiny, 0, 0, tw, th, 0, 0, W, H);
             spaceCtx.restore();
         }
 
