@@ -5497,16 +5497,18 @@ def delete_note(request: Request, note_id: int):
     return RedirectResponse(url="/notes", status_code=303)
 
 @app.get("/calendar", response_class=HTMLResponse)
-def calendar_page(request: Request, universe_id: Optional[int] = None, year: Optional[int] = None, month: Optional[int] = None):
-    """A month-grid view of every due-dated task, browsed by Universe via the same swipable strip
-    Notes uses - reported directly, wanting a real calendar alongside the checklist-style Notes
-    page rather than folded into it. Unlike Notes (which only ever shows STARRED tasks), this
+def calendar_page(request: Request, universe_id: Optional[int] = None, year: Optional[int] = None, month: Optional[int] = None, view: str = "day", day: Optional[int] = None):
+    """A month-grid (and, per direct feedback that the month grid is "useless on mobile" once every
+    task per day renders inline, a Day-list) view of every due-dated task, browsed by Universe via
+    the same swipable strip Notes uses. Unlike Notes (which only ever shows STARRED tasks), this
     pulls every task due in the displayed month, matching the same "every Task/Event-kind
     Universe the user owns" scope the Multiverse Timeline's own cross-Universe task list already
     uses (see multiverse_tasks in dashboard()) - a Contact-kind Universe naturally contributes
     nothing here since People aren't due-dated. Completed tasks stay visible (struck through)
-    rather than disappearing, so the grid also reads as "what actually happened" for days already
-    past, not just what's upcoming."""
+    rather than disappearing, so the grid/list also reads as "what actually happened" for days
+    already past, not just what's upcoming. `view` defaults to "day" (not "month") specifically
+    because Day is the one that's actually usable on a phone - full task titles plus a real
+    complete checkbox, versus the month grid's necessarily tiny cells."""
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user:
@@ -5567,10 +5569,15 @@ def calendar_page(request: Request, universe_id: Optional[int] = None, year: Opt
                     tasks_by_day[it.due_date.day].append({
                         "id": it.id,
                         "title": it.title,
+                        "description": it.description,
                         "is_completed": bool(it.is_completed),
                         "due_time": due_time,
+                        "due_date_formatted": it.due_date.strftime("%b %d, %Y"),
                         "realm_id": b.realm_id if b else None,
+                        "realm_icon": (r.icon if r else "") or "🔮",
+                        "realm_name": r.name if r else "",
                         "bucket_id": it.bucket_id,
+                        "bucket_name": b.name if b else "",
                         "universe_icon": (u.icon if u else "") or "😈",
                         "universe_name": u.name if u else "",
                     })
@@ -5589,6 +5596,20 @@ def calendar_page(request: Request, universe_id: Optional[int] = None, year: Opt
         while len(cells) % 7 != 0:
             cells.append(None)
         weeks = [cells[i:i + 7] for i in range(0, len(cells), 7)]
+
+        # Day view's own focused date - defaults to today when today falls inside the displayed
+        # month (the common case: just opening /calendar), otherwise the 1st, same as picking a
+        # month via prev/next lands you somewhere sensible rather than on a day that doesn't
+        # semantically mean "today" anymore.
+        if view_month == user_today.month and view_year == user_today.year:
+            view_day = day or user_today.day
+        else:
+            view_day = day or 1
+        view_day = max(1, min(view_day, days_in_month))
+        view_date = date(view_year, view_month, view_day)
+        prev_date = view_date - timedelta(days=1)
+        next_date = view_date + timedelta(days=1)
+        day_tasks = tasks_by_day.get(view_day, [])
 
         return templates.TemplateResponse(
             request=request,
@@ -5609,6 +5630,20 @@ def calendar_page(request: Request, universe_id: Optional[int] = None, year: Opt
                 "next_month": next_month,
                 "is_current_month": (view_year == user_today.year and view_month == user_today.month),
                 "gemini_enabled": GEMINI_ENABLED,
+                "view": "month" if view == "month" else "day",
+                "view_day": view_day,
+                "day_label": f"{view_date.strftime('%A, %B')} {view_day}, {view_year}",
+                "day_is_today": (view_date == user_today),
+                "day_tasks": day_tasks,
+                "prev_day_year": prev_date.year,
+                "prev_day_month": prev_date.month,
+                "prev_day_day": prev_date.day,
+                "next_day_year": next_date.year,
+                "next_day_month": next_date.month,
+                "next_day_day": next_date.day,
+                "today_day": user_today.day,
+                "today_month": user_today.month,
+                "today_year": user_today.year,
             }
         )
 

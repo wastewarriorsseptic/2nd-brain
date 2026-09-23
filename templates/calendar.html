@@ -10,6 +10,9 @@
     <title>{{ (selected_universe.name ~ ' ' if selected_universe else '') }}Calendar - TaskMonster</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <!-- Same confetti-on-complete burst as Notes' own checklist - Day view's checkboxes below use
+         the identical toggle pattern. -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <style>
         /* Same floating launcher cluster as index.html/notes.html - see notes.html's own head
            comment for why this is a static, page-local copy rather than shared code: no AI chat
@@ -127,12 +130,90 @@
                 {% endif %}
             </div>
 
+            <!-- Day/Month toggle - added directly in response to "its useless on mobile" once every
+                 task per day started rendering inline in the month grid (tiny truncated rows, no
+                 room to actually tap the right one). Day is the default view (see calendar_page in
+                 app.py); Month stays one tap away for a bird's-eye look at the whole month. Each
+                 link carries the OTHER view's own current position (view_year/month/day) so
+                 switching back and forth never loses your place. -->
+            <div class="flex items-center gap-1 mb-3 shrink-0 bg-slate-100 rounded-full p-1 w-fit">
+                <a href="/calendar?view=day&year={{ view_year }}&month={{ view_month }}&day={{ view_day }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
+                   class="px-4 py-1.5 rounded-full text-xs font-bold transition {{ 'bg-white text-indigo-600 shadow' if view == 'day' else 'text-slate-500 hover:text-slate-700' }}">
+                    Day
+                </a>
+                <a href="/calendar?view=month&year={{ view_year }}&month={{ view_month }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
+                   class="px-4 py-1.5 rounded-full text-xs font-bold transition {{ 'bg-white text-indigo-600 shadow' if view == 'month' else 'text-slate-500 hover:text-slate-700' }}">
+                    Month
+                </a>
+            </div>
+
+            {% if view == 'day' %}
+            <!-- Day navigation - ‹ Weekday, Month Day, Year › plus a "Today" pill that only shows
+                 once you've actually navigated away from today. -->
+            <div class="flex items-center justify-between gap-2 mb-3 shrink-0">
+                <a href="/calendar?view=day&year={{ prev_day_year }}&month={{ prev_day_month }}&day={{ prev_day_day }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
+                   title="Previous day"
+                   class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold transition shrink-0">
+                    ‹
+                </a>
+                <div class="flex items-center gap-2 min-w-0">
+                    <span class="text-sm font-extrabold text-slate-900 truncate">{{ day_label }}</span>
+                    {% if not day_is_today %}
+                    <a href="/calendar?view=day{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
+                       class="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-200 rounded-full px-2 py-0.5 whitespace-nowrap shrink-0">
+                        Today
+                    </a>
+                    {% endif %}
+                </div>
+                <a href="/calendar?view=day&year={{ next_day_year }}&month={{ next_day_month }}&day={{ next_day_day }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
+                   title="Next day"
+                   class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold transition shrink-0">
+                    ›
+                </a>
+            </div>
+
+            <!-- Day list - full task rows with a real complete checkbox, same
+                 fetch()-with-X-Requested-With toggle pattern (and confetti) as Notes' own
+                 checklist, reported directly as what was missing from the month grid on mobile. -->
+            <div class="flex-1 overflow-y-auto space-y-2.5 pb-32">
+                {% for t in day_tasks %}
+                <div class="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200" data-row-item-id="{{ t.id }}">
+                    <button type="button" onclick="toggleCalTaskComplete(this, {{ t.id }})" ontouchstart="try { window.webkit.messageHandlers.haptics.postMessage('rigid'); } catch (e) {}" title="{{ 'Mark Incomplete' if t.is_completed else 'Mark Complete' }}"
+                            class="shrink-0 mt-0.5 w-6 h-6 rounded-md border flex items-center justify-center transition {% if t.is_completed %}bg-emerald-500 border-emerald-500 text-white font-bold{% else %}border-slate-400 hover:border-emerald-500 text-transparent hover:text-emerald-500/50{% endif %}">
+                        ✓
+                    </button>
+                    <div class="flex-1 min-w-0">
+                        <p class="cal-task-title text-sm font-semibold break-words leading-snug {{ 'text-slate-400 line-through' if t.is_completed else 'text-slate-800' }}">{{ t.title | linkify_phone }}</p>
+                        {% if t.description %}
+                        <p class="text-xs text-slate-500 mt-0.5 break-words">{{ t.description | linkify_phone }}</p>
+                        {% endif %}
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
+                            {% if t.due_time %}<span class="text-[11px] text-slate-500">🕒 {{ t.due_time }}</span>{% endif %}
+                            {% if not selected_universe_id %}
+                            <span class="text-[11px] text-slate-500">{{ t.universe_icon }} {{ t.universe_name }}</span>
+                            {% endif %}
+                            <span class="text-[11px] text-slate-500">{{ t.realm_icon }} {{ t.realm_name }} / {{ t.bucket_name }}</span>
+                        </div>
+                    </div>
+                    <a href="/?realm_id={{ t.realm_id }}&bucket_id={{ t.bucket_id }}&goto_item={{ t.id }}"
+                       onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
+                       class="shrink-0 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline underline-offset-2 whitespace-nowrap">🎯</a>
+                </div>
+                {% else %}
+                <div class="flex flex-col items-center justify-center text-center gap-2 py-14">
+                    <div class="text-4xl">📅</div>
+                    <p class="text-slate-400 text-sm">Nothing due{% if selected_universe %} in {{ selected_universe.name }}{% endif %} on {{ day_label }}.</p>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+
             <!-- Month navigation - ‹ Month Year › plus a "Today" pill that only shows once you've
                  actually navigated away from the current month (no point offering to jump
                  "back" to where you already are). universe_id is carried through every link here
                  so switching months never drops whichever Universe scope was selected. -->
             <div class="flex items-center justify-between gap-2 mb-3 shrink-0">
-                <a href="/calendar?year={{ prev_year }}&month={{ prev_month }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
+                <a href="/calendar?view=month&year={{ prev_year }}&month={{ prev_month }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
                    title="Previous month"
                    class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold transition">
                     ‹
@@ -140,13 +221,13 @@
                 <div class="flex items-center gap-2 min-w-0">
                     <span class="text-base font-extrabold text-slate-900 truncate">{{ month_label }}</span>
                     {% if not is_current_month %}
-                    <a href="/calendar{{ '?universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
+                    <a href="/calendar?view=month{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
                        class="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-200 rounded-full px-2 py-0.5 whitespace-nowrap">
                         Today
                     </a>
                     {% endif %}
                 </div>
-                <a href="/calendar?year={{ next_year }}&month={{ next_month }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
+                <a href="/calendar?view=month&year={{ next_year }}&month={{ next_month }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
                    title="Next month"
                    class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold transition">
                     ›
@@ -170,9 +251,12 @@
                         <!-- Every task for the day renders here - reported directly, wanting the
                              full day visible rather than capped behind a "+N more" - so a busy day
                              simply makes its whole calendar row taller (CSS Grid rows size to their
-                             tallest cell automatically) instead of hiding anything. -->
+                             tallest cell automatically) instead of hiding anything. Tapping the day
+                             NUMBER itself jumps into Day view for that date (added alongside Day
+                             view, since the month grid is still cramped on mobile even uncapped). -->
                         <div class="min-h-[76px] md:min-h-[92px] rounded-xl p-1 border {{ 'border-indigo-300 bg-indigo-50/70' if cell.is_today else 'border-slate-100' }} flex flex-col gap-0.5">
-                            <span class="text-[11px] font-bold shrink-0 {{ 'text-indigo-600' if cell.is_today else 'text-slate-500' }}">{{ cell.day }}</span>
+                            <a href="/calendar?view=day&year={{ view_year }}&month={{ view_month }}&day={{ cell.day }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
+                               class="text-[11px] font-bold shrink-0 {{ 'text-indigo-600' if cell.is_today else 'text-slate-500' }} hover:underline w-fit">{{ cell.day }}</a>
                             {% for t in cell.tasks %}
                             <a href="/?realm_id={{ t.realm_id }}&bucket_id={{ t.bucket_id }}&goto_item={{ t.id }}"
                                onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
@@ -198,6 +282,7 @@
                 </div>
                 {% endif %}
             </div>
+            {% endif %}
         </div>
     </div>
 
@@ -221,6 +306,56 @@
             container.innerHTML = html;
         }
         document.addEventListener('DOMContentLoaded', generateCalSpaceStars);
+    </script>
+
+    <!-- Day view's own complete/incomplete toggle - same fetch()-with-X-Requested-With pattern
+         against /items/toggle-complete/ as Notes' own checklist (see toggleNotesChecklistItem in
+         notes.html and toggle_item_complete in app.py), added directly in response to Day view
+         being requested specifically so tasks could be completed from the calendar, not just
+         linked out to the main app. No page reload - just flips this one row's own
+         checkbox/strikethrough classes once the server confirms the toggle. -->
+    <script>
+        async function toggleCalTaskComplete(button, itemId) {
+            button.disabled = true;
+            try {
+                const res = await fetch('/items/toggle-complete/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'fetch' },
+                    body: 'item_id=' + encodeURIComponent(itemId)
+                });
+                const data = await res.json();
+                if (!res.ok || !data.ok) return;
+                const isCompleted = data.is_completed;
+                if (isCompleted && typeof confetti === 'function') {
+                    const rect = button.getBoundingClientRect();
+                    confetti({
+                        particleCount: 65,
+                        spread: 80,
+                        origin: { x: (rect.left + rect.width / 2) / window.innerWidth, y: (rect.top + rect.height / 2) / window.innerHeight },
+                        colors: ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#3b82f6'],
+                        disableForReducedMotion: true
+                    });
+                }
+                button.title = isCompleted ? 'Mark Incomplete' : 'Mark Complete';
+                button.classList.toggle('bg-emerald-500', isCompleted);
+                button.classList.toggle('border-emerald-500', isCompleted);
+                button.classList.toggle('text-white', isCompleted);
+                button.classList.toggle('font-bold', isCompleted);
+                button.classList.toggle('border-slate-400', !isCompleted);
+                button.classList.toggle('hover:border-emerald-500', !isCompleted);
+                button.classList.toggle('text-transparent', !isCompleted);
+                button.classList.toggle('hover:text-emerald-500/50', !isCompleted);
+                const row = button.closest('[data-row-item-id]');
+                const title = row ? row.querySelector('.cal-task-title') : null;
+                if (title) {
+                    title.classList.toggle('text-slate-400', isCompleted);
+                    title.classList.toggle('line-through', isCompleted);
+                    title.classList.toggle('text-slate-800', !isCompleted);
+                }
+            } finally {
+                button.disabled = false;
+            }
+        }
     </script>
 
     <!-- Hold-to-reorder the Universe strip - identical pattern to notes.html's own (see its

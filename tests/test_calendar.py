@@ -97,4 +97,37 @@ resp_home = A.calendar_page(Req(uid), universe_id=home_id, year=2026, month=9)
 day5b = next(c for w in resp_home.context["weeks"] for c in w if c and c["day"] == 5)
 assert len(day5b["tasks"]) == 1
 
+# --- Day view ---
+# No view param -> defaults to "day" (reported directly: the month grid is "useless on mobile").
+resp_default = A.calendar_page(Req(uid), universe_id=None, year=2026, month=9)
+assert resp_default.context["view"] == "day", resp_default.context["view"]
+
+# No explicit `day` param, viewing the current month -> lands on today (Sep 23, 2026 per the
+# system date this test suite runs under... but be explicit rather than depend on wall-clock time).
+resp_day5 = A.calendar_page(Req(uid), universe_id=None, year=2026, month=9, view="day", day=5)
+assert resp_day5.context["view_day"] == 5
+assert [t["title"] for t in resp_day5.context["day_tasks"]] == ["In-month pending"]
+assert resp_day5.context["day_tasks"][0]["bucket_name"] == "B"
+assert resp_day5.context["day_tasks"][0]["realm_name"] == "R"
+assert resp_day5.context["day_label"] == "Saturday, September 5, 2026", resp_day5.context["day_label"]
+
+# Empty day still returns cleanly, no IndexError.
+resp_day_empty = A.calendar_page(Req(uid), universe_id=None, year=2026, month=9, view="day", day=10)
+assert resp_day_empty.context["day_tasks"] == []
+
+# Day nav wraps across month boundaries.
+resp_day1 = A.calendar_page(Req(uid), universe_id=None, year=2026, month=9, view="day", day=1)
+assert (resp_day1.context["prev_day_year"], resp_day1.context["prev_day_month"], resp_day1.context["prev_day_day"]) == (2026, 8, 31)
+day30 = A.calendar_page(Req(uid), universe_id=None, year=2026, month=9, view="day", day=30)
+assert (day30.context["next_day_year"], day30.context["next_day_month"], day30.context["next_day_day"]) == (2026, 10, 1)
+
+# An out-of-range `day` (e.g. carried over from a 31-day month's URL into a 30-day one) clamps
+# rather than raising.
+resp_clamped = A.calendar_page(Req(uid), universe_id=None, year=2026, month=9, view="day", day=31)
+assert resp_clamped.context["view_day"] == 30
+
+# Explicit view="month" still works and doesn't quietly get overridden back to "day".
+resp_month = A.calendar_page(Req(uid), universe_id=None, year=2026, month=9, view="month")
+assert resp_month.context["view"] == "month"
+
 print("ALL TESTS PASSED")
