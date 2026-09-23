@@ -9803,38 +9803,14 @@
                     spaceCtx.restore();
                 });
 
-                const selT = lane._selectedTask;
+                // A selected task used to also get its title redrawn a second time in a bordered box
+                // below the hub's own name pill - reported directly as "overkill" now that the HUD
+                // card above the hub already shows that exact same title. Removed outright rather
+                // than just hidden; lane._selTextRect (its old tap target, aliasing straight to the
+                // same mvOpenHud the dot/label already open) is left unset so the two hit-test
+                // branches checking for it below simply never match, same as if this task had no
+                // selection box at all.
                 lane._selTextRect = null;
-                if (selT && (lane._fw || 0) > 0.05 && lane._namePillRect) {
-                    const kk = lane._tk || 1;
-                    const pr = lane._namePillRect;
-                    spaceCtx.save();
-                    spaceCtx.globalAlpha = mvClamp(((lane._fw || 0) - 0.05) / 0.5, 0, 1);
-                    spaceCtx.translate(lane.x, pr.y + pr.h + 46 * kk);
-                    spaceCtx.scale(kk, kk);
-                    spaceCtx.textAlign = 'center';
-                    spaceCtx.textBaseline = 'middle';
-                    spaceCtx.font = 'bold 46px sans-serif';
-                    const maxW = Math.min(900, ((window.innerWidth / cameraZoom) * 0.84) / kk);
-                    const selLines = wrapTextToWidth(spaceCtx, selT.title, maxW, 3);
-                    const selWidest = Math.max(...selLines.map(l => spaceCtx.measureText(l).width));
-                    const selLineH = 56;
-                    const selW = selWidest + 48;
-                    const selH = selLines.length * selLineH + 24;
-                    spaceCtx.fillStyle = 'rgba(15, 23, 42, 0.94)';
-                    spaceCtx.strokeStyle = '#818cf8';
-                    spaceCtx.lineWidth = 2;
-                    spaceCtx.beginPath();
-                    spaceCtx.roundRect(-selW / 2, 0, selW, selH, 20);
-                    spaceCtx.fill();
-                    spaceCtx.stroke();
-                    spaceCtx.fillStyle = '#ffffff';
-                    selLines.forEach((line, li) => {
-                        spaceCtx.fillText(line, 0, 12 + selLineH / 2 + li * selLineH);
-                    });
-                    spaceCtx.restore();
-                    lane._selTextRect = { x: lane.x - (selW * kk) / 2, y: pr.y + pr.h + 46 * kk, w: selW * kk, h: selH * kk };
-                }
             });
 
             // Same dashed-emerald "+" the single-bucket linear view draws for its own midAddButtons
