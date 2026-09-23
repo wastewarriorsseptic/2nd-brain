@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!-- Same maximum-scale=1.0, user-scalable=no as notes.html's own head - this page shares the
+         exact same fixed-position-geometry-assumes-scale-1.0 layout hazards (the safe-area probe,
+         the Universe strip) a stuck pinch-zoom broke there. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#020617">
+    <title>{{ (selected_universe.name ~ ' ' if selected_universe else '') }}Calendar - TaskMonster</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <style>
+        /* Same floating launcher cluster as index.html/notes.html - see notes.html's own head
+           comment for why this is a static, page-local copy rather than shared code: no AI chat
+           panel to toggle here, just plain links back into the main app. */
+        @keyframes ai-chat-launcher-float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-6px); }
+        }
+        @keyframes ai-chat-quick-task-float-breathe {
+            0%, 100% { transform: translateY(0) scale(1); }
+            50% { transform: translateY(-3px) scale(1.06); }
+        }
+        @keyframes ai-chat-plus-repel-breathe {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(7px, -3px) scale(1.06); }
+        }
+        @keyframes ai-chat-timeline-repel-breathe {
+            0%, 100% { transform: translateX(-50%) translateY(0) scale(1); }
+            50% { transform: translateX(-50%) translateY(4px) scale(1.06); }
+        }
+        #ai-chat-launcher { animation: ai-chat-quick-task-float-breathe 3.2s ease-in-out infinite; }
+        #ai-chat-quick-task-btn { animation: ai-chat-plus-repel-breathe 3.2s ease-in-out infinite; }
+        #multiverse-timeline-quick-btn { animation: ai-chat-timeline-repel-breathe 3.2s ease-in-out infinite; }
+        #notes-quick-btn { animation: ai-chat-launcher-float 3.2s ease-in-out infinite; }
+        #events-quick-btn { animation: ai-chat-launcher-float 3.2s ease-in-out infinite; animation-delay: -1.6s; }
+        #ai-chat-launcher:hover,
+        #ai-chat-quick-task-btn:hover,
+        #multiverse-timeline-quick-btn:hover,
+        #notes-quick-btn:hover,
+        #events-quick-btn:hover {
+            animation-play-state: paused;
+        }
+        /* Hold-to-reorder wobble for the Universe strip - identical to notes.html's own. */
+        @keyframes universe-card-wobble {
+            0%, 100% { transform: rotate(-2deg); }
+            50% { transform: rotate(2deg); }
+        }
+        .universe-card-wobbling {
+            animation: universe-card-wobble 0.22s ease-in-out infinite;
+        }
+        #cal-universe-strip, #cal-universe-strip * {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        /* Same Space View-echoing starfield as notes.html's own - this page's dark background is
+           meant to read as the same surface, not a different shade. */
+        @keyframes cal-space-star-twinkle {
+            0%, 100% { opacity: var(--star-min-o, 0.12); }
+            50% { opacity: var(--star-max-o, 0.34); }
+        }
+        .cal-space-star {
+            position: absolute;
+            border-radius: 9999px;
+            animation-name: cal-space-star-twinkle;
+            animation-timing-function: ease-in-out;
+            animation-iteration-count: infinite;
+        }
+    </style>
+</head>
+<!-- bg-slate-950, matching Notes/Space View exactly - see notes.html's own comment for the
+     reproducible shade-mismatch this is standing in for. -->
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+    <div id="cal-safe-area-probe" style="position: fixed; top: 0; left: 0; height: 0; padding-top: env(safe-area-inset-top); pointer-events: none; visibility: hidden;"></div>
+    <div id="cal-space-stars" class="fixed inset-0 pointer-events-none overflow-hidden"></div>
+    <div class="relative z-10 max-w-5xl mx-auto p-4 md:p-6">
+        <!-- Same absolutely-positioned "✓ Done" pattern as notes.html's own reorder button - see
+             its comment for why this is floated out of document flow rather than reserving a row. -->
+        <button type="button" id="cal-universe-reorder-done-btn" onclick="exitCalUniverseReorderMode()"
+                class="invisible absolute top-0 right-0 z-20 px-3.5 py-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-emerald-400/30"
+                style="top: env(safe-area-inset-top, 0px);">
+            ✓ Done
+        </button>
+
+        <!-- Same compact, always-minimized horizontal Universe strip as Notes - browsing this
+             calendar by Universe (or "All") uses the exact same picker, just pointed at /calendar
+             instead of /notes, so the two pages feel like the same app rather than a bolted-on
+             extra. -->
+        <div id="cal-universe-strip" class="flex items-start gap-3 overflow-x-auto pb-1 mb-4 -mx-1 px-1"
+             style="padding-top: calc(env(safe-area-inset-top, 0px) + 0.375rem);">
+            <a href="/calendar" class="shrink-0 flex flex-col items-center gap-1 w-14">
+                <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if not selected_universe_id else 'border-slate-700 bg-slate-900 hover:border-indigo-500/60' }}">
+                    ✨
+                </div>
+                <span class="text-[10px] font-bold text-center truncate w-full {{ 'text-white' if not selected_universe_id else 'text-slate-400' }}">All</span>
+            </a>
+            <div id="cal-universe-picker" class="flex items-start gap-3">
+                {% for u in universes %}
+                <a href="/calendar?universe_id={{ u.id }}" class="cal-universe-card shrink-0 flex flex-col items-center gap-1 w-14" data-universe-id="{{ u.id }}">
+                    <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if selected_universe_id == u.id else 'border-slate-700 bg-slate-900 hover:border-indigo-500/60' }}">
+                        {{ u.icon or '😈' }}
+                    </div>
+                    <span class="text-[10px] font-bold text-center truncate w-full {{ 'text-white' if selected_universe_id == u.id else 'text-slate-400' }}">{{ u.name }}</span>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Full white paper surface, same as Notes' own checklist card - a month grid instead of
+             a checklist, but the same "this Universe's own note" framing. -->
+        <div class="bg-white rounded-3xl p-4 md:p-6 flex flex-col shadow-2xl" style="min-height: calc(100vh - 230px);">
+            <div class="flex items-center justify-between gap-2 mb-3 shrink-0">
+                <h2 class="text-lg font-extrabold text-slate-900 flex items-center gap-2 min-w-0 truncate">
+                    {% if selected_universe %}{{ selected_universe.icon or '😈' }} {{ selected_universe.name }}{% else %}✨ All{% endif %}
+                </h2>
+                {% if selected_universe_id %}
+                <!-- Same cross-Universe "+" flow the launcher cluster's own quick-task badge and
+                     Multiverse Timeline lanes already use (open_add_task=1 - see the
+                     DOMContentLoaded handler in index.html) rather than a second, calendar-specific
+                     task-creation UI - one real "add a task" surface, reused everywhere. -->
+                <a href="/?universe_id={{ selected_universe_id }}&open_add_task=1"
+                   class="w-9 h-9 shrink-0 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xl font-extrabold flex items-center justify-center shadow-lg shadow-indigo-600/30 transition-all">
+                    +
+                </a>
+                {% endif %}
+            </div>
+
+            <!-- Month navigation - ‹ Month Year › plus a "Today" pill that only shows once you've
+                 actually navigated away from the current month (no point offering to jump
+                 "back" to where you already are). universe_id is carried through every link here
+                 so switching months never drops whichever Universe scope was selected. -->
+            <div class="flex items-center justify-between gap-2 mb-3 shrink-0">
+                <a href="/calendar?year={{ prev_year }}&month={{ prev_month }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
+                   title="Previous month"
+                   class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold transition">
+                    ‹
+                </a>
+                <div class="flex items-center gap-2 min-w-0">
+                    <span class="text-base font-extrabold text-slate-900 truncate">{{ month_label }}</span>
+                    {% if not is_current_month %}
+                    <a href="/calendar{{ '?universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
+                       class="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-200 rounded-full px-2 py-0.5 whitespace-nowrap">
+                        Today
+                    </a>
+                    {% endif %}
+                </div>
+                <a href="/calendar?year={{ next_year }}&month={{ next_month }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
+                   title="Next month"
+                   class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold transition">
+                    ›
+                </a>
+            </div>
+
+            <!-- Weekday header row, Sunday-first (matches every other date on this site). -->
+            <div class="grid grid-cols-7 gap-1 mb-1 shrink-0">
+                {% for wd in ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] %}
+                <div class="text-center text-[10px] font-bold text-slate-400 uppercase tracking-wide py-1">{{ wd }}</div>
+                {% endfor %}
+            </div>
+
+            <!-- pb-32 - same reasoning as Notes' own checklist: clears the floating launcher
+                 cluster fixed over the bottom of the screen regardless of scroll position. -->
+            <div class="flex-1 overflow-y-auto pb-32">
+                <div class="grid grid-cols-7 gap-1">
+                    {% for week in weeks %}
+                        {% for cell in week %}
+                        {% if cell %}
+                        <div class="min-h-[76px] md:min-h-[92px] rounded-xl p-1 border {{ 'border-indigo-300 bg-indigo-50/70' if cell.is_today else 'border-slate-100' }} flex flex-col gap-0.5 overflow-hidden">
+                            <span class="text-[11px] font-bold shrink-0 {{ 'text-indigo-600' if cell.is_today else 'text-slate-500' }}">{{ cell.day }}</span>
+                            {% for t in cell.tasks[:3] %}
+                            <a href="/?realm_id={{ t.realm_id }}&bucket_id={{ t.bucket_id }}&goto_item={{ t.id }}"
+                               onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
+                               title="{{ t.title }}{{ ' - ' ~ t.due_time if t.due_time else '' }}"
+                               class="block text-left text-[10px] leading-tight rounded-md px-1 py-0.5 truncate transition {% if t.is_completed %}bg-slate-100 text-slate-400 line-through{% else %}bg-indigo-50 text-indigo-700 hover:bg-indigo-100{% endif %}">
+                                {% if not selected_universe_id %}{{ t.universe_icon }} {% endif %}{{ t.title }}
+                            </a>
+                            {% endfor %}
+                            {% if cell.tasks|length > 3 %}
+                            <span class="text-[9px] font-bold text-slate-400 px-1">+{{ cell.tasks|length - 3 }} more</span>
+                            {% endif %}
+                        </div>
+                        {% else %}
+                        <div class="min-h-[76px] md:min-h-[92px]"></div>
+                        {% endif %}
+                        {% endfor %}
+                    {% endfor %}
+                </div>
+
+                {% set any_task = namespace(found=false) %}
+                {% for week in weeks %}{% for cell in week %}{% if cell and cell.tasks %}{% set any_task.found = true %}{% endif %}{% endfor %}{% endfor %}
+                {% if not any_task.found %}
+                <div class="flex flex-col items-center justify-center text-center gap-2 py-14">
+                    <div class="text-4xl">📅</div>
+                    <p class="text-slate-400 text-sm">Nothing due{% if selected_universe %} in {{ selected_universe.name }}{% endif %} this month.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function generateCalSpaceStars() {
+            const container = document.getElementById('cal-space-stars');
+            if (!container) return;
+            const STAR_COUNT = 14;
+            let html = '';
+            for (let i = 0; i < STAR_COUNT; i++) {
+                const size = (1 + Math.random() * 1.4).toFixed(2);
+                const maxOVal = 0.25 + Math.random() * 0.2;
+                const minO = (maxOVal * (0.6 + Math.random() * 0.15)).toFixed(2);
+                const maxO = maxOVal.toFixed(2);
+                const left = (Math.random() * 100).toFixed(2);
+                const top = (Math.random() * 100).toFixed(2);
+                const delay = (Math.random() * 6).toFixed(2);
+                const duration = (8 + Math.random() * 8).toFixed(2);
+                html += `<div class="cal-space-star" style="left:${left}%; top:${top}%; width:${size}px; height:${size}px; background: rgba(226, 232, 240, ${maxO}); animation-delay: ${delay}s; animation-duration: ${duration}s; --star-min-o: ${minO}; --star-max-o: ${maxO};"></div>`;
+            }
+            container.innerHTML = html;
+        }
+        document.addEventListener('DOMContentLoaded', generateCalSpaceStars);
+    </script>
+
+    <!-- Hold-to-reorder the Universe strip - identical pattern to notes.html's own (see its
+         comment for the full rationale), writing to the same /universes/reorder/ endpoint so a
+         reorder from either page shows up everywhere. -->
+    <script>
+        let calUniverseReorderMode = false;
+        let calUniverseSortable = null;
+        let calUniverseLongPressTimer = null;
+        let calUniverseLongPressStartPos = null;
+
+        function setCalUniverseStripTopPadding(reordering) {
+            const strip = document.getElementById('cal-universe-strip');
+            if (!strip) return;
+            strip.style.paddingTop = reordering
+                ? 'calc(env(safe-area-inset-top, 0px) + 2rem)'
+                : 'calc(env(safe-area-inset-top, 0px) + 0.375rem)';
+        }
+
+        function enterCalUniverseReorderMode() {
+            if (calUniverseReorderMode) return;
+            calUniverseReorderMode = true;
+            const picker = document.getElementById('cal-universe-picker');
+            if (!picker) return;
+            picker.querySelectorAll('.cal-universe-card').forEach(card => card.classList.add('universe-card-wobbling'));
+            const doneBtn = document.getElementById('cal-universe-reorder-done-btn');
+            if (doneBtn) doneBtn.classList.remove('invisible');
+            setCalUniverseStripTopPadding(true);
+            if (calUniverseSortable) calUniverseSortable.option('disabled', false);
+        }
+
+        function exitCalUniverseReorderMode() {
+            calUniverseReorderMode = false;
+            const picker = document.getElementById('cal-universe-picker');
+            if (picker) picker.querySelectorAll('.universe-card-wobbling').forEach(el => el.classList.remove('universe-card-wobbling'));
+            const doneBtn = document.getElementById('cal-universe-reorder-done-btn');
+            if (doneBtn) doneBtn.classList.add('invisible');
+            setCalUniverseStripTopPadding(false);
+            if (calUniverseSortable) calUniverseSortable.option('disabled', true);
+        }
+
+        function initCalUniverseSortable() {
+            const picker = document.getElementById('cal-universe-picker');
+            if (!picker || calUniverseSortable || typeof Sortable === 'undefined') return;
+            calUniverseSortable = new Sortable(picker, {
+                animation: 150,
+                disabled: true,
+                delay: 150,
+                delayOnTouchOnly: true,
+                onEnd: () => {
+                    if (document.activeElement && document.activeElement.classList.contains('cal-universe-card')) {
+                        document.activeElement.blur();
+                    }
+                    const order = Array.from(picker.querySelectorAll('.cal-universe-card'))
+                        .map(el => parseInt(el.getAttribute('data-universe-id')))
+                        .filter(Boolean);
+                    fetch('/universes/reorder/', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(order)
+                    });
+                }
+            });
+        }
+
+        function setupCalUniverseLongPress() {
+            const picker = document.getElementById('cal-universe-picker');
+            if (!picker) return;
+            initCalUniverseSortable();
+
+            picker.querySelectorAll('.cal-universe-card').forEach(card => {
+                card.addEventListener('pointerdown', (e) => {
+                    if (e.pointerType === 'mouse' && e.button !== 0) return;
+                    calUniverseLongPressStartPos = { x: e.clientX, y: e.clientY };
+                    clearTimeout(calUniverseLongPressTimer);
+                    calUniverseLongPressTimer = setTimeout(enterCalUniverseReorderMode, 500);
+                });
+                const cancelPress = () => clearTimeout(calUniverseLongPressTimer);
+                card.addEventListener('pointerup', cancelPress);
+                card.addEventListener('pointerleave', cancelPress);
+                card.addEventListener('pointercancel', cancelPress);
+                card.addEventListener('pointermove', (e) => {
+                    if (!calUniverseLongPressStartPos) return;
+                    const dist = Math.hypot(e.clientX - calUniverseLongPressStartPos.x, e.clientY - calUniverseLongPressStartPos.y);
+                    if (dist > 10) clearTimeout(calUniverseLongPressTimer);
+                });
+                card.addEventListener('click', (e) => {
+                    if (calUniverseReorderMode) e.preventDefault();
+                });
+            });
+
+            document.addEventListener('pointerdown', (e) => {
+                if (e.target.closest('.cal-universe-card') || e.target.closest('#cal-universe-reorder-done-btn')) return;
+                if (calUniverseReorderMode) exitCalUniverseReorderMode();
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', setupCalUniverseLongPress);
+    </script>
+
+    <!-- Same floating launcher cluster as the main app. -->
+    <div id="ai-chat-launcher-wrapper" class="fixed bottom-[71px] right-[50px] z-[70] flex items-center gap-2">
+        <div class="relative">
+            <a href="/" id="ai-chat-launcher" title="Back to TaskMonster"
+               class="relative -top-1 w-14 h-14 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border border-indigo-400/30 shadow-2xl flex items-center justify-center text-2xl transition">
+                😈
+            </a>
+            <a href="/" id="ai-chat-quick-task-btn" title="Add a new task"
+               class="absolute -bottom-6 -right-10 w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 border border-emerald-300/40 text-white text-2xl font-extrabold flex items-center justify-center shadow-lg transition">
+                +
+            </a>
+            <a href="/?open_multiverse_timeline=1" id="multiverse-timeline-quick-btn" title="Multiverse Timeline"
+               class="absolute -bottom-11 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full bg-amber-500 hover:bg-amber-400 border border-amber-300/40 text-white text-xl flex items-center justify-center shadow-lg transition">
+                🏡
+            </a>
+        </div>
+    </div>
+
+    <!-- Notes + Events + Calendar - Calendar is the quiet "you are here" marker here (not a link
+         to itself), same convention Notes uses on its own page. -->
+    <div class="fixed bottom-[40px] left-[16px] z-[70] flex items-center gap-2">
+        <a href="/notes" id="notes-quick-btn" title="Notes"
+           class="w-14 h-14 rounded-full bg-yellow-500 hover:bg-yellow-400 border border-yellow-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
+            📝
+        </a>
+        <a href="{{ events_universe_href }}" id="events-quick-btn" title="Events"
+           onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
+           class="w-14 h-14 rounded-full bg-fuchsia-500 hover:bg-fuchsia-400 border border-fuchsia-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
+            🎉
+        </a>
+        <div id="calendar-quick-btn" title="Calendar"
+             class="w-14 h-14 rounded-full bg-sky-500 border border-sky-300/40 shadow-2xl flex items-center justify-center text-2xl">
+            📅
+        </div>
+    </div>
+</body>
+</html>

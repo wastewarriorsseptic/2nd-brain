@@ -11,7 +11,7 @@ import difflib
 import httpx
 import iap
 from urllib.parse import quote, urlparse
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from calendar import monthrange
 from typing import Optional, List
 from zoneinfo import ZoneInfo  # Built-in IANA timezone support
@@ -5495,6 +5495,122 @@ def delete_note(request: Request, note_id: int):
             session.commit()
 
     return RedirectResponse(url="/notes", status_code=303)
+
+@app.get("/calendar", response_class=HTMLResponse)
+def calendar_page(request: Request, universe_id: Optional[int] = None, year: Optional[int] = None, month: Optional[int] = None):
+    """A month-grid view of every due-dated task, browsed by Universe via the same swipable strip
+    Notes uses - reported directly, wanting a real calendar alongside the checklist-style Notes
+    page rather than folded into it. Unlike Notes (which only ever shows STARRED tasks), this
+    pulls every task due in the displayed month, matching the same "every Task/Event-kind
+    Universe the user owns" scope the Multiverse Timeline's own cross-Universe task list already
+    uses (see multiverse_tasks in dashboard()) - a Contact-kind Universe naturally contributes
+    nothing here since People aren't due-dated. Completed tasks stay visible (struck through)
+    rather than disappearing, so the grid also reads as "what actually happened" for days already
+    past, not just what's upcoming."""
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+
+        # Same "every owned Universe, any kind" strip Notes shows - a Contact-kind Universe is a
+        # valid thing to pick here, it just always renders an empty month (no due-dated Items to
+        # find), same as it would on Notes' own checklist.
+        universes = session.exec(
+            select(Universe).where(Universe.user_id == user.id).order_by(Universe.sort_order)
+        ).all()
+        universe_by_id = {u.id: u for u in universes}
+        selected_universe = universe_by_id.get(universe_id) if universe_id else None
+
+        user_today = get_user_today_date(user.timezone or "UTC")
+
+        view_year = year or user_today.year
+        view_month = month or user_today.month
+        # Normalize an out-of-range month from manual prev/next URL construction (13 -> next
+        # January, 0 -> previous December) rather than letting date() below raise.
+        view_year += (view_month - 1) // 12
+        view_month = ((view_month - 1) % 12) + 1
+
+        days_in_month = monthrange(view_year, view_month)[1]
+        month_start = date(view_year, view_month, 1)
+        next_month_start = date(view_year + 1, 1, 1) if view_month == 12 else date(view_year, view_month + 1, 1)
+        prev_year, prev_month = (view_year - 1, 12) if view_month == 1 else (view_year, view_month - 1)
+        next_year, next_month = (view_year + 1, 1) if view_month == 12 else (view_year, view_month + 1)
+
+        if selected_universe:
+            scope_universe_ids = {selected_universe.id} if selected_universe.kind in ("task", "event") else set()
+        else:
+            scope_universe_ids = {u.id for u in universes if u.kind in ("task", "event")}
+
+        tasks_by_day = {d: [] for d in range(1, days_in_month + 1)}
+        if scope_universe_ids:
+            realms = session.exec(
+                select(Realm).where(Realm.user_id == user.id, Realm.universe_id.in_(scope_universe_ids))
+            ).all()
+            realm_by_id = {r.id: r for r in realms}
+            realm_ids = list(realm_by_id.keys())
+            bucket_by_id = {}
+            if realm_ids:
+                bucket_by_id = {b.id: b for b in session.exec(select(Bucket).where(Bucket.realm_id.in_(realm_ids))).all()}
+            if bucket_by_id:
+                month_items = session.exec(
+                    select(Item).where(
+                        Item.bucket_id.in_(list(bucket_by_id.keys())),
+                        Item.due_date >= datetime(month_start.year, month_start.month, month_start.day),
+                        Item.due_date < datetime(next_month_start.year, next_month_start.month, next_month_start.day),
+                    ).order_by(Item.due_date)
+                ).all()
+                for it in month_items:
+                    b = bucket_by_id.get(it.bucket_id)
+                    r = realm_by_id.get(b.realm_id) if b else None
+                    u = universe_by_id.get(r.universe_id) if r else None
+                    due_time = it.due_date.strftime("%I:%M %p").lstrip("0") if it.due_date.strftime("%H:%M") != "09:00" else ""
+                    tasks_by_day[it.due_date.day].append({
+                        "id": it.id,
+                        "title": it.title,
+                        "is_completed": bool(it.is_completed),
+                        "due_time": due_time,
+                        "realm_id": b.realm_id if b else None,
+                        "bucket_id": it.bucket_id,
+                        "universe_icon": (u.icon if u else "") or "😈",
+                        "universe_name": u.name if u else "",
+                    })
+
+        # Sunday-first grid (matches the Daily Digest / rest of the app's own date formatting,
+        # which is US-conventioned throughout) - leading/trailing blanks pad the first and last
+        # week out to a full 7 columns so every row lines up.
+        first_weekday = (date(view_year, view_month, 1).weekday() + 1) % 7  # Mon=0..Sun=6 -> Sun=0..Sat=6
+        cells = [None] * first_weekday
+        for d in range(1, days_in_month + 1):
+            cells.append({
+                "day": d,
+                "is_today": (view_year == user_today.year and view_month == user_today.month and d == user_today.day),
+                "tasks": tasks_by_day[d],
+            })
+        while len(cells) % 7 != 0:
+            cells.append(None)
+        weeks = [cells[i:i + 7] for i in range(0, len(cells), 7)]
+
+        return templates.TemplateResponse(
+            request=request,
+            name="calendar.html",
+            context={
+                "user": user,
+                "universes": universes,
+                "selected_universe_id": universe_id,
+                "selected_universe": selected_universe,
+                "events_universe_href": get_events_universe_href(session, user.id),
+                "weeks": weeks,
+                "month_label": date(view_year, view_month, 1).strftime("%B %Y"),
+                "view_year": view_year,
+                "view_month": view_month,
+                "prev_year": prev_year,
+                "prev_month": prev_month,
+                "next_year": next_year,
+                "next_month": next_month,
+                "is_current_month": (view_year == user_today.year and view_month == user_today.month),
+                "gemini_enabled": GEMINI_ENABLED,
+            }
+        )
 
 # --- AI Chat Assistant (Gemini) ---
 # Task-focused v1: the assistant can create/update/find/navigate-to tasks and answer questions
