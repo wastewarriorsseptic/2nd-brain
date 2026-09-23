@@ -9699,13 +9699,37 @@
                     const tPillHeight = (lines.length * lineHeight) + (isActiveSwipeNode ? 14 : 10);
                     const tPillY = rLocal + (isActiveSwipeNode ? 12 : 8);
 
+                    // Nothing below this point clamps the pill to the screen - a node near the left/
+                    // right edge of the camera's current view (the normal case for the oldest/newest
+                    // task in a lane, exactly the ones scrolling/panning is meant to reveal) draws a
+                    // pill that's partly or entirely off-canvas, so its title is invisible even though
+                    // the dot itself is on-screen. Reported directly with a screenshot: the
+                    // "Yesterday" node showed its date but no title snippet at all. task.x/task.y here
+                    // are WORLD coordinates and this whole block runs inside the camera's own
+                    // translate(cameraOffset)+scale(cameraZoom) (see renderSpaceFrameInner), so the
+                    // pill's actual on-screen center is cameraOffset + cameraZoom*task.x, and each
+                    // local unit is cameraZoom*tTk screen pixels - shift the pill's local x (and the
+                    // hit-test rect / text draws that must match it) just enough to keep it fully
+                    // within the viewport with a small margin, same idea as clamping any tooltip to
+                    // its container.
+                    const labelEdgeMargin = 16;
+                    const labelEffScale = cameraZoom * tTk;
+                    const labelScreenCenterX = cameraOffset.x + cameraZoom * task.x;
+                    const labelScreenHalfWidth = (tWidth / 2) * labelEffScale;
+                    const labelDesiredScreenCenterX = mvClamp(
+                        labelScreenCenterX,
+                        labelEdgeMargin + labelScreenHalfWidth,
+                        window.innerWidth - labelEdgeMargin - labelScreenHalfWidth
+                    );
+                    const labelXOffset = (labelDesiredScreenCenterX - labelScreenCenterX) / labelEffScale;
+
                     // Stashed (in world units) so tapping the label text does exactly what tapping the
                     // dot does - see handleMultiverseStackedClick.
-                    task._labelRect = { x: task.x - (tWidth * tTk) / 2, y: task.y + tPillY * tTk, w: tWidth * tTk, h: tPillHeight * tTk };
+                    task._labelRect = { x: task.x + (labelXOffset - tWidth / 2) * tTk, y: task.y + tPillY * tTk, w: tWidth * tTk, h: tPillHeight * tTk };
 
                     spaceCtx.fillStyle = isActiveSwipeNode ? 'rgba(30, 41, 59, 0.98)' : 'rgba(15, 23, 42, 0.9)';
                     spaceCtx.beginPath();
-                    spaceCtx.roundRect(-tWidth / 2, tPillY, tWidth, tPillHeight, 4);
+                    spaceCtx.roundRect(labelXOffset - tWidth / 2, tPillY, tWidth, tPillHeight, 4);
                     spaceCtx.fill();
                     if (isActiveSwipeNode) {
                         spaceCtx.strokeStyle = '#818cf8';
@@ -9715,7 +9739,7 @@
                     spaceCtx.fillStyle = isActiveSwipeNode ? '#ffffff' : '#e2e8f0';
                     const firstLineY = tPillY + (lineHeight / 2) + (isActiveSwipeNode ? 4 : 3);
                     lines.forEach((line, lineIdx) => {
-                        spaceCtx.fillText(line, 0, firstLineY + (lineIdx * lineHeight));
+                        spaceCtx.fillText(line, labelXOffset, firstLineY + (lineIdx * lineHeight));
                     });
                     spaceCtx.restore();
                     spaceCtx.restore();
