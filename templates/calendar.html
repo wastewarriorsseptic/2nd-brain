@@ -38,11 +38,13 @@
         #multiverse-timeline-quick-btn { animation: ai-chat-timeline-repel-breathe 3.2s ease-in-out infinite; }
         #notes-quick-btn { animation: ai-chat-launcher-float 3.2s ease-in-out infinite; }
         #events-quick-btn { animation: ai-chat-launcher-float 3.2s ease-in-out infinite; animation-delay: -1.6s; }
+        #calendar-quick-btn { animation: ai-chat-launcher-float 3.2s ease-in-out infinite; animation-delay: -0.8s; }
         #ai-chat-launcher:hover,
         #ai-chat-quick-task-btn:hover,
         #multiverse-timeline-quick-btn:hover,
         #notes-quick-btn:hover,
-        #events-quick-btn:hover {
+        #events-quick-btn:hover,
+        #calendar-quick-btn:hover {
             animation-play-state: paused;
         }
         /* Hold-to-reorder wobble for the Universe strip - identical to notes.html's own. */
@@ -248,26 +250,28 @@
                     {% for week in weeks %}
                         {% for cell in week %}
                         {% if cell %}
-                        <!-- Every task for the day renders here - reported directly, wanting the
-                             full day visible rather than capped behind a "+N more" - so a busy day
-                             simply makes its whole calendar row taller (CSS Grid rows size to their
-                             tallest cell automatically) instead of hiding anything. Tapping the day
-                             NUMBER itself jumps into Day view for that date (added alongside Day
-                             view, since the month grid is still cramped on mobile even uncapped). -->
-                        <div class="min-h-[76px] md:min-h-[92px] rounded-xl p-1 border {{ 'border-indigo-300 bg-indigo-50/70' if cell.is_today else 'border-slate-100' }} flex flex-col gap-0.5">
-                            <a href="/calendar?view=day&year={{ view_year }}&month={{ view_month }}&day={{ cell.day }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
-                               class="text-[11px] font-bold shrink-0 {{ 'text-indigo-600' if cell.is_today else 'text-slate-500' }} hover:underline w-fit">{{ cell.day }}</a>
-                            {% for t in cell.tasks %}
-                            <a href="/?realm_id={{ t.realm_id }}&bucket_id={{ t.bucket_id }}&goto_item={{ t.id }}"
-                               onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
-                               title="{{ t.title }}{{ ' - ' ~ t.due_time if t.due_time else '' }}"
-                               class="block text-left text-[10px] leading-tight rounded-md px-1 py-0.5 truncate transition {% if t.is_completed %}bg-slate-100 text-slate-400 line-through{% else %}bg-indigo-50 text-indigo-700 hover:bg-indigo-100{% endif %}">
-                                {% if not selected_universe_id %}{{ t.universe_icon }} {% endif %}{{ t.title }}
-                            </a>
-                            {% endfor %}
-                        </div>
+                        <!-- Glance view, not a task list - reported directly with a screenshot that
+                             real day loads (10-20+ tasks) turned every cell into a wall of
+                             truncated icon pills, stretched some rows past the whole screen and let
+                             the floating launcher buttons (fixed-position) sit on top of buried
+                             tasks. Now that Day view (below/via the toggle) exists as the actual
+                             full-list surface, Month only needs to answer "does this day have stuff,
+                             how much of it is still open" - a fixed-height cell with a pending-count
+                             badge (or a ✓ once everything's done) answers that at a glance, same
+                             convention as Apple/Google Calendar's own month view. The whole cell is
+                             the tap target into that day's full list, not just the day number. -->
+                        {% set pending = cell.tasks | rejectattr('is_completed') | list | length %}
+                        <a href="/calendar?view=day&year={{ view_year }}&month={{ view_month }}&day={{ cell.day }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
+                           class="h-14 md:h-16 rounded-xl p-1.5 border flex flex-col items-center justify-center gap-0.5 transition {{ 'border-indigo-300 bg-indigo-50/70' if cell.is_today else 'border-slate-100 hover:bg-slate-50' }}">
+                            <span class="text-[11px] font-bold {{ 'text-indigo-600' if cell.is_today else 'text-slate-600' }}">{{ cell.day }}</span>
+                            {% if pending > 0 %}
+                            <span class="text-[10px] font-bold text-indigo-600 bg-indigo-100 rounded-full min-w-[1.1rem] px-1 leading-tight py-0.5 text-center">{{ pending }}</span>
+                            {% elif cell.tasks %}
+                            <span class="text-[10px] font-bold text-emerald-600">✓</span>
+                            {% endif %}
+                        </a>
                         {% else %}
-                        <div class="min-h-[76px] md:min-h-[92px]"></div>
+                        <div class="h-14 md:h-16"></div>
                         {% endif %}
                         {% endfor %}
                     {% endfor %}

@@ -261,10 +261,11 @@
         #multiverse-timeline-quick-btn:hover {
             animation-play-state: paused;
         }
-        /* Standalone Notes + Events shortcuts, opposite corner from the main launcher cluster -
-           just a plain idle float each (the shared ai-chat-launcher-float keyframe), not the
-           cluster's own repel-from-devil choreography, since neither is tangent to anything.
-           Events gets its own delay so the pair doesn't bob in perfect unison. */
+        /* Standalone Notes + Events + Calendar shortcuts, opposite corner from the main launcher
+           cluster - just a plain idle float each (the shared ai-chat-launcher-float keyframe), not
+           the cluster's own repel-from-devil choreography, since none of them is tangent to
+           anything. Each gets its own delay so the three don't bob in perfect unison - reported
+           directly that Calendar sat still next to its two floating siblings. */
         #notes-quick-btn {
             animation: ai-chat-launcher-float 3.2s ease-in-out infinite;
         }
@@ -272,8 +273,13 @@
             animation: ai-chat-launcher-float 3.2s ease-in-out infinite;
             animation-delay: -1.6s;
         }
+        #calendar-quick-btn {
+            animation: ai-chat-launcher-float 3.2s ease-in-out infinite;
+            animation-delay: -0.8s;
+        }
         #notes-quick-btn:hover,
-        #events-quick-btn:hover {
+        #events-quick-btn:hover,
+        #calendar-quick-btn:hover {
             animation-play-state: paused;
         }
         /* iOS home-screen-style jiggle while reordering Universe cards (see
