@@ -9637,7 +9637,6 @@
 
                 const resolveSweepTask = (t, prevEdge, sweepsRight) => {
                     t._pillOffset = 0;
-                    t._pillSkip = false;
                     if (lane._selectedTask === t && (lane._fw || 0) > 0.05) {
                         // No title pill is drawn for the selected task (its title lives in the HUD
                         // card above instead - see the draw loop below), but its own DATE label still
@@ -9668,28 +9667,56 @@
                     }
                     const sweepTk = t._tk || laneTk;
                     spaceCtx.font = '40px sans-serif';
-                    const sweepMaxWidth = 380 / Math.max(1, sweepTk / 1.25);
-                    const sweepLines = wrapTextToWidth(spaceCtx, t.title, sweepMaxWidth, (lane._fw || 0) > 0.3 ? 3 : 6);
-                    const sweepWidest = Math.max(...sweepLines.map(l => spaceCtx.measureText(l).width));
-                    const sweepWidth = sweepWidest + 24;
                     const sweepEffScale = cameraZoom * sweepTk;
                     const sweepCenterX = cameraOffset.x + cameraZoom * t.x;
-                    const sweepHalfWidth = (sweepWidth / 2) * sweepEffScale;
-                    let minCenter, maxCenter;
-                    if (sweepsRight) {
-                        minCenter = Math.max(pillScreenMargin + sweepHalfWidth, prevEdge + pillSweepGap + sweepHalfWidth);
-                        maxCenter = window.innerWidth - pillScreenMargin - sweepHalfWidth;
-                    } else {
-                        minCenter = pillScreenMargin + sweepHalfWidth;
-                        maxCenter = Math.min(window.innerWidth - pillScreenMargin - sweepHalfWidth, prevEdge - pillSweepGap - sweepHalfWidth);
+                    const baseLineCap = (lane._fw || 0) > 0.3 ? 3 : 6;
+
+                    // Tries the normal (full) wrap width first, same as before - if there's room, this
+                    // task's pill doesn't move or change shape at all. If not, instead of skipping the
+                    // label outright (an earlier version of this fix did that, and was rejected
+                    // directly, twice: "for the Today it must show" / "have text drop lower instead of
+                    // ...") this narrows the wrap width step by step, allowing a couple more lines each
+                    // time, until a width is found that actually fits the space available on this side
+                    // - a narrower pill needs a smaller shift to land inside its bounds, which also
+                    // keeps it sitting closer to its own node instead of shoved hard against the screen
+                    // edge (reported directly: "the yesterday needs to be centered with node"). Always
+                    // resolves to SOMETHING drawable, even in a pathological case with truly no room
+                    // (forced flush against whichever boundary is closer, at the narrowest width tried)
+                    // rather than looping forever or hiding the label.
+                    let tryWidth = 380 / Math.max(1, sweepTk / 1.25);
+                    const minTryWidth = 90;
+                    let chosenLines = null, chosenTWidth = null, chosenHalfWidth = null, chosenCenter = sweepCenterX;
+                    for (let attempt = 0; attempt < 14; attempt++) {
+                        const tryLineCap = baseLineCap + attempt * 2;
+                        const lines = wrapTextToWidth(spaceCtx, t.title, tryWidth, tryLineCap);
+                        const widest = Math.max(...lines.map(l => spaceCtx.measureText(l).width));
+                        const tWidth = widest + 24;
+                        const halfWidth = (tWidth / 2) * sweepEffScale;
+                        let minCenter, maxCenter;
+                        if (sweepsRight) {
+                            minCenter = Math.max(pillScreenMargin + halfWidth, prevEdge + pillSweepGap + halfWidth);
+                            maxCenter = window.innerWidth - pillScreenMargin - halfWidth;
+                        } else {
+                            minCenter = pillScreenMargin + halfWidth;
+                            maxCenter = Math.min(window.innerWidth - pillScreenMargin - halfWidth, prevEdge - pillSweepGap - halfWidth);
+                        }
+                        chosenLines = lines;
+                        chosenTWidth = tWidth;
+                        chosenHalfWidth = halfWidth;
+                        if (minCenter <= maxCenter) {
+                            chosenCenter = mvClamp(sweepCenterX, minCenter, maxCenter);
+                            break;
+                        }
+                        if (tryWidth <= minTryWidth) {
+                            chosenCenter = sweepsRight ? (prevEdge + pillSweepGap + halfWidth) : (prevEdge - pillSweepGap - halfWidth);
+                            break;
+                        }
+                        tryWidth = Math.max(minTryWidth, tryWidth * 0.82);
                     }
-                    if (minCenter <= maxCenter) {
-                        const sweepDesiredCenter = mvClamp(sweepCenterX, minCenter, maxCenter);
-                        t._pillOffset = (sweepDesiredCenter - sweepCenterX) / sweepEffScale;
-                        return sweepsRight ? sweepDesiredCenter + sweepHalfWidth : sweepDesiredCenter - sweepHalfWidth;
-                    }
-                    t._pillSkip = true;
-                    return prevEdge;
+                    t._pillOffset = (chosenCenter - sweepCenterX) / sweepEffScale;
+                    t._pillLines = chosenLines;
+                    t._pillWidth = chosenTWidth;
+                    return sweepsRight ? chosenCenter + chosenHalfWidth : chosenCenter - chosenHalfWidth;
                 };
 
                 let rightEdge = hubPillScreenRight !== null ? hubPillScreenRight : -Infinity;
@@ -9773,19 +9800,10 @@
                     // above that same pill and was never part of the sweep's own on-screen math, so it
                     // clipped at the screen edge on its own even after the pill itself was already
                     // being kept fully visible. Shifting both by the same amount keeps them visually
-                    // stacked on the same task exactly as before.
-                    //
-                    // Skipped entirely (not just left unshifted) when the sweep found nowhere safe for
-                    // this task's pill either - reported directly with a screenshot: with no title
-                    // pill drawn for a skipped task, its date label alone still drew at its natural,
-                    // completely unshifted position, landing right on top of a NEIGHBORING task's own
-                    // (correctly shifted) date label - "Today" and "Sep 18, 2026" overlapping. A task
-                    // with nowhere safe for its pill has nowhere safe for its (smaller, but still
-                    // real) date label either; both wait for panning to bring it properly into view
-                    // rather than half-showing it into a collision.
-                    if (!task._pillSkip) {
-                        spaceCtx.fillText(dateLabel, task._pillOffset || 0, -rLocal - 30);
-                    }
+                    // stacked on the same task exactly as before. Always drawn now (the sweep always
+                    // resolves SOME on-screen position for every task - see its own comment - so there
+                    // is no more "nowhere safe to go" case left to skip for).
+                    spaceCtx.fillText(dateLabel, task._pillOffset || 0, -rLocal - 30);
                     spaceCtx.restore();
 
                     // The selected task's title is drawn centered below its lane's circle instead (see
@@ -9802,33 +9820,22 @@
                     spaceCtx.textAlign = 'center';
                     spaceCtx.textBaseline = 'middle';
                     spaceCtx.font = isActiveSwipeNode ? 'bold 44px sans-serif' : '40px sans-serif';
-                    // Grown labels wrap to more lines instead of getting wider, so the selected lane's
-                    // titles don't run off the edge of a phone screen.
-                    const maxLabelWidth = 380 / Math.max(1, tTk / 1.25);
                     const lineHeight = isActiveSwipeNode ? 50 : 46;
-                    // The task card carries the full text now, so the focused lane's labels stay short.
-                    const lines = wrapTextToWidth(spaceCtx, task.title, maxLabelWidth, (lane._fw || 0) > 0.3 ? 3 : 6);
-                    const widestLine = Math.max(...lines.map(l => spaceCtx.measureText(l).width));
-                    const tWidth = widestLine + 24;
+                    // Reuses the exact lines/width the sweep pre-pass above already settled on for
+                    // this task (rather than re-wrapping at a fixed width here, which would silently
+                    // throw away any narrowing the sweep did to make it fit) - see that pre-pass for
+                    // the full history: a node near the edge, or once the camera hits its own zoom-out
+                    // floor even an INTERIOR node, could draw a pill partly or entirely off-canvas
+                    // (reported directly: the "Yesterday" node showed its date but no title). Two
+                    // earlier versions of the sweep responded to that by clamping position only, then
+                    // by skipping the label outright when even clamping couldn't make it fit - both
+                    // rejected directly ("for the Today it must show" / "have text drop lower instead
+                    // of ..."). The sweep now narrows the wrap width (more, shorter lines) until
+                    // something fits, so every task always gets a real, visible pill.
+                    const lines = task._pillLines || wrapTextToWidth(spaceCtx, task.title, 380 / Math.max(1, tTk / 1.25), (lane._fw || 0) > 0.3 ? 3 : 6);
+                    const tWidth = task._pillWidth || (Math.max(...lines.map(l => spaceCtx.measureText(l).width)) + 24);
                     const tPillHeight = (lines.length * lineHeight) + (isActiveSwipeNode ? 14 : 10);
                     const tPillY = rLocal + (isActiveSwipeNode ? 12 : 8);
-
-                    // A node near the edge of the camera's current view - or, once the camera hits its
-                    // own zoom-out floor with enough tasks or a long title inflating spacing, even an
-                    // INTERIOR node - draws a pill that's partly or entirely off-canvas, invisible
-                    // even though the dot itself is on-screen (reported directly: the "Yesterday"
-                    // node showed its date but no title). The pre-pass above already resolved every
-                    // task's horizontal shift for this exact lane in one left-to-right sweep, so
-                    // there's nothing left to compute here except reading it back - see that pre-pass
-                    // for the full history of why a per-task, collision-aware sweep replaced two
-                    // narrower attempts (an unconditional full clamp, then an edges-only clamp) that
-                    // each fixed one reported case while breaking another.
-                    if (task._pillSkip) {
-                        task._labelRect = null;
-                        spaceCtx.restore();
-                        spaceCtx.restore();
-                        return;
-                    }
                     const labelXOffset = task._pillOffset || 0;
 
                     // Stashed (in world units) so tapping the label text does exactly what tapping the
