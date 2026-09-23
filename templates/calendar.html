@@ -197,7 +197,12 @@
                             <span class="text-[11px] text-slate-500">{{ t.realm_icon }} {{ t.realm_name }} / {{ t.bucket_name }}</span>
                         </div>
                     </div>
-                    <a href="/?realm_id={{ t.realm_id }}&bucket_id={{ t.bucket_id }}&goto_item={{ t.id }}"
+                    <!-- focus_item=1 - same override index.html's own aiChatTaskUrl already uses
+                         (see its comment / the goto_item pickup listener in index.html): without
+                         it, landing while already inside a Timeline overview silently skips the
+                         drill-down to this exact task, leaving you in "the general area" instead -
+                         reported directly. -->
+                    <a href="/?realm_id={{ t.realm_id }}&bucket_id={{ t.bucket_id }}&goto_item={{ t.id }}&focus_item=1"
                        onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
                        class="shrink-0 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline underline-offset-2 whitespace-nowrap">🎯</a>
                 </div>

@@ -5632,7 +5632,10 @@ def calendar_page(request: Request, universe_id: Optional[int] = None, year: Opt
                 "gemini_enabled": GEMINI_ENABLED,
                 "view": "month" if view == "month" else "day",
                 "view_day": view_day,
-                "day_label": f"{view_date.strftime('%A, %B')} {view_day}, {view_year}",
+                # Abbreviated ("Wed, Sep 23, 2026") - reported directly with a screenshot: the full
+                # "Wednesday, September 23, 2026" got clipped by the day-nav row's own truncate,
+                # squeezed between the two ‹/› circular buttons on a phone-width screen.
+                "day_label": f"{view_date.strftime('%a, %b')} {view_day}, {view_year}",
                 "day_is_today": (view_date == user_today),
                 "day_tasks": day_tasks,
                 "prev_day_year": prev_date.year,

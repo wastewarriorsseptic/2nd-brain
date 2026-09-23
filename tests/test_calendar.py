@@ -109,7 +109,7 @@ assert resp_day5.context["view_day"] == 5
 assert [t["title"] for t in resp_day5.context["day_tasks"]] == ["In-month pending"]
 assert resp_day5.context["day_tasks"][0]["bucket_name"] == "B"
 assert resp_day5.context["day_tasks"][0]["realm_name"] == "R"
-assert resp_day5.context["day_label"] == "Saturday, September 5, 2026", resp_day5.context["day_label"]
+assert resp_day5.context["day_label"] == "Sat, Sep 5, 2026", resp_day5.context["day_label"]
 
 # Empty day still returns cleanly, no IndexError.
 resp_day_empty = A.calendar_page(Req(uid), universe_id=None, year=2026, month=9, view="day", day=10)
