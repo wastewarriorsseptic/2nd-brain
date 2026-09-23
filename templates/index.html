@@ -9604,6 +9604,50 @@
 
             lanes.forEach(lane => {
                 const laneTk = lane._tk || 1;
+
+                // Pre-pass: resolve every task's title-pill horizontal position ONCE per lane,
+                // sweeping left-to-right (lane.tasks is already x-sorted - see buildRealmLanes/
+                // buildMultiverseLanes) so no two labels can ever end up drawn on top of each other.
+                // Earlier attempts at this only special-cased the lane's two EXTREME tasks
+                // (leftmostTaskX/rightmostTaskX), on the assumption the fit-to-screen camera (see
+                // focusRealmTimelineLane) already keeps every interior task comfortably on-screen -
+                // true only when the camera can actually zoom out far enough. A lane with a long
+                // title (which needs much more spacing than the rest) or simply enough tasks hits
+                // the camera's own 0.5 zoom floor, and once that floor is hit an INTERIOR task can be
+                // just as off-screen as either extreme - reported directly, twice, with a screenshot
+                // showing a non-extreme "Today" task with no title at all even after the
+                // extremes-only version of this fix. Sweeping every task, not just the two extremes,
+                // is what actually covers that. A task that's already comfortably on-screen and clear
+                // of its neighbor is left exactly where it naturally is (mvClamp only intervenes when
+                // it truly has to); a task with nowhere safe to go is skipped rather than forced to
+                // overlap.
+                const pillSweepGap = 16;
+                const pillScreenMargin = 16;
+                let pillSweepPrevRightEdge = -Infinity;
+                lane.tasks.forEach(t => {
+                    t._pillOffset = 0;
+                    t._pillSkip = false;
+                    if (lane._selectedTask === t && (lane._fw || 0) > 0.05) return;
+                    const sweepTk = t._tk || laneTk;
+                    spaceCtx.font = '40px sans-serif';
+                    const sweepMaxWidth = 380 / Math.max(1, sweepTk / 1.25);
+                    const sweepLines = wrapTextToWidth(spaceCtx, t.title, sweepMaxWidth, (lane._fw || 0) > 0.3 ? 3 : 6);
+                    const sweepWidest = Math.max(...sweepLines.map(l => spaceCtx.measureText(l).width));
+                    const sweepWidth = sweepWidest + 24;
+                    const sweepEffScale = cameraZoom * sweepTk;
+                    const sweepCenterX = cameraOffset.x + cameraZoom * t.x;
+                    const sweepHalfWidth = (sweepWidth / 2) * sweepEffScale;
+                    const sweepMinCenter = Math.max(pillScreenMargin + sweepHalfWidth, pillSweepPrevRightEdge + pillSweepGap + sweepHalfWidth);
+                    const sweepMaxCenter = window.innerWidth - pillScreenMargin - sweepHalfWidth;
+                    if (sweepMinCenter <= sweepMaxCenter) {
+                        const sweepDesiredCenter = mvClamp(sweepCenterX, sweepMinCenter, sweepMaxCenter);
+                        t._pillOffset = (sweepDesiredCenter - sweepCenterX) / sweepEffScale;
+                        pillSweepPrevRightEdge = sweepDesiredCenter + sweepHalfWidth;
+                    } else {
+                        t._pillSkip = true;
+                    }
+                });
+
                 lane.tasks.forEach(task => {
                     const isActiveSwipeNode = (activeSwipeTaskId && String(task.id) === String(activeSwipeTaskId))
                         || lane._selectedTask === task;
@@ -9699,51 +9743,23 @@
                     const tPillHeight = (lines.length * lineHeight) + (isActiveSwipeNode ? 14 : 10);
                     const tPillY = rLocal + (isActiveSwipeNode ? 12 : 8);
 
-                    // A node near the left/right edge of the camera's current view (the normal case
-                    // for the oldest/newest task in a lane) draws a pill that's partly or entirely
-                    // off-canvas, so its title is invisible even though the dot itself is on-screen -
-                    // reported directly with a screenshot: the "Yesterday" node showed its date but no
-                    // title snippet at all. task.x/task.y here are WORLD coordinates and this whole
-                    // block runs inside the camera's own translate(cameraOffset)+scale(cameraZoom)
-                    // (see renderSpaceFrameInner), so the pill's actual on-screen center is
-                    // cameraOffset + cameraZoom*task.x, and each local unit is cameraZoom*tTk screen
-                    // pixels.
-                    //
-                    // Two earlier attempts at this both dragged an off-screen label the FULL distance
-                    // back to the screen edge, no matter how far off it started - with more than one
-                    // task off/near-edge on the same side (the normal case for a lane with more than
-                    // a couple of entries, exactly what's shown here), a label yanked in from far away
-                    // lands on top of an interior neighbor's own (unclamped, already fine) position,
-                    // stacking into illegible overlapping "ghost text" - reported directly, twice,
-                    // with screenshots. Restricting this to only the single most-overdue/most-upcoming
-                    // task per lane (leftmostTaskX/rightmostTaskX) cut down how many labels could ever
-                    // compete for the edge, but that alone didn't stop THIS one task's own shift from
-                    // being large enough to land on its neighbor - the actual fix is capping how far a
-                    // label is ever allowed to move. A small nudge (a label that's mostly on-screen,
-                    // just clipped by a few dozen px - the original "Yesterday node has no title"
-                    // report) is safe: its neighbors are comfortably further inward already, nowhere
-                    // near where a small nudge lands. A large nudge means the node itself is
-                    // genuinely off-screen, exactly where an interior neighbor is likely to already be
-                    // sitting - so past this cap, the label is left at its natural (possibly clipped
-                    // or fully invisible) position instead of dragged inward at all.
-                    const isEdgeTask = task.x === lane.leftmostTaskX || task.x === lane.rightmostTaskX;
-                    const maxLabelShiftPx = 60;
-                    let labelXOffset = 0;
-                    if (isEdgeTask) {
-                        const labelEdgeMargin = 16;
-                        const labelEffScale = cameraZoom * tTk;
-                        const labelScreenCenterX = cameraOffset.x + cameraZoom * task.x;
-                        const labelScreenHalfWidth = (tWidth / 2) * labelEffScale;
-                        const labelDesiredScreenCenterX = mvClamp(
-                            labelScreenCenterX,
-                            labelEdgeMargin + labelScreenHalfWidth,
-                            window.innerWidth - labelEdgeMargin - labelScreenHalfWidth
-                        );
-                        const labelShiftPx = labelDesiredScreenCenterX - labelScreenCenterX;
-                        if (Math.abs(labelShiftPx) <= maxLabelShiftPx) {
-                            labelXOffset = labelShiftPx / labelEffScale;
-                        }
+                    // A node near the edge of the camera's current view - or, once the camera hits its
+                    // own zoom-out floor with enough tasks or a long title inflating spacing, even an
+                    // INTERIOR node - draws a pill that's partly or entirely off-canvas, invisible
+                    // even though the dot itself is on-screen (reported directly: the "Yesterday"
+                    // node showed its date but no title). The pre-pass above already resolved every
+                    // task's horizontal shift for this exact lane in one left-to-right sweep, so
+                    // there's nothing left to compute here except reading it back - see that pre-pass
+                    // for the full history of why a per-task, collision-aware sweep replaced two
+                    // narrower attempts (an unconditional full clamp, then an edges-only clamp) that
+                    // each fixed one reported case while breaking another.
+                    if (task._pillSkip) {
+                        task._labelRect = null;
+                        spaceCtx.restore();
+                        spaceCtx.restore();
+                        return;
                     }
+                    const labelXOffset = task._pillOffset || 0;
 
                     // Stashed (in world units) so tapping the label text does exactly what tapping the
                     // dot does - see handleMultiverseStackedClick.
