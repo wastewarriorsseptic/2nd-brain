@@ -261,7 +261,7 @@
                              no-reload path (see app.py) - this was purely a matter of using it here
                              too instead of the fallback plain-form behavior. -->
                         <button type="button" onclick="toggleNotesChecklistItem(this, {{ row.item_id }})" ontouchstart="triggerHapticFeedback()" title="{{ 'Mark Incomplete' if row.is_completed else 'Mark Complete' }}"
-                                class="shrink-0 mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center transition {% if row.is_completed %}bg-emerald-500 border-emerald-500 text-white font-bold{% else %}border-slate-400 hover:border-emerald-500 text-transparent hover:text-emerald-500/50{% endif %}">
+                                class="shrink-0 mt-0.5 w-5 h-5 rounded-full border flex items-center justify-center transition {% if row.is_completed %}bg-emerald-500 border-emerald-500 text-white font-bold{% else %}border-slate-400 hover:border-emerald-500 text-transparent hover:text-emerald-500/50{% endif %}">
                             ✓
                         </button>
                         <div class="flex-1 min-w-0">
