@@ -1385,7 +1385,10 @@
                     </div>
                 </div>
 
-                <div>
+                <!-- Centered - requested directly alongside the timeline's own left/right node text
+                     centering, so the card and the node beneath it read as one consistently-centered
+                     unit rather than this block being the one still-left-aligned piece. -->
+                <div class="text-center">
                     <h3 id="hud-task-title" class="text-sm font-bold text-white break-words leading-snug">Task Title</h3>
                     <p id="hud-task-date" class="text-[11px] text-indigo-300 font-mono mt-0.5">📅 Due Date</p>
                     <p id="hud-task-notes" class="hidden text-slate-300 mt-1.5 break-words leading-snug"></p>
@@ -9638,16 +9641,30 @@
                     if (lane._selectedTask === t && (lane._fw || 0) > 0.05) {
                         // No title pill is drawn for the selected task (its title lives in the HUD
                         // card above instead - see the draw loop below), but its own DATE label still
-                        // draws right where its dot naturally sits, unshifted. Reserving a modest
-                        // width around that position (instead of treating it as empty space) stops a
-                        // neighboring task from being swept right on top of it - reported directly
-                        // with a screenshot: "Today" (the selected task's own date label) and
-                        // "Tomorrow" (the next task's, swept in with no knowledge anything was already
-                        // there) overlapping.
+                        // draws above the dot - and, just like any other task's date label, was never
+                        // clamped to the screen at all, so it clipped at the edge exactly like the
+                        // original reported bug whenever the selected task itself sat near the edge
+                        // (reported directly with a screenshot: "Sep 27, 2026" missing its last
+                        // digit). Measures its own actual date text (not the fixed 90-unit guess the
+                        // very first version of this branch used) so both the label's own clamp AND
+                        // the width it reserves against a neighbor (an earlier bug here: a swept-in
+                        // neighbor landing on top of this task's own "Today"/"Tomorrow" label) agree
+                        // on the same real size.
                         const selTk = t._tk || laneTk;
-                        const selHalfWidth = 90 * cameraZoom * selTk;
+                        spaceCtx.font = '36px sans-serif';
+                        const selDateLabel = getRelativeDateLabel(t.dueDate, t.dueDateFormatted);
+                        const selDateWidth = spaceCtx.measureText(selDateLabel).width + 16;
+                        const selEffScale = cameraZoom * selTk;
                         const selCenterX = cameraOffset.x + cameraZoom * t.x;
-                        return sweepsRight ? selCenterX + selHalfWidth : selCenterX - selHalfWidth;
+                        const selHalfWidth = (selDateWidth / 2) * selEffScale;
+                        const selMinCenter = pillScreenMargin + selHalfWidth;
+                        const selMaxCenter = window.innerWidth - pillScreenMargin - selHalfWidth;
+                        let selFinalCenterX = selCenterX;
+                        if (selMinCenter <= selMaxCenter) {
+                            selFinalCenterX = mvClamp(selCenterX, selMinCenter, selMaxCenter);
+                            t._pillOffset = (selFinalCenterX - selCenterX) / selEffScale;
+                        }
+                        return sweepsRight ? selFinalCenterX + selHalfWidth : selFinalCenterX - selHalfWidth;
                     }
                     const sweepTk = t._tk || laneTk;
                     spaceCtx.font = '40px sans-serif';
