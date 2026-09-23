@@ -9605,29 +9605,34 @@
             lanes.forEach(lane => {
                 const laneTk = lane._tk || 1;
 
-                // Pre-pass: resolve every task's title-pill horizontal position ONCE per lane,
-                // sweeping left-to-right (lane.tasks is already x-sorted - see buildRealmLanes/
-                // buildMultiverseLanes) so no two labels can ever end up drawn on top of each other.
-                // Earlier attempts at this only special-cased the lane's two EXTREME tasks
-                // (leftmostTaskX/rightmostTaskX), on the assumption the fit-to-screen camera (see
-                // focusRealmTimelineLane) already keeps every interior task comfortably on-screen -
-                // true only when the camera can actually zoom out far enough. A lane with a long
-                // title (which needs much more spacing than the rest) or simply enough tasks hits
-                // the camera's own 0.5 zoom floor, and once that floor is hit an INTERIOR task can be
-                // just as off-screen as either extreme - reported directly, twice, with a screenshot
-                // showing a non-extreme "Today" task with no title at all even after the
-                // extremes-only version of this fix. Sweeping every task, not just the two extremes,
-                // is what actually covers that. A task that's already comfortably on-screen and clear
-                // of its neighbor is left exactly where it naturally is (mvClamp only intervenes when
-                // it truly has to); a task with nowhere safe to go is skipped rather than forced to
-                // overlap.
+                // Pre-pass: resolve every task's title-pill horizontal position ONCE per lane, so no
+                // two labels (or a label and the hub's own name pill) can ever end up drawn on top of
+                // each other. Earlier attempts at this only special-cased the lane's two EXTREME
+                // tasks, on the assumption the fit-to-screen camera (see focusRealmTimelineLane)
+                // already keeps every interior task comfortably on-screen - true only when the camera
+                // can actually zoom out far enough; a long title or simply enough tasks hits its 0.5
+                // zoom floor, and past that an INTERIOR task can be just as off-screen as either
+                // extreme (reported directly with a screenshot: a non-extreme "Today" task with no
+                // title at all). A single continuous left-to-right sweep across the whole lane fixed
+                // that, but didn't know about the hub's own name pill (lane._namePillRect, drawn in
+                // the pass just above this one, sitting right at the hub's own position in the middle
+                // of that sweep) - a task close to the hub could still land its label on top of the
+                // hub's own name (reported directly with a screenshot: a task's title overlapping the
+                // "All Tasks" hub label). Splitting into two independent sweeps - overdue tasks
+                // walking outward to the LEFT starting from the hub pill's own left edge, upcoming
+                // tasks walking outward to the RIGHT starting from its right edge - reserves that
+                // space from both directions the same way each side already reserves space from its
+                // own neighboring tasks. A task already clear of everything around it doesn't move at
+                // all; one with nowhere safe to go is skipped rather than forced to overlap.
                 const pillSweepGap = 16;
                 const pillScreenMargin = 16;
-                let pillSweepPrevRightEdge = -Infinity;
-                lane.tasks.forEach(t => {
+                const hubPillScreenLeft = lane._namePillRect ? cameraOffset.x + cameraZoom * lane._namePillRect.x : null;
+                const hubPillScreenRight = hubPillScreenLeft !== null ? hubPillScreenLeft + cameraZoom * lane._namePillRect.w : null;
+
+                const resolveSweepTask = (t, prevEdge, sweepsRight) => {
                     t._pillOffset = 0;
                     t._pillSkip = false;
-                    if (lane._selectedTask === t && (lane._fw || 0) > 0.05) return;
+                    if (lane._selectedTask === t && (lane._fw || 0) > 0.05) return prevEdge;
                     const sweepTk = t._tk || laneTk;
                     spaceCtx.font = '40px sans-serif';
                     const sweepMaxWidth = 380 / Math.max(1, sweepTk / 1.25);
@@ -9637,15 +9642,30 @@
                     const sweepEffScale = cameraZoom * sweepTk;
                     const sweepCenterX = cameraOffset.x + cameraZoom * t.x;
                     const sweepHalfWidth = (sweepWidth / 2) * sweepEffScale;
-                    const sweepMinCenter = Math.max(pillScreenMargin + sweepHalfWidth, pillSweepPrevRightEdge + pillSweepGap + sweepHalfWidth);
-                    const sweepMaxCenter = window.innerWidth - pillScreenMargin - sweepHalfWidth;
-                    if (sweepMinCenter <= sweepMaxCenter) {
-                        const sweepDesiredCenter = mvClamp(sweepCenterX, sweepMinCenter, sweepMaxCenter);
-                        t._pillOffset = (sweepDesiredCenter - sweepCenterX) / sweepEffScale;
-                        pillSweepPrevRightEdge = sweepDesiredCenter + sweepHalfWidth;
+                    let minCenter, maxCenter;
+                    if (sweepsRight) {
+                        minCenter = Math.max(pillScreenMargin + sweepHalfWidth, prevEdge + pillSweepGap + sweepHalfWidth);
+                        maxCenter = window.innerWidth - pillScreenMargin - sweepHalfWidth;
                     } else {
-                        t._pillSkip = true;
+                        minCenter = pillScreenMargin + sweepHalfWidth;
+                        maxCenter = Math.min(window.innerWidth - pillScreenMargin - sweepHalfWidth, prevEdge - pillSweepGap - sweepHalfWidth);
                     }
+                    if (minCenter <= maxCenter) {
+                        const sweepDesiredCenter = mvClamp(sweepCenterX, minCenter, maxCenter);
+                        t._pillOffset = (sweepDesiredCenter - sweepCenterX) / sweepEffScale;
+                        return sweepsRight ? sweepDesiredCenter + sweepHalfWidth : sweepDesiredCenter - sweepHalfWidth;
+                    }
+                    t._pillSkip = true;
+                    return prevEdge;
+                };
+
+                let rightEdge = hubPillScreenRight !== null ? hubPillScreenRight : -Infinity;
+                lane.tasks.filter(t => t.x >= lane.x).sort((a, b) => a.x - b.x).forEach(t => {
+                    rightEdge = resolveSweepTask(t, rightEdge, true);
+                });
+                let leftEdge = hubPillScreenLeft !== null ? hubPillScreenLeft : window.innerWidth * 10;
+                lane.tasks.filter(t => t.x < lane.x).sort((a, b) => b.x - a.x).forEach(t => {
+                    leftEdge = resolveSweepTask(t, leftEdge, false);
                 });
 
                 lane.tasks.forEach(task => {
