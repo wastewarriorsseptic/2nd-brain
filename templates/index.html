@@ -206,7 +206,7 @@
         #space-hud-card.mv-focus-hud #hud-task-title { font-size: 1.2rem; line-height: 1.3; }
         #space-hud-card.mv-focus-hud #hud-task-date { font-size: 0.85rem; }
         #space-hud-card.mv-focus-hud #hud-task-notes { font-size: 0.85rem; max-height: 4.5rem; overflow: hidden; }
-        #space-hud-card.mv-focus-hud #hud-checkbox-btn { width: 1.75rem; height: 1.75rem; }
+        #space-hud-card.mv-focus-hud #hud-checkbox-btn { width: 3rem; height: 3rem; font-size: 1.35rem; }
         /* Devil launcher, "+" quick-task badge, and 🌀 Multiverse badge all share the exact same
            timing/easing/duration with no per-element delay, so the three circles still bob and
            pulse as one synced unit - independently staggering them (as the "+" and 🌀 briefly were)
@@ -1363,35 +1363,40 @@
                         <span id="hud-status-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full">
                             Active
                         </span>
+                        <button id="hud-shop-btn" onclick="openAmazonShopFromHud()" title="Shop on Amazon"
+                                class="hidden text-slate-400 hover:text-amber-400 text-sm transition px-1.5 py-0.5 rounded-lg hover:bg-slate-800 shrink-0">
+                            🛒
+                        </button>
+                        <button id="hud-edit-btn" onclick="triggerHudEdit()" title="Edit Task"
+                                class="text-slate-400 hover:text-indigo-400 text-sm transition px-1.5 py-0.5 rounded-lg hover:bg-slate-800 shrink-0">
+                            ✏️
+                        </button>
                         <button onclick="hideHudCard()" class="text-slate-400 hover:text-white text-xs px-1 font-bold">✕</button>
                     </div>
                 </div>
 
-                <div class="flex items-start gap-3">
-                    <form id="hud-complete-form" action="/items/toggle-complete/" method="POST" class="inline shrink-0 mt-0.5" onsubmit="return handleHudCompleteToggle(event, this)" ontouchstart="triggerHapticFeedback()">
+                <div>
+                    <h3 id="hud-task-title" class="text-sm font-bold text-white break-words leading-snug">Task Title</h3>
+                    <p id="hud-task-date" class="text-[11px] text-indigo-300 font-mono mt-0.5">📅 Due Date</p>
+                    <p id="hud-task-notes" class="hidden text-slate-300 mt-1.5 break-words leading-snug"></p>
+                </div>
+
+                <!-- Complete checkbox: its own centered row, directly below the title/date - the
+                     card itself is horizontally centered on screen (see the mv-focus-hud rule
+                     above), and so is the Universe/task node beneath it, so centering this here
+                     puts the button on the exact same vertical line as the node it completes.
+                     Sized to comfortably clear Apple's 44pt minimum tap target (reported directly:
+                     the old 24px version squeezed against the title was easy to miss on mobile). -->
+                <div class="flex justify-center pt-0.5">
+                    <form id="hud-complete-form" action="/items/toggle-complete/" method="POST" onsubmit="return handleHudCompleteToggle(event, this)" ontouchstart="triggerHapticFeedback()">
                         <input type="hidden" name="item_id" id="hud-task-id-input" value="">
                         <button type="submit" id="hud-checkbox-btn"
                                 title="Mark Complete"
-                                class="w-6 h-6 rounded-lg border border-slate-600 hover:border-emerald-400 text-transparent hover:text-emerald-400/50 flex items-center justify-center transition">
+                                class="w-11 h-11 rounded-full border-2 border-slate-600 hover:border-emerald-400 hover:bg-emerald-400/10 text-transparent hover:text-emerald-400 text-lg flex items-center justify-center transition">
                             ✓
                         </button>
                     </form>
-
-                    <div class="flex-1 min-w-0">
-                        <h3 id="hud-task-title" class="text-sm font-bold text-white break-words leading-snug">Task Title</h3>
-                        <p id="hud-task-date" class="text-[11px] text-indigo-300 font-mono mt-0.5">📅 Due Date</p>
-                        <p id="hud-task-notes" class="hidden text-slate-300 mt-1.5 break-words leading-snug"></p>
-                    </div>
-
-                    <button id="hud-shop-btn" onclick="openAmazonShopFromHud()" title="Shop on Amazon"
-                            class="hidden text-slate-400 hover:text-amber-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-800 shrink-0">
-                        🛒
-                    </button>
-
-                    <button id="hud-edit-btn" onclick="triggerHudEdit()" title="Edit Task"
-                            class="text-slate-400 hover:text-indigo-400 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-800 shrink-0">
-                        ✏️
-                    </button>
+                </div>
                 </div>
             </div>
 
