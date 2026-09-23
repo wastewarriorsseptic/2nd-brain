@@ -5498,17 +5498,20 @@ def delete_note(request: Request, note_id: int):
 
 @app.get("/calendar", response_class=HTMLResponse)
 def calendar_page(request: Request, universe_id: Optional[int] = None, year: Optional[int] = None, month: Optional[int] = None, view: str = "day", day: Optional[int] = None):
-    """A month-grid (and, per direct feedback that the month grid is "useless on mobile" once every
-    task per day renders inline, a Day-list) view of every due-dated task, browsed by Universe via
-    the same swipable strip Notes uses. Unlike Notes (which only ever shows STARRED tasks), this
-    pulls every task due in the displayed month, matching the same "every Task/Event-kind
-    Universe the user owns" scope the Multiverse Timeline's own cross-Universe task list already
-    uses (see multiverse_tasks in dashboard()) - a Contact-kind Universe naturally contributes
-    nothing here since People aren't due-dated. Completed tasks stay visible (struck through)
-    rather than disappearing, so the grid/list also reads as "what actually happened" for days
-    already past, not just what's upcoming. `view` defaults to "day" (not "month") specifically
-    because Day is the one that's actually usable on a phone - full task titles plus a real
-    complete checkbox, versus the month grid's necessarily tiny cells."""
+    """Three views (Day/Week/Month) of every due-dated task, browsed by Universe via the same
+    swipable strip Notes uses. Unlike Notes (which only ever shows STARRED tasks), this pulls
+    every task due in the displayed range, matching the same "every Task/Event-kind Universe the
+    user owns" scope the Multiverse Timeline's own cross-Universe task list already uses (see
+    multiverse_tasks in dashboard()) - a Contact-kind Universe naturally contributes nothing here
+    since People aren't due-dated. Completed tasks stay visible (struck through) rather than
+    disappearing, so every view also reads as "what actually happened" for days already past, not
+    just what's upcoming. `view` defaults to "day" (not "month") specifically because Day is the
+    one that's actually usable on a phone - full task titles plus a real complete checkbox, versus
+    Month's necessarily tiny cells (Month only shows a pending-count badge per day, same convention
+    as Apple/Google Calendar - see the "Glance view" comment in calendar.html for why). Week sits
+    between the two: a full week's worth of days, each with its own compact but untruncated task
+    rows - added directly on request, after Day/Month landed, for a "show me the next few days"
+    view neither of those covers well."""
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user:
@@ -5544,13 +5547,16 @@ def calendar_page(request: Request, universe_id: Optional[int] = None, year: Opt
             scope_universe_ids = {u.id for u in universes if u.kind in ("task", "event")}
 
         tasks_by_day = {d: [] for d in range(1, days_in_month + 1)}
+        # Defined here (not just inside the `if scope_universe_ids` below) so Week view's own query
+        # further down - which can straddle into an adjacent month - has them available too.
+        realm_by_id = {}
+        bucket_by_id = {}
         if scope_universe_ids:
             realms = session.exec(
                 select(Realm).where(Realm.user_id == user.id, Realm.universe_id.in_(scope_universe_ids))
             ).all()
             realm_by_id = {r.id: r for r in realms}
             realm_ids = list(realm_by_id.keys())
-            bucket_by_id = {}
             if realm_ids:
                 bucket_by_id = {b.id: b for b in session.exec(select(Bucket).where(Bucket.realm_id.in_(realm_ids))).all()}
             if bucket_by_id:
@@ -5611,6 +5617,55 @@ def calendar_page(request: Request, universe_id: Optional[int] = None, year: Opt
         next_date = view_date + timedelta(days=1)
         day_tasks = tasks_by_day.get(view_day, [])
 
+        # Week view - the Sunday-first week containing view_date. Its own date range can straddle
+        # two different months (e.g. Aug 30 - Sep 5), so it runs its own query against
+        # realm_by_id/bucket_by_id/universe_by_id (already scoped above) instead of reusing
+        # tasks_by_day, which only ever covers the currently displayed MONTH.
+        week_start = view_date - timedelta(days=(view_date.weekday() + 1) % 7)
+        week_end = week_start + timedelta(days=6)
+        week_end_exclusive = week_start + timedelta(days=7)
+        week_tasks_by_date = {week_start + timedelta(days=i): [] for i in range(7)}
+        if bucket_by_id:
+            week_items = session.exec(
+                select(Item).where(
+                    Item.bucket_id.in_(list(bucket_by_id.keys())),
+                    Item.due_date >= datetime(week_start.year, week_start.month, week_start.day),
+                    Item.due_date < datetime(week_end_exclusive.year, week_end_exclusive.month, week_end_exclusive.day),
+                ).order_by(Item.due_date)
+            ).all()
+            for it in week_items:
+                b = bucket_by_id.get(it.bucket_id)
+                r = realm_by_id.get(b.realm_id) if b else None
+                u = universe_by_id.get(r.universe_id) if r else None
+                due_time = it.due_date.strftime("%I:%M %p").lstrip("0") if it.due_date.strftime("%H:%M") != "09:00" else ""
+                week_tasks_by_date[it.due_date.date()].append({
+                    "id": it.id,
+                    "title": it.title,
+                    "is_completed": bool(it.is_completed),
+                    "due_time": due_time,
+                    "realm_id": b.realm_id if b else None,
+                    "bucket_id": it.bucket_id,
+                    "universe_icon": (u.icon if u else "") or "😈",
+                })
+        week_days = []
+        for i in range(7):
+            d = week_start + timedelta(days=i)
+            week_days.append({
+                "year": d.year,
+                "month": d.month,
+                "day": d.day,
+                "weekday_label": d.strftime("%a"),
+                "date_label": f"{d.strftime('%b')} {d.day}",
+                "is_today": (d == user_today),
+                "tasks": week_tasks_by_date[d],
+            })
+        week_prev_date = week_start - timedelta(days=7)
+        week_next_date = week_start + timedelta(days=7)
+        if week_start.month == week_end.month:
+            week_range_label = f"{week_start.strftime('%b')} {week_start.day}–{week_end.day}, {week_end.year}"
+        else:
+            week_range_label = f"{week_start.strftime('%b')} {week_start.day} – {week_end.strftime('%b')} {week_end.day}, {week_end.year}"
+
         return templates.TemplateResponse(
             request=request,
             name="calendar.html",
@@ -5630,8 +5685,17 @@ def calendar_page(request: Request, universe_id: Optional[int] = None, year: Opt
                 "next_month": next_month,
                 "is_current_month": (view_year == user_today.year and view_month == user_today.month),
                 "gemini_enabled": GEMINI_ENABLED,
-                "view": "month" if view == "month" else "day",
+                "view": view if view in ("month", "week") else "day",
                 "view_day": view_day,
+                "week_days": week_days,
+                "week_range_label": week_range_label,
+                "week_is_current": (week_start <= user_today <= week_end),
+                "week_prev_year": week_prev_date.year,
+                "week_prev_month": week_prev_date.month,
+                "week_prev_day": week_prev_date.day,
+                "week_next_year": week_next_date.year,
+                "week_next_month": week_next_date.month,
+                "week_next_day": week_next_date.day,
                 # Abbreviated ("Wed, Sep 23, 2026") - reported directly with a screenshot: the full
                 # "Wednesday, September 23, 2026" got clipped by the day-nav row's own truncate,
                 # squeezed between the two ‹/› circular buttons on a phone-width screen.

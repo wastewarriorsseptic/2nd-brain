@@ -132,24 +132,94 @@
                 {% endif %}
             </div>
 
-            <!-- Day/Month toggle - added directly in response to "its useless on mobile" once every
-                 task per day started rendering inline in the month grid (tiny truncated rows, no
-                 room to actually tap the right one). Day is the default view (see calendar_page in
-                 app.py); Month stays one tap away for a bird's-eye look at the whole month. Each
-                 link carries the OTHER view's own current position (view_year/month/day) so
-                 switching back and forth never loses your place. -->
+            <!-- Day/Week/Month toggle - Day/Month added directly in response to "its useless on
+                 mobile" once every task per day started rendering inline in the month grid (tiny
+                 truncated rows, no room to actually tap the right one); Week added directly after,
+                 for a "show me the next few days" view neither of those covers well. Day is the
+                 default view (see calendar_page in app.py). Each link carries the OTHER views' own
+                 current position (view_year/month/day) so switching back and forth never loses
+                 your place. -->
             <div class="flex items-center gap-1 mb-3 shrink-0 bg-slate-100 rounded-full p-1 w-fit">
                 <a href="/calendar?view=day&year={{ view_year }}&month={{ view_month }}&day={{ view_day }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
-                   class="px-4 py-1.5 rounded-full text-xs font-bold transition {{ 'bg-white text-indigo-600 shadow' if view == 'day' else 'text-slate-500 hover:text-slate-700' }}">
+                   class="px-3.5 py-1.5 rounded-full text-xs font-bold transition {{ 'bg-white text-indigo-600 shadow' if view == 'day' else 'text-slate-500 hover:text-slate-700' }}">
                     Day
                 </a>
+                <a href="/calendar?view=week&year={{ view_year }}&month={{ view_month }}&day={{ view_day }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
+                   class="px-3.5 py-1.5 rounded-full text-xs font-bold transition {{ 'bg-white text-indigo-600 shadow' if view == 'week' else 'text-slate-500 hover:text-slate-700' }}">
+                    Week
+                </a>
                 <a href="/calendar?view=month&year={{ view_year }}&month={{ view_month }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
-                   class="px-4 py-1.5 rounded-full text-xs font-bold transition {{ 'bg-white text-indigo-600 shadow' if view == 'month' else 'text-slate-500 hover:text-slate-700' }}">
+                   class="px-3.5 py-1.5 rounded-full text-xs font-bold transition {{ 'bg-white text-indigo-600 shadow' if view == 'month' else 'text-slate-500 hover:text-slate-700' }}">
                     Month
                 </a>
             </div>
 
-            {% if view == 'day' %}
+            {% if view == 'week' %}
+            <!-- Week navigation - ‹ Sep 20-26, 2026 › plus a "This Week" pill that only shows once
+                 you've navigated away from the week containing today. -->
+            <div class="flex items-center justify-between gap-2 mb-3 shrink-0">
+                <a href="/calendar?view=week&year={{ week_prev_year }}&month={{ week_prev_month }}&day={{ week_prev_day }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
+                   title="Previous week"
+                   class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold transition shrink-0">
+                    ‹
+                </a>
+                <div class="flex items-center gap-2 min-w-0">
+                    <span class="text-sm font-extrabold text-slate-900 truncate">{{ week_range_label }}</span>
+                    {% if not week_is_current %}
+                    <a href="/calendar?view=week{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
+                       class="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-200 rounded-full px-2 py-0.5 whitespace-nowrap shrink-0">
+                        This Week
+                    </a>
+                    {% endif %}
+                </div>
+                <a href="/calendar?view=week&year={{ week_next_year }}&month={{ week_next_month }}&day={{ week_next_day }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
+                   title="Next week"
+                   class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold transition shrink-0">
+                    ›
+                </a>
+            </div>
+
+            <!-- Week agenda - each of the 7 days gets its own compact section: a header (weekday +
+                 date, highlighted if today) and, unlike the month grid, every task's FULL title
+                 (wrapping, never truncated - same "show all tasks" standard Day view already holds
+                 to) with a real complete checkbox. Lighter than Day view's own cards (no
+                 description/realm/bucket line) since a week's worth needs to stay scannable, but
+                 nothing about a task's own title/time is ever hidden. -->
+            <div class="flex-1 overflow-y-auto pb-32">
+                {% for wd in week_days %}
+                <div class="mb-4">
+                    <div class="flex items-center gap-2 mb-1.5 px-0.5">
+                        <span class="text-[11px] font-extrabold uppercase tracking-wide {{ 'text-indigo-600' if wd.is_today else 'text-slate-400' }}">{{ wd.weekday_label }}</span>
+                        <span class="text-[11px] font-bold {{ 'text-indigo-600' if wd.is_today else 'text-slate-500' }}">{{ wd.date_label }}</span>
+                        {% if wd.is_today %}<span class="text-[9px] font-bold text-indigo-600 bg-indigo-100 rounded-full px-1.5 py-0.5">Today</span>{% endif %}
+                    </div>
+                    {% for t in wd.tasks %}
+                    <div class="flex items-center gap-2.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200 mb-1.5" data-row-item-id="{{ t.id }}">
+                        <button type="button" onclick="toggleCalTaskComplete(this, {{ t.id }})" ontouchstart="try { window.webkit.messageHandlers.haptics.postMessage('rigid'); } catch (e) {}" title="{{ 'Mark Incomplete' if t.is_completed else 'Mark Complete' }}"
+                                class="shrink-0 w-5 h-5 rounded-md border flex items-center justify-center transition {% if t.is_completed %}bg-emerald-500 border-emerald-500 text-white font-bold{% else %}border-slate-400 hover:border-emerald-500 text-transparent hover:text-emerald-500/50{% endif %}">
+                            ✓
+                        </button>
+                        <div class="flex-1 min-w-0">
+                            <p class="cal-task-title text-[13px] font-semibold break-words leading-snug {{ 'text-slate-400 line-through' if t.is_completed else 'text-slate-800' }}">{{ t.title | linkify_phone }}</p>
+                            {% if t.due_time or not selected_universe_id %}
+                            <div class="flex flex-wrap items-center gap-x-2 mt-0.5">
+                                {% if t.due_time %}<span class="text-[10px] text-slate-500">🕒 {{ t.due_time }}</span>{% endif %}
+                                {% if not selected_universe_id %}<span class="text-[10px] text-slate-500">{{ t.universe_icon }}</span>{% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <a href="/?realm_id={{ t.realm_id }}&bucket_id={{ t.bucket_id }}&goto_item={{ t.id }}&focus_item=1"
+                           onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
+                           class="shrink-0 text-[11px] font-bold text-indigo-600 hover:text-indigo-800">🎯</a>
+                    </div>
+                    {% else %}
+                    <p class="text-[11px] text-slate-300 italic px-0.5">Nothing due</p>
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            </div>
+
+            {% elif view == 'day' %}
             <!-- Day navigation - ‹ Weekday, Month Day, Year › plus a "Today" pill that only shows
                  once you've actually navigated away from today. -->
             <div class="flex items-center justify-between gap-2 mb-3 shrink-0">

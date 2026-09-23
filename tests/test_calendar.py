@@ -130,4 +130,34 @@ assert resp_clamped.context["view_day"] == 30
 resp_month = A.calendar_page(Req(uid), universe_id=None, year=2026, month=9, view="month")
 assert resp_month.context["view"] == "month"
 
+# --- Week view ---
+# Sep 5, 2026 is a Saturday -> that week is Aug 30 (Sun) - Sep 5 (Sat), straddling August.
+resp_week = A.calendar_page(Req(uid), universe_id=None, year=2026, month=9, view="week", day=5)
+assert resp_week.context["view"] == "week"
+week_days = resp_week.context["week_days"]
+assert len(week_days) == 7
+assert (week_days[0]["year"], week_days[0]["month"], week_days[0]["day"]) == (2026, 8, 30)
+assert (week_days[-1]["year"], week_days[-1]["month"], week_days[-1]["day"]) == (2026, 9, 5)
+assert resp_week.context["week_range_label"] == "Aug 30 – Sep 5, 2026", resp_week.context["week_range_label"]
+# "In-month pending" (Sep 5) is the last day of this straddling week and must still show up -
+# proof the week query isn't scoped to the displayed MONTH the way tasks_by_day is. "Before month"
+# (Aug 31) falls in this same week too, on its own day.
+sep5_cell = week_days[-1]
+assert [t["title"] for t in sep5_cell["tasks"]] == ["In-month pending"]
+aug31_cell = next(w for w in week_days if w["year"] == 2026 and w["month"] == 8 and w["day"] == 31)
+assert [t["title"] for t in aug31_cell["tasks"]] == ["Before month"]
+# Every other day of the week is genuinely empty, not silently dropped/errored.
+other_days = [w for w in week_days if w not in (sep5_cell, aug31_cell)]
+assert all(w["tasks"] == [] for w in other_days)
+
+# A week fully inside one month formats without the en-dash spanning two month names.
+resp_week2 = A.calendar_page(Req(uid), universe_id=None, year=2026, month=9, view="week", day=20)
+assert resp_week2.context["week_range_label"] == "Sep 20–26, 2026", resp_week2.context["week_range_label"]
+
+# Completed tasks still show (struck through client-side), matching Day/Month's own convention.
+resp_week3 = A.calendar_page(Req(uid), universe_id=None, year=2026, month=9, view="week", day=22)
+day20_cell = next(w for w in resp_week3.context["week_days"] if w["day"] == 20)
+assert [t["title"] for t in day20_cell["tasks"]] == ["In-month completed"]
+assert day20_cell["tasks"][0]["is_completed"] is True
+
 print("ALL TESTS PASSED")
