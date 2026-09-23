@@ -167,9 +167,13 @@
                     {% for week in weeks %}
                         {% for cell in week %}
                         {% if cell %}
-                        <div class="min-h-[76px] md:min-h-[92px] rounded-xl p-1 border {{ 'border-indigo-300 bg-indigo-50/70' if cell.is_today else 'border-slate-100' }} flex flex-col gap-0.5 overflow-hidden">
+                        <!-- Every task for the day renders here - reported directly, wanting the
+                             full day visible rather than capped behind a "+N more" - so a busy day
+                             simply makes its whole calendar row taller (CSS Grid rows size to their
+                             tallest cell automatically) instead of hiding anything. -->
+                        <div class="min-h-[76px] md:min-h-[92px] rounded-xl p-1 border {{ 'border-indigo-300 bg-indigo-50/70' if cell.is_today else 'border-slate-100' }} flex flex-col gap-0.5">
                             <span class="text-[11px] font-bold shrink-0 {{ 'text-indigo-600' if cell.is_today else 'text-slate-500' }}">{{ cell.day }}</span>
-                            {% for t in cell.tasks[:3] %}
+                            {% for t in cell.tasks %}
                             <a href="/?realm_id={{ t.realm_id }}&bucket_id={{ t.bucket_id }}&goto_item={{ t.id }}"
                                onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
                                title="{{ t.title }}{{ ' - ' ~ t.due_time if t.due_time else '' }}"
@@ -177,9 +181,6 @@
                                 {% if not selected_universe_id %}{{ t.universe_icon }} {% endif %}{{ t.title }}
                             </a>
                             {% endfor %}
-                            {% if cell.tasks|length > 3 %}
-                            <span class="text-[9px] font-bold text-slate-400 px-1">+{{ cell.tasks|length - 3 }} more</span>
-                            {% endif %}
                         </div>
                         {% else %}
                         <div class="min-h-[76px] md:min-h-[92px]"></div>
