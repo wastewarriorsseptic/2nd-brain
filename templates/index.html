@@ -8395,7 +8395,10 @@
 
             const isMobile = window.innerWidth < 768;
             const laneSpacing = isMobile ? 460 : 400;
-            const hubRadius = isMobile ? 90 : 70;
+            // Was 90/70 - requested directly, shrunk ~15% for a little more breathing room around
+            // the hub's own name/task labels without touching task spacing (startGap/stepSpacing
+            // below are unchanged) - purely a smaller circle, same layout otherwise.
+            const hubRadius = isMobile ? 76 : 60;
             const stepSpacing = 420;
             // Gap between the hub's own edge and the nearest task on either side - kept distinct
             // from stepSpacing (the gap BETWEEN two tasks) so the hub always reads as clearly set
@@ -8612,7 +8615,7 @@
 
             const isMobile = window.innerWidth < 768;
             const laneSpacing = isMobile ? 460 : 400;
-            const hubRadius = isMobile ? 90 : 70;
+            const hubRadius = isMobile ? 76 : 60;
             const stepSpacing = 420;
             const startGap = 300;
 
@@ -9016,7 +9019,7 @@
             const laneSpacing = mobile ? 460 : 400;
             const totalHeight = (laneCount - 1) * laneSpacing;
             const zoomVal = mobile ? 0.22 : 0.32;
-            const baseHub = (mvLanes()[0] && mvLanes()[0]._baseHub) || (mobile ? 90 : 70);
+            const baseHub = (mvLanes()[0] && mvLanes()[0]._baseHub) || (mobile ? 76 : 60);
             return {
                 zoom: zoomVal,
                 offset: {
@@ -9577,7 +9580,7 @@
             // down, where each lane is a Realm instead.
             if (!isBlurLayer && isMultiverseStackedView && !isRealmTimelineView) {
                 const addHubY = mvAddHubY !== null ? mvAddHubY : allLanes.length * (window.innerWidth < 768 ? 460 : 400);
-                const addHubRadius = allLanes.length > 0 ? (allLanes[0]._baseHub || allLanes[0].hubRadius) : (window.innerWidth < 768 ? 90 : 70);
+                const addHubRadius = allLanes.length > 0 ? (allLanes[0]._baseHub || allLanes[0].hubRadius) : (window.innerWidth < 768 ? 76 : 60);
                 multiverseAddUniverseHub = { x: 0, y: addHubY, radius: addHubRadius };
 
                 spaceCtx.save();
@@ -9632,7 +9635,20 @@
                 const resolveSweepTask = (t, prevEdge, sweepsRight) => {
                     t._pillOffset = 0;
                     t._pillSkip = false;
-                    if (lane._selectedTask === t && (lane._fw || 0) > 0.05) return prevEdge;
+                    if (lane._selectedTask === t && (lane._fw || 0) > 0.05) {
+                        // No title pill is drawn for the selected task (its title lives in the HUD
+                        // card above instead - see the draw loop below), but its own DATE label still
+                        // draws right where its dot naturally sits, unshifted. Reserving a modest
+                        // width around that position (instead of treating it as empty space) stops a
+                        // neighboring task from being swept right on top of it - reported directly
+                        // with a screenshot: "Today" (the selected task's own date label) and
+                        // "Tomorrow" (the next task's, swept in with no knowledge anything was already
+                        // there) overlapping.
+                        const selTk = t._tk || laneTk;
+                        const selHalfWidth = 90 * cameraZoom * selTk;
+                        const selCenterX = cameraOffset.x + cameraZoom * t.x;
+                        return sweepsRight ? selCenterX + selHalfWidth : selCenterX - selHalfWidth;
+                    }
                     const sweepTk = t._tk || laneTk;
                     spaceCtx.font = '40px sans-serif';
                     const sweepMaxWidth = 380 / Math.max(1, sweepTk / 1.25);
@@ -9735,7 +9751,16 @@
                     spaceCtx.fillStyle = task.isOverdue ? '#fda4af' : (isSoon ? '#5eead4' : '#94a3b8');
                     spaceCtx.shadowColor = task.isOverdue ? '#f43f5e' : (isSoon ? '#2dd4bf' : 'transparent');
                     spaceCtx.shadowBlur = isSoon || task.isOverdue ? 10 : 0;
-                    spaceCtx.fillText(dateLabel, 0, -rLocal - 30);
+                    // Reuses the SAME horizontal shift the sweep pre-pass above already worked out for
+                    // this task's title pill, rather than a hardcoded 0 - this date label sits right
+                    // above that same pill and was never part of the sweep's own on-screen math, so it
+                    // clipped at the screen edge on its own (reported directly with a screenshot: "Sep
+                    // 30, 2026" missing its leading/trailing digits on the two outermost nodes) even
+                    // after the pill itself was already being kept fully visible. Shifting both by the
+                    // same amount keeps them visually stacked on the same task exactly as before, and
+                    // since this text is narrower than its own pill, staying inside the pill's already-
+                    // resolved bounds keeps it on-screen too.
+                    spaceCtx.fillText(dateLabel, task._pillOffset || 0, -rLocal - 30);
                     spaceCtx.restore();
 
                     // The selected task's title is drawn centered below its lane's circle instead (see
