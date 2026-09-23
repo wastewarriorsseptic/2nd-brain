@@ -9771,13 +9771,21 @@
                     // Reuses the SAME horizontal shift the sweep pre-pass above already worked out for
                     // this task's title pill, rather than a hardcoded 0 - this date label sits right
                     // above that same pill and was never part of the sweep's own on-screen math, so it
-                    // clipped at the screen edge on its own (reported directly with a screenshot: "Sep
-                    // 30, 2026" missing its leading/trailing digits on the two outermost nodes) even
-                    // after the pill itself was already being kept fully visible. Shifting both by the
-                    // same amount keeps them visually stacked on the same task exactly as before, and
-                    // since this text is narrower than its own pill, staying inside the pill's already-
-                    // resolved bounds keeps it on-screen too.
-                    spaceCtx.fillText(dateLabel, task._pillOffset || 0, -rLocal - 30);
+                    // clipped at the screen edge on its own even after the pill itself was already
+                    // being kept fully visible. Shifting both by the same amount keeps them visually
+                    // stacked on the same task exactly as before.
+                    //
+                    // Skipped entirely (not just left unshifted) when the sweep found nowhere safe for
+                    // this task's pill either - reported directly with a screenshot: with no title
+                    // pill drawn for a skipped task, its date label alone still drew at its natural,
+                    // completely unshifted position, landing right on top of a NEIGHBORING task's own
+                    // (correctly shifted) date label - "Today" and "Sep 18, 2026" overlapping. A task
+                    // with nowhere safe for its pill has nowhere safe for its (smaller, but still
+                    // real) date label either; both wait for panning to bring it properly into view
+                    // rather than half-showing it into a collision.
+                    if (!task._pillSkip) {
+                        spaceCtx.fillText(dateLabel, task._pillOffset || 0, -rLocal - 30);
+                    }
                     spaceCtx.restore();
 
                     // The selected task's title is drawn centered below its lane's circle instead (see
