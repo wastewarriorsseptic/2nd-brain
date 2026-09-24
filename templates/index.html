@@ -9189,7 +9189,28 @@
                 fracTarget = Math.max(0.5, neededY / window.innerHeight);
             }
             mvCenterFrac = mvSmooth(mvCenterFrac, fracTarget, dt, 9);
-            const desiredX = window.innerWidth / 2;
+            // Centering purely on the hub (world x=0, since every Multiverse lane sits at lane.x=0)
+            // left the PRIOR task comfortably in view but the UPCOMING one cut off the edge -
+            // reported directly, with a screenshot. Not a camera bug on its own: mvApplyLaneLayout's
+            // own piecewise offset above deliberately keeps the previous task mirrored close to the
+            // hub (at -slot, matching the selected task's own +slot) so the scan/swap animation reads
+            // smoothly mid-gesture, but the NEXT task sits a full extra step further out than that -
+            // an intentional asymmetry for the animation that just never got accounted for by the
+            // camera framing. Centering on the midpoint of whatever actually needs to be visible
+            // (the hub, the selected task, and its immediate prior/next neighbor when they exist)
+            // instead of the hub alone brings both into the same field of view.
+            let desiredX = window.innerWidth / 2;
+            if (owner._selectedTask) {
+                const selL = mvTaskL(owner._selectedTask);
+                const prevTask = owner.tasks.find(t => mvTaskL(t) === selL - 1);
+                const nextTask = owner.tasks.find(t => mvTaskL(t) === selL + 1);
+                let leftBoundX = Math.min(0, owner._selectedTask.x);
+                let rightBoundX = Math.max(0, owner._selectedTask.x);
+                if (prevTask) leftBoundX = Math.min(leftBoundX, prevTask.x);
+                if (nextTask) rightBoundX = Math.max(rightBoundX, nextTask.x);
+                const midWorldX = (leftBoundX + rightBoundX) / 2;
+                desiredX = (window.innerWidth / 2) - midWorldX * cameraZoom * (owner._fw || 0);
+            }
             const desiredY = window.innerHeight * mvCenterFrac - fy * cameraZoom;
             targetCameraOffset = { x: desiredX, y: desiredY };
             if (snapCamera) {
