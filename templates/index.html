@@ -9787,22 +9787,7 @@
                         if (fits) {
                             chosenCenter = mvClamp(sweepCenterX, minCenter, maxCenter);
                         } else if (atFloor) {
-                            // Forced flush against the previous pill's own edge - but that edge can
-                            // itself already sit right at (or even past) the screen's own margin, most
-                            // easily now that the selected task ahead of this one reserves only a
-                            // narrow date-label edge rather than a full title pill (see
-                            // resolveSweepTask's selected-task branch above). Reported directly: "the
-                            // text was not underneath" its own node - flush-against-neighbor with no
-                            // screen clamp at all let this pill drift wherever prevEdge happened to be,
-                            // including well past the visible edge. Still prefers sitting flush against
-                            // the neighbor (that's what "no room" means here), but never past the
-                            // screen's own margin - the rare case where neither can be fully honored
-                            // ends in a slight overlap with the neighbor, on-screen, rather than a pill
-                            // invisibly floating off-canvas.
-                            const flushCenter = sweepsRight ? (prevEdge + pillSweepGap + halfWidth) : (prevEdge - pillSweepGap - halfWidth);
-                            const screenMin = pillScreenMargin + halfWidth;
-                            const screenMax = window.innerWidth - pillScreenMargin - halfWidth;
-                            chosenCenter = screenMin <= screenMax ? mvClamp(flushCenter, screenMin, screenMax) : flushCenter;
+                            chosenCenter = sweepsRight ? (prevEdge + pillSweepGap + halfWidth) : (prevEdge - pillSweepGap - halfWidth);
                         }
                         if (fits || atFloor) {
                             // Reached a final position (genuinely fits, or forced flush at the
