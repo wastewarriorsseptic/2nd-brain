@@ -9677,9 +9677,8 @@
                 const hubPillScreenLeft = lane._namePillRect ? cameraOffset.x + cameraZoom * lane._namePillRect.x : null;
                 const hubPillScreenRight = hubPillScreenLeft !== null ? hubPillScreenLeft + cameraZoom * lane._namePillRect.w : null;
 
-                const resolveSweepTask = (t, prevEdge, sweepsRight, sideScale) => {
+                const resolveSweepTask = (t, prevEdge, sweepsRight) => {
                     t._pillOffset = 0;
-                    t._pillDateOnly = false;
                     // Selected task shows its title in the HUD card above instead of a second copy
                     // here - reinstated after briefly folding it into the same full-pill path every
                     // other task uses (see git history): that made the node right next to the hub
@@ -9706,8 +9705,7 @@
                             selFinalCenterX = mvClamp(selCenterX, selMinCenter, selMaxCenter);
                             t._pillOffset = (selFinalCenterX - selCenterX) / selEffScale;
                         }
-                        const selEdge = sweepsRight ? selFinalCenterX + selHalfWidth : selFinalCenterX - selHalfWidth;
-                        return { edge: selEdge, everFit: selMinCenter <= selMaxCenter };
+                        return sweepsRight ? selFinalCenterX + selHalfWidth : selFinalCenterX - selHalfWidth;
                     }
                     const sweepTk = t._tk || laneTk;
                     // Must match the draw loop's own font choice exactly (bold 44px for the
@@ -9718,11 +9716,10 @@
                     // font - wider glyphs than what the sweep wrapped/sized for, so the box it computed
                     // undersold how much room the real, bigger text actually needed.
                     const sweepIsActive = (activeSwipeTaskId && String(t.id) === String(activeSwipeTaskId)) || lane._selectedTask === t;
-                    const baseFontPx = sweepIsActive ? 44 : 40;
+                    spaceCtx.font = sweepIsActive ? 'bold 44px sans-serif' : '40px sans-serif';
                     const sweepEffScale = cameraZoom * sweepTk;
                     const sweepCenterX = cameraOffset.x + cameraZoom * t.x;
                     const baseLineCap = (lane._fw || 0) > 0.3 ? 3 : 6;
-                    const maxLineCap = 16;
 
                     // Tries the normal (full) wrap width first, same as before - if there's room, this
                     // task's pill doesn't move or change shape at all. If not, instead of skipping the
@@ -9732,7 +9729,10 @@
                     // time, until a width is found that actually fits the space available on this side
                     // - a narrower pill needs a smaller shift to land inside its bounds, which also
                     // keeps it sitting closer to its own node instead of shoved hard against the screen
-                    // edge (reported directly: "the yesterday needs to be centered with node").
+                    // edge (reported directly: "the yesterday needs to be centered with node"). Always
+                    // resolves to SOMETHING drawable, even in a pathological case with truly no room
+                    // (forced flush against whichever boundary is closer, at the narrowest width tried)
+                    // rather than looping forever or hiding the label.
                     //
                     // Width and line count are grown independently: a long title can fit horizontally
                     // on the very first attempt (no narrowing needed) and still get cut off with an
@@ -9741,282 +9741,102 @@
                     // there's no horizontal problem to solve, only a vertical one, so the line cap
                     // keeps growing (the pill "drops lower") at the SAME width already known to fit,
                     // instead of narrowing further for no reason.
-                    //
-                    // Two adjacent pills can still both hit their own width floor (a title's widest
-                    // single WORD - "Massachusetts", say - is a hard limit no amount of narrowing or
-                    // extra lines can get under; see the widest-word note below) with genuinely no
-                    // combined room left between them and the screen edge - reported directly with a
-                    // screenshot: two overdue pills right next to the hub on a narrow phone, one
-                    // clamped on top of the other, nearly unreadable. Shrinking the font shrinks that
-                    // same word's measured width too, so retrying the ENTIRE search one step smaller
-                    // genuinely creates more room instead of just moving the collision from "on top of
-                    // the neighbor" to "off past the screen edge" and back. Only escalates to a
-                    // smaller font when the fully-narrowed search at the current size still couldn't
-                    // avoid the overlap; the overwhelming majority of tasks fit at the first, full-size
-                    // pass and never touch this loop at all.
-                    // sideScale (from the per-side outer squeeze pass below, near where this function
-                    // is called) shrinks this same ceiling further still - when task N genuinely has
-                    // nowhere to go even fully shrunk on its own, the EARLIER neighbor that ate all the
-                    // room in the first place needs to give some back too, not just this one task.
-                    const fontScales = [1, 0.8, 0.65].map(s => s * sideScale);
-                    let chosenLines = null, chosenTWidth = null, chosenHalfWidth = null, chosenCenter = sweepCenterX, chosenFontScale = 1, everFit = false;
-                    for (let fsi = 0; fsi < fontScales.length; fsi++) {
-                        const fontScale = fontScales[fsi];
-                        const isLastFontScale = fsi === fontScales.length - 1;
-                        spaceCtx.font = (sweepIsActive ? 'bold ' : '') + Math.round(baseFontPx * fontScale) + 'px sans-serif';
-                        let tryWidth = 380 / Math.max(1, sweepTk / 1.25);
-                        let tryLineCap = baseLineCap;
-                        // A flat 90px floor doesn't account for the title's own content - if a single
-                        // WORD (e.g. "Location") is wider than that on its own, no number of extra
-                        // lines can ever help: wrapTextToWidth truncates a line whenever ITS OWN width
-                        // exceeds maxWidth, even with room left under the line cap, so the last line
-                        // stayed ellipsis-cut forever regardless of how far tryLineCap grew (reported
-                        // directly: "Eric's Wedding Rehearsal at Lo…" stuck at 5 lines no matter what).
-                        // Never narrowing past the widest single word's own width keeps every word
-                        // full-length and lets the line-cap growth above actually reach a
-                        // truncation-free result. Cached directly on the task object (not the shared
-                        // cache above) - a task's own title never changes while it's visible, so this
-                        // only ever needs measuring once per task/font-size/active-state combo, not
-                        // once per frame. Keyed by the ACTUAL rounded font-px used (not just fsi/index)
-                        // and bold-vs-regular - fsi alone isn't enough now that the outer sideScale
-                        // squeeze (see sweepSide below) can make fsi=0 mean a completely different real
-                        // font size from one pass to the next; keying on the index alone let a later,
-                        // smaller-font pass silently reuse a widest-word measurement cached from an
-                        // earlier, larger-font pass, so the width floor never actually shrank the way
-                        // the visible font did (reported directly with a screenshot: two overdue pills
-                        // still overlapping even after the font had visibly shrunk). A value measured
-                        // at one font-px is wrong to reuse for another - the same class of stale-cache
-                        // bug the wrap cache above was fixed for.
-                        const widestWordCacheKey = '_cachedWidestWord_' + (sweepIsActive ? 'bold' : 'regular') + '_' + Math.round(baseFontPx * fontScale);
-                        if (t[widestWordCacheKey] === undefined) {
-                            t[widestWordCacheKey] = Math.max(...t.title.split(' ').map(w => spaceCtx.measureText(w).width)) + 24;
+                    let tryWidth = 380 / Math.max(1, sweepTk / 1.25);
+                    let tryLineCap = baseLineCap;
+                    // A flat 90px floor doesn't account for the title's own content - if a single
+                    // WORD (e.g. "Location") is wider than that on its own, no number of extra lines
+                    // can ever help: wrapTextToWidth truncates a line whenever ITS OWN width exceeds
+                    // maxWidth, even with room left under the line cap, so the last line stayed
+                    // ellipsis-cut forever regardless of how far tryLineCap grew (reported directly:
+                    // "Eric's Wedding Rehearsal at Lo…" stuck at 5 lines no matter what). Never
+                    // narrowing past the widest single word's own width keeps every word full-length
+                    // and lets the line-cap growth above actually reach a truncation-free result.
+                    // Cached directly on the task object (not the shared cache above) - a task's own
+                    // title never changes while it's visible, so this only ever needs measuring once
+                    // per task for the task's entire lifetime on screen, not once per frame. Keyed by
+                    // font (bold vs regular) too, not just left as a single cached value: whether a
+                    // task is the active/selected one can change as the user swipes between tasks, and
+                    // a value measured in one font is wrong to reuse for the other - the same class of
+                    // stale-cache bug the wrap cache above was just fixed for.
+                    const widestWordCacheKey = '_cachedWidestWord_' + (sweepIsActive ? 'bold' : 'regular');
+                    if (t[widestWordCacheKey] === undefined) {
+                        t[widestWordCacheKey] = Math.max(...t.title.split(' ').map(w => spaceCtx.measureText(w).width)) + 24;
+                    }
+                    const minTryWidth = Math.max(90, t[widestWordCacheKey]);
+                    const maxLineCap = 16;
+                    let chosenLines = null, chosenTWidth = null, chosenHalfWidth = null, chosenCenter = sweepCenterX;
+                    for (let attempt = 0; attempt < 20; attempt++) {
+                        const wrapped = cachedWrapTextToWidth(spaceCtx, t.title, tryWidth, tryLineCap);
+                        const lines = wrapped.lines;
+                        const widest = wrapped.widest;
+                        const tWidth = widest + 24;
+                        const halfWidth = (tWidth / 2) * sweepEffScale;
+                        let minCenter, maxCenter;
+                        if (sweepsRight) {
+                            minCenter = Math.max(pillScreenMargin + halfWidth, prevEdge + pillSweepGap + halfWidth);
+                            maxCenter = window.innerWidth - pillScreenMargin - halfWidth;
+                        } else {
+                            minCenter = pillScreenMargin + halfWidth;
+                            maxCenter = Math.min(window.innerWidth - pillScreenMargin - halfWidth, prevEdge - pillSweepGap - halfWidth);
                         }
-                        const minTryWidth = Math.max(90, t[widestWordCacheKey]);
-                        let fsFits = false, fsAtFloorFinal = false;
-                        for (let attempt = 0; attempt < 20; attempt++) {
-                            const wrapped = cachedWrapTextToWidth(spaceCtx, t.title, tryWidth, tryLineCap);
-                            const lines = wrapped.lines;
-                            const widest = wrapped.widest;
-                            const tWidth = widest + 24;
-                            const halfWidth = (tWidth / 2) * sweepEffScale;
-                            let minCenter, maxCenter;
-                            if (sweepsRight) {
-                                minCenter = Math.max(pillScreenMargin + halfWidth, prevEdge + pillSweepGap + halfWidth);
-                                maxCenter = window.innerWidth - pillScreenMargin - halfWidth;
-                            } else {
-                                minCenter = pillScreenMargin + halfWidth;
-                                maxCenter = Math.min(window.innerWidth - pillScreenMargin - halfWidth, prevEdge - pillSweepGap - halfWidth);
-                            }
-                            chosenLines = lines;
-                            chosenTWidth = tWidth;
-                            chosenHalfWidth = halfWidth;
-                            chosenFontScale = fontScale;
-                            const fits = minCenter <= maxCenter;
-                            const atFloor = tryWidth <= minTryWidth;
-                            // Only the SMALLEST font scale actually settles for the flush/overlapping
-                            // fallback below - every earlier scale that hits its own floor without
-                            // fitting just stops (fsAtFloorFinal, not fits) and lets the outer loop
-                            // retry one font size down instead.
-                            if (fits) {
-                                chosenCenter = mvClamp(sweepCenterX, minCenter, maxCenter);
-                                fsFits = true;
-                                everFit = true;
-                            } else if (atFloor && isLastFontScale) {
-                                // Forced flush against the previous pill's own edge - but that edge can
-                                // itself already sit right at (or even past) the screen's own margin.
-                                // Reported directly: "the text was not underneath" its own node -
-                                // flush-against-neighbor with no screen clamp at all let this pill
-                                // drift wherever prevEdge happened to be, including well past the
-                                // visible edge. Still prefers sitting flush against the neighbor
-                                // (that's what "no room" means here), but never past the screen's own
-                                // margin - the rare case where neither can be fully honored (even at
-                                // the smallest font tried) ends in a slight overlap with the neighbor,
-                                // on-screen, rather than a pill invisibly floating off-canvas.
-                                const flushCenter = sweepsRight ? (prevEdge + pillSweepGap + halfWidth) : (prevEdge - pillSweepGap - halfWidth);
-                                const screenMin = pillScreenMargin + halfWidth;
-                                const screenMax = window.innerWidth - pillScreenMargin - halfWidth;
-                                chosenCenter = screenMin <= screenMax ? mvClamp(flushCenter, screenMin, screenMax) : flushCenter;
-                                // Clamping to the screen edge here doesn't necessarily mean this pill
-                                // is actually touching its neighbor - a task whose NATURAL position is
-                                // simply off past the edge (most of the lane, for any reasonably-sized
-                                // list of tasks - only the first few are ever really "close" to the
-                                // hub) still clamps to the margin here, but with plenty of clear space
-                                // from prevEdge; that's the same on-screen-but-narrowed outcome this
-                                // whole width/line search already produces for any off-to-the-side
-                                // task, not a genuine collision. Only counting this as a REAL failure
-                                // (everFit false, below) when the clamped position still overlaps the
-                                // neighbor is what keeps the side-squeeze/date-only machinery reserved
-                                // for genuine crowding near the hub - reported as a regression when this
-                                // check was missing: a perfectly fine, merely-off-to-the-side task (the
-                                // very next one after the selected task, nowhere near crowded) got
-                                // needlessly downgraded to date-only just because it needed this same
-                                // ordinary edge-clamp every off-screen task always needed.
-                                // A little intrusion past prevEdge is tolerated, not just zero - the
-                                // selected task right before this one (see its own branch above)
-                                // reserves only a small date-label edge, and the very next task sitting
-                                // right after it grazing a few px into that margin was the explicitly
-                                // requested, already-shipped "next task still shows its title" behavior
-                                // (reported directly: "the next upcoming task text shows to right
-                                // please as before"). A hard zero-tolerance clearance check downgraded
-                                // that exact case to date-only too, alongside the genuinely broken one
-                                // (two FULL title pills almost entirely on top of each other) this whole
-                                // mechanism exists for - both looked like "some overlap" to a strict
-                                // check, but only one of them is actually a problem worth downgrading
-                                // for. NEIGHBOR_OVERLAP_TOLERANCE is well under what a real multi-line
-                                // title pill overlapping another one would produce, but comfortably
-                                // covers a slim date-label edge being grazed by a couple of px.
-                                const NEIGHBOR_OVERLAP_TOLERANCE = 24;
-                                const overlapPx = sweepsRight
-                                    ? Math.max(0, prevEdge - (chosenCenter - halfWidth))
-                                    : Math.max(0, (chosenCenter + halfWidth) - prevEdge);
-                                if (overlapPx <= NEIGHBOR_OVERLAP_TOLERANCE) everFit = true;
-                            }
-                            if (fits || (atFloor && isLastFontScale)) {
-                                // Reached a final position (genuinely fits, or forced flush at the
-                                // narrowest width AND smallest font tried) - but a title long enough to
-                                // need every line the cap allowed still ends in an ellipsis at THIS
-                                // width even though nothing is stopping it from wrapping onto a couple
-                                // more, still-narrow lines instead. Reported directly with a screenshot
-                                // ("Eric's Wedding Rehearsal R…") - this specific title only hit the
-                                // width floor, where the earlier version of this fix never tried
-                                // growing the line cap at all. Retrying at the SAME width with more
-                                // lines allowed doesn't change whether it fits (width, not line count,
-                                // decides that), so it's always safe to do here.
-                                const wasCutOff = lines.length > 0 && lines[lines.length - 1].endsWith('…');
-                                if (wasCutOff && tryLineCap < maxLineCap) {
-                                    tryLineCap += 2;
-                                    continue;
-                                }
-                                break;
-                            }
-                            if (atFloor) { fsAtFloorFinal = true; break; }
-                            tryWidth = Math.max(minTryWidth, tryWidth * 0.82);
+                        chosenLines = lines;
+                        chosenTWidth = tWidth;
+                        chosenHalfWidth = halfWidth;
+                        const fits = minCenter <= maxCenter;
+                        const atFloor = tryWidth <= minTryWidth;
+                        if (fits) {
+                            chosenCenter = mvClamp(sweepCenterX, minCenter, maxCenter);
+                        } else if (atFloor) {
+                            // Forced flush against the previous pill's own edge - but that edge can
+                            // itself already sit right at (or even past) the screen's own margin, most
+                            // easily now that the selected task ahead of this one reserves only a
+                            // narrow date-label edge rather than a full title pill (see
+                            // resolveSweepTask's selected-task branch above). Reported directly: "the
+                            // text was not underneath" its own node - flush-against-neighbor with no
+                            // screen clamp at all let this pill drift wherever prevEdge happened to be,
+                            // including well past the visible edge. Still prefers sitting flush against
+                            // the neighbor (that's what "no room" means here), but never past the
+                            // screen's own margin - the rare case where neither can be fully honored
+                            // ends in a slight overlap with the neighbor, on-screen, rather than a pill
+                            // invisibly floating off-canvas.
+                            const flushCenter = sweepsRight ? (prevEdge + pillSweepGap + halfWidth) : (prevEdge - pillSweepGap - halfWidth);
+                            const screenMin = pillScreenMargin + halfWidth;
+                            const screenMax = window.innerWidth - pillScreenMargin - halfWidth;
+                            chosenCenter = screenMin <= screenMax ? mvClamp(flushCenter, screenMin, screenMax) : flushCenter;
                         }
-                        if (fsFits || fsAtFloorFinal === false) break;
-                        // else: hit this scale's own width floor without fitting, and a smaller font
-                        // remains to try - loop continues to fsi + 1.
+                        if (fits || atFloor) {
+                            // Reached a final position (genuinely fits, or forced flush at the
+                            // narrowest width tried) - but a title long enough to need every line the
+                            // cap allowed still ends in an ellipsis at THIS width even though nothing
+                            // is stopping it from wrapping onto a couple more, still-narrow lines
+                            // instead. Reported directly with a screenshot ("Eric's Wedding Rehearsal
+                            // R…") - this specific title only hit the width floor, where the earlier
+                            // version of this fix never tried growing the line cap at all. Retrying at
+                            // the SAME width with more lines allowed doesn't change whether it fits
+                            // (width, not line count, decides that), so it's always safe to do here.
+                            const wasCutOff = lines.length > 0 && lines[lines.length - 1].endsWith('…');
+                            if (wasCutOff && tryLineCap < maxLineCap) {
+                                tryLineCap += 2;
+                                continue;
+                            }
+                            break;
+                        }
+                        tryWidth = Math.max(minTryWidth, tryWidth * 0.82);
                     }
                     t._pillOffset = (chosenCenter - sweepCenterX) / sweepEffScale;
                     t._pillLines = chosenLines;
                     t._pillWidth = chosenTWidth;
-                    t._pillFontScale = chosenFontScale;
-                    const edge = sweepsRight ? chosenCenter + chosenHalfWidth : chosenCenter - chosenHalfWidth;
-                    return { edge, everFit };
+                    return sweepsRight ? chosenCenter + chosenHalfWidth : chosenCenter - chosenHalfWidth;
                 };
 
-                // Same date-only treatment the selected task gets above (its title lives in the HUD
-                // card instead) - reused here as the very last resort for a task whose title pill
-                // genuinely has nowhere to go even at the smallest font tried (see sweepSide below).
-                // Showing just the date, cleanly positioned, beats a title that's still overlapping a
-                // neighbor after every other escalation already failed.
-                const resolveDateOnlyTask = (t, prevEdge, sweepsRight) => {
-                    const tk = t._tk || laneTk;
-                    // Must match the draw loop's own date-label font choice (bold 40px only for the
-                    // active/selected node, 36px otherwise) - same font-mismatch class of bug already
-                    // fixed once for the title pill above; measuring at the wrong font here would just
-                    // reintroduce it for this fallback instead.
-                    const dateIsActive = (activeSwipeTaskId && String(t.id) === String(activeSwipeTaskId)) || lane._selectedTask === t;
-                    spaceCtx.font = dateIsActive ? 'bold 40px sans-serif' : '36px sans-serif';
-                    const dateLabel = getRelativeDateLabel(t.dueDate, t.dueDateFormatted);
-                    const dateWidth = spaceCtx.measureText(dateLabel).width + 16;
-                    const effScale = cameraZoom * tk;
-                    const centerX = cameraOffset.x + cameraZoom * t.x;
-                    const halfWidth = (dateWidth / 2) * effScale;
-                    const minCenter = sweepsRight
-                        ? Math.max(pillScreenMargin + halfWidth, prevEdge + pillSweepGap + halfWidth)
-                        : pillScreenMargin + halfWidth;
-                    const maxCenter = sweepsRight
-                        ? window.innerWidth - pillScreenMargin - halfWidth
-                        : Math.min(window.innerWidth - pillScreenMargin - halfWidth, prevEdge - pillSweepGap - halfWidth);
-                    // Same screen-margin-first preference as resolveSweepTask's own atFloor fallback
-                    // above (see its comment) - flush-against-neighbor with no screen clamp let a
-                    // date-only pill drift off past the visible edge just as easily as a title pill
-                    // could, especially since a date-only neighbor is usually sitting exactly at that
-                    // margin already (that's WHY the downgrade happened in the first place).
-                    let finalCenter;
-                    if (minCenter <= maxCenter) {
-                        finalCenter = mvClamp(centerX, minCenter, maxCenter);
-                    } else {
-                        const flushCenter = sweepsRight ? (prevEdge + pillSweepGap + halfWidth) : (prevEdge - pillSweepGap - halfWidth);
-                        const screenMin = pillScreenMargin + halfWidth;
-                        const screenMax = window.innerWidth - pillScreenMargin - halfWidth;
-                        finalCenter = screenMin <= screenMax ? mvClamp(flushCenter, screenMin, screenMax) : flushCenter;
-                    }
-                    t._pillOffset = (finalCenter - centerX) / effScale;
-                    t._pillLines = null;
-                    t._pillWidth = null;
-                    t._pillDateOnly = true;
-                    return sweepsRight ? finalCenter + halfWidth : finalCenter - halfWidth;
-                };
-
-                // A task that never truly "fit" (see everFit above) only tells the WHOLE story once
-                // its neighbors are considered too - if task N is squeezed out with nowhere to go, the
-                // EARLIER neighbor(s) that claimed all the room in the first place need to give some
-                // back, not just N alone (that alone was tried first, and still overlapped - reported
-                // directly with a screenshot: two overdue pills on a narrow phone almost entirely on
-                // top of each other, the font-shrink on the later one not enough by itself since the
-                // closer one was still sitting at full size). Re-running the WHOLE side at a smaller
-                // shared ceiling makes every pill on it shrink together instead of only the last one
-                // in line; stops as soon as a pass gets everyone to genuinely fit.
-                //
-                // Titles long enough that even this can't seat everyone without overlap (several long
-                // titles genuinely can't all share one narrow phone screen's worth of room, no matter
-                // how small the font gets before becoming illegible) get one final downgrade: only the
-                // task(s) still without room fall back to date-only (resolveDateOnlyTask above) rather
-                // than a shrunk-past-readable or still-overlapping title, and the side is walked once
-                // more so a downgrade properly frees up room for whichever titles genuinely do fit.
-                // Only the cluster actually near the hub competes for shared screen room - a lane
-                // like the "__all_tasks__" aggregate can have a couple dozen tasks on one side, and
-                // every one past the first handful is already so far from the hub it was never going
-                // to be on screen at all (its own natural position is well past the viewport, fading
-                // out by distance same as always). Treating the WHOLE side as one shared budget made
-                // even a genuinely-fine, close-in task (the very next one after the selected task, not
-                // remotely crowded) get needlessly squeezed and finally date-only-downgraded, just
-                // because SOME unrelated task ten steps further out couldn't find room for itself -
-                // reported as a regression right after the squeeze/downgrade logic above first shipped
-                // (the next task's own title had come back correctly in an earlier, simpler repro,
-                // then silently lost it again once a longer, more realistic task list was involved).
-                // Farther tasks still get resolveSweepTask's own per-task narrowing/line-growth/font-
-                // shrink and screen-margin clamp (see above) - just not the side-wide squeeze or the
-                // date-only downgrade, since neither one is meaningful for a pill that was never going
-                // to compete with the hub cluster for the same visible pixels.
-                const SWEEP_SQUEEZE_CLUSTER = 6;
-
-                const sweepSide = (tasks, sweepsRight) => {
-                    const nearTasks = tasks.slice(0, SWEEP_SQUEEZE_CLUSTER);
-                    const farTasks = tasks.slice(SWEEP_SQUEEZE_CLUSTER);
-                    const hubEdge = sweepsRight
-                        ? (hubPillScreenRight !== null ? hubPillScreenRight : -Infinity)
-                        : (hubPillScreenLeft !== null ? hubPillScreenLeft : window.innerWidth * 10);
-                    const sideScales = [1, 0.8, 0.6, 0.45];
-                    let lastFits = null, allFit = false, edge = hubEdge;
-                    for (let ssi = 0; ssi < sideScales.length && !allFit; ssi++) {
-                        const sideScale = sideScales[ssi];
-                        edge = hubEdge;
-                        allFit = true;
-                        lastFits = nearTasks.map(t => {
-                            const result = resolveSweepTask(t, edge, sweepsRight, sideScale);
-                            edge = result.edge;
-                            if (!result.everFit) allFit = false;
-                            return result.everFit;
-                        });
-                    }
-                    // allFit true means the last pass's positions (already applied to every task via
-                    // resolveSweepTask above, as a side effect) are the final ones - nothing left to
-                    // redo. Otherwise, re-walk nearTasks once more, downgrading just the ones that never
-                    // fit at any scale to date-only (see resolveDateOnlyTask above) instead of leaving
-                    // them at their still-overlapping smallest-font position.
-                    if (!allFit) {
-                        edge = hubEdge;
-                        nearTasks.forEach((t, i) => {
-                            edge = lastFits[i] ? resolveSweepTask(t, edge, sweepsRight, 1).edge : resolveDateOnlyTask(t, edge, sweepsRight);
-                        });
-                    }
-                    farTasks.forEach(t => { edge = resolveSweepTask(t, edge, sweepsRight, 1).edge; });
-                };
-
-                sweepSide(lane.tasks.filter(t => t.x >= lane.x).sort((a, b) => a.x - b.x), true);
-                sweepSide(lane.tasks.filter(t => t.x < lane.x).sort((a, b) => b.x - a.x), false);
+                let rightEdge = hubPillScreenRight !== null ? hubPillScreenRight : -Infinity;
+                lane.tasks.filter(t => t.x >= lane.x).sort((a, b) => a.x - b.x).forEach(t => {
+                    rightEdge = resolveSweepTask(t, rightEdge, true);
+                });
+                let leftEdge = hubPillScreenLeft !== null ? hubPillScreenLeft : window.innerWidth * 10;
+                lane.tasks.filter(t => t.x < lane.x).sort((a, b) => b.x - a.x).forEach(t => {
+                    leftEdge = resolveSweepTask(t, leftEdge, false);
+                });
 
                 lane.tasks.forEach(task => {
                     const isActiveSwipeNode = (activeSwipeTaskId && String(task.id) === String(activeSwipeTaskId))
@@ -10097,11 +9917,8 @@
                     spaceCtx.restore();
 
                     // The selected task's title lives in the HUD card above instead of a second copy
-                    // here - see resolveSweepTask's own comment for why this was reinstated. A task
-                    // downgraded to date-only (resolveDateOnlyTask, sweepSide's own last resort when
-                    // even the smallest font still couldn't seat every title without overlap) skips
-                    // the title block the exact same way - its date label was already drawn just above.
-                    if ((lane._selectedTask === task && (lane._fw || 0) > 0.05) || task._pillDateOnly) {
+                    // here - see resolveSweepTask's own comment for why this was reinstated.
+                    if (lane._selectedTask === task && (lane._fw || 0) > 0.05) {
                         task._labelRect = null;
                         spaceCtx.restore();
                         return;
@@ -10112,15 +9929,8 @@
                     spaceCtx.scale(tTk, tTk);
                     spaceCtx.textAlign = 'center';
                     spaceCtx.textBaseline = 'middle';
-                    // Font size can be smaller than the usual 44/40px - see resolveSweepTask's own
-                    // fontScales comment: two adjacent pills that still can't both fit at full size
-                    // shrink together rather than overlap or drift off-canvas. Must reuse the SAME
-                    // scale the sweep measured at, or this pill's actual rendered size (and the
-                    // background box sized around task._pillWidth below) would mismatch again - the
-                    // exact class of bug the bold-vs-regular font-matching fix above already covers.
-                    const pillFontScale = task._pillFontScale || 1;
-                    spaceCtx.font = (isActiveSwipeNode ? 'bold ' : '') + Math.round((isActiveSwipeNode ? 44 : 40) * pillFontScale) + 'px sans-serif';
-                    const lineHeight = (isActiveSwipeNode ? 50 : 46) * pillFontScale;
+                    spaceCtx.font = isActiveSwipeNode ? 'bold 44px sans-serif' : '40px sans-serif';
+                    const lineHeight = isActiveSwipeNode ? 50 : 46;
                     // Reuses the exact lines/width the sweep pre-pass above already settled on for
                     // this task (rather than re-wrapping at a fixed width here, which would silently
                     // throw away any narrowing the sweep did to make it fit) - see that pre-pass for
@@ -10130,9 +9940,8 @@
                     // earlier versions of the sweep responded to that by clamping position only, then
                     // by skipping the label outright when even clamping couldn't make it fit - both
                     // rejected directly ("for the Today it must show" / "have text drop lower instead
-                    // of ..."). The sweep now narrows the wrap width (more, shorter lines), and as a
-                    // last resort shrinks the font, until something fits, so every task always gets a
-                    // real, visible, non-overlapping pill.
+                    // of ..."). The sweep now narrows the wrap width (more, shorter lines) until
+                    // something fits, so every task always gets a real, visible pill.
                     const lines = task._pillLines || wrapTextToWidth(spaceCtx, task.title, 380 / Math.max(1, tTk / 1.25), (lane._fw || 0) > 0.3 ? 3 : 6);
                     const tWidth = task._pillWidth || (Math.max(...lines.map(l => spaceCtx.measureText(l).width)) + 24);
                     const tPillHeight = (lines.length * lineHeight) + (isActiveSwipeNode ? 14 : 10);
