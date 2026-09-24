@@ -9672,11 +9672,29 @@
                     // resolves to SOMETHING drawable, even in a pathological case with truly no room
                     // (forced flush against whichever boundary is closer, at the narrowest width tried)
                     // rather than looping forever or hiding the label.
+                    //
+                    // Width and line count are grown independently: a long title can fit horizontally
+                    // on the very first attempt (no narrowing needed) and still get cut off with an
+                    // ellipsis simply because wrapTextToWidth's own line cap was reached - reported
+                    // directly with a screenshot ("Eric's Wedding Rehearsal a…"). When that happens
+                    // there's no horizontal problem to solve, only a vertical one, so the line cap
+                    // keeps growing (the pill "drops lower") at the SAME width already known to fit,
+                    // instead of narrowing further for no reason.
                     let tryWidth = 380 / Math.max(1, sweepTk / 1.25);
-                    const minTryWidth = 90;
+                    let tryLineCap = baseLineCap;
+                    // A flat 90px floor doesn't account for the title's own content - if a single
+                    // WORD (e.g. "Location") is wider than that on its own, no number of extra lines
+                    // can ever help: wrapTextToWidth truncates a line whenever ITS OWN width exceeds
+                    // maxWidth, even with room left under the line cap, so the last line stayed
+                    // ellipsis-cut forever regardless of how far tryLineCap grew (reported directly:
+                    // "Eric's Wedding Rehearsal at Lo…" stuck at 5 lines no matter what). Never
+                    // narrowing past the widest single word's own width keeps every word full-length
+                    // and lets the line-cap growth above actually reach a truncation-free result.
+                    const widestWord = Math.max(...t.title.split(' ').map(w => spaceCtx.measureText(w).width)) + 24;
+                    const minTryWidth = Math.max(90, widestWord);
+                    const maxLineCap = 16;
                     let chosenLines = null, chosenTWidth = null, chosenHalfWidth = null, chosenCenter = sweepCenterX;
-                    for (let attempt = 0; attempt < 14; attempt++) {
-                        const tryLineCap = baseLineCap + attempt * 2;
+                    for (let attempt = 0; attempt < 20; attempt++) {
                         const lines = wrapTextToWidth(spaceCtx, t.title, tryWidth, tryLineCap);
                         const widest = Math.max(...lines.map(l => spaceCtx.measureText(l).width));
                         const tWidth = widest + 24;
@@ -9692,12 +9710,28 @@
                         chosenLines = lines;
                         chosenTWidth = tWidth;
                         chosenHalfWidth = halfWidth;
-                        if (minCenter <= maxCenter) {
+                        const fits = minCenter <= maxCenter;
+                        const atFloor = tryWidth <= minTryWidth;
+                        if (fits) {
                             chosenCenter = mvClamp(sweepCenterX, minCenter, maxCenter);
-                            break;
-                        }
-                        if (tryWidth <= minTryWidth) {
+                        } else if (atFloor) {
                             chosenCenter = sweepsRight ? (prevEdge + pillSweepGap + halfWidth) : (prevEdge - pillSweepGap - halfWidth);
+                        }
+                        if (fits || atFloor) {
+                            // Reached a final position (genuinely fits, or forced flush at the
+                            // narrowest width tried) - but a title long enough to need every line the
+                            // cap allowed still ends in an ellipsis at THIS width even though nothing
+                            // is stopping it from wrapping onto a couple more, still-narrow lines
+                            // instead. Reported directly with a screenshot ("Eric's Wedding Rehearsal
+                            // R…") - this specific title only hit the width floor, where the earlier
+                            // version of this fix never tried growing the line cap at all. Retrying at
+                            // the SAME width with more lines allowed doesn't change whether it fits
+                            // (width, not line count, decides that), so it's always safe to do here.
+                            const wasCutOff = lines.length > 0 && lines[lines.length - 1].endsWith('…');
+                            if (wasCutOff && tryLineCap < maxLineCap) {
+                                tryLineCap += 2;
+                                continue;
+                            }
                             break;
                         }
                         tryWidth = Math.max(minTryWidth, tryWidth * 0.82);
