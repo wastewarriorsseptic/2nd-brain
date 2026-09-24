@@ -9189,28 +9189,15 @@
                 fracTarget = Math.max(0.5, neededY / window.innerHeight);
             }
             mvCenterFrac = mvSmooth(mvCenterFrac, fracTarget, dt, 9);
-            // Centering purely on the hub (world x=0, since every Multiverse lane sits at lane.x=0)
-            // left the PRIOR task comfortably in view but the UPCOMING one cut off the edge -
-            // reported directly, with a screenshot. Not a camera bug on its own: mvApplyLaneLayout's
-            // own piecewise offset above deliberately keeps the previous task mirrored close to the
-            // hub (at -slot, matching the selected task's own +slot) so the scan/swap animation reads
-            // smoothly mid-gesture, but the NEXT task sits a full extra step further out than that -
-            // an intentional asymmetry for the animation that just never got accounted for by the
-            // camera framing. Centering on the midpoint of whatever actually needs to be visible
-            // (the hub, the selected task, and its immediate prior/next neighbor when they exist)
-            // instead of the hub alone brings both into the same field of view.
-            let desiredX = window.innerWidth / 2;
-            if (owner._selectedTask) {
-                const selL = mvTaskL(owner._selectedTask);
-                const prevTask = owner.tasks.find(t => mvTaskL(t) === selL - 1);
-                const nextTask = owner.tasks.find(t => mvTaskL(t) === selL + 1);
-                let leftBoundX = Math.min(0, owner._selectedTask.x);
-                let rightBoundX = Math.max(0, owner._selectedTask.x);
-                if (prevTask) leftBoundX = Math.min(leftBoundX, prevTask.x);
-                if (nextTask) rightBoundX = Math.max(rightBoundX, nextTask.x);
-                const midWorldX = (leftBoundX + rightBoundX) / 2;
-                desiredX = (window.innerWidth / 2) - midWorldX * cameraZoom * (owner._fw || 0);
-            }
+            // Reverted a camera shift here that tried to bring the previous/next task into view by
+            // moving the hub itself off-center - rejected directly ("it looks Stupid... the Universe
+            // node must be centered with the HUD card"), since the HUD card is a separate, always-
+            // centered DOM overlay (see #space-hud-card), and de-syncing the hub from it looked
+            // broken. The hub and HUD card stay centered together; see mvApplyLaneLayout's own
+            // piecewise offset above and the selected-task title pill below for the actual fix to
+            // "see the prior/upcoming task" (every node, including the selected one, now gets its own
+            // label directly beneath it - no more relying on a shifted camera to reveal one).
+            const desiredX = window.innerWidth / 2;
             const desiredY = window.innerHeight * mvCenterFrac - fy * cameraZoom;
             targetCameraOffset = { x: desiredX, y: desiredY };
             if (snapCamera) {
@@ -9657,35 +9644,16 @@
                 const hubPillScreenRight = hubPillScreenLeft !== null ? hubPillScreenLeft + cameraZoom * lane._namePillRect.w : null;
 
                 const resolveSweepTask = (t, prevEdge, sweepsRight) => {
+                    // The selected task used to be special-cased here - no title pill at all (its
+                    // title lives in the HUD card above too), just a narrower reservation sized for
+                    // its date label alone. That left a bare gap under it where every other task gets
+                    // its own label - reported directly: "First node to right must have whatever the
+                    // text is below it. there is an empty space for some reason." Folding it into the
+                    // exact same path every other task already uses (full title-pill sizing, clamping,
+                    // narrowing) removes that gap - the HUD card repeating the same title above is a
+                    // harmless bit of redundancy, not a bug, and consistent treatment for every node
+                    // is simpler than two parallel code paths that have to be kept in sync by hand.
                     t._pillOffset = 0;
-                    if (lane._selectedTask === t && (lane._fw || 0) > 0.05) {
-                        // No title pill is drawn for the selected task (its title lives in the HUD
-                        // card above instead - see the draw loop below), but its own DATE label still
-                        // draws above the dot - and, just like any other task's date label, was never
-                        // clamped to the screen at all, so it clipped at the edge exactly like the
-                        // original reported bug whenever the selected task itself sat near the edge
-                        // (reported directly with a screenshot: "Sep 27, 2026" missing its last
-                        // digit). Measures its own actual date text (not the fixed 90-unit guess the
-                        // very first version of this branch used) so both the label's own clamp AND
-                        // the width it reserves against a neighbor (an earlier bug here: a swept-in
-                        // neighbor landing on top of this task's own "Today"/"Tomorrow" label) agree
-                        // on the same real size.
-                        const selTk = t._tk || laneTk;
-                        spaceCtx.font = '36px sans-serif';
-                        const selDateLabel = getRelativeDateLabel(t.dueDate, t.dueDateFormatted);
-                        const selDateWidth = spaceCtx.measureText(selDateLabel).width + 16;
-                        const selEffScale = cameraZoom * selTk;
-                        const selCenterX = cameraOffset.x + cameraZoom * t.x;
-                        const selHalfWidth = (selDateWidth / 2) * selEffScale;
-                        const selMinCenter = pillScreenMargin + selHalfWidth;
-                        const selMaxCenter = window.innerWidth - pillScreenMargin - selHalfWidth;
-                        let selFinalCenterX = selCenterX;
-                        if (selMinCenter <= selMaxCenter) {
-                            selFinalCenterX = mvClamp(selCenterX, selMinCenter, selMaxCenter);
-                            t._pillOffset = (selFinalCenterX - selCenterX) / selEffScale;
-                        }
-                        return sweepsRight ? selFinalCenterX + selHalfWidth : selFinalCenterX - selHalfWidth;
-                    }
                     const sweepTk = t._tk || laneTk;
                     spaceCtx.font = '40px sans-serif';
                     const sweepEffScale = cameraZoom * sweepTk;
@@ -9826,14 +9794,6 @@
                     // is no more "nowhere safe to go" case left to skip for).
                     spaceCtx.fillText(dateLabel, task._pillOffset || 0, -rLocal - 30);
                     spaceCtx.restore();
-
-                    // The selected task's title is drawn centered below its lane's circle instead (see
-                    // after this loop), with the task card above the circle.
-                    if (lane._selectedTask === task && (lane._fw || 0) > 0.05) {
-                        task._labelRect = null;
-                        spaceCtx.restore();
-                        return;
-                    }
 
                     spaceCtx.save();
                     spaceCtx.translate(task.x, task.y);
