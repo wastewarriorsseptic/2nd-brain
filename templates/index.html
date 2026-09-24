@@ -5836,7 +5836,12 @@
         // truly unbounded, so not worth the complexity of a size-limited cache for a single session.
         const spaceLabelWrapCache = new Map();
         function cachedWrapTextToWidth(ctx, text, maxWidth, maxLines) {
-            const key = text + '|' + Math.round(maxWidth) + '|' + maxLines;
+            // ctx.font is part of the key - a wrap/measurement is only valid for the exact font it
+            // was measured in (the caller sets ctx.font before calling this), and the sweep now sets
+            // a DIFFERENT font for the active/selected task than for everything else (see its own
+            // comment - this is what fixed a title spilling out past its background box). Without the
+            // font in the key, a result measured in one font could get wrongly reused for another.
+            const key = text + '|' + Math.round(maxWidth) + '|' + maxLines + '|' + ctx.font;
             let hit = spaceLabelWrapCache.get(key);
             if (!hit) {
                 const lines = wrapTextToWidth(ctx, text, maxWidth, maxLines);
@@ -9684,7 +9689,15 @@
                     // is simpler than two parallel code paths that have to be kept in sync by hand.
                     t._pillOffset = 0;
                     const sweepTk = t._tk || laneTk;
-                    spaceCtx.font = '40px sans-serif';
+                    // Must match the draw loop's own font choice exactly (bold 44px for the
+                    // active/selected task, 40px otherwise) - reported directly with a screenshot: the
+                    // selected task's title spilling out past the bottom of its own background box.
+                    // The sweep always measured at the smaller, non-bold 40px regardless of which task
+                    // this was, but the draw loop below draws the ACTIVE task's text in the larger bold
+                    // font - wider glyphs than what the sweep wrapped/sized for, so the box it computed
+                    // undersold how much room the real, bigger text actually needed.
+                    const sweepIsActive = (activeSwipeTaskId && String(t.id) === String(activeSwipeTaskId)) || lane._selectedTask === t;
+                    spaceCtx.font = sweepIsActive ? 'bold 44px sans-serif' : '40px sans-serif';
                     const sweepEffScale = cameraZoom * sweepTk;
                     const sweepCenterX = cameraOffset.x + cameraZoom * t.x;
                     const baseLineCap = (lane._fw || 0) > 0.3 ? 3 : 6;
@@ -9721,11 +9734,16 @@
                     // and lets the line-cap growth above actually reach a truncation-free result.
                     // Cached directly on the task object (not the shared cache above) - a task's own
                     // title never changes while it's visible, so this only ever needs measuring once
-                    // per task for the task's entire lifetime on screen, not once per frame.
-                    if (t._cachedWidestWord === undefined) {
-                        t._cachedWidestWord = Math.max(...t.title.split(' ').map(w => spaceCtx.measureText(w).width)) + 24;
+                    // per task for the task's entire lifetime on screen, not once per frame. Keyed by
+                    // font (bold vs regular) too, not just left as a single cached value: whether a
+                    // task is the active/selected one can change as the user swipes between tasks, and
+                    // a value measured in one font is wrong to reuse for the other - the same class of
+                    // stale-cache bug the wrap cache above was just fixed for.
+                    const widestWordCacheKey = '_cachedWidestWord_' + (sweepIsActive ? 'bold' : 'regular');
+                    if (t[widestWordCacheKey] === undefined) {
+                        t[widestWordCacheKey] = Math.max(...t.title.split(' ').map(w => spaceCtx.measureText(w).width)) + 24;
                     }
-                    const minTryWidth = Math.max(90, t._cachedWidestWord);
+                    const minTryWidth = Math.max(90, t[widestWordCacheKey]);
                     const maxLineCap = 16;
                     let chosenLines = null, chosenTWidth = null, chosenHalfWidth = null, chosenCenter = sweepCenterX;
                     for (let attempt = 0; attempt < 20; attempt++) {
