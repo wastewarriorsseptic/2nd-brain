@@ -9678,16 +9678,35 @@
                 const hubPillScreenRight = hubPillScreenLeft !== null ? hubPillScreenLeft + cameraZoom * lane._namePillRect.w : null;
 
                 const resolveSweepTask = (t, prevEdge, sweepsRight) => {
-                    // The selected task used to be special-cased here - no title pill at all (its
-                    // title lives in the HUD card above too), just a narrower reservation sized for
-                    // its date label alone. That left a bare gap under it where every other task gets
-                    // its own label - reported directly: "First node to right must have whatever the
-                    // text is below it. there is an empty space for some reason." Folding it into the
-                    // exact same path every other task already uses (full title-pill sizing, clamping,
-                    // narrowing) removes that gap - the HUD card repeating the same title above is a
-                    // harmless bit of redundancy, not a bug, and consistent treatment for every node
-                    // is simpler than two parallel code paths that have to be kept in sync by hand.
                     t._pillOffset = 0;
+                    // Selected task shows its title in the HUD card above instead of a second copy
+                    // here - reinstated after briefly folding it into the same full-pill path every
+                    // other task uses (see git history): that made the node right next to the hub
+                    // just repeat the HUD's own title, when what the strip is supposed to reveal
+                    // there is the NEXT actual task. Reported directly: "the task in the Hud should
+                    // not be the task to the Right of the universe node... the text simply goes away
+                    // when its selected... and the next upcoming task text shows to right". Reserves
+                    // space only for the date label (measured in the same bold font the draw loop
+                    // renders it in for this always-active node, not the title font), so this node
+                    // stops competing with its neighbor for room and no _pillLines/_pillWidth get
+                    // set - the draw loop skips the title block entirely for this task.
+                    if (lane._selectedTask === t && (lane._fw || 0) > 0.05) {
+                        const selTk = t._tk || laneTk;
+                        spaceCtx.font = 'bold 40px sans-serif';
+                        const selDateLabel = getRelativeDateLabel(t.dueDate, t.dueDateFormatted);
+                        const selDateWidth = spaceCtx.measureText(selDateLabel).width + 16;
+                        const selEffScale = cameraZoom * selTk;
+                        const selCenterX = cameraOffset.x + cameraZoom * t.x;
+                        const selHalfWidth = (selDateWidth / 2) * selEffScale;
+                        const selMinCenter = pillScreenMargin + selHalfWidth;
+                        const selMaxCenter = window.innerWidth - pillScreenMargin - selHalfWidth;
+                        let selFinalCenterX = selCenterX;
+                        if (selMinCenter <= selMaxCenter) {
+                            selFinalCenterX = mvClamp(selCenterX, selMinCenter, selMaxCenter);
+                            t._pillOffset = (selFinalCenterX - selCenterX) / selEffScale;
+                        }
+                        return sweepsRight ? selFinalCenterX + selHalfWidth : selFinalCenterX - selHalfWidth;
+                    }
                     const sweepTk = t._tk || laneTk;
                     // Must match the draw loop's own font choice exactly (bold 44px for the
                     // active/selected task, 40px otherwise) - reported directly with a screenshot: the
@@ -9881,6 +9900,14 @@
                     // is no more "nowhere safe to go" case left to skip for).
                     spaceCtx.fillText(dateLabel, task._pillOffset || 0, -rLocal - 30);
                     spaceCtx.restore();
+
+                    // The selected task's title lives in the HUD card above instead of a second copy
+                    // here - see resolveSweepTask's own comment for why this was reinstated.
+                    if (lane._selectedTask === task && (lane._fw || 0) > 0.05) {
+                        task._labelRect = null;
+                        spaceCtx.restore();
+                        return;
+                    }
 
                     spaceCtx.save();
                     spaceCtx.translate(task.x, task.y);
