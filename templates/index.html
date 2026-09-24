@@ -5822,6 +5822,35 @@
         let multiverseAddUniverseHub = null;
         let multiverseDragStartWorldY = null;
         let multiverseDragLaneStartY = null;
+        // Memoizes wrapTextToWidth results for the timeline label sweep in renderStackedLanesCore -
+        // requested directly ("the whole system is jerky... flow on swiping and moving around is not
+        // smooth"). The sweep's narrowing loop calls ctx.measureText() many times per task, every
+        // single animation frame (60/sec), for EVERY task in the focused lane - expensive canvas text
+        // measurement work that's actually independent of the camera: a given (title, width, line
+        // cap) always wraps to the same lines regardless of where the camera happens to be pointing
+        // right now. Only the FIT-CHECK against a neighbor's current screen position genuinely needs
+        // to be fresh every frame during a pan/swipe; the wrap itself doesn't. Caching it here means
+        // panning re-runs the cheap position math every frame but hits this cache instead of
+        // re-measuring text that hasn't changed. Never explicitly evicted - bounded in practice by
+        // (task count) x (the handful of widths/line-caps the narrowing loop actually tries), not
+        // truly unbounded, so not worth the complexity of a size-limited cache for a single session.
+        const spaceLabelWrapCache = new Map();
+        function cachedWrapTextToWidth(ctx, text, maxWidth, maxLines) {
+            const key = text + '|' + Math.round(maxWidth) + '|' + maxLines;
+            let hit = spaceLabelWrapCache.get(key);
+            if (!hit) {
+                const lines = wrapTextToWidth(ctx, text, maxWidth, maxLines);
+                // The widest line's own measured width is cached alongside the lines themselves
+                // (same cache key, so it's free once the lines are already computed) - the sweep
+                // used to re-measure every returned line with its own separate ctx.measureText()
+                // call on every single frame right after this, which is exactly the same kind of
+                // redundant per-frame text measurement this cache exists to avoid.
+                const widest = Math.max(...lines.map(l => ctx.measureText(l).width));
+                hit = { lines, widest };
+                spaceLabelWrapCache.set(key, hit);
+            }
+            return hit;
+        }
         let cameraOffset = { x: 0, y: 0 };
         let targetCameraOffset = { x: 0, y: 0 };
         let cameraZoom = 1;
@@ -9690,13 +9719,19 @@
                     // "Eric's Wedding Rehearsal at Lo…" stuck at 5 lines no matter what). Never
                     // narrowing past the widest single word's own width keeps every word full-length
                     // and lets the line-cap growth above actually reach a truncation-free result.
-                    const widestWord = Math.max(...t.title.split(' ').map(w => spaceCtx.measureText(w).width)) + 24;
-                    const minTryWidth = Math.max(90, widestWord);
+                    // Cached directly on the task object (not the shared cache above) - a task's own
+                    // title never changes while it's visible, so this only ever needs measuring once
+                    // per task for the task's entire lifetime on screen, not once per frame.
+                    if (t._cachedWidestWord === undefined) {
+                        t._cachedWidestWord = Math.max(...t.title.split(' ').map(w => spaceCtx.measureText(w).width)) + 24;
+                    }
+                    const minTryWidth = Math.max(90, t._cachedWidestWord);
                     const maxLineCap = 16;
                     let chosenLines = null, chosenTWidth = null, chosenHalfWidth = null, chosenCenter = sweepCenterX;
                     for (let attempt = 0; attempt < 20; attempt++) {
-                        const lines = wrapTextToWidth(spaceCtx, t.title, tryWidth, tryLineCap);
-                        const widest = Math.max(...lines.map(l => spaceCtx.measureText(l).width));
+                        const wrapped = cachedWrapTextToWidth(spaceCtx, t.title, tryWidth, tryLineCap);
+                        const lines = wrapped.lines;
+                        const widest = wrapped.widest;
                         const tWidth = widest + 24;
                         const halfWidth = (tWidth / 2) * sweepEffScale;
                         let minCenter, maxCenter;
