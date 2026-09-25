@@ -5929,6 +5929,11 @@
         let mvCamSettling = false;
         let mvFocusLastFrameMs = 0;
         let mvAddHubY = null;
+        // The add-hub's own focus-weight/scale, mirroring lane._fw/scale so it zooms in and fades
+        // the same way a real lane does as mvFocusF approaches it (see mvApplyLayout/mvHasAddHubSlot).
+        let mvAddHubFw = 0;
+        let mvAddHubScale = 1;
+        let mvAddHubAlpha = 0.5;
         let mvHudTaskId = null;
         let mvHudOwned = false;
         let mvHudUp = false;
@@ -9071,6 +9076,7 @@
             const lanes = mvLanes(), n = lanes.length;
             if (!n) return 0;
             const R = 2.6, S = mvMaxScale();
+            const hasAddHub = mvHasAddHubSlot();
             const ss = [], tks = [];
             lanes.forEach((lane, i) => {
                 if (lane._taskCountSeen !== lane.tasks.length) mvReindexLane(lane);
@@ -9081,20 +9087,33 @@
                 lane._alpha = 0.5 + 0.5 * w;
                 lane._fw = w * w * w;
             });
+            // The add-hub's own focus-weight, computed the exact same way a real lane's is (distance
+            // from mvFocusF, at its own virtual index n) - lets it grow/fade in as it's swiped to,
+            // rather than always sitting at one fixed size regardless of focus.
+            const addHubW = hasAddHub ? mvSmoothstep(1 - Math.abs(n - mvFocusF) / R) : 0;
+            mvAddHubFw = addHubW * addHubW * addHubW;
+            mvAddHubScale = 1 + (S - 1) * addHubW;
+            mvAddHubAlpha = 0.5 + 0.5 * addHubW;
             const base = lanes[0]._spacing;
             const ys = [];
             let y = 0;
             for (let i = 0; i < n; i++) {
                 ys[i] = y;
                 const sNext = i + 1 < n ? ss[i + 1] : 1;
-                y += base * (1 + MV_FOCUS_GAP_K * Math.max(lanes[i]._fw || 0, i + 1 < n ? (lanes[i + 1]._fw || 0) : 0));
+                const nextFw = i + 1 < n ? (lanes[i + 1]._fw || 0) : (hasAddHub ? mvAddHubFw : 0);
+                y += base * (1 + MV_FOCUS_GAP_K * Math.max(lanes[i]._fw || 0, nextFw));
                 if (i + 1 < n) y += mvCardGap * (lanes[i + 1]._fw || 0);
             }
             mvAddHubY = y;
             lanes.forEach((lane, i) => mvApplyLaneLayout(lane, ys[i], ss[i], tks[i], lane._scroll || 0));
-            const F = mvClamp(mvFocusF, 0, n - 1);
-            const lo = Math.floor(F), hi = Math.min(n - 1, lo + 1);
-            return ys[lo] + (ys[hi] - ys[lo]) * (F - lo);
+            // F can reach n itself now (the add-hub's own virtual index, one past the last real
+            // lane) when this view has one - see mvHasAddHubSlot/mvSetFocus - so the camera keeps
+            // smoothly panning all the way onto it instead of stopping dead at the last real lane.
+            const maxF = n - 1 + (hasAddHub ? 1 : 0);
+            const F = mvClamp(mvFocusF, 0, maxF);
+            const lo = Math.floor(F), hi = Math.min(maxF, lo + 1);
+            const yAt = (idx) => idx >= n ? mvAddHubY : ys[idx];
+            return yAt(lo) + (yAt(hi) - yAt(lo)) * (F - lo);
         }
 
         function mvOverviewCamera() {
@@ -9143,14 +9162,28 @@
             mvApplyLayout();
         }
 
+        // The "add Universe" hub sits one slot past the last real lane (see mvApplyLayout/mvAddHubY)
+        // but is deliberately kept OUT of multiverseLanes itself - see its own comment in
+        // renderStackedLanesCore. Only the Multiverse Timeline has one; the Realm Timeline has no
+        // equivalent "new Realm" concept living at this level. Reported directly: swiping past the
+        // last Universe never snapped the camera onto it the way swiping between real lanes does -
+        // mvFocusF/mvFocusTarget were hard-clamped to the last real lane's own index, so the hub
+        // was only ever reachable by manually dragging the camera off the end of that clamped
+        // range, and even then never got the same snap-into-focus treatment a real lane gets.
+        function mvHasAddHubSlot() {
+            return isMultiverseStackedView && !isRealmTimelineView;
+        }
+
         function mvSetFocus(idx) {
             const n = mvLanes().length;
             if (!n) return;
-            idx = mvClamp(idx, 0, n - 1);
+            const maxIdx = n - 1 + (mvHasAddHubSlot() ? 1 : 0);
+            idx = mvClamp(idx, 0, maxIdx);
             if (idx !== mvFocusTarget) {
                 mvLanes().forEach(l => { l._scrollIdxTarget = 0; });
                 mvFocusTarget = idx;
-                if (!(isRealmTimelineView && realmLayer !== 'universe') && !mvLanes()[idx].isUniverseNode) { try { localStorage.setItem(mvFocusStorageKey(), String(mvLanes()[idx].id)); } catch (e) {} }
+                const targetLane = idx < n ? mvLanes()[idx] : null;
+                if (targetLane && !(isRealmTimelineView && realmLayer !== 'universe') && !targetLane.isUniverseNode) { try { localStorage.setItem(mvFocusStorageKey(), String(targetLane.id)); } catch (e) {} }
                 triggerHapticFeedback('light');
             }
         }
@@ -9214,7 +9247,13 @@
                 }
             }
 
-            mvFocusTarget = mvClamp(mvFocusTarget, 0, n - 1);
+            // n itself (the add-hub's own virtual index, one past the last real lane) is a valid
+            // target here too when this view has one - see mvHasAddHubSlot/mvApplyLayout. Missing
+            // this clamp was the actual bug behind "swiping past the last Universe never snaps
+            // into place" - mvSetFocus itself allowed index n just fine, but this per-frame clamp
+            // (running every frame regardless of who set mvFocusTarget) silently pulled it straight
+            // back down to n-1 again before the next render ever saw it.
+            mvFocusTarget = mvClamp(mvFocusTarget, 0, n - 1 + (mvHasAddHubSlot() ? 1 : 0));
             const g = mvFocusGesture;
             if (!(g && g.axis === 'v')) {
                 mvFocusF = mvSmooth(mvFocusF, mvFocusTarget, dt, 13);
@@ -9240,11 +9279,14 @@
             const fy = mvApplyLayout();
 
             // Selected task of the selected lane: mirrors it onto the HUD card (auto-updating as you
-            // scan) and highlights it on the canvas.
+            // scan) and highlights it on the canvas. owner is undefined when mvFocusTarget is the
+            // add-hub's own virtual index (see mvHasAddHubSlot) - it isn't a real lane and has no
+            // task/HUD concept of its own, so all of this is skipped for it, closing the HUD card
+            // if one happened to be open from whatever was focused just before.
             const owner = lanes[mvFocusTarget];
             lanes.forEach(l => { if (l !== owner) l._selectedTask = null; });
             const scanning = g && g.axis === 'h' && g.lane === owner;
-            if (!(g && g.axis === 'v')) {
+            if (owner && !(g && g.axis === 'v')) {
                 const cSel = scanning ? Math.round(owner._scroll || 0) : (owner._scrollIdxTarget || 0);
                 owner._selectedTask = mvSelectedTaskFor(owner, cSel);
                 Object.keys(mvSavedScroll).forEach(k => { if (k !== '__for') delete mvSavedScroll[k]; });
@@ -9257,13 +9299,19 @@
                     if (owner._selectedTask) mvOpenHud(owner._selectedTask);
                     else if (mvHudOwned) hideHudCard();
                 }
+            } else if (!owner && mvHudOwned) {
+                mvHudTaskId = null;
+                hideHudCard();
             }
 
             mvHudUp = hudUp;
             // With the card up, the scanned row sits at mid-screen; it only drops lower when the card is
-            // tall enough that it would otherwise run up under the Daily Digest pill.
+            // tall enough that it would otherwise run up under the Daily Digest pill. owner is also
+            // re-checked here (not just above) - hudUp reflects the CARD's own DOM state from the
+            // end of the PREVIOUS frame, so the very frame focus moves onto the add-hub can still
+            // see hudUp true here even though owner is already gone this frame.
             let fracTarget = 0.48;
-            if (hudUp) {
+            if (hudUp && owner) {
                 const digest = document.getElementById('daily-digest-hud');
                 const digestBottom = (digest && !digest.classList.contains('hidden')) ? digest.getBoundingClientRect().bottom : 60;
                 const neededY = digestBottom + 16 + hudEl.offsetHeight + 14 + owner.hubRadius * cameraZoom;
@@ -9291,7 +9339,7 @@
                 cameraOffset.x = desiredX;
                 cameraOffset.y = desiredY;
             }
-            if (hudUp) {
+            if (hudUp && owner) {
                 const hubTopScreen = cameraOffset.y + owner.y * cameraZoom - owner.hubRadius * cameraZoom;
                 hudEl.style.bottom = Math.max(0, window.innerHeight - hubTopScreen + 14) + 'px';
                 hudEl.style.top = 'auto';
@@ -9319,11 +9367,12 @@
             }
             const now = performance.now();
             const n = mvLanes().length;
+            const maxF = n - 1 + (mvHasAddHubSlot() ? 1 : 0);
             if (g.axis === 'v') {
                 const px = mvLanes()[0]._spacing * 1.15 * cameraZoom;
-                const f = mvRubber(g.startF - dy / px, 0, n - 1);
+                const f = mvRubber(g.startF - dy / px, 0, maxF);
                 mvFocusF = f;
-                const idx = mvClamp(Math.round(f), 0, n - 1);
+                const idx = mvClamp(Math.round(f), 0, maxF);
                 if (idx !== mvFocusTarget) mvSetFocus(idx);
                 g.samples.push({ t: now, v: f });
             } else {
@@ -9352,8 +9401,10 @@
                 if (dtS > 0.01) vel = (b.v - a.v) / dtS;
             }
             if (g.axis === 'v') {
+                const n = mvLanes().length;
+                const maxF = n - 1 + (mvHasAddHubSlot() ? 1 : 0);
                 const proj = mvFocusF + mvClamp(vel * 0.07, -1.5, 1.5);
-                mvSetFocus(Math.round(mvClamp(proj, 0, mvLanes().length - 1)));
+                mvSetFocus(Math.round(mvClamp(proj, 0, maxF)));
             } else if (g.lane) {
                 const rng = mvScrollRange(g.lane);
                 const proj = (g.lane._scroll || 0) + mvClamp(vel * 0.08, -2, 2);
@@ -9672,7 +9723,11 @@
             // down, where each lane is a Realm instead.
             if (!isBlurLayer && isMultiverseStackedView && !isRealmTimelineView) {
                 const addHubY = mvAddHubY !== null ? mvAddHubY : allLanes.length * (window.innerWidth < 768 ? 460 : 400);
-                const addHubRadius = allLanes.length > 0 ? (allLanes[0]._baseHub || allLanes[0].hubRadius) : (window.innerWidth < 768 ? 76 : 60);
+                // Scales/fades with mvAddHubFw/mvAddHubScale/mvAddHubAlpha the same way a real
+                // lane's hub grows and brightens as mvFocusF reaches it (see mvApplyLayout) -
+                // requested directly, wanting this hub to act as a genuine, swipeable "next
+                // Universe" slot rather than a fixed-size button sitting outside that system.
+                const addHubRadius = (allLanes.length > 0 ? (allLanes[0]._baseHub || allLanes[0].hubRadius) : (window.innerWidth < 768 ? 76 : 60)) * mvAddHubScale;
                 multiverseAddUniverseHub = { x: 0, y: addHubY, radius: addHubRadius };
 
                 // Matched to the Multiverse picker grid's own "+" tile as closely as canvas
@@ -9683,6 +9738,7 @@
                 // opaque indigo-400, matching the DOM tile's softer shadow-*/30 look; the "+" itself
                 // is bold now too, closer to how a Tailwind-rendered "+" character actually reads.
                 spaceCtx.save();
+                spaceCtx.globalAlpha = mvAddHubAlpha;
                 spaceCtx.beginPath();
                 spaceCtx.arc(0, addHubY, addHubRadius, 0, Math.PI * 2);
                 spaceCtx.fillStyle = 'rgba(30, 41, 59, 0.95)';
