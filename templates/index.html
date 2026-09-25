@@ -9880,24 +9880,14 @@
                     spaceCtx.shadowColor = task.isOverdue ? '#f43f5e' : (isSoon ? '#2dd4bf' : 'transparent');
                     spaceCtx.shadowBlur = isSoon || task.isOverdue ? 10 : 0;
                     // Reuses the SAME horizontal shift the sweep pre-pass above already worked out for
-                    // this task's title pill as a starting point, rather than a hardcoded 0 - this
-                    // date label sits right above that same pill and was never part of the sweep's own
-                    // on-screen math. That alone isn't quite enough on its own, though: the pill's
-                    // shift was sized for the PILL's own (often much narrower, once wrapped) width, not
-                    // the date label's - reported directly with a screenshot, a date label running off
-                    // the right edge of the screen even though its own task's title pill sat fully
-                    // on-screen right below it. One more clamp, scoped to just this label's own actual
-                    // width, keeps it on-screen too.
-                    const dateHalfWidthScreen = (spaceCtx.measureText(dateLabel).width / 2) * cameraZoom * tTk;
-                    const dateBaseScreenX = cameraOffset.x + cameraZoom * task.x;
-                    const dateScreenX = dateBaseScreenX + cameraZoom * tTk * (task._pillOffset || 0);
-                    const dateMinCenter = pillScreenMargin + dateHalfWidthScreen;
-                    const dateMaxCenter = window.innerWidth - pillScreenMargin - dateHalfWidthScreen;
-                    const dateClampedScreenX = dateMinCenter <= dateMaxCenter
-                        ? mvClamp(dateScreenX, dateMinCenter, dateMaxCenter)
-                        : dateScreenX;
-                    const dateLocalX = (dateClampedScreenX - dateBaseScreenX) / (cameraZoom * tTk);
-                    spaceCtx.fillText(dateLabel, dateLocalX, -rLocal - 30);
+                    // this task's title pill, rather than a hardcoded 0 - this date label sits right
+                    // above that same pill and was never part of the sweep's own on-screen math, so it
+                    // clipped at the screen edge on its own even after the pill itself was already
+                    // being kept fully visible. Shifting both by the same amount keeps them visually
+                    // stacked on the same task exactly as before. Always drawn now (the sweep always
+                    // resolves SOME on-screen position for every task - see its own comment - so there
+                    // is no more "nowhere safe to go" case left to skip for).
+                    spaceCtx.fillText(dateLabel, task._pillOffset || 0, -rLocal - 30);
                     spaceCtx.restore();
 
                     spaceCtx.save();
