@@ -9837,15 +9837,28 @@
                     spaceCtx.save();
                     spaceCtx.globalAlpha = task._vis;
 
+                    // The dot itself used to always sit at the task's raw, unshifted position while
+                    // its date label and title pill (below) both already apply task._pillOffset to
+                    // stay clear of the screen edge - reported directly with a screenshot: the left
+                    // node's text sitting noticeably off to one side instead of lined up underneath
+                    // it. Shifting the dot by that same offset keeps the whole node - halo, dot, date,
+                    // and title - moving together as one unit instead of just the text sliding out
+                    // from under it. Converts pillOffset (a LOCAL unit meant for use inside the
+                    // translate+scale(tTk) space the label below draws in) into the same WORLD-space
+                    // shift by multiplying by tTk, since the dot draws directly in world space with no
+                    // extra scale of its own.
+                    const dotTk = task._tk || laneTk;
+                    const dotX = task.x + dotTk * (task._pillOffset || 0);
+
                     if (isActiveSwipeNode) {
                         spaceCtx.save();
                         const pulseHalo = 18 + Math.sin(frameCount * 4) * 6;
                         spaceCtx.beginPath();
-                        spaceCtx.arc(task.x, task.y, task.radius + pulseHalo, 0, Math.PI * 2);
+                        spaceCtx.arc(dotX, task.y, task.radius + pulseHalo, 0, Math.PI * 2);
                         spaceCtx.fillStyle = 'rgba(129, 140, 248, 0.25)';
                         spaceCtx.fill();
                         spaceCtx.beginPath();
-                        spaceCtx.arc(task.x, task.y, task.radius + 6, 0, Math.PI * 2);
+                        spaceCtx.arc(dotX, task.y, task.radius + 6, 0, Math.PI * 2);
                         spaceCtx.strokeStyle = '#38bdf8';
                         spaceCtx.lineWidth = 2.5;
                         spaceCtx.shadowColor = '#818cf8';
@@ -9855,7 +9868,7 @@
                     }
 
                     spaceCtx.beginPath();
-                    spaceCtx.arc(task.x, task.y, isActiveSwipeNode ? task.radius + 4 : task.radius, 0, Math.PI * 2);
+                    spaceCtx.arc(dotX, task.y, isActiveSwipeNode ? task.radius + 4 : task.radius, 0, Math.PI * 2);
                     if (task.isOverdue) {
                         spaceCtx.fillStyle = '#f43f5e';
                         spaceCtx.shadowColor = '#f43f5e';
