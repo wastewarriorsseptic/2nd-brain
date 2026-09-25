@@ -4683,10 +4683,14 @@
                 const lane = multiverseLanes[mvFocusTarget];
                 if (lane) {
                     if (lane.id === '__all_tasks__') return { allTasks: true };
-                    return { universeId: lane.id };
+                    return { universeId: lane.id, universeName: lane.name };
                 }
             }
-            return activeUniverseId ? { universeId: activeUniverseId } : null;
+            if (activeUniverseId) {
+                const meta = allUniversesData.find(u => String(u.id) === String(activeUniverseId));
+                return { universeId: activeUniverseId, universeName: meta ? meta.name : null };
+            }
+            return null;
         }
 
         function openAiChatQuickTask(event) {
@@ -4706,7 +4710,19 @@
             // above) already shows the sign-in prompt there, and asking what task they want right
             // alongside "you need to sign in first" would be a contradictory double message.
             if (aiChatLoggedIn) {
-                renderAiChatBubble('assistant', 'What task would you like me to create for you?');
+                // Requested directly, wanting the opening question itself to already make clear
+                // where the task is headed rather than only confirming it after the fact: named
+                // for a specific Universe when one's on screen, or asked outright when "All Tasks"
+                // (every Universe at once) is what's actually in view instead - the one case where
+                // there's genuinely nothing to name yet.
+                const hint = aiChatQuickTaskUniverseHint;
+                let quickTaskPrompt = 'What task would you like me to create for you?';
+                if (hint && hint.universeName) {
+                    quickTaskPrompt = `What task would you like me to create for you in ${hint.universeName}?`;
+                } else if (hint && hint.allTasks) {
+                    quickTaskPrompt = 'What task would you like me to create for you, and in what universe?';
+                }
+                renderAiChatBubble('assistant', quickTaskPrompt);
             }
             const input = document.getElementById('ai-chat-input');
             if (input) {
