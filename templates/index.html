@@ -9675,13 +9675,20 @@
                 const addHubRadius = allLanes.length > 0 ? (allLanes[0]._baseHub || allLanes[0].hubRadius) : (window.innerWidth < 768 ? 76 : 60);
                 multiverseAddUniverseHub = { x: 0, y: addHubY, radius: addHubRadius };
 
+                // Matched to the Multiverse picker grid's own "+" tile as closely as canvas
+                // rendering allows (border-2 border-indigo-500 bg-slate-800/95 shadow-indigo-600/30
+                // text-indigo-400) - requested directly, wanting the two to look the same. lineWidth
+                // 3->2 for border-2's 2px; the glow now uses indigo-600 at a baked-in low alpha
+                // (canvas shadowColor has no separate opacity control) instead of a bright, fully
+                // opaque indigo-400, matching the DOM tile's softer shadow-*/30 look; the "+" itself
+                // is bold now too, closer to how a Tailwind-rendered "+" character actually reads.
                 spaceCtx.save();
                 spaceCtx.beginPath();
                 spaceCtx.arc(0, addHubY, addHubRadius, 0, Math.PI * 2);
                 spaceCtx.fillStyle = 'rgba(30, 41, 59, 0.95)';
                 spaceCtx.strokeStyle = '#6366f1';
-                spaceCtx.lineWidth = 3;
-                spaceCtx.shadowColor = '#818cf8';
+                spaceCtx.lineWidth = 2;
+                spaceCtx.shadowColor = 'rgba(79, 70, 229, 0.5)';
                 spaceCtx.shadowBlur = 20;
                 spaceCtx.fill();
                 spaceCtx.stroke();
@@ -9689,7 +9696,7 @@
                 spaceCtx.shadowBlur = 0;
                 spaceCtx.textAlign = 'center';
                 spaceCtx.textBaseline = 'middle';
-                spaceCtx.font = `${Math.round(addHubRadius * 0.9)}px sans-serif`;
+                spaceCtx.font = `bold ${Math.round(addHubRadius * 0.75)}px sans-serif`;
                 spaceCtx.fillStyle = '#818cf8';
                 spaceCtx.fillText('+', 0, addHubY);
                 spaceCtx.restore();
