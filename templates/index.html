@@ -8497,7 +8497,9 @@
                     }
                 }
                 lane._emptyFallback = emptyLaneFallback;
-                lane.midAddButtons = computeLaneMidAddButtons(lane, upcomingTasks, hubRadius, startGap, stepSpacing, isMobile, emptyLaneFallback);
+                // Requested directly: removed the dashed-green "+" quick-add buttons along the
+                // timeline strip - not needed now that tasks mostly get added through chat instead.
+                lane.midAddButtons = [];
             });
 
             return lanes;
@@ -8693,7 +8695,9 @@
                         emptyLaneFallback = { bucketId: lane.id, realmId: layerRealm, universeId: activeUniverseId };
                     }
                 }
-                lane.midAddButtons = computeLaneMidAddButtons(lane, upcomingTasks, hubRadius, startGap, stepSpacing, isMobile, emptyLaneFallback);
+                // Requested directly: removed the dashed-green "+" quick-add buttons along the
+                // timeline strip - not needed now that tasks mostly get added through chat instead.
+                lane.midAddButtons = [];
             });
 
             return lanes;
@@ -8985,25 +8989,9 @@
             lane.leftmostTaskX = minX;
             lane.rightmostTaskX = maxX;
 
-            const mabRadius = (lane._isMobile ? 22 : 19) * tk;
-            const ups = lane._upcoming || [];
-            const mabs = [];
-            if (lane.isAllNode) {
-                // no add buttons: a task added from here would have no obvious Universe
-            } else if (ups.length === 0) {
-                const fb = lane._emptyFallback;
-                if (fb && fb.bucketId != null) {
-                    mabs.push({ x: lane.x + slot, y, bucketId: fb.bucketId, realmId: fb.realmId, universeId: fb.universeId, radius: mabRadius });
-                }
-            } else {
-                mabs.push({ x: ups[0].x - step / 2, y, bucketId: ups[0].bucketId, realmId: ups[0].realmId, universeId: ups[0].universeId, radius: mabRadius });
-                for (let i = 0; i < ups.length - 1; i++) {
-                    mabs.push({ x: (ups[i].x + ups[i + 1].x) / 2, y, bucketId: ups[i + 1].bucketId, realmId: ups[i + 1].realmId, universeId: ups[i + 1].universeId, radius: mabRadius });
-                }
-                const last = ups[ups.length - 1];
-                mabs.push({ x: last.x + step, y, bucketId: last.bucketId, realmId: last.realmId, universeId: last.universeId, radius: mabRadius });
-            }
-            lane.midAddButtons = mabs;
+            // Requested directly: removed the dashed-green "+" quick-add buttons along the
+            // timeline strip - not needed now that tasks mostly get added through chat instead.
+            lane.midAddButtons = [];
         }
 
         function mvResetLayoutToBase() {
