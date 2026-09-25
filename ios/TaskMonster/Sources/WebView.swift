@@ -216,10 +216,36 @@ struct WebView: UIViewRepresentable {
         // Google's "disallowed_useragent" block targets WKWebView sessions using a stripped-down
         // custom user agent or other automation signals - this WKWebView uses its stock default
         // configuration/user agent, which is why it isn't flagged.
+        //
+        // Only listing "accounts.google.com" itself missed a real report: a friend testing the
+        // app "couldn't login" - the account-owner's own Google account (used for the 2026-09-04
+        // verification above) has no 2-Step Verification challenge and is already a trusted
+        // device, so it never left accounts.google.com. A account with 2FA, a "verify it's you"
+        // security check, or a new/unrecognized-device prompt gets redirected through OTHER
+        // Google subdomains (myaccount.google.com and similar) that weren't in this list - the
+        // WKWebView would bounce that navigation out to Safari mid-flow instead of completing it
+        // in-app, so the user finishes signing in in Safari while the app's own WKWebView (a
+        // separate, non-shared cookie store) never receives the resulting session and just sits
+        // on the login screen. Matching any *.google.com / *.apple.com host (not just the one
+        // subdomain each provider's sign-in NORMALLY uses) covers those extra verification steps
+        // too, without opening this up to unrelated sites.
         private let inAppHosts: Set<String> = [
             "usetaskmonster.app",
-            "accounts.google.com",
-            "appleid.apple.com",
+            "google.com",
+            "apple.com",
+        ]
+
+        // Matching all of google.com/apple.com above (not just the accounts.* subdomain each
+        // provider's sign-in NORMALLY uses) would also pull an ordinary content link - a Google
+        // Doc or Drive file pasted into a task's own title/description, say - into this chromeless
+        // WKWebView instead of handing it to Safari as before, with no address bar or back button
+        // to escape it. These are the well-known non-auth content subdomains most likely to show
+        // up as a link IN a task rather than as part of a sign-in redirect; carved back out so
+        // that behavior for them is unchanged.
+        private let contentSubdomainExceptions: Set<String> = [
+            "docs.google.com", "drive.google.com", "sheets.google.com", "slides.google.com",
+            "forms.google.com", "calendar.google.com", "mail.google.com", "photos.google.com",
+            "maps.google.com", "meet.google.com", "keep.google.com", "translate.google.com",
         ]
 
         func webView(
@@ -231,7 +257,9 @@ struct WebView: UIViewRepresentable {
                 decisionHandler(.allow)
                 return
             }
-            if inAppHosts.contains(where: { host == $0 || host.hasSuffix(".\($0)") }) {
+            let isInApp = inAppHosts.contains(where: { host == $0 || host.hasSuffix(".\($0)") })
+                && !contentSubdomainExceptions.contains(host)
+            if isInApp {
                 decisionHandler(.allow)
             } else {
                 UIApplication.shared.open(url)
