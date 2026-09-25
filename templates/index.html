@@ -8963,7 +8963,11 @@
             lane._tk = tk;
             lane.hubRadius = lane._baseHub * s;
             const fw = lane._fw || 0;
-            const slot = lane.hubRadius + lane._startGap + 190 * (tk - 1);
+            // Requested directly: more room around the hub for its immediate prior/next node,
+            // specifically once this Universe is the one actually being viewed ("standing" - fw
+            // near 1) rather than a flat increase felt everywhere, including lanes barely in
+            // focus. Mirrors the same (1 + 0.15*fw) growth step already uses below.
+            const slot = (lane.hubRadius + lane._startGap + 190 * (tk - 1)) * (1 + 0.15 * fw);
             const step = (lane._step + 380 * (tk - 1)) * (1 + 0.15 * fw);
             lane._stepNow = step;
             let minX = null, maxX = null;
