@@ -6753,6 +6753,25 @@ def ai_chat(request: Request, payload: dict = Body(...)):
             notes_task_bucket = get_or_create_default_task_bucket_in_universe(session, user.id, notes_task_universe)
             quick_task_intent = True
 
+        # Set when this message came from Space View's own "+" quick-task shortcut instead of the
+        # plain launcher - reported directly, wanting it to default to whichever Universe was
+        # currently scrolled to/selected (stating that explicitly in the reply, unless the message
+        # itself says otherwise), or ask which Universe if "All Tasks" (every Universe at once) was
+        # what's actually on screen. A SOFT hint, not a forced destination like notes_task_bucket
+        # above - the model still picks the actual bucket, and still follows a different Universe
+        # the user names outright - so skipped entirely when that other, stricter entry point
+        # already applies.
+        quick_task_universe_hint = None
+        quick_task_all_tasks = False
+        if not notes_task_bucket:
+            hint_universe_id = payload.get("quick_task_universe_id")
+            if hint_universe_id:
+                hint_universe = session.get(Universe, hint_universe_id)
+                if hint_universe and hint_universe.user_id == user.id and hint_universe.kind == "task":
+                    quick_task_universe_hint = hint_universe
+            elif payload.get("quick_task_all_tasks"):
+                quick_task_all_tasks = True
+
         # History and "last touched task" both now come from the DB (this user's own saved
         # conversation), not from anything the client sends - the client used to track and send
         # both itself, which meant a stale/wrong client-side value could feed the model a bad
@@ -6784,6 +6803,25 @@ def ai_chat(request: Request, payload: dict = Body(...)):
                 f"effort reasoning about which universe/realm/bucket to use - it's already decided. "
                 f"Just extract the title (and due date if mentioned, otherwise today) and call "
                 f"create_task. Do not ask which universe or bucket to use."
+            )
+        elif quick_task_universe_hint:
+            system_instruction += (
+                f"\n\nThe user tapped the quick-task shortcut while viewing their "
+                f"\"{quick_task_universe_hint.name}\" Universe specifically (scrolled to/selected in "
+                f"the timeline). Default to creating this task there - pick the best-matching bucket "
+                f"within that Universe's own tree above - UNLESS the message itself clearly names a "
+                f"different Universe, Realm, or Bucket, in which case follow what the user actually "
+                f"said instead. Whichever Universe the task ends up in, your reply MUST say so "
+                f"explicitly (e.g. \"Added to your {quick_task_universe_hint.name} list.\"), not just "
+                f"confirm the task was created."
+            )
+        elif quick_task_all_tasks:
+            system_instruction += (
+                "\n\nThe user tapped the quick-task shortcut while viewing \"All Tasks\" (every "
+                "Universe at once, not one in particular). If the message doesn't already make the "
+                "destination Universe unambiguous on its own, ask which Universe/list this task "
+                "belongs to before creating it, rather than guessing - the same as you would for any "
+                "other genuinely ambiguous bucket."
             )
         config = genai_types.GenerateContentConfig(system_instruction=system_instruction, tools=_ai_tools)
 

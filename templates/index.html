@@ -4656,6 +4656,14 @@
         // even if it's just a bare "Buy milk tomorrow" with no "add a task" framing, so it can
         // skip straight to extracting title/due date instead of asking what's meant.
         let aiChatQuickTaskPending = false;
+        // Captured at the moment "+" is tapped (not later, when the message is actually sent -
+        // by then the user may have scrolled Space View further) so the assistant knows which
+        // Universe was on screen. Requested directly: "+" should default to the Universe currently
+        // scrolled to/selected, stating that explicitly, unless the message says otherwise - and
+        // if it's the "All Tasks" aggregate specifically (no single Universe in view), ask instead
+        // of guessing. null when neither applies (not in the Multiverse Timeline and no other
+        // Universe context active) - existing default behavior, unchanged.
+        let aiChatQuickTaskUniverseHint = null;
         const AI_CHAT_DEFAULT_PLACEHOLDER = 'Add a task or ask a question…';
 
         // The chat launcher's "+" badge - lets someone jump straight into creating a task without
@@ -4665,6 +4673,22 @@
         // on mobile - unlike the plain launcher tap, tapping this specific button is an
         // unambiguous "I'm about to type a task" signal, so there's no reason to hold the
         // keyboard back the way toggleAiChatPanel() normally does there.
+        // In the Multiverse Timeline, the focused lane IS a Universe (or the synthetic "All Tasks"
+        // aggregate, id '__all_tasks__') - that's "the Universe I am scrolling through/selected".
+        // Outside that view, activeUniverseId (whichever single Universe's page is loaded) is the
+        // closest equivalent. Returns null when neither applies, leaving create_task's existing
+        // default behavior untouched.
+        function getAiChatQuickTaskUniverseHint() {
+            if (isSpaceViewActive && isMultiverseStackedView) {
+                const lane = multiverseLanes[mvFocusTarget];
+                if (lane) {
+                    if (lane.id === '__all_tasks__') return { allTasks: true };
+                    return { universeId: lane.id };
+                }
+            }
+            return activeUniverseId ? { universeId: activeUniverseId } : null;
+        }
+
         function openAiChatQuickTask(event) {
             if (event) event.stopPropagation();
             // Used to redirect straight to /events/new instead of opening the chat whenever the
@@ -4677,6 +4701,7 @@
                 toggleAiChatPanel(true);
             }
             aiChatQuickTaskPending = true;
+            aiChatQuickTaskUniverseHint = getAiChatQuickTaskUniverseHint();
             // Logged-out skips this - maybeGreetLoggedOutVisitor() (triggered by the panel open
             // above) already shows the sign-in prompt there, and asking what task they want right
             // alongside "you need to sign in first" would be a contradictory double message.
@@ -5311,7 +5336,9 @@
             if (!text) return false;
 
             const quickTaskIntent = aiChatQuickTaskPending;
+            const quickTaskUniverseHint = aiChatQuickTaskUniverseHint;
             aiChatQuickTaskPending = false;
+            aiChatQuickTaskUniverseHint = null;
             input.placeholder = AI_CHAT_DEFAULT_PLACEHOLDER;
 
             input.value = '';
@@ -5323,6 +5350,10 @@
             try {
                 const requestBody = { message: text };
                 if (quickTaskIntent) requestBody.intent = 'create_task';
+                if (quickTaskIntent && quickTaskUniverseHint) {
+                    if (quickTaskUniverseHint.universeId) requestBody.quick_task_universe_id = quickTaskUniverseHint.universeId;
+                    else if (quickTaskUniverseHint.allTasks) requestBody.quick_task_all_tasks = true;
+                }
                 const res = await fetch('/ai/chat/', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
