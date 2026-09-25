@@ -8792,6 +8792,14 @@
 
             multiverseLanes = buildMultiverseLanes();
             mvInitFocus();
+            // Requested directly: the Home button should always land on "All Tasks" at the top,
+            // not wherever was last viewed. mvInitFocus's own default already skips it (it's
+            // flagged isUniverseNode, same as the Realm Timeline's unrelated "back out" node, so
+            // its own default-focus search steps past it to the first real Universe) and then
+            // restores whatever Universe was last focused from localStorage on top of that - so
+            // opening this view always landed on some other Universe instead.
+            const allTasksIdx = multiverseLanes.findIndex(l => l.id === '__all_tasks__');
+            if (allTasksIdx >= 0) mvSetFocus(allTasksIdx);
 
             const isMobile = window.innerWidth < 768;
             const laneCount = Math.max(multiverseLanes.length, 1);
