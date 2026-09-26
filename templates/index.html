@@ -3524,6 +3524,18 @@
         // this task's position in the first place, so there's nothing to preserve beyond not reloading.
         async function handleHudCompleteToggle(event, formElement) {
             event.preventDefault();
+            // Reported directly with a screenshot: the NEXT task's HUD card showing up with its
+            // checkbox already looking checked (solid green fill, white checkmark) even though it
+            // was never touched. Nothing in this file ever sets a "checked" class/style on this
+            // button - #hud-checkbox-btn only has :hover styling in its markup - so that's mobile
+            // WebKit's classic stuck-:hover-after-a-tap bug: a touch simulates hover+click, and
+            // without a real mouse to ever "leave", the hover style can stick around indefinitely.
+            // Normally invisible (the button just goes back to its own resting state once you tap
+            // elsewhere), but this exact button is REUSED, not recreated, for whichever task the
+            // HUD shows next - so the stuck hover carried the completed-looking style straight onto
+            // an entirely different, not-yet-completed task. Explicitly blurring it right where the
+            // tap happens clears that stuck state before it can carry over.
+            document.getElementById('hud-checkbox-btn')?.blur();
             fireCompleteConfetti(formElement);
 
             const itemId = document.getElementById('hud-task-id-input').value;
