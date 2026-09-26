@@ -1061,6 +1061,11 @@
         <!-- Canvas Viewport -->
         <canvas id="space-canvas" class="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"></canvas>
 
+        <!-- TEMPORARY diagnostic overlay for the mobile node-tap bug report - pointer-events:none so
+             it never blocks a real tap, fixed to the very top so it's never covered by the HUD card
+             or swipe dock. Remove once the touch bug is confirmed fixed. -->
+        <div id="space-debug-log" style="position:fixed; top:0; left:0; right:0; z-index:9999; pointer-events:none; background:rgba(0,0,0,0.75); color:#4ade80; font:10px/1.3 monospace; padding:4px 6px; max-height:32vh; overflow:hidden; white-space:pre-wrap;"></div>
+
         {% if is_event_universe %}
         <!-- Event Universe Space View: reported directly that this should "behave differently"
              from the normal Task-universe realm/bucket/task orbit ring - "more about having the
@@ -5927,6 +5932,17 @@
             }
             return hit;
         }
+        // TEMPORARY diagnostic logger for the mobile node-tap bug report - writes to the small
+        // on-screen panel (#space-debug-log) instead of the console, since a phone's real console
+        // isn't reachable while reproducing this live. Remove once the touch bug is confirmed fixed.
+        const spaceDebugLines = [];
+        function spaceDebugLog(msg) {
+            const t = new Date().toISOString().slice(11, 23);
+            spaceDebugLines.push(`${t} ${msg}`);
+            if (spaceDebugLines.length > 14) spaceDebugLines.shift();
+            const el = document.getElementById('space-debug-log');
+            if (el) el.textContent = spaceDebugLines.join('\n');
+        }
         let cameraOffset = { x: 0, y: 0 };
         let targetCameraOffset = { x: 0, y: 0 };
         let cameraZoom = 1;
@@ -10293,9 +10309,11 @@
                 if (clickedTask) break;
             }
 
+            spaceDebugLog(`MV click: clickedTask=${clickedTask?.id ?? 'NONE'} focusOn=${focusOn}`);
             if (!clickedTask) return;
 
             if (focusOn && clickedLane !== focusedLane) {
+                spaceDebugLog(`-> mvSetFocus(lane ${clickedLane.id})`);
                 mvSetFocus(multiverseLanes.indexOf(clickedLane));
                 return;
             }
@@ -10303,11 +10321,13 @@
                 // Tapping the selected task opens its card; tapping a neighbor scrolls to it.
                 const selected = mvSelectedTaskFor(focusedLane, focusedLane._scrollIdxTarget || 0);
                 if (clickedTask === selected) {
+                    spaceDebugLog(`-> mvOpenHud(${clickedTask.id}) [was selected]`);
                     mvOpenHud(clickedTask);
                     triggerHapticFeedback('light');
                 } else {
                     const rng = mvScrollRange(focusedLane);
                     focusedLane._scrollIdxTarget = mvClamp(mvTaskL(clickedTask), rng.min, rng.max);
+                    spaceDebugLog(`-> scroll to ${clickedTask.id} (selected was ${selected?.id ?? '-'}), newTarget=${focusedLane._scrollIdxTarget}`);
                     triggerHapticFeedback('light');
                 }
                 return;
@@ -10520,14 +10540,18 @@
                 if (clickedTask) break;
             }
 
+            spaceDebugLog(`Realm click: clickedTask=${clickedTask?.id ?? 'NONE'} focusOn=${focusOn}`);
             if (focusOn && clickedTask) {
                 if (clickedLane !== focusedLane) {
+                    spaceDebugLog(`-> mvSetFocus(lane ${clickedLane.id})`);
                     mvSetFocus(realmLanes.indexOf(clickedLane));
                 } else if (clickedTask === mvSelectedTaskFor(focusedLane, focusedLane._scrollIdxTarget || 0)) {
+                    spaceDebugLog(`-> mvOpenHud(${clickedTask.id}) [was selected]`);
                     mvOpenHud(clickedTask);
                 } else {
                     const rng = mvScrollRange(focusedLane);
                     focusedLane._scrollIdxTarget = mvClamp(mvTaskL(clickedTask), rng.min, rng.max);
+                    spaceDebugLog(`-> scroll to ${clickedTask.id}, newTarget=${focusedLane._scrollIdxTarget}`);
                     triggerHapticFeedback('light');
                 }
                 return;
@@ -11722,6 +11746,7 @@
                 // hijacking our own hold-to-delete gesture.
                 e.preventDefault();
                 lastTouchTime = Date.now();
+                spaceDebugLog(`START touches=${e.touches.length} x=${e.touches[0]?.clientX?.toFixed(0)} y=${e.touches[0]?.clientY?.toFixed(0)}`);
                 if (e.touches.length === 1) {
                     // A fresh single-finger touch is always the START of a brand new gesture (going
                     // from 2 fingers back down to 1 fires touchend for the lifted one, never
@@ -11830,6 +11855,7 @@
                         }
                     }
 
+                    spaceDebugLog(`pressed: task=${pressedTask?.id ?? '-'} bucket=${pressedBucket?.id ?? '-'} realm=${pressedRealm?.id ?? '-'} lane=${pressedLane?.id ?? '-'} realmLane=${pressedRealmLane?.id ?? '-'}`);
                     if (pressedTask) {
                         longPressTimer = setTimeout(() => {
                             longPressFired = true;
@@ -11891,6 +11917,7 @@
                     const touch = e.touches[0];
                     const moveDist = Math.hypot(touch.clientX - longPressStartPos.x, touch.clientY - longPressStartPos.y);
                     if (moveDist > TAP_MOVE_THRESHOLD) {
+                        if (!gestureMoved) spaceDebugLog(`MOVE past threshold (${moveDist.toFixed(1)}px) - gestureMoved=true`);
                         clearTimeout(longPressTimer);
                         gestureMoved = true;
                     }
@@ -11967,6 +11994,7 @@
                 if (longPressFired) {
                     // The long press already revealed the trash icon this gesture - swallow this tap
                     // so it doesn't also register as a normal realm-select tap.
+                    spaceDebugLog('END swallowed: longPressFired');
                     longPressFired = false;
                     return;
                 }
@@ -11979,7 +12007,10 @@
                 // still count as part of the same multi-touch gesture).
                 if (!gestureMoved && !gestureWasMultiTouch && e.changedTouches.length === 1) {
                     const touch = e.changedTouches[0];
+                    spaceDebugLog(`END -> detectClickNode x=${touch.clientX.toFixed(0)} y=${touch.clientY.toFixed(0)}`);
                     detectClickNode(touch.clientX, touch.clientY);
+                } else {
+                    spaceDebugLog(`END swallowed: gestureMoved=${gestureMoved} multiTouch=${gestureWasMultiTouch} changedTouches=${e.changedTouches.length}`);
                 }
                 if (e.touches.length === 0) {
                     gestureMoved = false;
@@ -11998,6 +12029,7 @@
             // that the user released over whatever's underneath) and without persisting a lane drag
             // that never got a real drop.
             spaceCanvas.ontouchcancel = (e) => {
+                spaceDebugLog(`CANCEL touches=${e.touches.length}`);
                 isDragging = false;
                 mvFocusEndGesture();
                 initialPinchDistance = null;
