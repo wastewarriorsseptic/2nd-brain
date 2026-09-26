@@ -9971,6 +9971,14 @@
                     // extra scale of its own.
                     const dotTk = task._tk || laneTk;
                     const dotX = task.x + dotTk * (task._pillOffset || 0);
+                    // Cached so the click/touch hit-test below can test against the same shifted
+                    // center the dot is actually drawn at, instead of the unshifted task.x - on a
+                    // narrow mobile viewport _pillOffset is nonzero far more often (edge-avoidance
+                    // kicks in sooner), so the drawn dot and the old task.x-based hit circle could
+                    // end up several dozen px apart, making the node itself untappable on mobile
+                    // even though the label right next to it (whose own hit rect already used this
+                    // offset) still worked.
+                    task._dotX = dotX;
 
                     if (isActiveSwipeNode) {
                         spaceCtx.save();
@@ -10272,7 +10280,7 @@
             for (const lane of multiverseLanes) {
                 for (const task of lane.tasks) {
                     if (task._vis !== undefined && task._vis < 0.35) continue;
-                    const dist = Math.hypot(worldX - task.x, worldY - task.y);
+                    const dist = Math.hypot(worldX - (task._dotX ?? task.x), worldY - task.y);
                     const hitNode = dist <= task.radius + 18;
                     const r = task._labelRect;
                     const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
@@ -10499,7 +10507,7 @@
             for (const lane of hitTestLanes) {
                 for (const task of lane.tasks) {
                     if (task._vis !== undefined && task._vis < 0.35) continue;
-                    const dist = Math.hypot(worldX - task.x, worldY - task.y);
+                    const dist = Math.hypot(worldX - (task._dotX ?? task.x), worldY - task.y);
                     const hitNode = dist <= task.radius + 18;
                     const r = task._labelRect;
                     const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
@@ -11800,7 +11808,7 @@
                         if (isMultiverseStackedView) {
                             multiverseLanes.forEach(lane => {
                                 lane.tasks.forEach(task => {
-                                    const dist = Math.hypot(worldX - task.x, worldY - task.y);
+                                    const dist = Math.hypot(worldX - (task._dotX ?? task.x), worldY - task.y);
                                     const hitNode = dist <= task.radius + 18;
                                     const r = task._labelRect;
                                     const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
@@ -11812,7 +11820,7 @@
                                 if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
                                 if (bucket.isAddButton) return;
                                 bucket.tasks.forEach(task => {
-                                    const dist = Math.hypot(worldX - task.x, worldY - task.y);
+                                    const dist = Math.hypot(worldX - (task._dotX ?? task.x), worldY - task.y);
                                     const hitNode = dist <= task.radius + 18;
                                     const r = task._labelRect;
                                     const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
@@ -12401,7 +12409,7 @@
                         const pillRect = lane._namePillRect;
                         if (pillRect && worldX >= pillRect.x && worldX <= pillRect.x + pillRect.w && worldY >= pillRect.y && worldY <= pillRect.y + pillRect.h) return true;
                         return lane.tasks.some(task => {
-                            if (Math.hypot(worldX - task.x, worldY - task.y) <= task.radius + 18) return true;
+                            if (Math.hypot(worldX - (task._dotX ?? task.x), worldY - task.y) <= task.radius + 18) return true;
                             const labelRect = task._labelRect;
                             return labelRect && worldX >= labelRect.x && worldX <= labelRect.x + labelRect.w && worldY >= labelRect.y && worldY <= labelRect.y + labelRect.h;
                         });
@@ -12469,7 +12477,7 @@
                     });
 
                     bucket.tasks.forEach(task => {
-                        const dist = Math.hypot(worldX - task.x, worldY - task.y);
+                        const dist = Math.hypot(worldX - (task._dotX ?? task.x), worldY - task.y);
                         const hitNode = dist <= task.radius + 18;
 
                         // Tapping the task's text label now does exactly what tapping its dot does -
