@@ -10281,7 +10281,7 @@
                 for (const task of lane.tasks) {
                     if (task._vis !== undefined && task._vis < 0.35) continue;
                     const dist = Math.hypot(worldX - (task._dotX ?? task.x), worldY - task.y);
-                    const hitNode = dist <= task.radius + 18;
+                    const hitNode = dist <= task.radius + 40;
                     const r = task._labelRect;
                     const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
                     if (hitNode || hitLabel) {
@@ -10508,7 +10508,7 @@
                 for (const task of lane.tasks) {
                     if (task._vis !== undefined && task._vis < 0.35) continue;
                     const dist = Math.hypot(worldX - (task._dotX ?? task.x), worldY - task.y);
-                    const hitNode = dist <= task.radius + 18;
+                    const hitNode = dist <= task.radius + 40;
                     const r = task._labelRect;
                     const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
                     if (hitNode || hitLabel) {
@@ -11809,7 +11809,7 @@
                             multiverseLanes.forEach(lane => {
                                 lane.tasks.forEach(task => {
                                     const dist = Math.hypot(worldX - (task._dotX ?? task.x), worldY - task.y);
-                                    const hitNode = dist <= task.radius + 18;
+                                    const hitNode = dist <= task.radius + 40;
                                     const r = task._labelRect;
                                     const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
                                     if (hitNode || hitLabel) pressedTask = task;
@@ -11821,7 +11821,7 @@
                                 if (bucket.isAddButton) return;
                                 bucket.tasks.forEach(task => {
                                     const dist = Math.hypot(worldX - (task._dotX ?? task.x), worldY - task.y);
-                                    const hitNode = dist <= task.radius + 18;
+                                    const hitNode = dist <= task.radius + 40;
                                     const r = task._labelRect;
                                     const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
                                     if (hitNode || hitLabel) pressedTask = task;
@@ -12409,7 +12409,7 @@
                         const pillRect = lane._namePillRect;
                         if (pillRect && worldX >= pillRect.x && worldX <= pillRect.x + pillRect.w && worldY >= pillRect.y && worldY <= pillRect.y + pillRect.h) return true;
                         return lane.tasks.some(task => {
-                            if (Math.hypot(worldX - (task._dotX ?? task.x), worldY - task.y) <= task.radius + 18) return true;
+                            if (Math.hypot(worldX - (task._dotX ?? task.x), worldY - task.y) <= task.radius + 40) return true;
                             const labelRect = task._labelRect;
                             return labelRect && worldX >= labelRect.x && worldX <= labelRect.x + labelRect.w && worldY >= labelRect.y && worldY <= labelRect.y + labelRect.h;
                         });
@@ -12478,7 +12478,7 @@
 
                     bucket.tasks.forEach(task => {
                         const dist = Math.hypot(worldX - (task._dotX ?? task.x), worldY - task.y);
-                        const hitNode = dist <= task.radius + 18;
+                        const hitNode = dist <= task.radius + 40;
 
                         // Tapping the task's text label now does exactly what tapping its dot does -
                         // task._labelRect is only ever set while this task's own label is actually
