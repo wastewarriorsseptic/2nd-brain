@@ -12956,6 +12956,21 @@
             const shopBtn = document.getElementById('hud-shop-btn');
             const noteBtn = document.getElementById('hud-note-btn');
 
+            // Reported directly a second time - blurring the checkbox (see
+            // handleHudCompleteToggle) didn't actually fix the "next task's checkbox shows
+            // pre-checked" bug, since blur() only clears :focus, not the real culprit: mobile
+            // WebKit's stuck :hover/:active state after a tap, which blur() has no effect on at
+            // all. This button is reused across every task the HUD ever shows, never recreated,
+            // so whichever pseudo-class was actually stuck kept carrying its emerald "checked"
+            // look onto a task that was never touched. Cloning and replacing the node is the one
+            // fix that works regardless of which pseudo-class is responsible - a freshly-inserted
+            // node has none of them, since they're tracked per DOM node identity/pointer state,
+            // not any class or attribute that could otherwise just be reset. Safe to do here: its
+            // only behavior is the onsubmit on the surrounding <form> (untouched by replacing this
+            // child), and idInput.value is set fresh below regardless of which button node is live.
+            const oldCheckboxBtn = document.getElementById('hud-checkbox-btn');
+            if (oldCheckboxBtn) oldCheckboxBtn.replaceWith(oldCheckboxBtn.cloneNode(true));
+
             badgeCategory.innerText = `${task.realmName} / ${task.bucketName}`;
             idInput.value = task.id;
 
