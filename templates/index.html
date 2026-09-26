@@ -11986,6 +11986,32 @@
                     gestureWasMultiTouch = false;
                 }
             };
+
+            // iOS can cancel an in-progress touch instead of cleanly ending it - most often when the
+            // very animation a tap just kicked off (the timeline sliding the tapped task into focus)
+            // is still playing while the finger lifts. With no cancel handler, none of this gesture's
+            // tracking state below ever got reset, so the tap that started the animation would work,
+            // but every later tap's own touchstart could inherit stale isDragging/focus-gesture state
+            // and be swallowed with no visible effect - reported directly ("works the first time I
+            // tap a node, any other time after it doesn't"). Mirrors ontouchend's own reset exactly,
+            // just without treating a cancelled gesture as a tap (a cancel means the OS took over, not
+            // that the user released over whatever's underneath) and without persisting a lane drag
+            // that never got a real drop.
+            spaceCanvas.ontouchcancel = (e) => {
+                isDragging = false;
+                mvFocusEndGesture();
+                initialPinchDistance = null;
+                clearTimeout(longPressTimer);
+                longPressStartPos = null;
+                longPressFired = false;
+                multiverseDraggingLane = null;
+                multiverseDragStartWorldY = null;
+                multiverseDragLaneStartY = null;
+                if (e.touches.length === 0) {
+                    gestureMoved = false;
+                    gestureWasMultiTouch = false;
+                }
+            };
         }
 
         function getDeleteIconPos(realm) {
