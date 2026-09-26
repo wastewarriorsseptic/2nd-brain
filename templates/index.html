@@ -3320,16 +3320,28 @@
         function applyToggleCompleteResult(result) {
             if (result.updated_items && result.updated_items.length) {
                 const byId = new Map(result.updated_items.map(u => [String(u.id), u]));
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
                 const patchTask = (task) => {
                     const update = byId.get(String(task.id));
-                    if (update) {
-                        task.dueDate = update.due_date;
-                        task.dueDateFormatted = update.due_date_formatted;
-                    }
+                    if (!update) return false;
+                    task.dueDate = update.due_date;
+                    task.dueDateFormatted = update.due_date_formatted;
+                    task.isOverdue = !!(task.dueDate && new Date(task.dueDate + 'T00:00:00') < today);
+                    return true;
                 };
                 spaceRealms.forEach(realm => (realm.buckets || []).forEach(bucket => (bucket.tasks || []).forEach(patchTask)));
-                multiverseLanes.forEach(lane => (lane.tasks || []).forEach(patchTask));
-                realmLanes.forEach(lane => (lane.tasks || []).forEach(patchTask));
+                // Timeline lanes also need re-sorting/re-bucketing (mvReindexLane) whenever a patch
+                // lands, not just the raw field update above - otherwise a rolled-forward sibling
+                // keeps its stale overdue/upcoming side and x position until the lane's task COUNT
+                // happens to change for some unrelated reason (mvApplyLayout only auto-reindexes on
+                // a count change), so swiping back to it later would still show the old placement.
+                const patchAndReindex = (lane) => {
+                    const touched = (lane.tasks || []).map(patchTask).some(Boolean);
+                    if (touched) mvReindexLane(lane);
+                };
+                multiverseLanes.forEach(patchAndReindex);
+                realmLanes.forEach(patchAndReindex);
             }
             if (result.reorder_suggestion) {
                 showReorderSuggestion(result.reorder_suggestion);
