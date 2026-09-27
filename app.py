@@ -838,19 +838,18 @@ def send_daily_snapshot_emails():
             yesterday = user_today - timedelta(days=1)
             tomorrow = user_today + timedelta(days=1)
 
-            # Get user's realms (owned + shared)
-            owned_realms = session.exec(select(Realm).where(Realm.user_id == user.id)).all()
-            shared_ids = session.exec(select(RealmShare.realm_id).where(RealmShare.user_id == user.id)).all()
-            shared_realms = session.exec(select(Realm).where(Realm.id.in_(shared_ids))).all() if shared_ids else []
-            
-            all_realms = list({r.id: r for r in owned_realms + shared_realms}.values())
-            realm_ids = [r.id for r in all_realms]
+            # Get user's Universes (owned + shared) - the real sharing boundary now (see the
+            # Universe-only schema simplification; UniverseShare already covers what RealmShare
+            # used to, including shares granted after this schema change).
+            owned_universe_ids = session.exec(select(Universe.id).where(Universe.user_id == user.id)).all()
+            shared_universe_ids = session.exec(select(UniverseShare.universe_id).where(UniverseShare.user_id == user.id)).all()
+            universe_ids = list(set(owned_universe_ids) | set(shared_universe_ids))
 
-            if not realm_ids:
+            if not universe_ids:
                 continue
 
             all_items = session.exec(
-                select(Item).join(Bucket).where(Bucket.realm_id.in_(realm_ids))
+                select(Item).where(Item.universe_id.in_(universe_ids))
             ).all()
 
             # Categorize Items
@@ -890,8 +889,14 @@ def send_daily_snapshot_emails():
                 html = "<ul style='padding-left: 20px; margin: 8px 0; color: #374151; font-size: 14px;'>"
                 for item in items:
                     amount_str = f" (${item.amount:.2f})" if item.amount else ""
-                    realm_str = f" <span style='color: #6b7280; font-size: 12px;'>[{escape(item.bucket.realm.name)} / {escape(item.bucket.name)}]</span>" if item.bucket else ""
-                    
+                    universe = session.get(Universe, item.universe_id) if item.universe_id else None
+                    if universe:
+                        realm_str = f" <span style='color: #6b7280; font-size: 12px;'>[{escape(universe.icon or '')} {escape(universe.name)}]</span>"
+                    elif item.bucket:
+                        realm_str = f" <span style='color: #6b7280; font-size: 12px;'>[{escape(item.bucket.realm.name)} / {escape(item.bucket.name)}]</span>"
+                    else:
+                        realm_str = ""
+
                     extra_tag = ""
                     if show_overdue_days:
                         days_late = (user_today - item.due_date.date()).days
@@ -3061,7 +3066,8 @@ def new_person_form(request: Request):
 def create_person(
     request: Request,
     name: str = Form(...),
-    bucket_id: int = Form(...),
+    bucket_id: Optional[int] = Form(None),
+    universe_id: Optional[int] = Form(None),
     nickname: Optional[str] = Form(None),
     phone: Optional[str] = Form(None),
     email: Optional[str] = Form(None),
@@ -3073,7 +3079,20 @@ def create_person(
 ):
     with Session(engine) as session:
         user = get_current_user(request, session)
-        if not user_can_access_bucket(session, user, bucket_id):
+        # universe_id is the real, primary attachment point now - see create_item's comment for
+        # the same dual-accept pattern (bucket_id kept only for a not-yet-updated caller).
+        universe = None
+        if universe_id:
+            if not user_can_access_universe(session, user, universe_id) or not user:
+                return RedirectResponse(url="/", status_code=303)
+            universe = session.get(Universe, universe_id)
+            if not universe or universe.kind != "contact":
+                return RedirectResponse(url="/", status_code=303)
+            bucket_id = get_or_create_default_contact_bucket(session, user.id, universe).id
+        elif bucket_id:
+            if not user_can_access_bucket(session, user, bucket_id):
+                return RedirectResponse(url="/", status_code=303)
+        else:
             return RedirectResponse(url="/", status_code=303)
         parsed_birthday = None
         if birthday:
@@ -3082,7 +3101,8 @@ def create_person(
             except ValueError:
                 parsed_birthday = None
         person = Person(
-            name=name, bucket_id=bucket_id, nickname=nickname or None, phone=phone or None, email=email or None,
+            name=name, bucket_id=bucket_id, universe_id=universe.id if universe else None,
+            nickname=nickname or None, phone=phone or None, email=email or None,
             notes=notes or None, birthday=parsed_birthday, company=company or None,
             role=role or None, tags=tags or None,
         )
@@ -3098,6 +3118,7 @@ def update_person(
     person_id: int = Form(...),
     name: str = Form(...),
     bucket_id: Optional[int] = Form(None),
+    universe_id: Optional[int] = Form(None),
     nickname: Optional[str] = Form(None),
     phone: Optional[str] = Form(None),
     email: Optional[str] = Form(None),
@@ -3114,7 +3135,15 @@ def update_person(
         person = session.get(Person, person_id)
         if not person:
             return RedirectResponse(url="/", status_code=303)
-        if bucket_id:
+        target_universe = None
+        if universe_id:
+            if not user_can_access_universe(session, user, universe_id) or not user:
+                return RedirectResponse(url="/", status_code=303)
+            target_universe = session.get(Universe, universe_id)
+            if not target_universe or target_universe.kind != "contact":
+                return RedirectResponse(url="/", status_code=303)
+            bucket_id = get_or_create_default_contact_bucket(session, user.id, target_universe).id
+        elif bucket_id:
             if not user_can_access_bucket(session, user, bucket_id):
                 return RedirectResponse(url="/", status_code=303)
             if get_bucket_universe_kind(session, bucket_id) != "contact":
@@ -3127,6 +3156,7 @@ def update_person(
                 parsed_birthday = None
         person.name = name
         person.bucket_id = bucket_id or person.bucket_id
+        person.universe_id = target_universe.id if target_universe else person.universe_id
         person.nickname = nickname or None
         person.phone = phone or None
         person.email = email or None
@@ -3161,7 +3191,8 @@ def delete_person(request: Request, person_id: int = Form(...)):
 def create_item(
     request: Request,
     title: str = Form(...),
-    bucket_id: int = Form(...),
+    bucket_id: Optional[int] = Form(None),
+    universe_id: Optional[int] = Form(None),
     due_date: str = Form(...),
     due_time: Optional[str] = Form(None),
     reminder_offset: int = Form(...),
@@ -3236,8 +3267,33 @@ def create_item(
 
     with Session(engine) as session:
         current_user = get_current_user(request, session)
-        if not user_can_access_bucket(session, current_user, bucket_id):
+
+        # universe_id is the real, primary attachment point now (see the Universe-only schema
+        # simplification) - bucket_id is kept accepted here purely so any not-yet-updated caller
+        # (e.g. an older cached page, a direct API integration) keeps working unchanged. When
+        # given a universe_id, get_or_create_default_task_bucket_in_universe resolves it to the
+        # same hidden, auto-provisioned Bucket every other Universe-only entry point already uses
+        # (Notes' own "+ Add Task", AI chat) - Item.bucket_id stays a required DB column, but the
+        # app itself never surfaces that Bucket for picking/renaming/organizing anymore.
+        universe = None
+        if universe_id:
+            if not user_can_access_universe(session, current_user, universe_id):
+                return RedirectResponse(url="/", status_code=303)
+            universe = session.get(Universe, universe_id)
+            if not universe or not current_user:
+                return RedirectResponse(url="/", status_code=303)
+            bucket = get_or_create_default_task_bucket_in_universe(session, current_user.id, universe)
+            bucket_id = bucket.id
+        elif bucket_id:
+            if not user_can_access_bucket(session, current_user, bucket_id):
+                return RedirectResponse(url="/", status_code=303)
+            bucket = session.get(Bucket, bucket_id)
+            realm = session.get(Realm, bucket.realm_id) if bucket else None
+            if realm and realm.universe_id:
+                universe = session.get(Universe, realm.universe_id)
+        else:
             return RedirectResponse(url="/", status_code=303)
+
         created_by_name = current_user.name if current_user else "A collaborator"
         created_by_email = current_user.email if current_user else None
 
@@ -3252,6 +3308,7 @@ def create_item(
             new_item = Item(
                 title=title,
                 bucket_id=bucket_id,
+                universe_id=universe.id if universe else None,
                 due_date=target_due_date,
                 amount=amount,
                 is_shoppable=is_shoppable_flag,
@@ -3291,18 +3348,20 @@ def create_item(
                     args=[f"🚨 Due Today: {title}", target_due_str, amount, description]
                 )
 
+        # Notification recipients now key off the Universe (the real sharing boundary - see
+        # UniverseShare) rather than the hidden auto-provisioned Realm/Bucket underneath it.
         recipients = []
         bucket = session.get(Bucket, bucket_id)
         realm = session.get(Realm, bucket.realm_id) if bucket else None
 
-        if realm:
-            if realm.user_id:
-                owner = session.get(User, realm.user_id)
+        if universe:
+            if universe.user_id:
+                owner = session.get(User, universe.user_id)
                 if owner and owner.email:
                     recipients.append(owner.email)
 
             shared_records = session.exec(
-                select(RealmShare).where(RealmShare.realm_id == realm.id)
+                select(UniverseShare).where(UniverseShare.universe_id == universe.id)
             ).all()
             for share in shared_records:
                 shared_user = session.get(User, share.user_id)
@@ -3572,6 +3631,7 @@ def update_item(
     is_shoppable: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
     bucket_id: Optional[int] = Form(None),
+    universe_id: Optional[int] = Form(None),
     update_series: bool = Form(False),
     from_multiverse_timeline: Optional[str] = Form(None)
 ):
@@ -3603,21 +3663,36 @@ def update_item(
         user = get_current_user(request, session)
         if not user_can_access_item(session, user, item_id):
             return RedirectResponse(url=redirect_url, status_code=303)
-        # If this edit also relocates the task to a different bucket, make sure the user has
-        # access to that destination too - not just the bucket the task started in - and that
-        # the destination is still inside a Task-kind Universe (a Task can never land in a
-        # Contact Universe's bucket, even via a crafted request).
-        if bucket_id:
+        # If this edit also relocates the task to a different Universe/bucket, make sure the user
+        # has access to that destination too - not just where the task started - and that the
+        # destination is still inside a Task-kind Universe (a Task can never land in a Contact
+        # Universe, even via a crafted request). universe_id is the real, primary destination now
+        # (see the Universe-only schema simplification); bucket_id is kept accepted purely for a
+        # not-yet-updated caller, same as create_item.
+        target_universe = None
+        if universe_id:
+            if not user_can_access_universe(session, user, universe_id):
+                return RedirectResponse(url=redirect_url, status_code=303)
+            target_universe = session.get(Universe, universe_id)
+            if not target_universe or target_universe.kind != "task":
+                return RedirectResponse(url=redirect_url, status_code=303)
+            bucket_id = get_or_create_default_task_bucket_in_universe(session, user.id, target_universe).id
+        elif bucket_id:
             if not user_can_access_bucket(session, user, bucket_id):
                 return RedirectResponse(url=redirect_url, status_code=303)
             if get_bucket_universe_kind(session, bucket_id) != "task":
                 return RedirectResponse(url=redirect_url, status_code=303)
+            bucket = session.get(Bucket, bucket_id)
+            realm = session.get(Realm, bucket.realm_id) if bucket else None
+            if realm and realm.universe_id:
+                target_universe = session.get(Universe, realm.universe_id)
 
         item = session.get(Item, item_id)
         if not item:
             return RedirectResponse(url=redirect_url, status_code=303)
 
         target_bucket_id = bucket_id if bucket_id else item.bucket_id
+        target_universe_id = target_universe.id if target_universe else item.universe_id
 
         interval_val = max(1, interval if interval is not None else 1)
 
@@ -3640,6 +3715,7 @@ def update_item(
             item.is_shoppable = is_shoppable_flag
             item.description = description
             item.bucket_id = target_bucket_id
+            item.universe_id = target_universe_id
             item.recurrence_type = recurrence_type
             session.add(item)
             session.commit()
@@ -3653,6 +3729,7 @@ def update_item(
                     session.add(Item(
                         title=title,
                         bucket_id=target_bucket_id,
+                        universe_id=target_universe_id,
                         due_date=target_due_date,
                         amount=amount,
                         is_shoppable=is_shoppable_flag,
@@ -3673,6 +3750,7 @@ def update_item(
             item.is_shoppable = is_shoppable_flag
             item.description = description
             item.bucket_id = target_bucket_id
+            item.universe_id = target_universe_id
             item.recurrence_type = recurrence_type
             item.recurring_group_id = str(uuid.uuid4())
             session.add(item)
@@ -3685,6 +3763,7 @@ def update_item(
                 session.add(Item(
                     title=title,
                     bucket_id=target_bucket_id,
+                    universe_id=target_universe_id,
                     due_date=target_due_date,
                     amount=amount,
                     is_shoppable=is_shoppable_flag,
@@ -3699,6 +3778,7 @@ def update_item(
             item.is_shoppable = is_shoppable_flag
             item.description = description
             item.bucket_id = target_bucket_id
+            item.universe_id = target_universe_id
             item.recurrence_type = recurrence_type
             session.add(item)
 
@@ -5811,23 +5891,22 @@ like "I have completed the requested action" or "Your request has been processed
 what happened the way a person would. An occasional 😈 fits the brand but don't force one into \
 every single message.
 
-Only call create_task if you are HIGHLY CONFIDENT there is exactly one clearly-correct bucket for \
-the task, chosen from the bucket ids listed in the context below. Never invent a bucket_id that \
-isn't listed. If two or more EXISTING buckets are plausible, you MUST NOT call create_task - \
+Only call create_task if you are HIGHLY CONFIDENT there is exactly one clearly-correct Universe for \
+the task, chosen from the universe ids listed in the context below. Never invent a universe_id that \
+isn't listed. If two or more EXISTING universes are plausible, you MUST NOT call create_task - \
 instead reply with plain text asking a short clarifying question that names the specific \
-plausible bucket options, and wait for the user's next message. When genuinely unsure, always \
+plausible universe options, and wait for the user's next message. When genuinely unsure, always \
 ask rather than guess. If instead NOTHING in the tree is a match because the user is clearly \
-asking for a brand new Universe/Realm/Bucket by name (e.g. "add this to my new Important Dates \
-list" when no such Universe exists), create whatever's missing first - create_universe, then \
-create_realm inside it, then create_bucket inside that, all in the same response - then \
-create_task in the bucket_id the last of those calls returned. Each of those ids is only ever \
-valid for calls made in this same turn (never invent one from a previous turn); the ORIGINAL \
-context tree below is still what you check FIRST to decide whether something already exists.
+asking for a brand new Universe by name (e.g. "add this to my new Important Dates list" when no \
+such Universe exists), call create_universe first, then create_task in the universe_id that call \
+returned. That id is only ever valid for a call made in this same turn (never invent one from a \
+previous turn); the ORIGINAL context tree below is still what you check FIRST to decide whether \
+something already exists.
 
-Only call create_universe/create_realm/create_bucket when the user is clearly asking for \
-something new BY NAME - never create one just to have somewhere to put a task if an existing one \
-in the context tree is a reasonable fit, and never create a duplicate of something that's already \
-there under basically the same name.
+Only call create_universe when the user is clearly asking for something new BY NAME - never \
+create one just to have somewhere to put a task if an existing one in the context tree is a \
+reasonable fit, and never create a duplicate of something that's already there under basically \
+the same name.
 
 To update_task or navigate_to_task, you need the task's task_id. If the user is clearly referring \
 to the task named in "last_referenced_task" below (e.g. "that task", "it", "update the due date", \
@@ -5842,13 +5921,12 @@ actually called update_task for every single one of them. Each call is executed 
 to you individually, so your final reply to the user must be based on what those results actually \
 said happened, not on what you intended to do.
 
-You CAN move a task to a different Bucket, Realm, or even a different Universe entirely ("move \
-this to Bills", "put this under my Shopping list instead", "this actually belongs in Work") - use \
-update_task with bucket_id set to the destination bucket's id from the universe tree in context. \
-This works across Universes just as well as within one - there's no separate tool for it, moving \
-is just another field on the same update_task call. If more than one bucket in the tree plausibly \
-matches what the user named (e.g. two different Realms each have a "General" bucket), ask which \
-one instead of guessing, the same as you would for navigate_to_place.
+You CAN move a task to a different Universe ("move this to Bills", "put this under my Shopping \
+list instead", "this actually belongs in Work") - use update_task with universe_id set to the \
+destination Universe's id from the context. There's no separate tool for it, moving is just \
+another field on the same update_task call. If more than one Universe in the tree plausibly \
+matches what the user named, ask which one instead of guessing, the same as you would for \
+navigate_to_place.
 
 You CAN favorite a task (and un-favorite it) - "favorite this", "star my dentist task", "pin that to \
 my notes", "remove the favorite from it". Use favorite_task with the task's task_id. A favorite is \
@@ -5907,7 +5985,7 @@ _ai_tools = None
 if GEMINI_ENABLED:
     _ai_create_task_decl = genai_types.FunctionDeclaration(
         name="create_task",
-        description="Create a new task in a specific bucket the user already owns. Pass the "
+        description="Create a new task in a specific Universe the user already owns. Pass the "
                      "recurrence_* fields whenever the user describes it repeating (\"every "
                      "Monday\", \"monthly\", \"the last day of every month\") - due_date is still "
                      "required either way, as the FIRST occurrence's date. Omit them entirely for "
@@ -5916,7 +5994,7 @@ if GEMINI_ENABLED:
             "type": "OBJECT",
             "properties": {
                 "title": {"type": "STRING"},
-                "bucket_id": {"type": "INTEGER", "description": "Must be one of the bucket ids given in the universe tree context."},
+                "universe_id": {"type": "INTEGER", "description": "Must be one of the universe ids given in context."},
                 "due_date": {"type": "STRING", "description": "YYYY-MM-DD. The first occurrence's date if this is recurring."},
                 "notes": {"type": "STRING"},
                 "recurrence_type": {
@@ -5941,12 +6019,12 @@ if GEMINI_ENABLED:
                     "description": "Only for recurrence_type \"yearly\" with specific months named (e.g. \"every January and July\") - comma-separated month numbers, 1-12. Omit to just repeat yearly on due_date's own month.",
                 },
             },
-            "required": ["title", "bucket_id", "due_date"],
+            "required": ["title", "universe_id", "due_date"],
         },
     )
     _ai_update_task_decl = genai_types.FunctionDeclaration(
         name="update_task",
-        description="Update one or more fields of a task the user already has. Only include the fields being changed. To MOVE a task to a different Bucket/Realm/Universe (\"move this to Bills\", \"put this under Shopping instead\"), pass bucket_id - the id must come from the universe tree given in context (never invented), and can be any task-kind bucket the user owns, in any Realm or Universe, not just the one the task is currently in.",
+        description="Update one or more fields of a task the user already has. Only include the fields being changed. To MOVE a task to a different Universe (\"move this to Bills\", \"put this under Shopping instead\"), pass universe_id - the id must come from context (never invented), and can be any task-kind Universe the user owns, not just the one the task is currently in.",
         parameters={
             "type": "OBJECT",
             "properties": {
@@ -5954,7 +6032,7 @@ if GEMINI_ENABLED:
                 "title": {"type": "STRING"},
                 "due_date": {"type": "STRING", "description": "YYYY-MM-DD"},
                 "notes": {"type": "STRING"},
-                "bucket_id": {"type": "INTEGER", "description": "Moves the task to this bucket - from the universe tree in context. Only include this when the user actually asked to move/relocate the task somewhere else."},
+                "universe_id": {"type": "INTEGER", "description": "Moves the task to this Universe - from context. Only include this when the user actually asked to move/relocate the task somewhere else."},
             },
             "required": ["task_id"],
         },
@@ -6139,21 +6217,23 @@ def _ai_chat_load_history(session: Session, user: "User", max_turns: int = AI_CH
 
 def _ai_execute_create_task(session: Session, user: "User", args: dict) -> dict:
     """Returns {"error": str} on any validation failure, or the created-task confirmation dict.
-    bucket_id is NEVER trusted just because the model returned it - it's re-checked against the
-    requesting user's own access exactly like create_item's own bucket_id check does, since the
+    universe_id is NEVER trusted just because the model returned it - it's re-checked against the
+    requesting user's own access exactly like create_item's own universe_id check does, since the
     model's tool-call arguments are untrusted input by construction (a confused model, or a
     crafted prompt-injection payload echoed back from a task title on an earlier turn, could try
     to reference an id it was never actually given)."""
-    bucket_id = args.get("bucket_id")
+    universe_id = args.get("universe_id")
     title = (args.get("title") or "").strip()
     due_date_str = args.get("due_date") or ""
 
     if not title:
         return {"error": "Missing task title."}
-    if not user_can_access_bucket(session, user, bucket_id):
-        return {"error": "That bucket doesn't exist or isn't yours."}
-    if get_bucket_universe_kind(session, bucket_id) != "task":
-        return {"error": "That bucket isn't a task bucket."}
+    if not user_can_access_universe(session, user, universe_id):
+        return {"error": "That universe doesn't exist or isn't yours."}
+    universe = session.get(Universe, universe_id)
+    if not universe or universe.kind != "task":
+        return {"error": "That universe isn't a task universe."}
+    bucket_id = get_or_create_default_task_bucket_in_universe(session, user.id, universe).id
 
     try:
         due_date = datetime.strptime(due_date_str, "%Y-%m-%d").replace(hour=9, minute=0, second=0)
@@ -6247,6 +6327,7 @@ def _ai_execute_create_task(session: Session, user: "User", args: dict) -> dict:
         new_item = Item(
             title=title,
             bucket_id=bucket_id,
+            universe_id=universe.id,
             due_date=target_due_date,
             description=(args.get("notes") or None),
             recurring_group_id=group_id,
@@ -6261,17 +6342,13 @@ def _ai_execute_create_task(session: Session, user: "User", args: dict) -> dict:
 
     new_item = first_created_item
     bucket = session.get(Bucket, bucket_id)
-    realm = session.get(Realm, bucket.realm_id) if bucket else None
-    universe = session.get(Universe, realm.universe_id) if realm and realm.universe_id else None
 
     return {
         "id": new_item.id,
         "title": new_item.title,
-        "bucket_id": new_item.bucket_id,
-        "realm_id": bucket.realm_id if bucket else None,
-        "bucket_name": bucket.name if bucket else "",
-        "realm_name": realm.name if realm else "",
-        "universe_icon": universe.icon if universe else "😈",
+        "universe_id": universe.id,
+        "universe_name": universe.name,
+        "universe_icon": universe.icon,
         "due_date": new_item.due_date.strftime("%Y-%m-%d"),
         "due_date_formatted": new_item.due_date.strftime("%b %d, %Y"),
         "recurrence_type": recurrence_type,
@@ -6300,17 +6377,19 @@ def _ai_execute_update_task(session: Session, user: "User", args: dict) -> dict:
             return {"error": "That due date wasn't in a recognizable format."}
     if "notes" in args:
         item.description = args.get("notes") or None
-    if "bucket_id" in args and args.get("bucket_id"):
-        new_bucket_id = args["bucket_id"]
-        # Same re-validation create_task already does for a bucket_id the model supplies - never
-        # trust it just because it matched something in the context tree we handed the model
-        # ourselves; a confused model or an injected payload from an earlier task title could
-        # still try to move a task into a bucket the user doesn't actually own.
-        if not user_can_access_bucket(session, user, new_bucket_id):
-            return {"error": "That bucket doesn't exist or isn't yours."}
-        if get_bucket_universe_kind(session, new_bucket_id) != "task":
-            return {"error": "That bucket isn't a task bucket."}
-        item.bucket_id = new_bucket_id
+    if "universe_id" in args and args.get("universe_id"):
+        new_universe_id = args["universe_id"]
+        # Same re-validation create_task already does for a universe_id the model supplies - never
+        # trust it just because it matched something in the context we handed the model ourselves;
+        # a confused model or an injected payload from an earlier task title could still try to
+        # move a task into a universe the user doesn't actually own.
+        if not user_can_access_universe(session, user, new_universe_id):
+            return {"error": "That universe doesn't exist or isn't yours."}
+        new_universe = session.get(Universe, new_universe_id)
+        if not new_universe or new_universe.kind != "task":
+            return {"error": "That universe isn't a task universe."}
+        item.bucket_id = get_or_create_default_task_bucket_in_universe(session, user.id, new_universe).id
+        item.universe_id = new_universe.id
 
     session.add(item)
     session.commit()
@@ -6814,7 +6893,7 @@ def ai_chat(request: Request, payload: dict = Body(...)):
         # Set when this message came from a specific Universe's own Notes checklist "+" instead
         # (see openNotesTaskChat in notes.html) - reported directly, wanting that "+" to "start a
         # chat for what task to make within that exact universe" and "have it know that if its
-        # being made there to have it starred to show there." bucket_id is forced below (in the
+        # being made there to have it starred to show there." universe_id is forced below (in the
         # create_task tool-call branch) regardless of what the model returns - the whole point of
         # this entry point is a guaranteed destination, not another thing for the model to infer -
         # and a successful creation is immediately starred into that Universe's Notes the same way
@@ -6874,20 +6953,19 @@ def ai_chat(request: Request, payload: dict = Body(...)):
         if notes_task_bucket:
             system_instruction += (
                 f"\n\nThis message is specifically adding a task to the \"{notes_task_universe.name}\" "
-                f"Universe's own Notes checklist. If you call create_task, its bucket_id will be forced "
-                f"to {notes_task_bucket.id} server-side no matter what you pass, so don't spend any "
-                f"effort reasoning about which universe/realm/bucket to use - it's already decided. "
+                f"Universe's own Notes checklist. If you call create_task, its universe_id will be forced "
+                f"to {notes_task_universe.id} server-side no matter what you pass, so don't spend any "
+                f"effort reasoning about which universe to use - it's already decided. "
                 f"Just extract the title (and due date if mentioned, otherwise today) and call "
-                f"create_task. Do not ask which universe or bucket to use."
+                f"create_task. Do not ask which universe to use."
             )
         elif quick_task_universe_hint:
             system_instruction += (
                 f"\n\nThe user tapped the quick-task shortcut while viewing their "
                 f"\"{quick_task_universe_hint.name}\" Universe specifically (scrolled to/selected in "
-                f"the timeline). Default to creating this task there - pick the best-matching bucket "
-                f"within that Universe's own tree above - UNLESS the message itself clearly names a "
-                f"different Universe, Realm, or Bucket, in which case follow what the user actually "
-                f"said instead. Whichever Universe the task ends up in, your reply MUST say so "
+                f"the timeline). Default to creating this task there (pass its universe_id) UNLESS "
+                f"the message itself clearly names a different Universe, in which case follow what "
+                f"the user actually said instead. Whichever Universe the task ends up in, your reply MUST say so "
                 f"explicitly (e.g. \"Added to your {quick_task_universe_hint.name} list.\"), not just "
                 f"confirm the task was created."
             )
@@ -6966,8 +7044,8 @@ def ai_chat(request: Request, payload: dict = Body(...)):
                     args = dict(function_call.args)
 
                     if name == "create_task":
-                        if notes_task_bucket:
-                            args["bucket_id"] = notes_task_bucket.id
+                        if notes_task_universe:
+                            args["universe_id"] = notes_task_universe.id
                         result = _ai_execute_create_task(session, user, args)
                         if "error" not in result:
                             task_created = result
