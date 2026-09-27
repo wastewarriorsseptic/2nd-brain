@@ -11,6 +11,7 @@ import difflib
 import httpx
 import bcrypt
 import iap
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from urllib.parse import quote, urlparse
 from datetime import datetime, timedelta, timezone, date
 from calendar import monthrange
@@ -120,6 +121,22 @@ if not SECRET_KEY:
     else:
         SECRET_KEY = "dev-only-insecure-session-key"  # local development only (no secrets configured)
 
+# Signed, stateless tokens for email/password auth's own email-driven confirmations (verify a
+# brand-new signup, or an email/password reset link) - same itsdangerous mechanism the session
+# cookie itself already uses, just a separate serializer/salt so a session cookie could never be
+# replayed as one of these or vice versa. No DB table needed: the signature + built-in expiry
+# (max_age at loads() time) is the whole "is this token still valid" check.
+_auth_token_serializer = URLSafeTimedSerializer(SECRET_KEY)
+EMAIL_VERIFY_SALT = "email-verify-v1"
+PASSWORD_RESET_SALT = "password-reset-v1"
+
+def _password_reset_fingerprint(user: "User") -> str:
+    """A short marker derived from whatever the user's password_hash was AT THE MOMENT a reset
+    link was issued (or "none" if they never set one). Embedded in the reset token and re-checked
+    at redemption time, so a reset link stops working the instant it's actually used (password_hash
+    changes) or superseded by a newer link - without needing a DB table to track "already used"."""
+    return hashlib.sha256((user.password_hash or "none").encode("utf-8")).hexdigest()[:16]
+
 # --- Apple Sign In Configuration ---
 # Apple doesn't use a static client secret like Google - it requires a short-lived JWT signed with
 # your "Sign in with Apple" private key (the .p8 file from Apple Developer > Certificates, Identifiers
@@ -227,6 +244,7 @@ def safe_apply_migrations():
             conn.execute(text('ALTER TABLE IF EXISTS note ADD COLUMN IF NOT EXISTS realm_id INTEGER;'))
             conn.execute(text('ALTER TABLE IF EXISTS note ADD COLUMN IF NOT EXISTS source_item_id INTEGER;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR;'))
+            conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT \'UTC\';'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS pro_until TIMESTAMP;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_original_transaction_id VARCHAR;'))
@@ -326,6 +344,8 @@ def safe_apply_migrations():
             user_cols = [col[1] for col in cursor.fetchall()]
             if 'password_hash' not in user_cols:
                 cursor.execute('ALTER TABLE users ADD COLUMN "password_hash" VARCHAR;')
+            if 'email_verified' not in user_cols:
+                cursor.execute('ALTER TABLE users ADD COLUMN "email_verified" BOOLEAN DEFAULT 0;')
             if 'timezone' not in user_cols:
                 cursor.execute('ALTER TABLE users ADD COLUMN "timezone" VARCHAR DEFAULT "UTC";')
             if 'pro_until' not in user_cols:
@@ -392,6 +412,13 @@ class User(SQLModel, table=True):
     # would be an account-takeover vector without an email-ownership verification step this app
     # doesn't have yet.
     password_hash: Optional[str] = Field(default=None)
+    # Only meaningful for an email/password account - a Google/Apple login already asserts a
+    # verified address itself (see _email_is_verified), so find_or_create_user_and_log_in marks
+    # this True unconditionally for those, on both a brand-new account and an existing one (e.g. a
+    # password account that later also signs in with Google using the same email). Clicking either
+    # the /signup confirmation link or a /reset-password link also proves ownership and sets this,
+    # since both require access to the inbox either way.
+    email_verified: bool = Field(default=False)
     timezone: str = Field(default="UTC")
     # TaskMonster Pro (auto-renewing Apple subscription): active while pro_until is in the future.
     # Set/extended only from a signature-verified Apple transaction - see iap.py / /iap/verify/.
@@ -783,6 +810,9 @@ RATE_RULES = [
     # of these has a signed-in user yet when they're hit.
     ("POST", re.compile(r"^/login-with-email$"), "login-attempt", 10, 3600),
     ("POST", re.compile(r"^/signup$"), "signup-attempt", 5, 3600),
+    ("POST", re.compile(r"^/forgot-password$"), "forgot-password", 5, 3600),
+    ("POST", re.compile(r"^/reset-password/[^/]+$"), "reset-password", 10, 3600),
+    ("POST", re.compile(r"^/resend-verification$"), "resend-verification", 5, 3600),
 ]
 _rate_hits: dict = {}
 
@@ -1728,7 +1758,7 @@ def on_startup():
     run_expire_stale_invites()
     scheduler.add_job(run_expire_stale_invites, 'interval', minutes=30)
 
-def find_or_create_user_and_log_in(request: Request, email: str, name: str, password_hash: Optional[str] = None):
+def find_or_create_user_and_log_in(request: Request, email: str, name: str, password_hash: Optional[str] = None, mark_verified: bool = False):
     """Shared by every sign-in provider (Google, Apple, email/password...) - looks up or creates the
     User by email, sets up default realms for brand-new accounts, claims any pending realm-share and
     universe-share invites sent to this email, and stores the session. Keying purely on email (not
@@ -1736,13 +1766,16 @@ def find_or_create_user_and_log_in(request: Request, email: str, name: str, pass
     address, lands on the same account. password_hash is ONLY ever used on the create branch below
     (from /signup, right after hashing a brand-new password) - an existing account's password_hash
     is never touched here, by a Google/Apple login or otherwise, so this can never become a way to
-    silently attach/overwrite a password on someone else's account."""
+    silently attach/overwrite a password on someone else's account. mark_verified is passed True by
+    Google/Apple (which already assert a verified address themselves - see _email_is_verified) on
+    both the create AND existing-user path, so e.g. a password account that later also signs in
+    with Google using the same email picks up email_verified too."""
     email = email.lower()
 
     with Session(engine) as session:
         user = session.exec(select(User).where(User.email == email)).first()
         if not user:
-            user = User(email=email, name=name, password_hash=password_hash)
+            user = User(email=email, name=name, password_hash=password_hash, email_verified=mark_verified)
             session.add(user)
             session.commit()
             session.refresh(user)
@@ -1767,6 +1800,11 @@ def find_or_create_user_and_log_in(request: Request, email: str, name: str, pass
             # birthdays/anniversaries/etc. Shared with the existing-account backfill path (see
             # backfill_important_dates_universes) via the same idempotent helper.
             get_or_create_important_dates_universe(session, user.id)
+
+        if mark_verified and not user.email_verified:
+            user.email_verified = True
+            session.add(user)
+            session.commit()
 
         # Claim any pending Realm-share invites for this email address - logging in with the
         # invited email counts as accepting, same as clicking the email's "Accept Invite" button
@@ -1901,7 +1939,7 @@ async def auth_callback(request: Request):
 
     email = user_info['email'].lower()
     name = user_info.get('name', email.split('@')[0])
-    find_or_create_user_and_log_in(request, email, name)
+    find_or_create_user_and_log_in(request, email, name, mark_verified=True)
 
     post_login_redirect = request.session.pop('post_login_redirect', None)
     return RedirectResponse(url=post_login_redirect or "/", status_code=303)
@@ -1917,12 +1955,85 @@ def _verify_password(password: str, password_hash: str) -> bool:
         # fails closed (never authenticates) rather than raising a 500 into the login flow.
         return False
 
+def _send_verification_email(email: str):
+    """Fired right after /signup creates a brand-new account. Silently no-ops (just logs) with no
+    RESEND_API_KEY configured, same fail-open-to-"skip" pattern every other transactional email in
+    this app already uses (local dev has no key at all) - the account still works either way, this
+    only ever gates the "✓ Verified" state, never login itself."""
+    if not resend.api_key:
+        print("Skipping verification email: RESEND_API_KEY is missing.", flush=True)
+        return
+    token = _auth_token_serializer.dumps(email, salt=EMAIL_VERIFY_SALT)
+    verify_url = f"https://usetaskmonster.app/verify-email/{token}"
+    try:
+        resend.Emails.send({
+            "from": "TaskMonster <notifications@usetaskmonster.app>",
+            "to": [email],
+            "subject": "Confirm your TaskMonster email",
+            "html": f"""
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
+                <h2 style="color: #4f46e5; margin-top: 0;">😈 Confirm your email</h2>
+                <p>Welcome to TaskMonster! Tap below to confirm this is really your email address.</p>
+                <p style="margin: 28px 0;">
+                    <a href="{verify_url}" style="background-color: #4f46e5; color: #ffffff; padding: 14px 26px; text-decoration: none; border-radius: 6px; font-weight: 700; display: inline-block; font-size: 15px;">✅ Confirm Email</a>
+                </p>
+                <p style="font-size: 13px; color: #6b7280;">Or paste this link into your browser:<br>
+                    <a href="{verify_url}" style="color: #6366f1;">{verify_url}</a>
+                </p>
+                <p style="font-size: 12px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 12px; margin-top: 16px;">
+                    ⏳ This link expires in 24 hours.
+                </p>
+                <p style="font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 28px;">
+                    Your account already works without this - it just unlocks a couple of things (like password reset) that need a confirmed address first. Didn't sign up for TaskMonster? You can safely ignore this email.
+                </p>
+            </div>
+            """,
+        })
+    except (ResendError, Exception) as e:
+        print(f"Verification email error (non-fatal): {e}", flush=True)
+
+def _send_password_reset_email(user: "User"):
+    if not resend.api_key:
+        print("Skipping password reset email: RESEND_API_KEY is missing.", flush=True)
+        return
+    token = _auth_token_serializer.dumps(
+        {"uid": user.id, "fp": _password_reset_fingerprint(user)}, salt=PASSWORD_RESET_SALT
+    )
+    reset_url = f"https://usetaskmonster.app/reset-password/{token}"
+    has_password = bool(user.password_hash)
+    try:
+        resend.Emails.send({
+            "from": "TaskMonster <notifications@usetaskmonster.app>",
+            "to": [user.email],
+            "subject": "Reset your TaskMonster password" if has_password else "Set a TaskMonster password",
+            "html": f"""
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; max-width: 550px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
+                <h2 style="color: #4f46e5; margin-top: 0;">😈 {"Reset your password" if has_password else "Set a password"}</h2>
+                <p>{"Tap below to choose a new password for your TaskMonster account." if has_password else "This account currently only signs in via Google/Apple - tap below to also set a password for it, if you'd like."}</p>
+                <p style="margin: 28px 0;">
+                    <a href="{reset_url}" style="background-color: #4f46e5; color: #ffffff; padding: 14px 26px; text-decoration: none; border-radius: 6px; font-weight: 700; display: inline-block; font-size: 15px;">🔑 {"Reset Password" if has_password else "Set Password"}</a>
+                </p>
+                <p style="font-size: 13px; color: #6b7280;">Or paste this link into your browser:<br>
+                    <a href="{reset_url}" style="color: #6366f1;">{reset_url}</a>
+                </p>
+                <p style="font-size: 12px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 12px; margin-top: 16px;">
+                    ⏳ This link expires in 1 hour, and stops working the moment it's used once.
+                </p>
+                <p style="font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 28px;">
+                    Didn't request this? You can safely ignore this email - your password (if you have one) hasn't changed.
+                </p>
+            </div>
+            """,
+        })
+    except (ResendError, Exception) as e:
+        print(f"Password reset email error (non-fatal): {e}", flush=True)
+
 @app.post("/signup")
 def signup(request: Request, email: str = Form(...), password: str = Form(...), name: str = Form("")):
     """The third sign-in option alongside Google/Apple - plain email + password, for anyone who'd
-    rather not go through either. No email-confirmation step (unlike Google/Apple, which already
-    assert a verified address themselves) - a deliberate v1 scope cut, not an oversight; nothing
-    here reads/writes anything sensitive enough yet to justify building that flow first."""
+    rather not go through either. Access is immediate either way (unlike, say, requiring a click
+    before first login) - the confirmation email just unlocks email_verified, which currently only
+    gates /reset-password working without going through Google/Apple first."""
     email = email.strip().lower()
     if not email or "@" not in email:
         return RedirectResponse(url="/?signup_error=email", status_code=303)
@@ -1934,13 +2045,16 @@ def signup(request: Request, email: str = Form(...), password: str = Form(...), 
         if existing:
             # Never reveal whether that's a plain email collision or an existing Google/Apple-only
             # account with no password of its own - same "don't leak account existence" reasoning
-            # login-with-email's own generic error uses below. A real "sign in instead, or reset
-            # your password" flow is future work, not this pass.
+            # login-with-email's own generic error uses below. /forgot-password (further down) is
+            # the real way to add a password to an existing Google/Apple account - that one's safe
+            # because it requires clicking a link mailed to the address itself, proving ownership;
+            # a bare signup form submission proves nothing.
             return RedirectResponse(url="/?signup_error=exists", status_code=303)
 
     password_hash = _hash_password(password)
     display_name = name.strip() or email.split("@")[0]
     find_or_create_user_and_log_in(request, email, display_name, password_hash=password_hash)
+    _send_verification_email(email)
 
     post_login_redirect = request.session.pop('post_login_redirect', None)
     return RedirectResponse(url=post_login_redirect or "/", status_code=303)
@@ -1960,6 +2074,123 @@ def login_with_email(request: Request, email: str = Form(...), password: str = F
     find_or_create_user_and_log_in(request, email, user_name)
     post_login_redirect = request.session.pop('post_login_redirect', None)
     return RedirectResponse(url=post_login_redirect or "/", status_code=303)
+
+@app.get("/verify-email/{token}")
+def verify_email(token: str):
+    try:
+        email = _auth_token_serializer.loads(token, salt=EMAIL_VERIFY_SALT, max_age=86400)
+    except SignatureExpired:
+        return HTMLResponse(_invite_status_page(
+            "That link expired", "Confirmation links are only good for 24 hours - sign in and use \"Resend verification email\" from your Profile page to get a new one.",
+            redirect_url="/", redirect_label="Back to TaskMonster",
+        ))
+    except BadSignature:
+        return HTMLResponse(_invite_status_page(
+            "That link isn't valid", "This confirmation link looks broken or tampered with.",
+            redirect_url="/", redirect_label="Back to TaskMonster",
+        ))
+
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.email == email)).first()
+        if not user:
+            return HTMLResponse(_invite_status_page(
+                "Account not found", "There's no TaskMonster account for this email anymore.",
+                redirect_url="/", redirect_label="Back to TaskMonster",
+            ))
+        user.email_verified = True
+        session.add(user)
+        session.commit()
+
+    return HTMLResponse(_invite_status_page(
+        "✅ Email confirmed", "Your email is confirmed - you're all set.",
+        redirect_url="/", redirect_label="Go to TaskMonster",
+    ))
+
+@app.post("/resend-verification")
+def resend_verification(request: Request):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+        if not user.email_verified:
+            _send_verification_email(user.email)
+    return RedirectResponse(url="/settings/account?verification_sent=1", status_code=303)
+
+@app.get("/forgot-password", response_class=HTMLResponse)
+def forgot_password_page(request: Request, sent: Optional[str] = None):
+    return templates.TemplateResponse(
+        request=request, name="forgot_password.html", context={"sent": sent}
+    )
+
+@app.post("/forgot-password")
+def forgot_password_submit(email: str = Form(...)):
+    email = email.strip().lower()
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.email == email)).first()
+        if user:
+            _send_password_reset_email(user)
+    # Always the same redirect whether or not an account exists for that email - same
+    # no-enumeration reasoning as login-with-email's own generic error.
+    return RedirectResponse(url="/forgot-password?sent=1", status_code=303)
+
+@app.get("/reset-password/{token}", response_class=HTMLResponse)
+def reset_password_page(request: Request, token: str, error: Optional[str] = None):
+    try:
+        payload = _auth_token_serializer.loads(token, salt=PASSWORD_RESET_SALT, max_age=3600)
+    except (SignatureExpired, BadSignature):
+        return HTMLResponse(_invite_status_page(
+            "That link expired or isn't valid", "Password reset links are only good for 1 hour, and only work once - request a new one if you still need it.",
+            redirect_url="/forgot-password", redirect_label="Request a new link",
+        ))
+
+    with Session(engine) as session:
+        user = session.get(User, payload.get("uid"))
+        if not user or payload.get("fp") != _password_reset_fingerprint(user):
+            # Fingerprint mismatch = this exact link was already used (password_hash changed since
+            # it was issued) or a newer link superseded it - same "expired or isn't valid" message
+            # either way, no need to distinguish for the person reading it.
+            return HTMLResponse(_invite_status_page(
+                "That link expired or isn't valid", "Password reset links are only good for 1 hour, and only work once - request a new one if you still need it.",
+                redirect_url="/forgot-password", redirect_label="Request a new link",
+            ))
+
+    return templates.TemplateResponse(
+        request=request, name="reset_password.html", context={"token": token, "error": error}
+    )
+
+@app.post("/reset-password/{token}")
+def reset_password_submit(request: Request, token: str, password: str = Form(...), confirm_password: str = Form(...)):
+    try:
+        payload = _auth_token_serializer.loads(token, salt=PASSWORD_RESET_SALT, max_age=3600)
+    except (SignatureExpired, BadSignature):
+        return RedirectResponse(url="/forgot-password?expired=1", status_code=303)
+
+    if password != confirm_password:
+        return RedirectResponse(url=f"/reset-password/{token}?error=mismatch", status_code=303)
+    if len(password) < 8:
+        return RedirectResponse(url=f"/reset-password/{token}?error=short", status_code=303)
+
+    with Session(engine) as session:
+        user = session.get(User, payload.get("uid"))
+        if not user or payload.get("fp") != _password_reset_fingerprint(user):
+            return RedirectResponse(url="/forgot-password?expired=1", status_code=303)
+
+        user.password_hash = _hash_password(password)
+        # Clicking a link mailed to this exact address proves ownership just as much as the
+        # signup-confirmation link does - no reason to leave this account looking unverified
+        # afterward, whether it already had a password or (a Google/Apple-only account) this is
+        # the first one it's ever had.
+        user.email_verified = True
+        session.add(user)
+        session.commit()
+        email = user.email
+        user_name = user.name
+
+    # Logs them straight in rather than sending them back to type the password they just set -
+    # they just proved ownership of the account via the emailed link, same trust level a normal
+    # login would establish.
+    find_or_create_user_and_log_in(request, email, user_name)
+    return RedirectResponse(url="/?password_reset=1", status_code=303)
 
 @app.get("/login/apple")
 async def login_apple(request: Request):
@@ -2014,7 +2245,7 @@ async def auth_callback_apple(request: Request):
     if not name:
         name = email.split('@')[0]
 
-    find_or_create_user_and_log_in(request, email, name)
+    find_or_create_user_and_log_in(request, email, name, mark_verified=True)
 
     post_login_redirect = request.session.pop('post_login_redirect', None)
     return RedirectResponse(url=post_login_redirect or "/", status_code=303)
@@ -5157,7 +5388,7 @@ def revoke_api_key(request: Request, key_id: int = Form(...)):
     return RedirectResponse(url="/settings/api", status_code=303)
 
 @app.get("/settings/account", response_class=HTMLResponse)
-def account_settings_page(request: Request, photo_error: Optional[str] = None):
+def account_settings_page(request: Request, photo_error: Optional[str] = None, verification_sent: Optional[str] = None):
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user:
@@ -5172,7 +5403,7 @@ def account_settings_page(request: Request, photo_error: Optional[str] = None):
             name="account_settings.html",
             context={
                 "user": user, "photo_error": photo_error, "ai_quota": _ai_quota_status(session, user),
-                "has_contact_info": has_contact_info,
+                "has_contact_info": has_contact_info, "verification_sent": verification_sent,
             }
         )
 
