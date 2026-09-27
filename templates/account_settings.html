@@ -63,13 +63,7 @@
             <p class="text-rose-400 text-xs mb-4">That file type isn't supported - please use a JPEG, PNG, WEBP, or GIF.</p>
             {% elif photo_error == 'size' %}
             <p class="text-rose-400 text-xs mb-4">That photo is too large - please use one under 5MB.</p>
-            {% else %}
-            <div class="mb-4"></div>
             {% endif %}
-
-            <div class="bg-slate-900/60 border border-slate-700/60 rounded-2xl p-4 text-xs text-slate-400 leading-relaxed">
-                Manage your API keys under <a href="/settings/api" class="text-indigo-300 hover:text-indigo-200 font-semibold">🔑 API</a>.
-            </div>
         </div>
 
         <!-- The actual subscription is a real Apple auto-renewing purchase (App Store, verified
