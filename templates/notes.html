@@ -55,12 +55,14 @@
         #notes-quick-btn { animation: ai-chat-launcher-float 3.2s ease-in-out infinite; }
         #events-quick-btn { animation: ai-chat-launcher-float 3.2s ease-in-out infinite; animation-delay: -1.6s; }
         #calendar-quick-btn { animation: ai-chat-launcher-float 3.2s ease-in-out infinite; animation-delay: -0.8s; }
+        #people-quick-btn { animation: ai-chat-launcher-float 3.2s ease-in-out infinite; animation-delay: -2.4s; }
         #ai-chat-launcher:hover,
         #ai-chat-quick-task-btn:hover,
         #multiverse-timeline-quick-btn:hover,
         #notes-quick-btn:hover,
         #events-quick-btn:hover,
-        #calendar-quick-btn:hover {
+        #calendar-quick-btn:hover,
+        #people-quick-btn:hover {
             animation-play-state: paused;
         }
         /* iOS home-screen-style jiggle while reordering the Universe picker strip (see
@@ -980,22 +982,31 @@
         </div>
     </div>
 
-    <!-- Notes + Events, paired - Notes is just a quiet "you are here" marker on this page (not a
-         link to itself); Events links out since it isn't. -->
-    <div class="fixed bottom-[40px] left-[16px] z-[70] flex items-center gap-2">
-        <div id="notes-quick-btn" title="Notes"
-             class="w-14 h-14 rounded-full bg-yellow-500 border border-yellow-300/40 shadow-2xl flex items-center justify-center text-2xl">
-            📝
+    <!-- 2x2 stack (Notes/Calendar above, People/Events below), lined up with the right-side
+         devil-chat/+/multiverse-timeline cluster - Notes is just a quiet "you are here" marker on
+         this page (not a link to itself); the other three link out since they aren't. -->
+    <div class="fixed bottom-[27px] left-[16px] z-[70] flex flex-col gap-2">
+        <div class="flex items-center gap-2">
+            <div id="notes-quick-btn" title="Notes"
+                 class="w-14 h-14 rounded-full bg-yellow-500 border border-yellow-300/40 shadow-2xl flex items-center justify-center text-2xl">
+                📝
+            </div>
+            <a href="/calendar" id="calendar-quick-btn" title="Calendar"
+               class="w-14 h-14 rounded-full bg-sky-500 hover:bg-sky-400 border border-sky-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
+                📅
+            </a>
         </div>
-        <a href="/calendar" id="calendar-quick-btn" title="Calendar"
-           class="w-14 h-14 rounded-full bg-sky-500 hover:bg-sky-400 border border-sky-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
-            📅
-        </a>
-        <a href="{{ events_universe_href }}" id="events-quick-btn" title="Events"
-           onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
-           class="w-14 h-14 rounded-full bg-fuchsia-500 hover:bg-fuchsia-400 border border-fuchsia-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
-            🎉
-        </a>
+        <div class="flex items-center gap-2">
+            <a href="/people" id="people-quick-btn" title="People"
+               class="w-14 h-14 rounded-full bg-emerald-500 hover:bg-emerald-400 border border-emerald-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
+                👥
+            </a>
+            <a href="{{ events_universe_href }}" id="events-quick-btn" title="Events"
+               onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
+               class="w-14 h-14 rounded-full bg-fuchsia-500 hover:bg-fuchsia-400 border border-fuchsia-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
+                🎉
+            </a>
+        </div>
     </div>
 </body>
 </html>

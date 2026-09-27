@@ -26,11 +26,12 @@
         #ai-chat-launcher { animation: ai-chat-quick-task-float-breathe 3.2s ease-in-out infinite; }
         #ai-chat-quick-task-btn { animation: ai-chat-plus-repel-breathe 3.2s ease-in-out infinite; }
         #multiverse-timeline-quick-btn { animation: ai-chat-timeline-repel-breathe 3.2s ease-in-out infinite; }
-        #notes-quick-btn, #calendar-quick-btn, #events-quick-btn { animation: ai-chat-launcher-float 3.2s ease-in-out infinite; }
+        #notes-quick-btn, #calendar-quick-btn, #events-quick-btn, #people-quick-btn { animation: ai-chat-launcher-float 3.2s ease-in-out infinite; }
         #calendar-quick-btn { animation-delay: -0.8s; }
         #events-quick-btn { animation-delay: -1.6s; }
+        #people-quick-btn { animation-delay: -2.4s; }
         #ai-chat-launcher:hover, #ai-chat-quick-task-btn:hover, #multiverse-timeline-quick-btn:hover,
-        #notes-quick-btn:hover, #calendar-quick-btn:hover, #events-quick-btn:hover {
+        #notes-quick-btn:hover, #calendar-quick-btn:hover, #events-quick-btn:hover, #people-quick-btn:hover {
             animation-play-state: paused;
         }
         /* Same starfield technique as notes.html/calendar.html - a couple dozen small
@@ -477,19 +478,44 @@
         </div>
     </div>
 
-    <div class="fixed bottom-[40px] left-[16px] z-[70] flex items-center gap-2">
-        <a href="/notes" id="notes-quick-btn" title="Notes"
-           class="w-14 h-14 rounded-full bg-yellow-500 hover:bg-yellow-400 border border-yellow-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
-            📝
-        </a>
-        <a href="/calendar" id="calendar-quick-btn" title="Calendar"
-           class="w-14 h-14 rounded-full bg-sky-500 hover:bg-sky-400 border border-sky-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
-            📅
-        </a>
-        <a href="{{ events_universe_href }}" id="events-quick-btn" title="Events"
-           onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
-           class="w-14 h-14 rounded-full bg-fuchsia-500 hover:bg-fuchsia-400 border border-fuchsia-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
-            🎉
+    <!-- 2x2 stack (Notes/Calendar above, People/Events below), lined up with the right-side
+         devil-chat/+/multiverse-timeline cluster - People is the quiet "you are here" marker
+         here (not a link to itself), same convention Notes/Calendar use on their own pages. -->
+    <div class="fixed bottom-[27px] left-[16px] z-[70] flex flex-col gap-2">
+        <div class="flex items-center gap-2">
+            <a href="/notes" id="notes-quick-btn" title="Notes"
+               class="w-14 h-14 rounded-full bg-yellow-500 hover:bg-yellow-400 border border-yellow-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
+                📝
+            </a>
+            <a href="/calendar" id="calendar-quick-btn" title="Calendar"
+               class="w-14 h-14 rounded-full bg-sky-500 hover:bg-sky-400 border border-sky-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
+                📅
+            </a>
+        </div>
+        <div class="flex items-center gap-2">
+            <div id="people-quick-btn" title="People"
+                 class="w-14 h-14 rounded-full bg-emerald-500 border border-emerald-300/40 shadow-2xl flex items-center justify-center text-2xl">
+                👥
+            </div>
+            <a href="{{ events_universe_href }}" id="events-quick-btn" title="Events"
+               onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
+               class="w-14 h-14 rounded-full bg-fuchsia-500 hover:bg-fuchsia-400 border border-fuchsia-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
+                🎉
+            </a>
+        </div>
+    </div>
+
+    <!-- Top-right floating Profile button - same as index.html's own (settings/account, sign out,
+         privacy policy, account deletion). Notes/Calendar don't carry this yet; added here because
+         it was asked for specifically on this page. -->
+    <div id="profile-floating-btn-wrapper" class="fixed right-[16px] z-[70]" style="top: max(1rem, calc(env(safe-area-inset-top) + 0.5rem));">
+        <a href="/settings/account" id="profile-floating-btn" title="Profile"
+           class="w-11 h-11 rounded-full bg-slate-800/90 hover:bg-slate-700 border border-indigo-500/40 backdrop-blur-md shadow-xl flex items-center justify-center text-xl transition overflow-hidden">
+            {% if user.profile_photo %}
+            <img src="/profile-photo" alt="" class="w-full h-full object-cover">
+            {% else %}
+            👤
+            {% endif %}
         </a>
     </div>
 </body>
