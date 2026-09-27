@@ -6199,6 +6199,7 @@
                     title: t.title, realmName: t.realmName, bucketName: t.bucketName,
                     realmId: t.realmId, bucketId: t.bucketId, itemId: t.id,
                     universeId: t.universeId, universeName: t.universeName, universeIcon: t.universeIcon,
+                    tag: t.tag,
                 };
 
                 if (t.isCompleted) {
@@ -6243,9 +6244,10 @@
                     const rows = items.map(it => {
                         // Only present on cross-Universe entries - see computeMultiverseDailyDigestData.
                         const universeTag = it.universeIcon ? `<span class="text-slate-500 text-[10px]">${escapeHtml(it.universeIcon)} </span>` : '';
-                        // Universe name only now (Realm/Bucket are no longer a user-facing concept).
+                        // Universe name (+ the task's own free-form tag, if it has one) now -
+                        // Realm/Bucket are no longer a user-facing concept.
                         const locationTag = it.universeName
-                            ? `<span class="text-slate-500 text-[10px]"> [${escapeHtml(it.universeName)}]</span>`
+                            ? `<span class="text-slate-500 text-[10px]"> [${escapeHtml(it.universeName)}${it.tag ? ' · ' + escapeHtml(it.tag) : ''}]</span>`
                             : '';
                         const overdueTag = isOverdueSection
                             ? `<span class="text-rose-400 font-bold text-[10px] ml-1">(${it.daysLate}d late)</span>`
@@ -13032,13 +13034,13 @@
             const oldCheckboxBtn = document.getElementById('hud-checkbox-btn');
             if (oldCheckboxBtn) oldCheckboxBtn.replaceWith(oldCheckboxBtn.cloneNode(true));
 
-            // Universe name only now (Realm/Bucket are no longer a user-facing concept - see the
-            // Universe-only simplification), falling back to the old Realm/Bucket text only for a
-            // task object that somehow doesn't carry universeName (the per-Universe "ring" view's
-            // own task objects, not the primary Multiverse/Realm Timeline lanes this HUD is really
-            // reached from now).
+            // Universe name (+ the task's own free-form tag, if it has one) now - Realm/Bucket are
+            // no longer a user-facing concept (see the Universe-only simplification). Falls back to
+            // the old Realm/Bucket text only for a task object that somehow doesn't carry
+            // universeName (the per-Universe "ring" view's own task objects, not the primary
+            // Multiverse/Realm Timeline lanes this HUD is really reached from now).
             badgeCategory.innerText = task.universeName
-                ? `${task.universeIcon || ''} ${task.universeName}`.trim()
+                ? `${task.universeIcon || ''} ${task.universeName}`.trim() + (task.tag ? ` · ${task.tag}` : '')
                 : `${task.realmName} / ${task.bucketName}`;
             idInput.value = task.id;
 
