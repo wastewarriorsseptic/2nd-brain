@@ -231,6 +231,15 @@ def safe_apply_migrations():
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_notes VARCHAR;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_photo BYTEA;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_photo_content_type VARCHAR;'))
+            conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_first_name VARCHAR;'))
+            conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_last_name VARCHAR;'))
+            conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_address_line1 VARCHAR;'))
+            conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_address_line2 VARCHAR;'))
+            conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_city VARCHAR;'))
+            conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_state VARCHAR;'))
+            conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_zip_code VARCHAR;'))
+            conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_phone VARCHAR;'))
+            conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_email VARCHAR;'))
             conn.execute(text('ALTER TABLE realm ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
             # Direct Universe attachment point for Item/Person, replacing the Realm/Bucket hop -
             # see backfill_item_person_universe_ids below for how existing rows get populated.
@@ -325,6 +334,12 @@ def safe_apply_migrations():
                 cursor.execute('ALTER TABLE users ADD COLUMN "profile_photo" BLOB;')
             if 'profile_photo_content_type' not in user_cols:
                 cursor.execute('ALTER TABLE users ADD COLUMN "profile_photo_content_type" VARCHAR;')
+            for contact_col in (
+                'contact_first_name', 'contact_last_name', 'contact_address_line1', 'contact_address_line2',
+                'contact_city', 'contact_state', 'contact_zip_code', 'contact_phone', 'contact_email',
+            ):
+                if contact_col not in user_cols:
+                    cursor.execute(f'ALTER TABLE users ADD COLUMN "{contact_col}" VARCHAR;')
 
             # Only ALTER the person table if create_all() has already created it in a prior run -
             # on a brand-new DB it won't exist yet at this point, and create_all() (which runs
@@ -381,6 +396,22 @@ class User(SQLModel, table=True):
     # them as without re-sniffing.
     profile_photo: Optional[bytes] = Field(default=None, sa_column=Column(LargeBinary))
     profile_photo_content_type: Optional[str] = Field(default=None)
+    # Contact Info - the Profile page's own collapsible section. Not read anywhere yet either
+    # (same as profile_notes above), but the intended future hook for autonomous tasks that need
+    # the user's own real-world details (an address to ship something to, a phone number to text,
+    # a contact email separate from whatever they signed in with) to actually act on the user's
+    # behalf. contact_email is deliberately its own field, never the login email - a user acting
+    # on their own behalf might want a different address given out than the one Google/Apple
+    # authenticated them with.
+    contact_first_name: Optional[str] = Field(default=None)
+    contact_last_name: Optional[str] = Field(default=None)
+    contact_address_line1: Optional[str] = Field(default=None)
+    contact_address_line2: Optional[str] = Field(default=None)
+    contact_city: Optional[str] = Field(default=None)
+    contact_state: Optional[str] = Field(default=None)
+    contact_zip_code: Optional[str] = Field(default=None)
+    contact_phone: Optional[str] = Field(default=None)
+    contact_email: Optional[str] = Field(default=None)
     realms: List["Realm"] = Relationship(back_populates="user")
     universes: List["Universe"] = Relationship(back_populates="user")
 
@@ -5053,10 +5084,18 @@ def account_settings_page(request: Request, photo_error: Optional[str] = None):
         user = get_current_user(request, session)
         if not user:
             return RedirectResponse(url="/login", status_code=303)
+        has_contact_info = any([
+            user.contact_first_name, user.contact_last_name, user.contact_address_line1,
+            user.contact_address_line2, user.contact_city, user.contact_state,
+            user.contact_zip_code, user.contact_phone, user.contact_email,
+        ])
         return templates.TemplateResponse(
             request=request,
             name="account_settings.html",
-            context={"user": user, "photo_error": photo_error, "ai_quota": _ai_quota_status(session, user)}
+            context={
+                "user": user, "photo_error": photo_error, "ai_quota": _ai_quota_status(session, user),
+                "has_contact_info": has_contact_info,
+            }
         )
 
 @app.post("/settings/account/profile")
@@ -5066,6 +5105,36 @@ def update_profile_notes(request: Request, profile_notes: str = Form("")):
         if not user:
             return RedirectResponse(url="/login", status_code=303)
         user.profile_notes = profile_notes.strip() or None
+        session.add(user)
+        session.commit()
+    return RedirectResponse(url="/settings/account", status_code=303)
+
+@app.post("/settings/account/contact")
+def update_contact_info(
+    request: Request,
+    contact_first_name: str = Form(""),
+    contact_last_name: str = Form(""),
+    contact_address_line1: str = Form(""),
+    contact_address_line2: str = Form(""),
+    contact_city: str = Form(""),
+    contact_state: str = Form(""),
+    contact_zip_code: str = Form(""),
+    contact_phone: str = Form(""),
+    contact_email: str = Form(""),
+):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+        user.contact_first_name = contact_first_name.strip() or None
+        user.contact_last_name = contact_last_name.strip() or None
+        user.contact_address_line1 = contact_address_line1.strip() or None
+        user.contact_address_line2 = contact_address_line2.strip() or None
+        user.contact_city = contact_city.strip() or None
+        user.contact_state = contact_state.strip() or None
+        user.contact_zip_code = contact_zip_code.strip() or None
+        user.contact_phone = contact_phone.strip() or None
+        user.contact_email = contact_email.strip() or None
         session.add(user)
         session.commit()
     return RedirectResponse(url="/settings/account", status_code=303)

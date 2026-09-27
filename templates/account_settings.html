@@ -105,6 +105,85 @@
             {% endif %}
         </div>
 
+        <!-- Not read anywhere yet - the intended source for future autonomous AI tasks that need
+             the user's own real-world details to act on their behalf (an address to ship
+             something to, a number to text). Starts expanded only if something's already saved
+             (has_contact_info) so existing info is never hidden behind an extra tap; otherwise
+             collapsed by default, same "don't show a wall of empty fields up front" reasoning the
+             Add/Edit Task modals' own Advanced section already uses. -->
+        <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-6 md:p-8 shadow-2xl mb-5">
+            <button type="button" onclick="toggleContactInfoSection()" class="w-full flex items-center justify-between text-left">
+                <h2 class="text-lg font-extrabold text-white tracking-tight flex items-center gap-2">
+                    📇 Contact Info
+                </h2>
+                <span id="contact-info-chevron" class="text-slate-400 text-lg">{{ '▲' if has_contact_info else '▾' }}</span>
+            </button>
+            <p class="text-slate-400 text-xs mt-1 mb-4 leading-relaxed">
+                Optional - not used anywhere yet, but the intended source for future autonomous AI
+                tasks that need your real-world details to act on your behalf (e.g. an address to
+                ship to, a number to text). This email is independent of your sign-in email above.
+            </p>
+            <div id="contact-info-fields" class="{{ '' if has_contact_info else 'hidden' }} space-y-3">
+                <form action="/settings/account/contact" method="POST" class="space-y-3">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">First Name</label>
+                            <input type="text" name="contact_first_name" value="{{ user.contact_first_name or '' }}" autocomplete="given-name"
+                                   class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Last Name</label>
+                            <input type="text" name="contact_last_name" value="{{ user.contact_last_name or '' }}" autocomplete="family-name"
+                                   class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Address Line 1</label>
+                        <input type="text" name="contact_address_line1" value="{{ user.contact_address_line1 or '' }}" autocomplete="address-line1"
+                               class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Address Line 2</label>
+                        <input type="text" name="contact_address_line2" value="{{ user.contact_address_line2 or '' }}" autocomplete="address-line2"
+                               class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <div class="grid grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">City</label>
+                            <input type="text" name="contact_city" value="{{ user.contact_city or '' }}" autocomplete="address-level2"
+                                   class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">State</label>
+                            <input type="text" name="contact_state" value="{{ user.contact_state or '' }}" autocomplete="address-level1"
+                                   class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Zip Code</label>
+                            <input type="text" name="contact_zip_code" value="{{ user.contact_zip_code or '' }}" autocomplete="postal-code"
+                                   class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Phone Number</label>
+                            <input type="tel" name="contact_phone" value="{{ user.contact_phone or '' }}" autocomplete="tel"
+                                   class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Email Address</label>
+                            <input type="email" name="contact_email" value="{{ user.contact_email or '' }}" autocomplete="email"
+                                   class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500">
+                        </div>
+                    </div>
+                    <button type="submit"
+                            class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-indigo-600/20 transition-all">
+                        Save
+                    </button>
+                </form>
+            </div>
+        </div>
+
         <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-6 md:p-8 shadow-2xl mb-5">
             <h2 class="text-lg font-extrabold text-white tracking-tight flex items-center gap-2 mb-1">
                 📝 About You
@@ -176,6 +255,14 @@
     </div>
 
     <script>
+        function toggleContactInfoSection() {
+            const fields = document.getElementById('contact-info-fields');
+            const chevron = document.getElementById('contact-info-chevron');
+            if (!fields) return;
+            const isHidden = fields.classList.toggle('hidden');
+            if (chevron) chevron.textContent = isHidden ? '▾' : '▲';
+        }
+
         (function() {
             const modal = document.getElementById('photo-crop-modal');
             const viewport = document.getElementById('photo-crop-viewport');
