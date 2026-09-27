@@ -6153,6 +6153,21 @@ another field on the same update_task call. If more than one Universe in the tre
 matches what the user named, ask which one instead of guessing, the same as you would for \
 navigate_to_place.
 
+You CAN move a whole CATEGORY of tasks at once ("move all my coding tasks to Coding", "put \
+everything tagged Personal Bills into Bills instead") - this is the SAME move as above, just \
+applied to a group instead of one task named directly, and it does NOT need a back-and-forth to \
+pull off: (1) call list_tasks with the category as `query` (it matches both title and tag) - or, \
+if the category doesn't obviously map to a single keyword, call it with status "all" and no query \
+and look at every result's own tag/title yourself; (2) from the results, decide which ones \
+actually belong to that category using their tag/title (and universe_name, so you can see where \
+they already live) - never guess about a task the results didn't actually return; (3) call \
+update_task once per matching task_id, ALL in this same response, exactly as the multi-task rule \
+above already says. Do this in one pass - don't ask the user to confirm the plan first unless the \
+category itself is genuinely ambiguous (e.g. it could reasonably mean two different things, or \
+list_tasks returned zero plausible matches at all). If you're ever unable to finish - a partial \
+failure, or you're not confident which results actually match - say exactly what you found and \
+what's still unclear, rather than a generic "couldn't work that out."
+
 You CAN favorite a task (and un-favorite it) - "favorite this", "star my dentist task", "pin that to \
 my notes", "remove the favorite from it". Use favorite_task with the task's task_id. A favorite is \
 the star on a task's card, which adds the task to the user's Notes; it doesn't change the task \
@@ -6278,13 +6293,13 @@ if GEMINI_ENABLED:
     )
     _ai_list_tasks_decl = genai_types.FunctionDeclaration(
         name="list_tasks",
-        description="List the current user's tasks, optionally filtered. Results include each task's id, needed to later update_task or navigate_to_task it. To check whether a task exists anywhere among the user's incomplete tasks, one call with status \"all\" is enough - it already includes both overdue AND upcoming tasks, so calling \"overdue\" or \"upcoming\" afterward on top of \"all\" is redundant. \"completed\" is the only status \"all\" does NOT include - call that separately only if the user is asking about something they may have already finished. Results are capped, ordered by due date - a user with many recurring tasks can easily have more near-term tasks than the cap, which would push something scheduled further out (e.g. next month) off the end BEFORE it's ever seen. Whenever the user is asking whether a SPECIFIC task/topic exists (a name, merchant, keyword) rather than asking for a general list, always pass that as `query` - it filters server-side before the cap is applied, so a real match far in the future is never missed. Never conclude something doesn't exist from an unfiltered call alone if a keyword was available to search for.",
+        description="List the current user's tasks, optionally filtered. Results include each task's id (needed to later update_task or navigate_to_task it), its tag, and which Universe it's currently in (universe_id/universe_name) - use those two fields to identify a GROUP of tasks by category (e.g. \"all my coding tasks\") before bulk-updating them, see your instructions on bulk moves. To check whether a task exists anywhere among the user's incomplete tasks, one call with status \"all\" is enough - it already includes both overdue AND upcoming tasks, so calling \"overdue\" or \"upcoming\" afterward on top of \"all\" is redundant. \"completed\" is the only status \"all\" does NOT include - call that separately only if the user is asking about something they may have already finished. Results are capped, ordered by due date - a user with many recurring tasks can easily have more near-term tasks than the cap, which would push something scheduled further out (e.g. next month) off the end BEFORE it's ever seen. Whenever the user is asking whether a SPECIFIC task/topic/category exists rather than asking for a general list, always pass that as `query` - it matches against both title and tag, filters server-side before the cap is applied, so a real match far in the future (or one only identifiable by its tag, not its title) is never missed. Never conclude something doesn't exist from an unfiltered call alone if a keyword was available to search for.",
         parameters={
             "type": "OBJECT",
             "properties": {
                 "status": {"type": "STRING", "enum": ["overdue", "upcoming", "all", "completed"], "description": "\"all\" = every incomplete task (overdue + upcoming combined) - the usual first/only call needed. \"completed\" is separate and not included in \"all\"."},
                 "due_within_days": {"type": "INTEGER", "description": "e.g. 7 for 'this week'"},
-                "query": {"type": "STRING", "description": "Case-insensitive substring to search for in task titles, e.g. \"amex\". Use this whenever checking if a specific task exists - it's applied before the result cap, so it finds a match regardless of how far in the future it's due or how many other tasks exist."},
+                "query": {"type": "STRING", "description": "Case-insensitive substring to search for in task titles OR tags, e.g. \"amex\" or \"coding\". Use this whenever checking if a specific task/category exists - it's applied before the result cap, so it finds a match regardless of how far in the future it's due or how many other tasks exist."},
             },
         },
     )
@@ -6349,9 +6364,17 @@ if GEMINI_ENABLED:
             "required": ["name", "realm_id"],
         },
     )
+    # create_realm/create_bucket deliberately NOT offered here anymore - leftover tools from
+    # before the Realm/Bucket flattening, whose own descriptions still talked about a task's
+    # "bucket_id" ("the level a task's bucket_id must ultimately point to"), directly contradicting
+    # update_task (universe_id only, no bucket_id at all) and very likely a real contributor to
+    # the model getting confused mid-way through a bulk move - reported directly. create_universe
+    # is the only "make a new place" tool the model needs now. The declarations/executors
+    # themselves are left in place below (harmless, just unreachable) rather than deleted here -
+    # a separate, larger pass, not part of this fix.
     _ai_tools = [genai_types.Tool(function_declarations=[
         _ai_create_task_decl, _ai_update_task_decl, _ai_favorite_task_decl, _ai_list_tasks_decl, _ai_navigate_task_decl, _ai_navigate_place_decl,
-        _ai_create_universe_decl, _ai_create_realm_decl, _ai_create_bucket_decl,
+        _ai_create_universe_decl,
     ])]
 
 # Simple in-memory per-user rate limit - resets on process restart and doesn't span multiple
@@ -6686,24 +6709,23 @@ def _ai_execute_favorite_task(session: Session, user: "User", args: dict) -> dic
     }
 
 def _ai_execute_list_tasks(session: Session, user: "User", args: dict) -> list:
-    """Read-only, and deliberately never accepts a realm/bucket id from the model at all - only a
-    status/day-count filter - so the query is always scoped from the DB by the requesting user's
-    own ownership, never by anything the model (or an injected payload) supplies."""
-    owned_realm_ids = session.exec(
-        select(Realm.id).where(Realm.user_id == user.id)
+    """Read-only, and deliberately never accepts a universe id from the model as a scope filter -
+    only a status/day-count/keyword filter - so the query is always scoped from the DB by the
+    requesting user's own ownership, never by anything the model (or an injected payload) supplies."""
+    owned_universe_ids = session.exec(
+        select(Universe.id).where(Universe.user_id == user.id, Universe.kind.in_(["task", "event"]))
     ).all()
-    if not owned_realm_ids:
+    if not owned_universe_ids:
         return []
 
-    items = session.exec(
-        select(Item).join(Bucket).where(Bucket.realm_id.in_(owned_realm_ids))
-    ).all()
+    items = session.exec(select(Item).where(Item.universe_id.in_(owned_universe_ids))).all()
 
     status = args.get("status") or "all"
     due_within_days = args.get("due_within_days")
     query = (args.get("query") or "").strip().lower()
     today_date = get_user_today_date(user.timezone or "UTC")
     today_dt = datetime(today_date.year, today_date.month, today_date.day)
+    universe_by_id = {u.id: u for u in session.exec(select(Universe).where(Universe.id.in_(owned_universe_ids))).all()}
 
     out = []
     for it in items:
@@ -6723,17 +6745,26 @@ def _ai_execute_list_tasks(session: Session, user: "User", args: dict) -> list:
         # further out, making the assistant wrongly report "you don't have that task" when it
         # simply never got returned. Reported directly: asked whether an "Amex" task existed (it
         # did, in October) and got told no, because the unfiltered due-date-ascending list was
-        # entirely consumed by nearer-term recurring tasks before reaching it.
-        if query and query not in it.title.lower():
+        # entirely consumed by nearer-term recurring tasks before reaching it. Matches tag as well
+        # as title - a bulk request like "move all my coding tasks" is usually asking by CATEGORY
+        # (the tag), not literal title text, so title-only matching missed it entirely - also
+        # reported directly, the assistant getting confused/failing partway through exactly that
+        # kind of request.
+        if query and query not in it.title.lower() and query not in (it.tag or "").lower():
             continue
 
-        bucket = session.get(Bucket, it.bucket_id)
+        universe = universe_by_id.get(it.universe_id)
         out.append({
             "id": it.id,
             "title": it.title,
             "due_date": it.due_date.strftime("%Y-%m-%d"),
             "is_completed": it.is_completed,
-            "bucket_name": bucket.name if bucket else "",
+            "tag": it.tag or "",
+            # Which Universe this task is CURRENTLY in - needed to actually reason about a move
+            # ("all my coding tasks" scattered across several Universes into one) rather than just
+            # find tasks with no way to tell where they already live.
+            "universe_id": it.universe_id,
+            "universe_name": universe.name if universe else "",
         })
 
     out.sort(key=lambda t: t["due_date"])
