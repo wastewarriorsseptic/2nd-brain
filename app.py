@@ -5544,6 +5544,18 @@ def notes_page(request: Request, universe_id: Optional[int] = None):
 
         selected_universe = universe_by_id.get(universe_id) if universe_id else None
 
+        # Same autocomplete source dashboard() builds for the Add/Edit Task modals' own Tag field -
+        # reused here for the "+" form's Tag input when adding a task from "All" (see
+        # all-universe-new-task-form in notes.html).
+        universe_ids_all = [u.id for u in universes]
+        existing_tags = session.exec(
+            select(Item.tag).where(Item.universe_id.in_(universe_ids_all), Item.tag != None)  # noqa: E711
+        ).all() if universe_ids_all else []
+        all_owned_realms_for_tags = session.exec(select(Realm).where(Realm.user_id == user.id)).all()
+        tag_suggestions = sorted(set(
+            [t for t in existing_tags if t] + [r.name for r in all_owned_realms_for_tags if r.name]
+        ))
+
         return templates.TemplateResponse(
             request=request,
             name="notes.html",
@@ -5556,6 +5568,7 @@ def notes_page(request: Request, universe_id: Optional[int] = None):
                 "selected_universe": selected_universe,
                 "events_universe_href": get_events_universe_href(session, user.id),
                 "gemini_enabled": GEMINI_ENABLED,
+                "tag_suggestions": tag_suggestions,
             }
         )
 
@@ -5609,14 +5622,14 @@ def toggle_note_from_task(request: Request, payload: dict = Body(...)):
         return JSONResponse({"ok": True, "noted": True, "note_id": note.id})
 
 @app.post("/notes/new-task/")
-def new_task_from_notes(request: Request, title: str = Form(...), due_date: Optional[str] = Form(None), universe_id: int = Form(...)):
+def new_task_from_notes(request: Request, title: str = Form(...), due_date: Optional[str] = Form(None), universe_id: int = Form(...), tag: Optional[str] = Form(None)):
     """The Notes checklist's own "+ Add Task" - reported directly, wanting to create a brand new
     task right from inside a Universe's checklist rather than leaving Notes to do it elsewhere.
-    Always targets whichever Universe's checklist is currently open (never "All" - there's no
-    single Universe to put a new task in from there, so the form is only ever shown once one is
-    selected), auto-provisioning a default General/Tasks Bucket in it if needed, then immediately
-    stars the new task the same way toggle_note_from_task does - it shows up in the checklist right
-    away without a separate manual star tap."""
+    Targets whichever Universe's checklist is currently open, or - from "All", where there's no
+    single implied Universe - whichever one the form's own Universe select was set to (see
+    all-universe-new-task-form in notes.html), auto-provisioning a default General/Tasks Bucket in
+    it if needed, then immediately stars the new task the same way toggle_note_from_task does - it
+    shows up in the checklist right away without a separate manual star tap."""
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user:
@@ -5642,7 +5655,7 @@ def new_task_from_notes(request: Request, title: str = Form(...), due_date: Opti
             today = get_user_today_date(user.timezone or "UTC")
             parsed_due = datetime(today.year, today.month, today.day, 9, 0, 0)
 
-        item = Item(title=title, bucket_id=bucket.id, due_date=parsed_due)
+        item = Item(title=title, bucket_id=bucket.id, universe_id=universe.id, due_date=parsed_due, tag=(tag or "").strip() or None)
         session.add(item)
         session.commit()
         session.refresh(item)

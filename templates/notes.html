@@ -218,15 +218,24 @@
                     {% if selected_universe %}{{ selected_universe.icon or '😈' }} {{ selected_universe.name }}{% else %}✨ All{% endif %}
                 </h2>
                 {% if selected_universe_id %}
-                <!-- Only shown once a specific Universe is picked - "All" has no single target to
-                     put a new task in. Just a plain round "+" until tapped - reported directly,
-                     wanting the add-task control to be a tap target, not a form always sitting on
-                     screen. When AI chat is available it opens openNotesTaskChat() - a tiny
-                     dedicated chat asking what task to make, reported directly ("start a chat for
-                     what task to make within that exact universe") - rather than the plain
-                     title/date/Add row toggleNewTaskForm() reveals, kept only as the fallback for
-                     when AI chat is disabled entirely. -->
+                <!-- Just a plain round "+" until tapped - reported directly, wanting the add-task
+                     control to be a tap target, not a form always sitting on screen. When AI chat
+                     is available it opens openNotesTaskChat() - a tiny dedicated chat asking what
+                     task to make, reported directly ("start a chat for what task to make within
+                     that exact universe") - rather than the plain title/date/Add row
+                     toggleNewTaskForm() reveals, kept only as the fallback for when AI chat is
+                     disabled entirely. -->
                 <button type="button" onclick="{{ 'openNotesTaskChat()' if gemini_enabled else 'toggleNewTaskForm()' }}"
+                        class="w-9 h-9 shrink-0 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xl font-extrabold flex items-center justify-center shadow-lg shadow-indigo-600/30 transition-all">
+                    +
+                </button>
+                {% else %}
+                <!-- "All" has no single implied Universe the way a specific one does, so this never
+                     goes through the AI chat quick-task flow (which assumes exactly one target
+                     universe) - it always reveals all-universe-new-task-form below instead, whose
+                     own Universe select is what makes the target explicit. Reported directly,
+                     wanting the same "+" available from "All" too. -->
+                <button type="button" onclick="toggleAllUniverseTaskForm()"
                         class="w-9 h-9 shrink-0 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xl font-extrabold flex items-center justify-center shadow-lg shadow-indigo-600/30 transition-all">
                     +
                 </button>
@@ -244,6 +253,38 @@
                     Add
                 </button>
             </form>
+            {% endif %}
+
+            {% if not selected_universe_id %}
+            <!-- "+" from "All" - unlike the single-Universe form above, the target Universe isn't
+                 implied by whichever checklist is open, so it's an explicit required select here,
+                 plus the same optional Tag every other Add Task surface now has. -->
+            <form id="all-universe-new-task-form" action="/notes/new-task/" method="POST" class="hidden flex-col gap-2 mb-4 shrink-0">
+                <div class="flex items-center gap-2">
+                    <select name="universe_id" required
+                            class="bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-2 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 shrink-0">
+                        {% for u in universes if u.kind == 'task' %}
+                        <option value="{{ u.id }}">{{ u.icon or '😈' }} {{ u.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="text" name="title" placeholder="Add a task…" required autocomplete="off"
+                           class="flex-1 min-w-0 bg-slate-100 border border-slate-200 rounded-xl px-3.5 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500">
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="text" name="tag" placeholder="Tag (optional)" list="notes-tag-suggestions-list" autocomplete="off"
+                           class="flex-1 min-w-0 bg-slate-100 border border-slate-200 rounded-xl px-3.5 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500">
+                    <input type="date" name="due_date"
+                           class="bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-2 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 shrink-0">
+                    <button type="submit" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/20 transition-all shrink-0">
+                        Add
+                    </button>
+                </div>
+            </form>
+            <datalist id="notes-tag-suggestions-list">
+                {% for t in tag_suggestions %}
+                <option value="{{ t }}"></option>
+                {% endfor %}
+            </datalist>
             {% endif %}
 
             <!-- pb-32 - reported directly with a screenshot showing the last row(s) sitting right
@@ -383,6 +424,17 @@
         // openNotesTaskChat() below is what actually runs whenever AI chat is enabled.
         function toggleNewTaskForm() {
             const form = document.getElementById('new-task-form');
+            if (!form) return;
+            const isHidden = form.classList.toggle('hidden');
+            form.classList.toggle('flex', !isHidden);
+            if (!isHidden) form.querySelector('input[name="title"]').focus();
+        }
+
+        // Same reveal-on-tap toggle as toggleNewTaskForm above, for the "+" shown from "All"
+        // instead (all-universe-new-task-form) - its own Universe select is what makes the
+        // otherwise-implied target explicit.
+        function toggleAllUniverseTaskForm() {
+            const form = document.getElementById('all-universe-new-task-form');
             if (!form) return;
             const isHidden = form.classList.toggle('hidden');
             form.classList.toggle('flex', !isHidden);
