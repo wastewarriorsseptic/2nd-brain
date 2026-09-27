@@ -5056,7 +5056,7 @@ def account_settings_page(request: Request, photo_error: Optional[str] = None):
         return templates.TemplateResponse(
             request=request,
             name="account_settings.html",
-            context={"user": user, "photo_error": photo_error}
+            context={"user": user, "photo_error": photo_error, "ai_quota": _ai_quota_status(session, user)}
         )
 
 @app.post("/settings/account/profile")

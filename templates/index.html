@@ -6423,6 +6423,21 @@
             history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
         });
 
+        // Deep-link straight into the Pro paywall modal from a plain page elsewhere - the Profile
+        // page's own "Upgrade to Pro" button, which has no access to this page's JS to call
+        // openProPaywall() directly (a separate standalone HTML document, same reason Notes'
+        // "🏡 Universes Home" link needs open_multiverse below). One-shot: stripped after use, same
+        // as open_add_task further down - there's nothing useful about reopening the paywall on
+        // every future refresh of this URL.
+        document.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('open_pro_paywall') !== '1') return;
+            openProPaywall();
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete('open_pro_paywall');
+            history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
+        });
+
         // Deep-link into the Multiverse picker overlay from a plain page elsewhere (e.g. the
         // standalone Notes page's own static "🏡 Universes Home" link, which has no access to this
         // page's JS to call openMultiverseView() directly) - same query-param-flag pattern

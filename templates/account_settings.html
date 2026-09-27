@@ -37,18 +37,22 @@
                 </div>
             </div>
 
-            <!-- Auto-submits the moment a file is picked (onchange below) - one less tap than a
-                 separate "Upload" button, and there's nothing else on this tiny form to fill in
-                 first. The "Remove" button (only shown once a photo exists) shares this same form
-                 but posts to the delete route instead via its own formaction, rather than needing
-                 a second <form>. -->
+            <!-- Picking a file (or tapping Edit on the current photo) opens the crop/center modal
+                 below rather than uploading straight away - reported directly, wanting the
+                 ability to center/adjust the image, especially on a first-ever upload where
+                 there's no existing crop to fall back on. The modal's own Save is what actually
+                 uploads (via fetch, see photo-crop-save-btn) - this form only still matters for
+                 Remove, a real POST with no image involved. -->
             <form action="/settings/account/photo" method="POST" enctype="multipart/form-data" id="profile-photo-form" class="flex items-center gap-2 mb-1">
                 <label class="cursor-pointer px-3.5 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs rounded-xl transition-all">
                     {{ 'Change Photo' if user.profile_photo else 'Upload Photo' }}
-                    <input type="file" name="photo" accept="image/png,image/jpeg,image/webp,image/gif"
-                           class="hidden" onchange="if (this.files.length) document.getElementById('profile-photo-form').submit();">
+                    <input type="file" id="profile-photo-input" name="photo" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden">
                 </label>
                 {% if user.profile_photo %}
+                <button type="button" id="profile-photo-edit-btn"
+                        class="px-3.5 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs rounded-xl transition-all">
+                    Edit
+                </button>
                 <button type="submit" formaction="/settings/account/photo/delete"
                         class="px-3.5 py-2 bg-slate-900 hover:bg-rose-900/30 text-rose-300 font-bold text-xs rounded-xl transition-all">
                     Remove
@@ -66,6 +70,39 @@
             <div class="bg-slate-900/60 border border-slate-700/60 rounded-2xl p-4 text-xs text-slate-400 leading-relaxed">
                 Manage your API keys under <a href="/settings/api" class="text-indigo-300 hover:text-indigo-200 font-semibold">🔑 API</a>.
             </div>
+        </div>
+
+        <!-- The actual subscription is a real Apple auto-renewing purchase (App Store, verified
+             server-side - see /iap/verify/ in app.py) - this page can't sell or toggle it itself,
+             only show where things stand and hand off to the flow that can. Upgrading reuses the
+             exact same paywall modal (native StoreKit purchase bridge) the AI chat's own quota chip
+             already opens in index.html - a standalone page like this one has no access to that
+             page's JS to call openProPaywall() directly, so it links there with a one-shot
+             ?open_pro_paywall=1 instead (see the DOMContentLoaded handler for it in index.html).
+             Already-Pro just links straight to Apple's own subscription management - there's
+             nothing left for a paywall modal to do at that point. -->
+        <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-6 md:p-8 shadow-2xl mb-5">
+            <h2 class="text-lg font-extrabold text-white tracking-tight flex items-center gap-2 mb-1">
+                😈 Subscription
+            </h2>
+            {% if ai_quota.plan == 'pro' %}
+            <p class="text-slate-400 text-xs mb-4 leading-relaxed">
+                You're on <strong class="text-emerald-400">TaskMonster Pro</strong> - {{ ai_quota.limit }} AI chat messages a day.
+                {% if ai_quota.pro_until %}Renews/ends {{ ai_quota.pro_until[:10] }}.{% endif %}
+            </p>
+            <a href="https://apps.apple.com/account/subscriptions" target="_blank" rel="noopener"
+               class="block w-full text-center py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm rounded-xl transition-all">
+                Manage Subscription
+            </a>
+            {% else %}
+            <p class="text-slate-400 text-xs mb-4 leading-relaxed">
+                You're on the <strong class="text-white">Free</strong> plan - {{ ai_quota.limit }} AI chat messages a day. Upgrade to TaskMonster Pro for more.
+            </p>
+            <a href="/?open_pro_paywall=1"
+               class="block w-full text-center py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-indigo-600/20 transition-all">
+                ⬆️ Upgrade to Pro
+            </a>
+            {% endif %}
         </div>
 
         <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-6 md:p-8 shadow-2xl mb-5">
@@ -117,7 +154,175 @@
         </div>
     </div>
 
+    <!-- Crop/center modal - opened by picking a file or tapping Edit (see the script below).
+         Drag to reposition, slider to zoom; Save renders the visible circle to a canvas and
+         uploads that instead of the original file. The circular viewport here is purely a preview
+         aid (CSS overflow:hidden) - the exported image is a plain square, since the avatar's own
+         circular mask (rounded-full) is already applied wherever it's displayed, same as before
+         this feature existed. -->
+    <div id="photo-crop-modal" class="hidden fixed inset-0 z-[80] flex items-center justify-center px-4" style="background: rgba(2, 6, 23, 0.7);">
+        <div class="bg-slate-800 border border-slate-700/80 rounded-3xl shadow-2xl w-full max-w-xs p-5">
+            <h3 class="text-white font-extrabold text-base mb-4 text-center">Center Your Photo</h3>
+            <div id="photo-crop-viewport" class="relative mx-auto rounded-full overflow-hidden bg-slate-950 touch-none" style="width: 240px; height: 240px; cursor: grab;">
+                <img id="photo-crop-img" draggable="false" alt="" class="absolute top-0 left-0 select-none pointer-events-none" style="max-width: none;">
+            </div>
+            <input type="range" id="photo-crop-zoom" min="100" max="300" value="100" class="w-full mt-4 accent-indigo-500">
+            <p id="photo-crop-error" class="hidden text-rose-400 text-xs text-center mt-2"></p>
+            <div class="flex items-center gap-2 mt-4">
+                <button type="button" id="photo-crop-cancel-btn" class="flex-1 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm rounded-xl transition-all">Cancel</button>
+                <button type="button" id="photo-crop-save-btn" class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl transition-all">Save Photo</button>
+            </div>
+        </div>
+    </div>
+
     <script>
+        (function() {
+            const modal = document.getElementById('photo-crop-modal');
+            const viewport = document.getElementById('photo-crop-viewport');
+            const img = document.getElementById('photo-crop-img');
+            const zoomSlider = document.getElementById('photo-crop-zoom');
+            const errorEl = document.getElementById('photo-crop-error');
+            const cancelBtn = document.getElementById('photo-crop-cancel-btn');
+            const saveBtn = document.getElementById('photo-crop-save-btn');
+            const fileInput = document.getElementById('profile-photo-input');
+            const editBtn = document.getElementById('profile-photo-edit-btn');
+
+            // Preview viewport size (CSS px) vs exported image size - independent of each other,
+            // scaled between by VIEWPORT/OUTPUT below, so the on-screen circle can be small/crisp
+            // while the actual upload stays reasonably high-res.
+            const VIEWPORT = 240;
+            const OUTPUT = 480;
+
+            let naturalW = 0, naturalH = 0, baseScale = 1, offsetX = 0, offsetY = 0;
+            let dragging = false, dragStartX = 0, dragStartY = 0, dragOffsetStartX = 0, dragOffsetStartY = 0;
+            let currentObjectUrl = null;
+
+            function clampOffsets() {
+                const zoom = parseFloat(zoomSlider.value) / 100;
+                const scale = baseScale * zoom;
+                const dispW = naturalW * scale;
+                const dispH = naturalH * scale;
+                offsetX = Math.min(0, Math.max(VIEWPORT - dispW, offsetX));
+                offsetY = Math.min(0, Math.max(VIEWPORT - dispH, offsetY));
+                return { scale, dispW, dispH };
+            }
+
+            function applyTransform() {
+                const { dispW, dispH } = clampOffsets();
+                img.style.width = dispW + 'px';
+                img.style.height = dispH + 'px';
+                img.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
+            }
+
+            function showCropError(msg) {
+                errorEl.textContent = msg;
+                errorEl.classList.remove('hidden');
+            }
+
+            function openCropModal(imageUrl) {
+                errorEl.classList.add('hidden');
+                img.onload = () => {
+                    naturalW = img.naturalWidth;
+                    naturalH = img.naturalHeight;
+                    if (!naturalW || !naturalH) {
+                        showCropError("Couldn't read that image - try a different file.");
+                        return;
+                    }
+                    baseScale = Math.max(VIEWPORT / naturalW, VIEWPORT / naturalH);
+                    zoomSlider.value = 100;
+                    const dispW = naturalW * baseScale;
+                    const dispH = naturalH * baseScale;
+                    offsetX = (VIEWPORT - dispW) / 2;
+                    offsetY = (VIEWPORT - dispH) / 2;
+                    applyTransform();
+                    modal.classList.remove('hidden');
+                };
+                img.onerror = () => showCropError("Couldn't read that image - try a different file.");
+                img.src = imageUrl;
+            }
+
+            function closeCropModal() {
+                modal.classList.add('hidden');
+                if (currentObjectUrl) {
+                    URL.revokeObjectURL(currentObjectUrl);
+                    currentObjectUrl = null;
+                }
+                img.src = '';
+                if (fileInput) fileInput.value = '';
+            }
+
+            // Pointer events cover mouse AND touch, so this one set of handlers works for both a
+            // desktop browser and the iPhone app's WKWebView without a separate touch path.
+            viewport.addEventListener('pointerdown', (e) => {
+                dragging = true;
+                dragStartX = e.clientX;
+                dragStartY = e.clientY;
+                dragOffsetStartX = offsetX;
+                dragOffsetStartY = offsetY;
+                viewport.style.cursor = 'grabbing';
+                viewport.setPointerCapture(e.pointerId);
+            });
+            viewport.addEventListener('pointermove', (e) => {
+                if (!dragging) return;
+                offsetX = dragOffsetStartX + (e.clientX - dragStartX);
+                offsetY = dragOffsetStartY + (e.clientY - dragStartY);
+                applyTransform();
+            });
+            const endDrag = () => { dragging = false; viewport.style.cursor = 'grab'; };
+            viewport.addEventListener('pointerup', endDrag);
+            viewport.addEventListener('pointercancel', endDrag);
+
+            zoomSlider.addEventListener('input', applyTransform);
+            cancelBtn.addEventListener('click', closeCropModal);
+
+            saveBtn.addEventListener('click', async () => {
+                saveBtn.disabled = true;
+                saveBtn.textContent = 'Saving…';
+                errorEl.classList.add('hidden');
+                try {
+                    const { scale, dispW, dispH } = clampOffsets();
+                    const k = OUTPUT / VIEWPORT;
+                    const canvas = document.createElement('canvas');
+                    canvas.width = OUTPUT;
+                    canvas.height = OUTPUT;
+                    const ctx = canvas.getContext('2d');
+                    // 4-arg drawImage draws the WHOLE source image scaled/positioned to this
+                    // destination rect - same math as the CSS transform above, just times k - and
+                    // the canvas's own fixed size clips anything outside it, exactly like the
+                    // viewport's overflow:hidden does on screen.
+                    ctx.drawImage(img, offsetX * k, offsetY * k, dispW * k, dispH * k);
+                    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+                    if (!blob) throw new Error('export failed');
+                    const fd = new FormData();
+                    fd.append('photo', blob, 'profile.jpg');
+                    const resp = await fetch('/settings/account/photo', { method: 'POST', body: fd });
+                    if (resp.ok) {
+                        window.location.href = '/settings/account';
+                        return;
+                    }
+                    showCropError('Something went wrong saving your photo - try again.');
+                } catch (err) {
+                    showCropError('Something went wrong saving your photo - try again.');
+                }
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save Photo';
+            });
+
+            if (fileInput) {
+                fileInput.addEventListener('change', () => {
+                    if (!fileInput.files || !fileInput.files.length) return;
+                    currentObjectUrl = URL.createObjectURL(fileInput.files[0]);
+                    openCropModal(currentObjectUrl);
+                });
+            }
+            if (editBtn) {
+                // Re-crops the CURRENTLY saved photo (not a fresh upload) - loaded from the same
+                // /profile-photo route the avatar itself displays, so "Edit" always starts from
+                // exactly what's live right now.
+                editBtn.addEventListener('click', () => openCropModal('/profile-photo'));
+            }
+        })();
+
         // Disabled until the exact word is typed - the button itself staying inert is a clearer
         // guard against a stray click than only catching it after submit.
         const confirmInput = document.getElementById('delete-account-confirm-input');
