@@ -5,6 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Privacy Policy - TaskMonster</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Reached inside the native iOS wrapper too, where a flat p-6/p-12 top padding lands
+           "Back to TaskMonster" under/behind the status bar and notch/Dynamic Island. env() is 0
+           in a normal browser tab, so this falls back to the original padding there. */
+        body {
+            padding-top: max(1.5rem, calc(env(safe-area-inset-top) + 0.5rem)) !important;
+        }
+        @media (min-width: 768px) {
+            body {
+                padding-top: max(3rem, env(safe-area-inset-top)) !important;
+            }
+        }
+    </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen p-6 md:p-12 font-sans">
     <div class="max-w-3xl mx-auto bg-slate-800 border border-slate-700/80 rounded-3xl p-6 md:p-10 shadow-2xl">

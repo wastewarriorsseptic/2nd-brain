@@ -12887,20 +12887,15 @@
                 return;
             }
 
-            const dummyBtn = document.createElement('button');
-            dummyBtn.setAttribute('data-id', activeSelectedTask.id);
-            dummyBtn.setAttribute('data-title', activeSelectedTask.title);
-            dummyBtn.setAttribute('data-due-date', activeSelectedTask.dueDate);
-            dummyBtn.setAttribute('data-due-time', activeSelectedTask.dueTime);
-            dummyBtn.setAttribute('data-amount', activeSelectedTask.amount);
-            dummyBtn.setAttribute('data-is-shoppable', activeSelectedTask.isShoppable ? 'true' : 'false');
-            dummyBtn.setAttribute('data-description', activeSelectedTask.description);
-            dummyBtn.setAttribute('data-recurring', activeSelectedTask.isRecurring ? 'true' : 'false');
-            dummyBtn.setAttribute('data-recurrence-type', activeSelectedTask.recurrenceType);
-            dummyBtn.setAttribute('data-bucket-id', activeSelectedTask.bucketId);
-            dummyBtn.setAttribute('data-realm-id', activeSelectedTask.realmId);
-
-            openEditItem(dummyBtn);
+            // Used to build its own separate dummyBtn here, a stale duplicate of
+            // openEditItemFromTask's own field list that never picked up data-tag (or
+            // data-universe-id) when those were added there - reported directly: the Tag field
+            // came up blank in Edit Task despite the HUD pill showing one, because this standalone
+            // HUD card's pencil icon (hud-edit-btn) goes through this function, not
+            // openEditItemFromTask. Delegating to it instead means there's exactly one place that
+            // builds the edit-modal handoff from a task object, so a future field can't drift out
+            // of sync between the two again.
+            openEditItemFromTask(activeSelectedTask);
         }
 
         function hideHudCard() {

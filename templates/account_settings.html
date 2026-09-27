@@ -5,6 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Profile - TaskMonster</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* This page is reached inside the native iOS wrapper too, where a flat p-4/p-10 top
+           padding lands "Back to TaskMonster" right under/behind the status bar and notch/Dynamic
+           Island - reported directly. env(safe-area-inset-top) is 0 in a normal browser tab, so
+           this falls back to the original Tailwind padding there with no visible change. */
+        body {
+            padding-top: max(1rem, calc(env(safe-area-inset-top) + 0.5rem)) !important;
+        }
+        @media (min-width: 768px) {
+            body {
+                padding-top: max(2.5rem, env(safe-area-inset-top)) !important;
+            }
+        }
+    </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen p-4 md:p-10 font-sans">
     <div class="max-w-xl mx-auto">
