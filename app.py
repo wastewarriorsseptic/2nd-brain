@@ -16,13 +16,13 @@ from calendar import monthrange
 from typing import Optional, List
 from zoneinfo import ZoneInfo  # Built-in IANA timezone support
 
-from fastapi import FastAPI, Request, Form, Body
+from fastapi import FastAPI, Request, Form, Body, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 from sqlmodel import SQLModel, Field, Relationship, Session, create_engine, select
-from sqlalchemy import text
+from sqlalchemy import text, Column, LargeBinary
 from sqlalchemy.exc import OperationalError
 from contextlib import contextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -229,6 +229,8 @@ def safe_apply_migrations():
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS pro_until TIMESTAMP;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_original_transaction_id VARCHAR;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_notes VARCHAR;'))
+            conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_photo BYTEA;'))
+            conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_photo_content_type VARCHAR;'))
             conn.execute(text('ALTER TABLE realm ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
             # Direct Universe attachment point for Item/Person, replacing the Realm/Bucket hop -
             # see backfill_item_person_universe_ids below for how existing rows get populated.
@@ -319,6 +321,10 @@ def safe_apply_migrations():
                 cursor.execute('ALTER TABLE users ADD COLUMN "apple_original_transaction_id" VARCHAR;')
             if 'profile_notes' not in user_cols:
                 cursor.execute('ALTER TABLE users ADD COLUMN "profile_notes" VARCHAR;')
+            if 'profile_photo' not in user_cols:
+                cursor.execute('ALTER TABLE users ADD COLUMN "profile_photo" BLOB;')
+            if 'profile_photo_content_type' not in user_cols:
+                cursor.execute('ALTER TABLE users ADD COLUMN "profile_photo_content_type" VARCHAR;')
 
             # Only ALTER the person table if create_all() has already created it in a prior run -
             # on a brand-new DB it won't exist yet at this point, and create_all() (which runs
@@ -369,6 +375,12 @@ class User(SQLModel, table=True):
     # chat to personalize its own help with, per the "have the AI use its users own personal
     # information to accomplish tasks" direction. Optional, never required.
     profile_notes: Optional[str] = Field(default=None)
+    # Stored directly in the DB (not local disk) - Render's own filesystem is wiped on every
+    # deploy/restart, so anything saved there would silently disappear the next time this app
+    # redeploys. content_type is kept alongside the bytes so /profile-photo knows what to serve
+    # them as without re-sniffing.
+    profile_photo: Optional[bytes] = Field(default=None, sa_column=Column(LargeBinary))
+    profile_photo_content_type: Optional[str] = Field(default=None)
     realms: List["Realm"] = Relationship(back_populates="user")
     universes: List["Universe"] = Relationship(back_populates="user")
 
@@ -5036,7 +5048,7 @@ def revoke_api_key(request: Request, key_id: int = Form(...)):
     return RedirectResponse(url="/settings/api", status_code=303)
 
 @app.get("/settings/account", response_class=HTMLResponse)
-def account_settings_page(request: Request):
+def account_settings_page(request: Request, photo_error: Optional[str] = None):
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user:
@@ -5044,7 +5056,7 @@ def account_settings_page(request: Request):
         return templates.TemplateResponse(
             request=request,
             name="account_settings.html",
-            context={"user": user}
+            context={"user": user, "photo_error": photo_error}
         )
 
 @app.post("/settings/account/profile")
@@ -5057,6 +5069,62 @@ def update_profile_notes(request: Request, profile_notes: str = Form("")):
         session.add(user)
         session.commit()
     return RedirectResponse(url="/settings/account", status_code=303)
+
+PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024  # 5MB - plenty for a small avatar, cheap insurance against an oversized DB row
+PROFILE_PHOTO_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+
+@app.post("/settings/account/photo")
+async def upload_profile_photo(request: Request, photo: UploadFile = File(...)):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+
+        content_type = (photo.content_type or "").lower()
+        if content_type not in PROFILE_PHOTO_ALLOWED_TYPES:
+            return RedirectResponse(url="/settings/account?photo_error=type", status_code=303)
+
+        data = await photo.read()
+        if not data:
+            return RedirectResponse(url="/settings/account", status_code=303)
+        if len(data) > PROFILE_PHOTO_MAX_BYTES:
+            return RedirectResponse(url="/settings/account?photo_error=size", status_code=303)
+
+        user.profile_photo = data
+        user.profile_photo_content_type = content_type
+        session.add(user)
+        session.commit()
+    return RedirectResponse(url="/settings/account", status_code=303)
+
+@app.post("/settings/account/photo/delete")
+def delete_profile_photo(request: Request):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+        user.profile_photo = None
+        user.profile_photo_content_type = None
+        session.add(user)
+        session.commit()
+    return RedirectResponse(url="/settings/account", status_code=303)
+
+@app.get("/profile-photo")
+def get_profile_photo(request: Request):
+    """Always THIS session's own photo - there's no reason yet for one user's photo to be
+    fetchable by id, so this avoids that surface entirely rather than adding an access check for
+    it. private (not shared/CDN-cacheable) since a session cookie gates it."""
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user or not user.profile_photo:
+            raise HTTPException(status_code=404)
+        # no-store rather than a max-age - a changed/removed photo must never show stale here, and
+        # there's no ETag/Last-Modified support to make a revalidating cache actually save
+        # anything anyway. Fine for a small, rarely-loaded avatar image.
+        return Response(
+            content=user.profile_photo,
+            media_type=user.profile_photo_content_type or "image/jpeg",
+            headers={"Cache-Control": "private, no-store"},
+        )
 
 def _delete_user_account(session: Session, user_id: int):
     """Full, permanent account deletion for Apple App Review Guideline 5.1.1(v) ("apps that

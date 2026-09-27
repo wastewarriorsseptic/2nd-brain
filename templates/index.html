@@ -511,8 +511,12 @@
          not competing with the launcher cluster for attention. -->
     <div id="profile-floating-btn-wrapper" class="fixed right-[16px] z-[70]">
         <a href="/settings/account" id="profile-floating-btn" title="Profile"
-           class="w-11 h-11 rounded-full bg-slate-800/90 hover:bg-slate-700 border border-indigo-500/40 backdrop-blur-md shadow-xl flex items-center justify-center text-xl transition">
+           class="w-11 h-11 rounded-full bg-slate-800/90 hover:bg-slate-700 border border-indigo-500/40 backdrop-blur-md shadow-xl flex items-center justify-center text-xl transition overflow-hidden">
+            {% if user.profile_photo %}
+            <img src="/profile-photo" alt="" class="w-full h-full object-cover">
+            {% else %}
             👤
+            {% endif %}
         </a>
     </div>
     {% endif %}
