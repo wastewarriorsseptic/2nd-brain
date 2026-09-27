@@ -229,6 +229,10 @@ def safe_apply_migrations():
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS pro_until TIMESTAMP;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_original_transaction_id VARCHAR;'))
             conn.execute(text('ALTER TABLE realm ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
+            # Direct Universe attachment point for Item/Person, replacing the Realm/Bucket hop -
+            # see backfill_item_person_universe_ids below for how existing rows get populated.
+            conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
+            conn.execute(text('ALTER TABLE IF EXISTS person ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
             # "IF EXISTS" on the table guards the case where this runs before create_all() has
             # ever created the person table (a brand-new DB) - ADD COLUMN IF NOT EXISTS alone
             # only guards the column, not a missing table.
@@ -267,6 +271,8 @@ def safe_apply_migrations():
                 cursor.execute('ALTER TABLE item ADD COLUMN "is_shoppable" BOOLEAN DEFAULT 0;')
             if 'is_event' not in item_cols:
                 cursor.execute('ALTER TABLE item ADD COLUMN "is_event" BOOLEAN DEFAULT 0;')
+            if 'universe_id' not in item_cols:
+                cursor.execute('ALTER TABLE item ADD COLUMN "universe_id" INTEGER;')
 
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='event';")
             if cursor.fetchone():
@@ -317,6 +323,8 @@ def safe_apply_migrations():
                 person_cols = [col[1] for col in cursor.fetchall()]
                 if 'nickname' not in person_cols:
                     cursor.execute('ALTER TABLE person ADD COLUMN "nickname" VARCHAR;')
+                if 'universe_id' not in person_cols:
+                    cursor.execute('ALTER TABLE person ADD COLUMN "universe_id" INTEGER;')
 
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='pendinguniverseinvite';")
             if cursor.fetchone():
@@ -402,6 +410,10 @@ class Item(SQLModel, table=True):
     is_event: bool = Field(default=False)
     bucket_id: int = Field(foreign_key="bucket.id")
     bucket: Optional[Bucket] = Relationship(back_populates="items")
+    # Direct Universe attachment, replacing the bucket->realm->universe hop above (kept only for
+    # existing rows/rollback - see backfill_item_person_universe_ids). Nullable during the
+    # migration window; app code should treat it as required once Phase 2 lands.
+    universe_id: Optional[int] = Field(default=None, foreign_key="universe.id")
     reminders: List["Reminder"] = Relationship(back_populates="item")
 
 class Reminder(SQLModel, table=True):
@@ -508,6 +520,7 @@ class Person(SQLModel, table=True):
     tags: Optional[str] = None
     bucket_id: int = Field(foreign_key="bucket.id")
     bucket: Optional[Bucket] = Relationship(back_populates="people")
+    universe_id: Optional[int] = Field(default=None, foreign_key="universe.id")
 
 class RealmShare(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -1506,6 +1519,67 @@ def backfill_default_universes():
                 realm.universe_id = default_universe.id
             session.commit()
 
+def backfill_item_person_universe_ids():
+    """One-time-per-row migration: populates the new Item.universe_id/Person.universe_id direct
+    attachment (see the schema simplification removing Realm/Bucket as organizational layers)
+    from each row's existing bucket->realm->universe_id chain. Idempotent - only ever touches
+    rows where universe_id is still NULL, safe to run on every process start."""
+    with Session(engine) as session:
+        orphan_items = session.exec(select(Item).where(Item.universe_id == None)).all()  # noqa: E711
+        for item in orphan_items:
+            bucket = session.get(Bucket, item.bucket_id)
+            realm = session.get(Realm, bucket.realm_id) if bucket else None
+            if realm and realm.universe_id:
+                item.universe_id = realm.universe_id
+        session.commit()
+
+        orphan_people = session.exec(select(Person).where(Person.universe_id == None)).all()  # noqa: E711
+        for person in orphan_people:
+            bucket = session.get(Bucket, person.bucket_id)
+            realm = session.get(Realm, bucket.realm_id) if bucket else None
+            if realm and realm.universe_id:
+                person.universe_id = realm.universe_id
+        session.commit()
+
+def backfill_universe_shares_from_realm_shares():
+    """One-time migration: Realm-level sharing (RealmShare/PendingInvite) is retired in favor of
+    the Universe-level sharing that already exists and already grants access to everything
+    inside a Universe (UniverseShare/PendingUniverseInvite) - see get_realm_universe_kind-style
+    access helpers moving to user_can_access_universe. Ensures every existing realm share/invite
+    has a matching universe share/invite before the app stops reading RealmShare/PendingInvite at
+    all. Idempotent - skips any pairing that already has a matching row."""
+    with Session(engine) as session:
+        existing_shares = {
+            (s.universe_id, s.user_id) for s in session.exec(select(UniverseShare)).all()
+        }
+        for rs in session.exec(select(RealmShare)).all():
+            realm = session.get(Realm, rs.realm_id)
+            if not realm or not realm.universe_id:
+                continue
+            key = (realm.universe_id, rs.user_id)
+            if key in existing_shares:
+                continue
+            session.add(UniverseShare(universe_id=realm.universe_id, user_id=rs.user_id))
+            existing_shares.add(key)
+        session.commit()
+
+        existing_invites = {
+            (i.universe_id, i.email) for i in session.exec(select(PendingUniverseInvite)).all()
+        }
+        for pi in session.exec(select(PendingInvite)).all():
+            realm = session.get(Realm, pi.realm_id)
+            if not realm or not realm.universe_id:
+                continue
+            key = (realm.universe_id, pi.email)
+            if key in existing_invites:
+                continue
+            session.add(PendingUniverseInvite(
+                universe_id=realm.universe_id, email=pi.email,
+                token=pi.token, created_at=pi.created_at,
+            ))
+            existing_invites.add(key)
+        session.commit()
+
 STARTUP_SCHEMA_LOCK_ID = 727272001
 
 @contextmanager
@@ -1538,6 +1612,8 @@ def run_startup_schema_setup():
                 backfill_default_universes()
                 backfill_important_dates_universes()
                 backfill_pending_invite_tokens()
+                backfill_item_person_universe_ids()
+                backfill_universe_shares_from_realm_shares()
             return
         except OperationalError as e:
             if "deadlock" in str(e).lower() and attempt < 3:
