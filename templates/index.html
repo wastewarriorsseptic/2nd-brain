@@ -166,6 +166,13 @@
            only needs to clear the notch/Dynamic Island itself, not leave room for a pill row.
            Pulling this down from the old flat 40px lets the Daily Digest pill and Universe grid
            below sit noticeably higher. */
+        /* Same notch/Dynamic Island clearance for the top-right floating Profile button - a flat
+           top offset landed it right under/behind the status bar on notched devices. env() is 0
+           in a normal browser tab, so this falls back to the original spacing there. */
+        #profile-floating-btn-wrapper {
+            top: max(1rem, calc(env(safe-area-inset-top) + 0.5rem));
+        }
+
         #multiverse-view-overlay > .relative.pt-10 {
             padding-top: max(0.75rem, calc(env(safe-area-inset-top) + 0.25rem)) !important;
         }
@@ -493,6 +500,19 @@
         <a href="/calendar" id="calendar-quick-btn" title="Calendar"
            class="w-14 h-14 rounded-full bg-sky-500 hover:bg-sky-400 border border-sky-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
             📅
+        </a>
+    </div>
+
+    <!-- Top-right floating Profile button - the app's account-level home (sign out, privacy
+         policy, App Store-mandatory account deletion, and the "About You" notes the AI is meant
+         to eventually read) now that the classic sidebar that used to hold this stuff is gone.
+         A top-level sibling (not inside #space-view-overlay) so it survives view switches, same
+         reasoning as the AI chat launcher above. Kept small/understated - reachable everywhere,
+         not competing with the launcher cluster for attention. -->
+    <div id="profile-floating-btn-wrapper" class="fixed right-[16px] z-[70]">
+        <a href="/settings/account" id="profile-floating-btn" title="Profile"
+           class="w-11 h-11 rounded-full bg-slate-800/90 hover:bg-slate-700 border border-indigo-500/40 backdrop-blur-md shadow-xl flex items-center justify-center text-xl transition">
+            👤
         </a>
     </div>
     {% endif %}
@@ -1360,8 +1380,8 @@
                  mode) - same mb-16 clearance from the fixed chat launcher as the swipe dock above,
                  for the same reason. -->
             <div id="space-hud-card" class="hidden pointer-events-auto w-11/12 max-w-sm bg-slate-900/95 border border-indigo-500/40 p-3.5 rounded-2xl backdrop-blur-md shadow-2xl space-y-2.5 mb-16 md:mb-0">
-                <div class="grid grid-cols-3 items-center gap-2 border-b border-slate-800 pb-2">
-                    <span id="hud-category-badge" class="justify-self-start bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full truncate">
+                <div class="grid grid-cols-[1fr_auto_auto] items-center gap-2 border-b border-slate-800 pb-2">
+                    <span id="hud-category-badge" class="justify-self-start min-w-0 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full truncate">
                         Realm / Bucket
                     </span>
                     <!-- Star-to-Notes toggle, centered - same feature/behavior as Card View's

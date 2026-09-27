@@ -228,6 +228,7 @@ def safe_apply_migrations():
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT \'UTC\';'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS pro_until TIMESTAMP;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_original_transaction_id VARCHAR;'))
+            conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_notes VARCHAR;'))
             conn.execute(text('ALTER TABLE realm ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
             # Direct Universe attachment point for Item/Person, replacing the Realm/Bucket hop -
             # see backfill_item_person_universe_ids below for how existing rows get populated.
@@ -316,6 +317,8 @@ def safe_apply_migrations():
                 cursor.execute('ALTER TABLE users ADD COLUMN "pro_until" TIMESTAMP;')
             if 'apple_original_transaction_id' not in user_cols:
                 cursor.execute('ALTER TABLE users ADD COLUMN "apple_original_transaction_id" VARCHAR;')
+            if 'profile_notes' not in user_cols:
+                cursor.execute('ALTER TABLE users ADD COLUMN "profile_notes" VARCHAR;')
 
             # Only ALTER the person table if create_all() has already created it in a prior run -
             # on a brand-new DB it won't exist yet at this point, and create_all() (which runs
@@ -361,6 +364,11 @@ class User(SQLModel, table=True):
     # Set/extended only from a signature-verified Apple transaction - see iap.py / /iap/verify/.
     pro_until: Optional[datetime] = Field(default=None)
     apple_original_transaction_id: Optional[str] = Field(default=None, index=True)
+    # Free-form, user-authored context (role, preferences, recurring details) for the Profile
+    # page's "About You" section - not read anywhere yet, but the intended future hook for the AI
+    # chat to personalize its own help with, per the "have the AI use its users own personal
+    # information to accomplish tasks" direction. Optional, never required.
+    profile_notes: Optional[str] = Field(default=None)
     realms: List["Realm"] = Relationship(back_populates="user")
     universes: List["Universe"] = Relationship(back_populates="user")
 
@@ -5038,6 +5046,17 @@ def account_settings_page(request: Request):
             name="account_settings.html",
             context={"user": user}
         )
+
+@app.post("/settings/account/profile")
+def update_profile_notes(request: Request, profile_notes: str = Form("")):
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+        user.profile_notes = profile_notes.strip() or None
+        session.add(user)
+        session.commit()
+    return RedirectResponse(url="/settings/account", status_code=303)
 
 def _delete_user_account(session: Session, user_id: int):
     """Full, permanent account deletion for Apple App Review Guideline 5.1.1(v) ("apps that
