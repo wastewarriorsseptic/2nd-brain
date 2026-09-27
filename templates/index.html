@@ -2621,23 +2621,22 @@
                            class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
                 </div>
 
-                <!-- Universe, Realm and Bucket Dynamic Pickers for Editing/Moving a Task -->
+                <!-- Universe picker for Editing/Moving a Task - Realm/Bucket are no longer a
+                     user-facing concept (see the Universe-only simplification); moving a task is
+                     just picking a different Universe here. -->
                 <div class="w-full">
                     <label class="block text-xs font-semibold text-slate-400 mb-1">Universe</label>
-                    <select id="edit-task-universe-select" onchange="onEditTaskUniverseChange()" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                    <select id="edit-task-universe-select" name="universe_id" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
                     </select>
                 </div>
-                <div class="grid grid-cols-2 gap-2">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-400 mb-1">Realm</label>
-                        <select id="edit-task-realm-select" onchange="onEditTaskRealmChange()" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-400 mb-1">Bucket</label>
-                        <select id="edit-task-bucket-select" name="bucket_id" required class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
-                        </select>
-                    </div>
+
+                <!-- Free-form, optional per-task label - the lightweight replacement for Realm/
+                     Bucket sub-categorization now that a Universe is the only real organizational
+                     unit. Takes the place of the old Realm/Bucket row - requested directly. -->
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Tag (optional)</label>
+                    <input type="text" name="tag" id="edit-item-tag" list="tag-suggestions-list" placeholder="e.g. Personal Bills" maxlength="60"
+                           class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
                 </div>
 
                 <input type="hidden" name="recurrence_type" id="edit-recurrence-type-input" value="none">
@@ -2712,15 +2711,6 @@
                         <label class="block text-xs font-semibold text-slate-400 mb-1">Description / Notes</label>
                         <textarea name="description" id="edit-item-description" rows="2" placeholder="Add optional details..."
                                   class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border"></textarea>
-                    </div>
-
-                    <!-- Free-form, optional per-task label - the lightweight replacement for Realm/
-                         Bucket sub-categorization now that a Universe is the only real
-                         organizational unit. -->
-                    <div class="w-full">
-                        <label class="block text-xs font-semibold text-slate-400 mb-1">Tag (optional)</label>
-                        <input type="text" name="tag" id="edit-item-tag" list="tag-suggestions-list" placeholder="e.g. Personal Bills" maxlength="60"
-                               class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
                     </div>
                 </div>
 
@@ -3088,20 +3078,6 @@
             }
         }
 
-        // Edit Task's Universe -> Realm -> Bucket cascade (move a Task to any of the user's
-        // OTHER Task-kind Universes, not just realms/buckets within the current one).
-        function onEditTaskUniverseChange() {
-            const universe = findUniverseInTree(document.getElementById('edit-task-universe-select').value);
-            populateSelectFromList(document.getElementById('edit-task-realm-select'), universe ? universe.realms : [], 'icon', '(No realms in this Universe)');
-            onEditTaskRealmChange();
-        }
-
-        function onEditTaskRealmChange() {
-            const universe = findUniverseInTree(document.getElementById('edit-task-universe-select').value);
-            const realmSelect = document.getElementById('edit-task-realm-select');
-            const realm = universe ? universe.realms.find(r => String(r.id) === String(realmSelect.value)) : null;
-            populateSelectFromList(document.getElementById('edit-task-bucket-select'), realm ? realm.buckets : [], null, '(No buckets in realm)');
-        }
 
         async function submitInlineRealm() {
             const nameInput = document.getElementById('inline-realm-name');
@@ -5697,27 +5673,15 @@
             document.getElementById('edit-item-description').value = description;
             document.getElementById('edit-item-tag').value = tag;
 
-            // Set Universe, Realm & Bucket dropdown selections. Every Task lives in the
-            // currently active (Task-kind) Universe, so that's always the correct starting
-            // point - the user picks a different one from here only if they want to move it.
+            // Set the Universe dropdown selection. Every Task lives in the currently active
+            // (Task-kind) Universe, so that's always the correct starting point - the user picks a
+            // different one from here only if they want to move it.
             const universeSelect = document.getElementById('edit-task-universe-select');
             if (universeSelect) {
                 populateSelectFromList(universeSelect, universesOfKind('task'), 'icon', '(No Task Universes)');
                 universeSelect.value = universeId;
-                onEditTaskUniverseChange();
             }
 
-            const realmSelect = document.getElementById('edit-task-realm-select');
-            if (realmSelect && realmId) {
-                realmSelect.value = realmId;
-                onEditTaskRealmChange();
-            }
-
-            const bucketSelect = document.getElementById('edit-task-bucket-select');
-            if (bucketSelect && bucketId) {
-                bucketSelect.value = bucketId;
-            }
-            
             const editRecurrenceInput = document.getElementById('edit-recurrence-type-input');
             if (editRecurrenceInput) {
                 editRecurrenceInput.value = recurrenceType;
