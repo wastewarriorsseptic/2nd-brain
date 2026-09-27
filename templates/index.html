@@ -544,15 +544,15 @@
             <textarea id="ai-chat-input" rows="1" placeholder="Ask or add a task…"
                    oninput="autoGrowAiChatInput()" onkeydown="handleAiChatInputKeydown(event)"
                    class="flex-1 bg-slate-100 border border-slate-200 rounded-2xl px-3.5 py-2.5 text-base text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white resize-none overflow-y-auto leading-relaxed" style="max-height: 140px;" autocomplete="off"></textarea>
-            <!-- w-11 h-11 (44x44pt), not the w-9 h-9 (36x36pt) this used to be - reported directly
-                 with a screen recording: taps meant for this button were landing on the textarea's
-                 own edge instead (visible in the recording as the textarea's blue focus ring
-                 appearing, never this button's own listening state), which tracks exactly with
-                 Apple's own Human Interface Guidelines minimum tap target of 44x44pt - 36px was
-                 genuinely too small and too close to a large flex-1 sibling to reliably hit. -->
-            <button type="button" id="ai-chat-mic-btn" onclick="focusAiChatInputForDictation(event)"
-                    onmousedown="event.preventDefault()" ontouchstart="event.preventDefault()" ontouchend="focusAiChatInputForDictation(event)" title="Dictate"
-                    class="w-11 h-11 shrink-0 bg-slate-100 border border-slate-200 hover:border-indigo-500 rounded-full text-slate-500 text-sm transition">🎤</button>
+            <!-- No separate mic/dictate button - removed after it turned out to be un-fixable:
+                 there is no web, WKWebView, or native API that lets an app trigger the system
+                 keyboard's own dictation button programmatically (Apple never exposes that, for
+                 privacy/security reasons - starting a listening mic has to come from a real, direct
+                 tap on the system's own mic glyph). A button here could only ever focus the input,
+                 which the textarea being tapped/already-focused already does on its own, making a
+                 dedicated button redundant rather than actually useful - reported directly. The
+                 system keyboard's own dictation mic (visible on it whenever this input is focused)
+                 is the real, working way to dictate here. -->
             <button type="submit" class="w-9 h-9 shrink-0 bg-indigo-600 hover:bg-indigo-500 rounded-full text-white text-sm transition">➤</button>
         </form>
     </div>
@@ -4621,10 +4621,10 @@
             if (!panel.classList.contains('hidden')) {
                 if (hint) hint.classList.add('hidden');
                 // Auto-focusing the input immediately pops the iOS keyboard, which eats a big
-                // chunk of an already-small mobile panel - and plenty of opens are to tap the mic
-                // for voice dictation instead of typing, where the keyboard was never wanted at
-                // all. Desktop has no on-screen keyboard to fight, so it keeps the convenience of
-                // landing in the input ready to type.
+                // chunk of an already-small mobile panel - left for the user to tap into
+                // themselves when they're actually ready to type. Desktop has no on-screen
+                // keyboard to fight, so it keeps the convenience of landing in the input ready to
+                // type.
                 if (window.innerWidth >= 768) {
                     document.getElementById('ai-chat-input').focus();
                 }
@@ -4877,29 +4877,6 @@
                 event.preventDefault();
                 document.getElementById('ai-chat-form').requestSubmit();
             }
-        }
-
-        // Dictation used to run its own speech-recognition session (a native Speech-framework
-        // bridge, with the browser's own SpeechRecognition API as a fallback) - reported directly,
-        // repeatedly, that the mic button's "listening" UI activated but nothing was ever
-        // transcribed. Rather than keep chasing that, this now just focuses the input and lets the
-        // system keyboard's own dictation button (already visible on it, standard iOS/every
-        // platform) do the actual speech-to-text - nothing here to break, since none of it is our
-        // code. touchstart is preventDefault()ed (so it can't double-fire) - a real tap is handled
-        // on touchend and the click that may follow right after is ignored, so one tap never fires
-        // twice.
-        let aiChatMicLastActivate = 0;
-        function focusAiChatInputForDictation(event) {
-            const now = Date.now();
-            if (event.type === 'touchend') {
-                event.preventDefault();
-            } else if (now - aiChatMicLastActivate < 600) {
-                return;
-            }
-            if (now - aiChatMicLastActivate < 250) return;
-            aiChatMicLastActivate = now;
-            const input = document.getElementById('ai-chat-input');
-            if (input) input.focus();
         }
 
         // navTarget (optional): the task_created/task_updated result dict (id/bucket_id/realm_id) -
