@@ -3839,6 +3839,7 @@
             initSpaceCanvas();
             updateSpaceTopPillLabel();
             restoreSpaceViewOnAppOpen();
+            defaultFreshLoadToHomeIfBare();
         });
 
         // Shared by the initial page-load restore above and the visibilitychange/pageshow
@@ -3895,6 +3896,44 @@
 
         function suppressMultiverseTimelineRestoreOnce() {
             try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}
+        }
+
+        // Called ONLY from the true DOMContentLoaded handler below (never from pageshow/
+        // visibilitychange - those cover the app resuming mid-browse, where forcing Home would
+        // be wrong) - a fresh, genuinely bare page load (no chat/digest navigation in flight, no
+        // Realm/Bucket/Universe link just followed, and no "greet me at Home" preference already
+        // restored above) used to just fall through to whichever Universe dashboard()'s own
+        // server-side default picked (effectively the first Universe in sort order) - landing on
+        // an arbitrary Universe's Realms/tasks right after logging in. Reported directly: this
+        // must land on Home every time, not just when the localStorage preference above happens
+        // to still be set - that flag has been observed getting cleared by unrelated code paths
+        // (see toggleSpaceView's leaving-Space-View branch), which silently reverted this exact
+        // behavior once already. Making Home the unconditional bare-load default removes the
+        // dependency on that flag ever surviving intact, rather than working around it.
+        function defaultFreshLoadToHomeIfBare() {
+            // A logged-out visitor still gets this same DOMContentLoaded handler (the timezone
+            // sync, filter-mode restore, etc. all run unconditionally) - without this guard,
+            // openMultiverseTimeline() below would force-remove #space-view-overlay's `hidden`
+            // class for them too, covering the actual "Welcome to TaskMonster" sign-in card with
+            // an empty Space View. aiChatLoggedIn already mirrors the server-side user check for
+            // exactly this kind of plain-JS test (see its own declaration).
+            if (!aiChatLoggedIn) return;
+            let suppressed = false;
+            try {
+                const until = parseInt(sessionStorage.getItem('suppress_mv_timeline_restore_until') || '0', 10);
+                suppressed = Date.now() < until;
+            } catch (e) {}
+            if (suppressed || isMultiverseStackedView) return;
+
+            const params = new URLSearchParams(window.location.search);
+            const hasNavIntent = params.get('goto_item') || params.get('chat_nav') || params.get('open_multiverse_timeline')
+                || params.get('mv_timeline') || params.get('realm_id') || params.get('bucket_id') || params.get('universe_id');
+            if (hasNavIntent) return;
+
+            openMultiverseTimeline();
+            // Same cold-load snap restoreSpaceViewOnAppOpen's own call above uses - see its comment.
+            cameraZoom = targetCameraZoom;
+            cameraOffset = { ...targetCameraOffset };
         }
 
         // pageshow covers a page restored from the back/forward cache (bfcache) - Safari's own
@@ -8478,6 +8517,17 @@
         }
 
         function openMultiverseTimeline() {
+            // Guards every caller at the source, not just the on-load restore paths that call
+            // this unprompted - a logged-out visitor still runs the same DOMContentLoaded chain
+            // (restoreSpaceViewOnAppOpen/defaultFreshLoadToHomeIfBare), and if a device's
+            // localStorage still has a "greet me at Home" preference saved from a previous logged-
+            // in session on it, either of those would otherwise force-remove #space-view-overlay's
+            // `hidden` class here and cover the actual "Welcome to TaskMonster" sign-in card with
+            // an empty Space View. Found directly while testing: every button that normally reaches
+            // this function lives on UI a logged-out visitor has no way to click anyway (it only
+            // renders for a signed-in session server-side), so this only ever short-circuits those
+            // two on-load restore paths.
+            if (!aiChatLoggedIn) return;
             closeMultiverseView();
 
             // Stamped into the URL (left in place, not stripped - see the mv_timeline
