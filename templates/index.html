@@ -1065,16 +1065,21 @@
                      while testing the new email/password form. This just needs to out-stack that
                      one badge, not the app's own higher layers (Space View overlay's z-40, the AI
                      chat panel, etc.), so 36 rather than something much larger. -->
-                <div class="relative z-[36] text-center py-12 bg-slate-800/60 border border-slate-700/60 rounded-3xl px-6 max-w-md mx-auto my-8 shadow-2xl backdrop-blur-md">
-                    <span class="text-5xl block mb-4">😈</span>
-                    <h3 class="text-2xl font-bold mb-2 text-white">Welcome to TaskMonster</h3>
-                    <p class="text-slate-400 text-sm mb-6 leading-relaxed">Sign in to access your personal dashboard and task timeline.</p>
-                    <div class="space-y-3">
-                        <a href="/login" class="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-3 rounded-2xl transition shadow-lg shadow-indigo-600/30 w-full">
+                <!-- Spacing here is deliberately tighter on mobile (py-6/my-3/etc, expanding back to
+                     the original py-12/my-8/etc at md:) than a first pass would use - reported
+                     directly that the whole card plus the Privacy Policy footer below it needed to
+                     fit on one native-app screen without scrolling, and the original desktop-sized
+                     spacing ran past the fold on a real iPhone viewport. -->
+                <div class="relative z-[36] text-center py-6 md:py-12 bg-slate-800/60 border border-slate-700/60 rounded-3xl px-6 max-w-md mx-auto my-3 md:my-8 shadow-2xl backdrop-blur-md">
+                    <span class="text-4xl md:text-5xl block mb-2 md:mb-4">😈</span>
+                    <h3 class="text-xl md:text-2xl font-bold mb-1 md:mb-2 text-white">Welcome to TaskMonster</h3>
+                    <p class="text-slate-400 text-sm mb-3 md:mb-6 leading-relaxed">Sign in to access your personal dashboard and task timeline.</p>
+                    <div class="space-y-2 md:space-y-3">
+                        <a href="/login" class="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-2.5 md:py-3 rounded-2xl transition shadow-lg shadow-indigo-600/30 w-full">
                             🔑 Sign in with Google
                         </a>
                         {% if apple_signin_enabled %}
-                        <a href="/login/apple" class="inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-100 text-black font-semibold px-6 py-3 rounded-2xl transition shadow-lg w-full">
+                        <a href="/login/apple" class="inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-100 text-black font-semibold px-6 py-2.5 md:py-3 rounded-2xl transition shadow-lg w-full">
                             <svg viewBox="0 0 384 512" class="w-5 h-5 fill-current" aria-hidden="true">
                                 <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/>
                             </svg>
@@ -1083,7 +1088,7 @@
                         {% endif %}
                     </div>
 
-                    <div class="flex items-center gap-3 my-5">
+                    <div class="flex items-center gap-3 my-3 md:my-5">
                         <div class="flex-1 h-px bg-slate-700"></div>
                         <span class="text-[10px] text-slate-500 font-bold uppercase tracking-wide">or use email</span>
                         <div class="flex-1 h-px bg-slate-700"></div>
@@ -1102,20 +1107,20 @@
                     <!-- One shared field set for both actions - Name is only ever read by /signup
                          (ignored by /login-with-email, which has no name field of its own), so
                          there's no need to hide/reveal it depending on which button gets pressed. -->
-                    <form class="space-y-2.5 text-left">
+                    <form class="space-y-2 text-left">
                         <input type="email" name="email" placeholder="Email address" required autocomplete="email"
-                               class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                               class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2 md:py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
                         <input type="password" name="password" placeholder="Password" required minlength="8" autocomplete="current-password"
-                               class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
-                        <input type="text" name="name" placeholder="Name (only used when creating an account)" autocomplete="name"
-                               class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                               class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2 md:py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                        <input type="text" name="name" placeholder="Name (new accounts only)" autocomplete="name"
+                               class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2 md:py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
                         <div class="flex items-center gap-2 pt-1">
                             <button type="submit" formaction="/login-with-email" formmethod="POST"
-                                    class="flex-1 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm rounded-xl transition-all">
+                                    class="flex-1 py-2 md:py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm rounded-xl transition-all">
                                 Sign In
                             </button>
                             <button type="submit" formaction="/signup" formmethod="POST"
-                                    class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl transition-all">
+                                    class="flex-1 py-2 md:py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl transition-all">
                                 Create Account
                             </button>
                         </div>
@@ -1128,7 +1133,7 @@
             </div>
         </div>
 
-        <footer class="mt-12 mb-2 text-center">
+        <footer class="mt-4 md:mt-12 mb-2 text-center">
             <a href="/privacy" target="_blank" class="text-[11px] text-slate-500 hover:text-indigo-400 transition-colors">
                 Privacy Policy
             </a>
