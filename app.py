@@ -7114,11 +7114,17 @@ def _ai_execute_navigate_to_task(session: Session, user: "User", args: dict) -> 
     item = session.get(Item, task_id)
     bucket = session.get(Bucket, item.bucket_id)
     realm = session.get(Realm, bucket.realm_id) if bucket else None
-    universe = session.get(Universe, realm.universe_id) if realm and realm.universe_id else None
+    universe_id = item.universe_id or (realm.universe_id if realm else None)
+    universe = session.get(Universe, universe_id) if universe_id else None
 
     return {
         "id": item.id,
         "title": item.title,
+        # navigateToTaskFromChat (index.html) requires universe_id to build the redirect URL and
+        # silently no-ops without it - this field was missing entirely until reported directly:
+        # the chat would say "Taking you there!" and just... not navigate. bucket_id/realm_id
+        # stay too, for the ?realm_id=&bucket_id= Space View camera targeting described above.
+        "universe_id": universe_id,
         "bucket_id": item.bucket_id,
         "realm_id": bucket.realm_id if bucket else None,
         "bucket_name": bucket.name if bucket else "",
