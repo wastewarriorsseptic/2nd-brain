@@ -5581,7 +5581,7 @@ def send_draft_event(request: Request, share_token: str):
 # --- Notes (Apple-Notes-style, deliberately undated) ---
 
 @app.get("/notes", response_class=HTMLResponse)
-def notes_page(request: Request, universe_id: Optional[int] = None):
+def notes_page(request: Request, universe_id: Optional[int] = None, overdue: Optional[int] = None):
     """Reported directly - Notes was reworked from a freeform, Apple-Notes-style list into a pure
     "starred tasks" checklist, browsed by Universe: no more typing an arbitrary title/content, no
     more per-note selection. The sidebar picks a scope (a specific Universe, home-screen-grid
@@ -5679,6 +5679,12 @@ def notes_page(request: Request, universe_id: Optional[int] = None):
                     "universe_name": u.name if u else "",
                 })
         checklist.sort(key=lambda c: c["due_date"])
+        # Counted before the overdue-only filter below is applied, so the toggle pill can always
+        # show how many there are, whether or not it's currently switched on.
+        overdue_count = sum(1 for c in checklist if c["is_overdue"])
+        overdue_only = bool(overdue)
+        if overdue_only:
+            checklist = [c for c in checklist if c["is_overdue"]]
 
         selected_universe = universe_by_id.get(universe_id) if universe_id else None
 
@@ -5707,6 +5713,8 @@ def notes_page(request: Request, universe_id: Optional[int] = None):
                 "events_universe_href": get_events_universe_href(session, user.id),
                 "gemini_enabled": GEMINI_ENABLED,
                 "tag_suggestions": tag_suggestions,
+                "overdue_only": overdue_only,
+                "overdue_count": overdue_count,
             }
         )
 
@@ -6050,6 +6058,43 @@ def calendar_page(request: Request, universe_id: Optional[int] = None, year: Opt
         else:
             week_range_label = f"{week_start.strftime('%b')} {week_start.day} – {week_end.strftime('%b')} {week_end.day}, {week_end.year}"
 
+        # "Overdue" - a 4th view alongside Day/Week/Month, reported directly: wanting a single
+        # place to see everything overdue instead of hunting for it a day/week/month at a time.
+        # Unlike those three (all scoped to whatever range is currently displayed), this ignores
+        # date range entirely and just queries every incomplete task due before today, oldest
+        # first - the same realm_by_id/bucket_by_id/universe_by_id already scoped by Universe above.
+        today_dt = datetime(user_today.year, user_today.month, user_today.day)
+        overdue_tasks = []
+        if bucket_by_id:
+            overdue_items = session.exec(
+                select(Item).where(
+                    Item.bucket_id.in_(list(bucket_by_id.keys())),
+                    Item.due_date < today_dt,
+                    Item.is_completed == False,  # noqa: E712
+                ).order_by(Item.due_date)
+            ).all()
+            for it in overdue_items:
+                b = bucket_by_id.get(it.bucket_id)
+                r = realm_by_id.get(b.realm_id) if b else None
+                u = universe_by_id.get(r.universe_id) if r else None
+                due_time = it.due_date.strftime("%I:%M %p").lstrip("0") if it.due_date.strftime("%H:%M") != "09:00" else ""
+                overdue_tasks.append({
+                    "id": it.id,
+                    "title": it.title,
+                    "description": it.description,
+                    "is_completed": False,
+                    "is_overdue": True,
+                    "due_time": due_time,
+                    "due_date_formatted": it.due_date.strftime("%b %d, %Y"),
+                    "realm_id": b.realm_id if b else None,
+                    "realm_icon": (r.icon if r else "") or "🔮",
+                    "realm_name": r.name if r else "",
+                    "bucket_id": it.bucket_id,
+                    "bucket_name": b.name if b else "",
+                    "universe_icon": (u.icon if u else "") or "😈",
+                    "universe_name": u.name if u else "",
+                })
+
         return templates.TemplateResponse(
             request=request,
             name="calendar.html",
@@ -6069,7 +6114,8 @@ def calendar_page(request: Request, universe_id: Optional[int] = None, year: Opt
                 "next_month": next_month,
                 "is_current_month": (view_year == user_today.year and view_month == user_today.month),
                 "gemini_enabled": GEMINI_ENABLED,
-                "view": view if view in ("month", "week") else "day",
+                "view": view if view in ("month", "week", "overdue") else "day",
+                "overdue_tasks": overdue_tasks,
                 "view_day": view_day,
                 "week_days": week_days,
                 "week_range_label": week_range_label,

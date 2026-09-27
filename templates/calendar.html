@@ -153,6 +153,12 @@
                    class="px-3.5 py-1.5 rounded-full text-xs font-bold transition {{ 'bg-white text-indigo-600 shadow' if view == 'month' else 'text-slate-500 hover:text-slate-700' }}">
                     Month
                 </a>
+                <!-- Not date-scoped like the three above - reported directly, wanting one place to
+                     see everything overdue instead of hunting for it a day/week/month at a time. -->
+                <a href="/calendar?view=overdue{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
+                   class="px-3.5 py-1.5 rounded-full text-xs font-bold transition {{ 'bg-white text-rose-600 shadow' if view == 'overdue' else 'text-slate-500 hover:text-slate-700' }}">
+                    Overdue{% if overdue_tasks %} ({{ overdue_tasks | length }}){% endif %}
+                </a>
             </div>
 
             {% if view == 'week' %}
@@ -281,6 +287,42 @@
                 <div class="flex flex-col items-center justify-center text-center gap-2 py-14">
                     <div class="text-4xl">📅</div>
                     <p class="text-slate-400 text-sm">Nothing due{% if selected_universe %} in {{ selected_universe.name }}{% endif %} on {{ day_label }}.</p>
+                </div>
+                {% endfor %}
+            </div>
+
+            {% elif view == 'overdue' %}
+            <!-- Flat list, oldest-first, across every day/Universe in scope - unlike Day/Week/Month
+                 this never changes with date navigation, so each row shows its own due date instead
+                 of relying on a shared header for it. -->
+            <div class="flex-1 overflow-y-auto space-y-2.5 pb-32">
+                {% for t in overdue_tasks %}
+                <div class="flex items-start gap-3 p-3.5 rounded-2xl border bg-red-50/60 border-red-100" data-row-item-id="{{ t.id }}">
+                    <button type="button" onclick="toggleCalTaskComplete(this, {{ t.id }})" ontouchstart="try { window.webkit.messageHandlers.haptics.postMessage('rigid'); } catch (e) {}" title="Mark Complete"
+                            class="shrink-0 mt-0.5 w-6 h-6 rounded-full border border-slate-400 hover:border-emerald-500 text-transparent hover:text-emerald-500/50 flex items-center justify-center transition">
+                        ✓
+                    </button>
+                    <div class="flex-1 min-w-0">
+                        <p class="cal-task-title text-sm font-semibold break-words leading-snug text-slate-800">{{ t.title | linkify_phone }}</p>
+                        {% if t.description %}
+                        <p class="text-xs text-slate-500 mt-0.5 break-words">{{ t.description | linkify_phone }}</p>
+                        {% endif %}
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
+                            <span class="text-[11px] font-bold text-rose-600">⚠️ {{ t.due_date_formatted }}{% if t.due_time %} · {{ t.due_time }}{% endif %}</span>
+                            {% if not selected_universe_id %}
+                            <span class="text-[11px] text-slate-500">{{ t.universe_icon }} {{ t.universe_name }}</span>
+                            {% endif %}
+                            <span class="text-[11px] text-slate-500">{{ t.realm_icon }} {{ t.realm_name }} / {{ t.bucket_name }}</span>
+                        </div>
+                    </div>
+                    <a href="/?realm_id={{ t.realm_id }}&bucket_id={{ t.bucket_id }}&goto_item={{ t.id }}&focus_item=1"
+                       onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
+                       class="shrink-0 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline underline-offset-2 whitespace-nowrap">🎯</a>
+                </div>
+                {% else %}
+                <div class="flex flex-col items-center justify-center text-center gap-2 py-14">
+                    <div class="text-4xl">🎉</div>
+                    <p class="text-slate-400 text-sm">Nothing overdue{% if selected_universe %} in {{ selected_universe.name }}{% endif %} - you're all caught up.</p>
                 </div>
                 {% endfor %}
             </div>

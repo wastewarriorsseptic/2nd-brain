@@ -231,6 +231,19 @@
                 </button>
             </div>
 
+            {% if overdue_only or overdue_count %}
+            <!-- Toggles between the full starred checklist and just its overdue rows - reported
+                 directly, wanting one place to see everything overdue rather than scanning the
+                 whole list for it. Only shown at all once there's something to filter (or the
+                 filter is already on, so it stays reachable to turn back off). -->
+            <div class="mb-4 -mt-2 shrink-0">
+                <a href="/notes{{ '?universe_id=' ~ selected_universe_id if selected_universe_id else '' }}{{ ('&' if selected_universe_id else '?') ~ 'overdue=1' if not overdue_only else '' }}"
+                   class="inline-flex items-center text-[11px] font-bold px-2.5 py-1 rounded-full transition {{ 'bg-rose-600 text-white' if overdue_only else 'bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100' }}">
+                    ⚠️ {{ 'Showing Overdue Only ✕' if overdue_only else 'Overdue (' ~ overdue_count ~ ')' }}
+                </a>
+            </div>
+            {% endif %}
+
             {% if selected_universe_id and not gemini_enabled %}
             <form id="new-task-form" action="/notes/new-task/" method="POST" class="hidden items-center gap-2 mb-4 shrink-0">
                 <input type="hidden" name="universe_id" value="{{ selected_universe_id }}">
