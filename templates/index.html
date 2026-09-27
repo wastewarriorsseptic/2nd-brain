@@ -2268,68 +2268,26 @@
         <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 md:p-6 w-full max-w-sm sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto overscroll-contain">
             <div class="flex items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-700/60">
                 <h3 class="text-lg md:text-xl font-bold text-white shrink-0">Add Task</h3>
-                <div id="modal-destination-badge" class="min-w-0">
-                    {% set ns = namespace(active_realm=None, active_bucket=None) %}
-                    {% for r in realms %}
-                        {% if r.id == selected_realm_id %}
-                            {% set ns.active_realm = r %}
-                        {% endif %}
-                        {% for b in r.buckets %}
-                            {% if b.id == selected_bucket_id %}
-                                {% set ns.active_bucket = b %}
-                                {% set ns.active_realm = r %}
-                            {% endif %}
-                        {% endfor %}
-                    {% endfor %}
-
-                    {% if ns.active_realm and ns.active_bucket %}
-                    <span class="bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-xs font-semibold px-2.5 py-1 rounded-full truncate inline-block max-w-[150px] sm:max-w-[200px]" title="{{ ns.active_realm.name }} / {{ ns.active_bucket.name }}">
-                        {{ ns.active_realm.icon or '🔮' }} {{ ns.active_realm.name }} / {{ ns.active_bucket.name }}
-                    </span>
-                    {% endif %}
-                </div>
             </div>
 
             <form action="/items/" method="POST" class="space-y-3.5">
-                <!-- Realm and Bucket Selector Row (with inline creation) -->
-                <div id="modal-realm-bucket-picker" class="space-y-2 pb-1">
-                    <div class="grid grid-cols-2 gap-2">
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-400 mb-1">Realm</label>
-                            <select id="task-modal-realm-select" onchange="onModalRealmChange()" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
-                                {% for r in realms %}
-                                <option value="{{ r.id }}" {% if r.id == selected_realm_id %}selected{% endif %}>{{ r.icon or '🔮' }} {{ r.name }}</option>
-                                {% endfor %}
-                                <option value="NEW_REALM" class="text-indigo-400 font-bold">+ New Realm...</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-400 mb-1">Bucket</label>
-                            <select id="task-modal-bucket-select" onchange="onModalBucketChange()" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- Inline New Realm Fields -->
-                    <div id="inline-new-realm-fields" class="hidden p-2.5 bg-slate-900/80 border border-indigo-500/30 rounded-xl space-y-2">
-                        <span class="text-[11px] font-semibold text-indigo-300 block">✨ Create New Realm</span>
-                        <div class="flex items-center gap-2">
-                            <input type="text" id="inline-realm-name" placeholder="Realm Name (e.g. Work)" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none">
-                            <button type="button" onclick="submitInlineRealm()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition">Create</button>
-                        </div>
-                    </div>
-
-                    <!-- Inline New Bucket Fields -->
-                    <div id="inline-new-bucket-fields" class="hidden p-2.5 bg-slate-900/80 border border-indigo-500/30 rounded-xl space-y-2">
-                        <span class="text-[11px] font-semibold text-indigo-300 block">⭐️ Create New Bucket</span>
-                        <div class="flex items-center gap-2">
-                            <input type="text" id="inline-bucket-name" placeholder="Bucket Name (e.g. Urgent)" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none">
-                            <button type="button" onclick="submitInlineBucket()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition">Create</button>
-                        </div>
-                    </div>
+                <!-- Universe picker - Realm/Bucket are no longer a user-facing concept (see the
+                     Universe-only simplification); a task just needs a Universe. -->
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Universe</label>
+                    <select id="add-task-universe-select" name="universe_id" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                    </select>
                 </div>
 
-                <input type="hidden" name="bucket_id" id="task-modal-bucket-id" value="{{ selected_bucket_id or '' }}">
+                <!-- Free-form, optional per-task label - the lightweight replacement for Realm/
+                     Bucket sub-categorization now that a Universe is the only real organizational
+                     unit. -->
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Tag (optional)</label>
+                    <input type="text" name="tag" list="tag-suggestions-list" placeholder="e.g. Personal Bills" maxlength="60"
+                           class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                </div>
+
                 <input type="hidden" name="recurrence_type" id="add-recurrence-type-input" value="none">
                 <input type="hidden" name="interval" id="interval-input" value="1">
                 <input type="hidden" name="weekdays" id="weekdays-input" value="">
@@ -2401,15 +2359,6 @@
                         <label class="block text-xs font-semibold text-slate-400 mb-1">Description / Notes</label>
                         <textarea name="description" rows="2" placeholder="Add optional details..."
                                   class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border"></textarea>
-                    </div>
-
-                    <!-- Free-form, optional per-task label - the lightweight replacement for Realm/
-                         Bucket sub-categorization now that a Universe is the only real
-                         organizational unit. -->
-                    <div class="w-full">
-                        <label class="block text-xs font-semibold text-slate-400 mb-1">Tag (optional)</label>
-                        <input type="text" name="tag" list="tag-suggestions-list" placeholder="e.g. Personal Bills" maxlength="60"
-                               class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
                     </div>
                 </div>
 
@@ -2875,40 +2824,16 @@
         ];
 
         function openGlobalAddTaskModal() {
-            // The "New Task" tile is now always visible regardless of which Universe kind is
-            // active (see the quick-create grid in the sidebar), but this modal's own Realm/Bucket
-            // <select> is server-rendered straight from `realms` for whichever Universe was active
-            // on page LOAD - a Contact or Event Universe's own realms, not Task ones, if that's
-            // what's currently on screen. Rather than showing the wrong tree, jump to the user's
-            // own Task Universe first (reusing the exact ?open_add_task=1 flag the cross-Universe
-            // "+" controller button already relies on - see the DOMContentLoaded handler below)
-            // and let it reopen this same modal correctly once there.
-            if (isContactUniverse || isEventUniverse) {
-                const taskUniverse = universesOfKind('task')[0];
-                if (taskUniverse) {
-                    suppressMultiverseTimelineRestoreOnce();
-                    window.location.href = `/?universe_id=${taskUniverse.id}&open_add_task=1`;
-                    return;
-                }
-                // No Task Universe exists at all (rare) - fall through and open the modal in
-                // place rather than risk bouncing between Universe kinds with nowhere real to
-                // land (a bare `/?open_add_task=1` can land back on an Event Universe here too).
-            }
-
-            const picker = document.getElementById('modal-realm-bucket-picker');
-            if (picker) picker.classList.remove('hidden');
-
-            document.getElementById('inline-new-realm-fields').classList.add('hidden');
-            document.getElementById('inline-new-bucket-fields').classList.add('hidden');
-
-            const realmSelect = document.getElementById('task-modal-realm-select');
-            if (realmSelect && realmsData.length > 0) {
-                if (currentSelectedRealmId) {
-                    realmSelect.value = currentSelectedRealmId;
-                } else {
-                    realmSelect.selectedIndex = 0;
-                }
-                onModalRealmChange();
+            // Just a Universe picker now (Realm/Bucket are no longer a user-facing concept - see
+            // the Universe-only simplification) - populated with every task-kind Universe
+            // regardless of which Universe kind happens to be active on screen, so unlike before
+            // there's no need to redirect anywhere first just to get the right options loaded.
+            const universeSelect = document.getElementById('add-task-universe-select');
+            if (universeSelect) {
+                const taskUniverses = universesOfKind('task');
+                populateSelectFromList(universeSelect, taskUniverses, 'icon', '(No Task Universes)');
+                const preferred = (!isContactUniverse && !isEventUniverse && activeUniverseId) ? activeUniverseId : (taskUniverses[0] ? taskUniverses[0].id : '');
+                universeSelect.value = preferred;
             }
 
             document.getElementById('add-item-modal').classList.remove('hidden');
@@ -2998,65 +2923,6 @@
             document.getElementById('edit-person-modal').classList.remove('hidden');
         }
 
-        function onModalRealmChange() {
-            const realmSelect = document.getElementById('task-modal-realm-select');
-            const bucketSelect = document.getElementById('task-modal-bucket-select');
-            const realmFields = document.getElementById('inline-new-realm-fields');
-            const bucketFields = document.getElementById('inline-new-bucket-fields');
-
-            bucketFields.classList.add('hidden');
-
-            if (realmSelect.value === 'NEW_REALM') {
-                realmFields.classList.remove('hidden');
-                bucketSelect.innerHTML = '<option value="">(Select Realm First)</option>';
-                return;
-            } else {
-                realmFields.classList.add('hidden');
-            }
-
-            const selectedRealmId = parseInt(realmSelect.value);
-            const realm = realmsData.find(r => r.id === selectedRealmId);
-            bucketSelect.innerHTML = '';
-
-            if (realm && realm.buckets.length > 0) {
-                realm.buckets.forEach(b => {
-                    const opt = document.createElement('option');
-                    opt.value = b.id;
-                    opt.textContent = b.name;
-                    if (currentSelectedBucketId && b.id === currentSelectedBucketId) {
-                        opt.selected = true;
-                    }
-                    bucketSelect.appendChild(opt);
-                });
-            }
-
-            const optNew = document.createElement('option');
-            optNew.value = 'NEW_BUCKET';
-            optNew.className = 'text-indigo-400 font-bold';
-            optNew.textContent = '+ New Bucket...';
-            bucketSelect.appendChild(optNew);
-
-            if (!realm || realm.buckets.length === 0) {
-                bucketSelect.value = 'NEW_BUCKET';
-            }
-
-            onModalBucketChange();
-        }
-
-        function onModalBucketChange() {
-            const bucketSelect = document.getElementById('task-modal-bucket-select');
-            const hiddenBucketInput = document.getElementById('task-modal-bucket-id');
-            const bucketFields = document.getElementById('inline-new-bucket-fields');
-
-            if (bucketSelect.value === 'NEW_BUCKET') {
-                bucketFields.classList.remove('hidden');
-                hiddenBucketInput.value = '';
-            } else {
-                bucketFields.classList.add('hidden');
-                hiddenBucketInput.value = bucketSelect.value || '';
-            }
-        }
-
         function findUniverseInTree(universeId) {
             return allUniversesData.find(u => String(u.id) === String(universeId));
         }
@@ -3079,117 +2945,6 @@
         }
 
 
-        async function submitInlineRealm() {
-            const nameInput = document.getElementById('inline-realm-name');
-            const realmName = nameInput ? nameInput.value.trim() : '';
-            if (!realmName) return alert('Please enter a Realm Name');
-
-            const formData = new FormData();
-            formData.append('name', realmName);
-            formData.append('icon', '🔮');
-
-            try {
-                const response = await fetch('/realms/', { method: 'POST', body: formData });
-                if (response.ok) {
-                    const htmlRes = await fetch('/');
-                    const htmlText = await htmlRes.text();
-                    const doc = new DOMParser().parseFromString(htmlText, 'text/html');
-
-                    let realRealmId = null;
-                    doc.querySelectorAll('[id^="realm-row-"]').forEach(row => {
-                        if (row.getAttribute('data-realm-name') === realmName) {
-                            realRealmId = parseInt(row.id.replace('realm-row-', ''));
-                        }
-                    });
-
-                    if (!realRealmId) {
-                        window.location.reload();
-                        return;
-                    }
-
-                    const realmSelect = document.getElementById('task-modal-realm-select');
-                    
-                    if (!realmsData.some(r => r.id === realRealmId)) {
-                        realmsData.push({ id: realRealmId, name: realmName, icon: '🔮', buckets: [] });
-                    }
-
-                    const newOpt = document.createElement('option');
-                    newOpt.value = realRealmId;
-                    newOpt.textContent = `🔮 ${realmName}`;
-                    realmSelect.insertBefore(newOpt, realmSelect.lastElementChild);
-
-                    realmSelect.value = realRealmId;
-                    nameInput.value = '';
-                    document.getElementById('inline-new-realm-fields').classList.add('hidden');
-                    
-                    onModalRealmChange();
-                }
-            } catch (err) {
-                console.error("Error creating inline realm:", err);
-            }
-        }
-
-        async function submitInlineBucket() {
-            const realmSelect = document.getElementById('task-modal-realm-select');
-            const nameInput = document.getElementById('inline-bucket-name');
-            const bucketName = nameInput ? nameInput.value.trim() : '';
-            const rawRealmVal = realmSelect ? realmSelect.value : '';
-
-            if (!bucketName) return alert('Please enter a Bucket Name');
-            if (!rawRealmVal || rawRealmVal === 'NEW_REALM') return alert('Please select a valid Realm first');
-
-            const formData = new FormData();
-            formData.append('name', bucketName);
-            formData.append('realm_id', rawRealmVal);
-            formData.append('icon', '⭐️');
-
-            try {
-                const response = await fetch('/buckets/', { method: 'POST', body: formData });
-                if (response.ok) {
-                    const htmlRes = await fetch('/');
-                    const htmlText = await htmlRes.text();
-                    const doc = new DOMParser().parseFromString(htmlText, 'text/html');
-
-                    let realBucketId = null;
-                    doc.querySelectorAll('[id^="bucket-row-"]').forEach(row => {
-                        if (row.getAttribute('data-bucket-name') === bucketName && row.getAttribute('data-parent-realm-id') === String(rawRealmVal)) {
-                            realBucketId = parseInt(row.id.replace('bucket-row-', ''));
-                        }
-                    });
-
-                    if (!realBucketId) {
-                        window.location.reload();
-                        return;
-                    }
-
-                    const bucketSelect = document.getElementById('task-modal-bucket-select');
-                    const selectedRealmId = parseInt(rawRealmVal);
-                    const realm = realmsData.find(r => r.id === selectedRealmId);
-
-                    if (realm && !realm.buckets.some(b => b.id === realBucketId)) {
-                        realm.buckets.push({ id: realBucketId, name: bucketName });
-                    }
-
-                    const newOpt = document.createElement('option');
-                    newOpt.value = realBucketId;
-                    newOpt.textContent = bucketName;
-
-                    if (bucketSelect.lastElementChild) {
-                        bucketSelect.insertBefore(newOpt, bucketSelect.lastElementChild);
-                    } else {
-                        bucketSelect.appendChild(newOpt);
-                    }
-
-                    bucketSelect.value = realBucketId;
-                    nameInput.value = '';
-                    document.getElementById('inline-new-bucket-fields').classList.add('hidden');
-
-                    onModalBucketChange();
-                }
-            } catch (err) {
-                console.error("Error creating inline bucket:", err);
-            }
-        }
 
         let currentRecurrenceTarget = 'add';
 
@@ -3726,11 +3481,6 @@
                 if (badgeContainer) {
                     badgeContainer.innerHTML = `<span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">✨ All Timelines</span>`;
                 }
-            }
-
-            const modalBucketInput = document.getElementById('task-modal-bucket-id');
-            if (modalBucketInput) {
-                modalBucketInput.value = currentSelectedBucketId || '';
             }
 
             filterTimelineList();
@@ -5301,7 +5051,7 @@
             bubble.innerHTML = `<div class="${bubbleClass}"></div>`;
             bubble.firstElementChild.innerText = text;
 
-            if (navTarget && navTarget.bucket_id && navTarget.realm_id && navTarget.id) {
+            if (navTarget && navTarget.universe_id && navTarget.id) {
                 const link = document.createElement('button');
                 link.type = 'button';
                 link.className = 'mt-2 block text-left text-emerald-700 hover:text-emerald-900 underline underline-offset-2 font-bold';
@@ -5492,11 +5242,11 @@
             // reported directly: tapping the link "takes me to the general area" of the task
             // instead of actually focusing it. focus_item overrides that guard for exactly this
             // one navigation, where going precisely to the task IS the whole point of the tap.
-            return '/?realm_id=' + nav.realm_id + '&bucket_id=' + nav.bucket_id + '&goto_item=' + nav.id + '&focus_item=1';
+            return '/?universe_id=' + nav.universe_id + '&goto_item=' + nav.id + '&focus_item=1';
         }
 
         function navigateToTaskFromChat(nav) {
-            if (!nav || !nav.bucket_id || !nav.realm_id || !nav.id) return;
+            if (!nav || !nav.universe_id || !nav.id) return;
             suppressMultiverseTimelineRestoreOnce();
             setTimeout(() => {
                 window.location.href = aiChatTaskUrl(nav);
@@ -5534,7 +5284,7 @@
         // AUTOMATIC redirect's confirmation text be read first), this is a direct response to the
         // user already having tapped something, so it navigates immediately.
         function goToAiChatTask(nav) {
-            if (!nav || !nav.bucket_id || !nav.realm_id || !nav.id) return;
+            if (!nav || !nav.universe_id || !nav.id) return;
             suppressMultiverseTimelineRestoreOnce();
             window.location.href = aiChatTaskUrl(nav);
         }
@@ -6395,10 +6145,54 @@
             }
         }
 
+        // Flat-model replacement for navigateToDigestItem/navigateToDigestItemCrossUniverse below -
+        // used by every "go to this task" link (Notes, AI chat, the Daily Digest) now that a task's
+        // real home is just its Universe, not a Realm/Bucket ring to drill into. multiverseLanes
+        // already carries every task across every owned task/event Universe (see dashboard()'s
+        // multiverse_tasks), so this never needs a real page navigation even for a task in a
+        // Universe other than whichever one happens to be on screen - it just opens the Multiverse
+        // Timeline (a no-op if already open) and focuses the target Universe's own lane, exactly like
+        // tapping that Universe's hub would ("we just wont be tapping into each universe" - no deeper
+        // Realm/Bucket layer to land in). openMultiverseTimeline() rebuilds multiverseLanes fresh, so
+        // the target lane must be looked up AFTER calling it, not before.
+        function navigateToDigestItemFlat(universeId, itemId) {
+            dailyDigestExpanded = false;
+            applyDailyDigestExpandedState();
+            openMultiverseTimeline();
+
+            const applyFocus = () => {
+                const idx = multiverseLanes.findIndex(l => !l.isUniverseNode && String(l.id) === String(universeId));
+                if (idx < 0) return;
+                mvSetFocus(idx);
+                const lane = multiverseLanes[idx];
+                const target = itemId && lane && lane.tasks && lane.tasks.find(t => String(t.id) === String(itemId));
+                if (target) {
+                    const rng = mvScrollRange(lane);
+                    lane._scrollIdxTarget = mvClamp(mvTaskL(target), rng.min, rng.max);
+                    lane._scroll = lane._scrollIdxTarget;
+                }
+            };
+            applyFocus();
+            // On a fresh page load (this function's only caller besides the in-canvas Daily Digest
+            // widget), the ?mv_timeline=1 openMultiverseTimeline() just stamped into the URL above
+            // is picked up by that flag's OWN DOMContentLoaded listener further down this file - it
+            // runs later in the same DOMContentLoaded dispatch and calls openMultiverseTimeline()
+            // a second time, which always resets focus to the '__all_tasks__' lane (see its own
+            // mvInitFocus/allTasksIdx call). Re-applying the real target on the next tick, after
+            // every same-event listener (including that one) has already run, wins the race instead
+            // of depending on listener registration order.
+            setTimeout(applyFocus, 0);
+        }
+
         // Jumps from a Daily Digest list item straight to that task's spot in Space View, reusing the
         // exact same realm -> bucket -> task focus sequence a manual tap-tap-tap through the universe
         // would trigger (see detectClickNode's clickedBucket/clickedTask branches), rather than
         // duplicating that positioning math a second time here.
+        //
+        // Deprecated: only the in-canvas Daily Digest widget's own item taps still reach this (via
+        // navigateToDigestItem/navigateToDigestItemCrossUniverse below) - every other "go to task"
+        // path now uses the flat navigateToDigestItemFlat above. Left in place rather than deleted
+        // since the Realm/Bucket data (spaceRealms, realmLanes) it walks is itself still live.
         function navigateToDigestItem(realmId, bucketId, itemId) {
             const realm = spaceRealms.find(r => !r.isAddButton && String(r.id) === String(realmId));
             if (!realm) return;
@@ -6581,6 +6375,17 @@
                 // to the general area" instead of actually focusing the task).
                 if (focusItem || (!isMultiverseStackedView && !isRealmTimelineView)) {
                     navigateToDigestItem(currentSelectedRealmId, currentSelectedBucketId, gotoItemId);
+                }
+            } else {
+                // No realm_id/bucket_id resolved a legacy destination above - the flat-model path
+                // (Notes, AI chat's "Go to this task", a Universe-only chat_nav place) instead lands
+                // with a bare ?universe_id= and no currentSelectedRealmId at all. Same flat focus
+                // navigateToDigestItemFlat's own callers use: open the Multiverse Timeline (a no-op
+                // if already open) and focus that Universe's lane, scrolling to gotoItemId's task
+                // when one was given.
+                const universeIdParam = params.get('universe_id');
+                if (universeIdParam) {
+                    navigateToDigestItemFlat(universeIdParam, gotoItemId);
                 }
             }
 

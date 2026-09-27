@@ -5489,6 +5489,7 @@ def notes_page(request: Request, universe_id: Optional[int] = None):
                     "due_date_formatted": it.due_date.strftime("%b %d, %Y"),
                     "realm_id": b.realm_id,
                     "bucket_id": b.id,
+                    "universe_id": it.universe_id,
                     "realm_name": r.name if r else "",
                     "realm_icon": (r.icon if r else "") or "🔮",
                     "bucket_name": b.name,
@@ -6442,6 +6443,7 @@ def _ai_execute_update_task(session: Session, user: "User", args: dict) -> dict:
     return {
         "id": item.id,
         "title": item.title,
+        "universe_id": item.universe_id,
         "bucket_id": item.bucket_id,
         "realm_id": bucket.realm_id if bucket else None,
         "bucket_name": bucket.name if bucket else "",
@@ -6484,6 +6486,7 @@ def _ai_execute_favorite_task(session: Session, user: "User", args: dict) -> dic
         "title": item.title,
         "favorited": want,
         "already_that_way": already,
+        "universe_id": item.universe_id,
         "bucket_id": item.bucket_id,
         "realm_id": bucket.realm_id if bucket else None,
         "bucket_name": bucket.name if bucket else "",

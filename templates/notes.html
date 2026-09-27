@@ -290,7 +290,7 @@
                                  index.html): without it, landing while already inside a Timeline
                                  overview silently skips the drill-down to this exact task, leaving
                                  you in "the general area" instead - reported directly. -->
-                            <a href="/?realm_id={{ row.realm_id }}&bucket_id={{ row.bucket_id }}&goto_item={{ row.item_id }}&focus_item=1"
+                            <a href="/?universe_id={{ row.universe_id }}&goto_item={{ row.item_id }}&focus_item=1"
                                onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
                                class="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline underline-offset-2 whitespace-nowrap">🎯 Go to task</a>
                             <form action="/notes/{{ row.note_id }}/delete" method="POST">
@@ -478,7 +478,7 @@
             }
             bubble.className = bubbleClass;
             bubble.textContent = text;
-            if (navTarget && navTarget.bucket_id && navTarget.realm_id && navTarget.id) {
+            if (navTarget && navTarget.universe_id && navTarget.id) {
                 const link = document.createElement('button');
                 link.type = 'button';
                 link.className = 'mt-2 block text-left text-emerald-700 hover:text-emerald-900 underline underline-offset-2 font-bold';
@@ -517,12 +517,12 @@
         // the checklist's own "Go to task" links already use so landing there doesn't immediately
         // snap back to the Multiverse Timeline.
         function goToNotesTaskChatTask(nav) {
-            if (!nav || !nav.bucket_id || !nav.realm_id || !nav.id) return;
+            if (!nav || !nav.universe_id || !nav.id) return;
             try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}
             // focus_item=1 - same override index.html's own aiChatTaskUrl uses; without it,
             // landing while already inside a Timeline overview skips the drill-down to this exact
             // task (see the goto_item pickup listener in index.html).
-            window.location.href = '/?realm_id=' + nav.realm_id + '&bucket_id=' + nav.bucket_id + '&goto_item=' + nav.id + '&focus_item=1';
+            window.location.href = '/?universe_id=' + nav.universe_id + '&goto_item=' + nav.id + '&focus_item=1';
         }
 
         function openNotesTaskChat() {
