@@ -11,6 +11,14 @@
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 
+    <!-- Prevent Flash of unstyled content on reload - see the html.preload-space-view CSS below.
+         Space View is the only view now, so this always applies (no saved-preference check
+         needed anymore); initSpaceCanvas() removes the class once Space View is actually set up,
+         letting #space-view-overlay drop back to its normal z-40 (below the launcher buttons -
+         Notes/Events/Calendar, the devil/home/+ cluster - which live outside it, at z-70). -->
+    <script>
+        document.documentElement.classList.add('preload-space-view');
+    </script>
 
     <style>
         /* Force dark mode styling and visual clickability for native date & time pickers */
@@ -28,14 +36,21 @@
         .pac-matched { color: #818cf8; }
         .pac-icon { filter: invert(1) brightness(1.6); }
 
-        /* Space View is the only view now (see the Universe-only/Space-View-only simplification) -
-           always covers the page immediately on load, with no dependency on JS running first or on
-           a remembered preference. Plain CSS instead of relying on Tailwind classes, since the
-           Tailwind Play CDN JIT-compiles utility classes asynchronously after the page starts
-           parsing - reported directly as a flash of the page underneath on a fresh load, back when
-           this was conditional on a saved 'space' preference; unconditional here removes that gap
-           entirely rather than racing it. */
-        #space-view-overlay {
+        /* Immediate hide of the page during pre-load to eliminate flicker on a fresh load -
+           display:flex alone wasn't enough: the overlay's actual position/z-index/background all
+           come from Tailwind utility classes (fixed inset-0 z-40 bg-slate-950), and the Tailwind
+           Play CDN JIT-compiles those asynchronously after the page starts parsing - so for a
+           brief window the overlay was already display:flex but NOT yet fixed/full-screen/opaque/
+           on top, which let the page underneath flash through. These four are plain CSS instead of
+           relying on Tailwind classes, so they're guaranteed to apply the instant this stylesheet
+           loads. Scoped to the preload window only (not permanent!) - #space-view-overlay's real,
+           steady-state z-index is the lower z-40 its Tailwind class already gives it, so the
+           launcher buttons that live OUTSIDE it (Notes/Events/Calendar, the devil/home/+ cluster,
+           all z-70) stay visible on top once Space View has actually finished loading;
+           initSpaceCanvas() removes this class right after setup, same trigger as the curtain
+           below. Forcing z-999 permanently here (a regression, caught and reverted) hid every one
+           of those buttons behind Space View forever instead of just during this brief window. */
+        html.preload-space-view #space-view-overlay {
             display: flex !important;
             position: fixed !important;
             inset: 0 !important;
@@ -48,14 +63,17 @@
            List content above it. The browser can paint everything above it in source order before
            that element even exists in the DOM, so an overlay-only fix can't cover a gap that opens
            before the overlay exists to do any covering. #preload-curtain is the literal first node
-           in <body> for exactly that reason - covers the viewport immediately; initSpaceCanvas()
-           removes it once Space View has actually finished setting up. */
+           in <body> for exactly that reason - covers the viewport immediately, then gets out of
+           the way (display:none) the instant preload-space-view is removed, same trigger as above. */
         #preload-curtain {
-            display: block;
-            position: fixed;
-            inset: 0;
-            z-index: 1000;
-            background: #020617;
+            display: none;
+        }
+        html.preload-space-view #preload-curtain {
+            display: block !important;
+            position: fixed !important;
+            inset: 0 !important;
+            z-index: 1000 !important;
+            background: #020617 !important;
         }
 
         @media (max-width: 768px) {
@@ -6196,8 +6214,9 @@
                     const rows = items.map(it => {
                         // Only present on cross-Universe entries - see computeMultiverseDailyDigestData.
                         const universeTag = it.universeIcon ? `<span class="text-slate-500 text-[10px]">${escapeHtml(it.universeIcon)} </span>` : '';
-                        const locationTag = (it.realmName || it.bucketName)
-                            ? `<span class="text-slate-500 text-[10px]"> [${escapeHtml(it.realmName)}${it.bucketName ? ' / ' + escapeHtml(it.bucketName) : ''}]</span>`
+                        // Universe name only now (Realm/Bucket are no longer a user-facing concept).
+                        const locationTag = it.universeName
+                            ? `<span class="text-slate-500 text-[10px]"> [${escapeHtml(it.universeName)}]</span>`
                             : '';
                         const overdueTag = isOverdueSection
                             ? `<span class="text-rose-400 font-bold text-[10px] ml-1">(${it.daysLate}d late)</span>`
@@ -7088,10 +7107,11 @@
             window.addEventListener('resize', resizeSpaceCanvas);
             generateSpaceStars();
 
-            // Space View is set up enough to look like itself now - drop the preload curtain that's
-            // been covering the viewport since <body> started parsing (see #preload-curtain).
-            const curtain = document.getElementById('preload-curtain');
-            if (curtain) curtain.style.display = 'none';
+            // Space View is set up enough to look like itself now - drop the preload curtain AND
+            // #space-view-overlay's forced z-999 (both gated on this one class - see the <head>
+            // CSS), letting the overlay fall back to its normal, lower z-40 so the launcher buttons
+            // that live outside it (Notes/Events/Calendar, the devil/home/+ cluster) show through.
+            document.documentElement.classList.remove('preload-space-view');
 
             // Event Universes skip the whole realm/bucket/task orbit ring below entirely - reported
             // directly that Space View here should "behave differently", "more about having the
@@ -12966,7 +12986,14 @@
             const oldCheckboxBtn = document.getElementById('hud-checkbox-btn');
             if (oldCheckboxBtn) oldCheckboxBtn.replaceWith(oldCheckboxBtn.cloneNode(true));
 
-            badgeCategory.innerText = `${task.realmName} / ${task.bucketName}`;
+            // Universe name only now (Realm/Bucket are no longer a user-facing concept - see the
+            // Universe-only simplification), falling back to the old Realm/Bucket text only for a
+            // task object that somehow doesn't carry universeName (the per-Universe "ring" view's
+            // own task objects, not the primary Multiverse/Realm Timeline lanes this HUD is really
+            // reached from now).
+            badgeCategory.innerText = task.universeName
+                ? `${task.universeIcon || ''} ${task.universeName}`.trim()
+                : `${task.realmName} / ${task.bucketName}`;
             idInput.value = task.id;
 
             if (task.isPerson) {
