@@ -7003,6 +7003,17 @@ def ai_chat(request: Request, payload: dict = Body(...)):
             notes_task_bucket = get_or_create_default_task_bucket_in_universe(session, user.id, notes_task_universe)
             quick_task_intent = True
 
+        # Set when this same "+" is tapped from Notes' "All" view instead (see openNotesTaskChat in
+        # notes.html) - unlike notes_task_universe above, there's no single implied Universe here,
+        # so it isn't forced; the model has to ask (see the system_instruction addition below) or
+        # infer it from the message itself. Once create_task actually lands, the result's own
+        # universe_id (whichever one the model resolved) is what gets auto-starred into Notes below -
+        # never a pre-known one, since there isn't one.
+        notes_task_all_tasks = False
+        if not notes_task_bucket and payload.get("notes_task_all_tasks"):
+            notes_task_all_tasks = True
+            quick_task_intent = True
+
         # Set when this message came from Space View's own "+" quick-task shortcut instead of the
         # plain launcher - reported directly, wanting it to default to whichever Universe was
         # currently scrolled to/selected (stating that explicitly in the reply, unless the message
@@ -7013,7 +7024,7 @@ def ai_chat(request: Request, payload: dict = Body(...)):
         # already applies.
         quick_task_universe_hint = None
         quick_task_all_tasks = False
-        if not notes_task_bucket:
+        if not notes_task_bucket and not notes_task_all_tasks:
             hint_universe_id = payload.get("quick_task_universe_id")
             if hint_universe_id:
                 hint_universe = session.get(Universe, hint_universe_id)
@@ -7053,6 +7064,21 @@ def ai_chat(request: Request, payload: dict = Body(...)):
                 f"effort reasoning about which universe to use - it's already decided. "
                 f"Just extract the title (and due date if mentioned, otherwise today) and call "
                 f"create_task. Do not ask which universe to use."
+            )
+        elif notes_task_all_tasks:
+            system_instruction += (
+                "\n\nThis message is adding a task from Notes' \"All\" view - every Universe at "
+                "once, not one in particular - so there's no single implied destination the way "
+                "there normally is from a specific Universe's own Notes checklist. If the message "
+                "doesn't already make the destination Universe unambiguous on its own, ask which "
+                "Universe/list this task belongs to before creating it. Also ask whether they'd "
+                "like to tag it (a short free-form label, entirely optional) if they haven't "
+                "already said one or clearly implied they don't want one - combine this into the "
+                "same question as the Universe one when you're asking anyway, rather than two "
+                "separate round trips. Once you have enough to proceed, call create_task - "
+                "whichever Universe it lands in, a successful creation is immediately starred into "
+                "that Universe's own Notes checklist server-side, so don't mention starring "
+                "yourself."
             )
         elif quick_task_universe_hint:
             system_instruction += (
@@ -7148,6 +7174,15 @@ def ai_chat(request: Request, payload: dict = Body(...)):
                                 session.add(Note(
                                     user_id=user.id, title="", content="",
                                     universe_id=notes_task_universe.id, source_item_id=result["id"],
+                                ))
+                                session.commit()
+                            elif notes_task_all_tasks and result.get("universe_id"):
+                                # No pre-known universe to star into here (see notes_task_all_tasks
+                                # above) - use whichever one the model actually resolved this task
+                                # into.
+                                session.add(Note(
+                                    user_id=user.id, title="", content="",
+                                    universe_id=result["universe_id"], source_item_id=result["id"],
                                 ))
                                 session.commit()
                     elif name == "update_task":

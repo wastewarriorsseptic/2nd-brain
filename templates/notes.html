@@ -217,29 +217,18 @@
                 <h2 class="text-lg font-extrabold text-slate-900 flex items-center gap-2">
                     {% if selected_universe %}{{ selected_universe.icon or '😈' }} {{ selected_universe.name }}{% else %}✨ All{% endif %}
                 </h2>
-                {% if selected_universe_id %}
                 <!-- Just a plain round "+" until tapped - reported directly, wanting the add-task
                      control to be a tap target, not a form always sitting on screen. When AI chat
                      is available it opens openNotesTaskChat() - a tiny dedicated chat asking what
                      task to make, reported directly ("start a chat for what task to make within
-                     that exact universe") - rather than the plain title/date/Add row
-                     toggleNewTaskForm() reveals, kept only as the fallback for when AI chat is
-                     disabled entirely. -->
-                <button type="button" onclick="{{ 'openNotesTaskChat()' if gemini_enabled else 'toggleNewTaskForm()' }}"
+                     that exact universe") - now available from "All" too, where it asks which
+                     Universe (and optionally a tag) instead of assuming one. The plain title/date/
+                     Add row toggleNewTaskForm()/toggleAllUniverseTaskForm() reveal is kept only as
+                     the fallback for when AI chat is disabled entirely. -->
+                <button type="button" onclick="{{ 'openNotesTaskChat()' if gemini_enabled else ('toggleNewTaskForm()' if selected_universe_id else 'toggleAllUniverseTaskForm()') }}"
                         class="w-9 h-9 shrink-0 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xl font-extrabold flex items-center justify-center shadow-lg shadow-indigo-600/30 transition-all">
                     +
                 </button>
-                {% else %}
-                <!-- "All" has no single implied Universe the way a specific one does, so this never
-                     goes through the AI chat quick-task flow (which assumes exactly one target
-                     universe) - it always reveals all-universe-new-task-form below instead, whose
-                     own Universe select is what makes the target explicit. Reported directly,
-                     wanting the same "+" available from "All" too. -->
-                <button type="button" onclick="toggleAllUniverseTaskForm()"
-                        class="w-9 h-9 shrink-0 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xl font-extrabold flex items-center justify-center shadow-lg shadow-indigo-600/30 transition-all">
-                    +
-                </button>
-                {% endif %}
             </div>
 
             {% if selected_universe_id and not gemini_enabled %}
@@ -255,10 +244,11 @@
             </form>
             {% endif %}
 
-            {% if not selected_universe_id %}
-            <!-- "+" from "All" - unlike the single-Universe form above, the target Universe isn't
-                 implied by whichever checklist is open, so it's an explicit required select here,
-                 plus the same optional Tag every other Add Task surface now has. -->
+            {% if not selected_universe_id and not gemini_enabled %}
+            <!-- "+" from "All" when AI chat is disabled - unlike the single-Universe form above,
+                 the target Universe isn't implied by whichever checklist is open, so it's an
+                 explicit required select here, plus the same optional Tag every other Add Task
+                 surface now has. -->
             <form id="all-universe-new-task-form" action="/notes/new-task/" method="POST" class="hidden flex-col gap-2 mb-4 shrink-0">
                 <div class="flex items-center gap-2">
                     <select name="universe_id" required
@@ -350,16 +340,18 @@
         </div>
     </div>
 
-    {% if gemini_enabled and selected_universe_id %}
+    {% if gemini_enabled %}
     <!-- Notes' own tiny task-creation chat - opened by the "+" next to a Universe's checklist
-         header. Deliberately NOT the full index.html chat panel (voice input, saved history,
-         navigation tools) - just enough to type a plain-language task description and have it
-         parsed, created in THIS Universe, and immediately starred so it shows right back up in the
-         checklist below - reported directly ("start a chat for what task to make within that exact
-         universe" / "have it know that if its being made there to have it starred to show there").
-         Reuses the same /ai/chat/ endpoint everything else on the site does, with
-         notes_task_universe_id set so the server forces the bucket and auto-stars the result
-         server-side - see ai_chat() in app.py. -->
+         header (or "All"'s own header). Deliberately NOT the full index.html chat panel (voice
+         input, saved history, navigation tools) - just enough to type a plain-language task
+         description and have it parsed, created, and immediately starred so it shows right back
+         up in the checklist below - reported directly ("start a chat for what task to make within
+         that exact universe" / "have it know that if its being made there to have it starred to
+         show there"). From a specific Universe this reuses the same /ai/chat/ endpoint everything
+         else on the site does, with notes_task_universe_id set so the server forces the bucket and
+         auto-stars the result server-side; from "All" (no single implied Universe) it sends
+         notes_task_all_tasks instead, and the model asks which Universe (and optionally a tag) -
+         see ai_chat() in app.py. -->
     <!-- Tap-the-backdrop-to-close, same as the other quick-create modals - reinstated now that the
          actual bug is fixed at its source: tapping Send blurs the input as part of that same tap,
          and the blur handler used to reposition the card IMMEDIATELY, shifting its layout out from
@@ -372,7 +364,7 @@
     <div id="notes-task-chat-modal" class="hidden fixed inset-0 z-[80] flex items-center justify-center px-4" style="background: rgba(2, 6, 23, 0.55);" onclick="if (event.target === this) closeNotesTaskChat();">
         <div id="notes-task-chat-card" class="bg-white rounded-3xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden" style="max-height: 80vh;">
             <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 shrink-0">
-                <span class="text-sm font-extrabold text-indigo-600 uppercase tracking-wide">😈 New Task</span>
+                <span class="text-sm font-extrabold text-indigo-600 uppercase tracking-wide">😈 New Favorited Task</span>
                 <button type="button" onclick="closeNotesTaskChat()" class="text-slate-400 hover:text-slate-700 text-xs font-bold px-1">✕</button>
             </div>
             <div id="notes-task-chat-messages" class="flex-1 min-h-0 overflow-y-auto p-3 space-y-2.5 text-sm bg-slate-50"></div>
@@ -496,8 +488,10 @@
             }
         }
 
-        {% if gemini_enabled and selected_universe_id %}
-        const notesTaskChatUniverseId = {{ selected_universe_id }};
+        {% if gemini_enabled %}
+        // null from "All" (no single implied Universe) - every place below that used to assume
+        // this was always set now branches on it instead.
+        const notesTaskChatUniverseId = {{ selected_universe_id | tojson }};
         let notesTaskChatSending = false;
         // Set the moment any message in this chat session actually creates a task - closeNotesTaskChat
         // only bothers reloading the page (the one way the checklist behind the modal picks up a
@@ -583,7 +577,16 @@
             if (!modal || !messages) return;
             messages.innerHTML = '';
             notesTaskChatCreatedAny = false;
-            renderNotesTaskChatBubble('assistant', 'What task would you like me to star and create in ' + {{ (selected_universe.name if selected_universe else 'this Universe') | tojson }} + '?');
+            // From a specific Universe the destination is already known, so the greeting just asks
+            // for the task itself. From "All" there's no single implied Universe - reported
+            // directly, wanting the greeting itself to ask which one (and optionally a tag) rather
+            // than assume, matching what the model is separately instructed to ask for server-side
+            // if the first message doesn't already answer it (see notes_task_all_tasks in app.py).
+            {% if selected_universe %}
+            renderNotesTaskChatBubble('assistant', 'What task would you like me to star and create in ' + {{ selected_universe.name | tojson }} + '?');
+            {% else %}
+            renderNotesTaskChatBubble('assistant', "What task would you like to add? Let me know which list it belongs to, and a tag if you'd like one.");
+            {% endif %}
             modal.classList.remove('hidden');
             const input = document.getElementById('notes-task-chat-input');
             if (input) { input.value = ''; input.focus(); }
@@ -606,7 +609,11 @@
             if (modal) modal.classList.add('hidden');
             resetNotesTaskChatLayout();
             if (notesTaskChatCreatedAny) {
-                window.location.href = '/notes?universe_id=' + notesTaskChatUniverseId;
+                // From "All" (notesTaskChatUniverseId null) there's no single Universe to jump
+                // back to - possibly more than one, if several tasks landed in different
+                // Universes across the conversation - so this just reloads "All" itself, where
+                // every one of them is already visible regardless of which Universe it's in.
+                window.location.href = notesTaskChatUniverseId ? ('/notes?universe_id=' + notesTaskChatUniverseId) : '/notes';
             }
         }
 
@@ -728,10 +735,16 @@
             const thinking = renderNotesTaskChatThinkingBubble();
             notesTaskChatSending = true;
             try {
+                // notesTaskChatUniverseId is null from "All" - notes_task_all_tasks tells the
+                // server there's no single implied Universe (it asks/infers instead of forcing
+                // one), same as notes_task_universe_id tells it there IS one.
+                const chatPayload = notesTaskChatUniverseId
+                    ? { message: text, intent: 'create_task', notes_task_universe_id: notesTaskChatUniverseId }
+                    : { message: text, intent: 'create_task', notes_task_all_tasks: true };
                 const res = await fetch('/ai/chat/', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: text, intent: 'create_task', notes_task_universe_id: notesTaskChatUniverseId })
+                    body: JSON.stringify(chatPayload)
                 });
                 const data = await res.json();
                 if (thinking) thinking.remove();
