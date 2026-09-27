@@ -6219,8 +6219,6 @@ _ai_list_tasks_decl = None
 _ai_navigate_task_decl = None
 _ai_navigate_place_decl = None
 _ai_create_universe_decl = None
-_ai_create_realm_decl = None
-_ai_create_bucket_decl = None
 _ai_tools = None
 if GEMINI_ENABLED:
     _ai_create_task_decl = genai_types.FunctionDeclaration(
@@ -6338,40 +6336,13 @@ if GEMINI_ENABLED:
             "required": ["name"],
         },
     )
-    _ai_create_realm_decl = genai_types.FunctionDeclaration(
-        name="create_realm",
-        description="Create a brand new Realm inside a Universe. universe_id must come from the context tree, or from a create_universe call earlier in this same turn. Only call this when the user is clearly asking for a genuinely new Realm and nothing in that Universe already matches the name.",
-        parameters={
-            "type": "OBJECT",
-            "properties": {
-                "name": {"type": "STRING"},
-                "universe_id": {"type": "INTEGER"},
-                "icon": {"type": "STRING", "description": "A single emoji that fits the name. Optional - a default is used if omitted."},
-            },
-            "required": ["name", "universe_id"],
-        },
-    )
-    _ai_create_bucket_decl = genai_types.FunctionDeclaration(
-        name="create_bucket",
-        description="Create a brand new Bucket inside a Realm - the level a task's bucket_id must ultimately point to. realm_id must come from the context tree, or from a create_realm call earlier in this same turn. Only call this when the user is clearly asking for a genuinely new Bucket and nothing in that Realm already matches the name.",
-        parameters={
-            "type": "OBJECT",
-            "properties": {
-                "name": {"type": "STRING"},
-                "realm_id": {"type": "INTEGER"},
-                "icon": {"type": "STRING", "description": "A single emoji that fits the name. Optional - a default is used if omitted."},
-            },
-            "required": ["name", "realm_id"],
-        },
-    )
-    # create_realm/create_bucket deliberately NOT offered here anymore - leftover tools from
+    # create_realm/create_bucket were removed entirely (see commit history) - leftover tools from
     # before the Realm/Bucket flattening, whose own descriptions still talked about a task's
-    # "bucket_id" ("the level a task's bucket_id must ultimately point to"), directly contradicting
-    # update_task (universe_id only, no bucket_id at all) and very likely a real contributor to
-    # the model getting confused mid-way through a bulk move - reported directly. create_universe
-    # is the only "make a new place" tool the model needs now. The declarations/executors
-    # themselves are left in place below (harmless, just unreachable) rather than deleted here -
-    # a separate, larger pass, not part of this fix.
+    # "bucket_id", directly contradicting update_task (universe_id only, no bucket_id at all) and
+    # very likely a real contributor to the model getting confused mid-way through a bulk move.
+    # create_universe is the only "make a new place" tool the model needs now - navigate_to_place
+    # still targets existing realms/buckets (see its own declaration and
+    # build_task_universe_context's docstring).
     _ai_tools = [genai_types.Tool(function_declarations=[
         _ai_create_task_decl, _ai_update_task_decl, _ai_favorite_task_decl, _ai_list_tasks_decl, _ai_navigate_task_decl, _ai_navigate_place_decl,
         _ai_create_universe_decl,
@@ -6865,67 +6836,6 @@ def _ai_execute_create_universe(session: Session, user: "User", args: dict) -> d
 
     return {"id": universe.id, "name": universe.name, "icon": universe.icon}
 
-def _ai_execute_create_realm(session: Session, user: "User", args: dict) -> dict:
-    """Returns {"error": str} on any validation failure, or the created-Realm confirmation dict.
-    universe_id is untrusted model output - re-checked via user_owns_universe exactly like the
-    real /realms/ POST route does (a Realm can only ever be created inside a Universe the user
-    owns, matching that route's own rule - not merely accessible via a Universe share)."""
-    name = (args.get("name") or "").strip()
-    universe_id = args.get("universe_id")
-    if not name:
-        return {"error": "Missing Realm name."}
-    if not user_owns_universe(session, user, universe_id):
-        return {"error": "That Universe doesn't exist or isn't yours."}
-    icon = (args.get("icon") or "").strip() or "🔮"
-
-    max_order = len(session.exec(
-        select(Realm).where(Realm.user_id == user.id, Realm.universe_id == universe_id)
-    ).all())
-    realm = Realm(name=name, icon=icon, sort_order=max_order, user_id=user.id, universe_id=universe_id)
-    session.add(realm)
-    session.commit()
-    session.refresh(realm)
-
-    universe = session.get(Universe, universe_id)
-    return {
-        "id": realm.id,
-        "name": realm.name,
-        "icon": realm.icon,
-        "universe_id": universe_id,
-        "universe_name": universe.name if universe else "",
-    }
-
-def _ai_execute_create_bucket(session: Session, user: "User", args: dict) -> dict:
-    """Returns {"error": str} on any validation failure, or the created-Bucket confirmation dict.
-    realm_id is untrusted model output - re-checked via user_can_access_realm exactly like the
-    real /buckets/ POST route does, plus the same Task-kind-only check create_task's own
-    bucket_id gets (a Bucket the assistant creates must land in a Task Universe, never a Contact
-    one)."""
-    name = (args.get("name") or "").strip()
-    realm_id = args.get("realm_id")
-    if not name:
-        return {"error": "Missing Bucket name."}
-    if not user_can_access_realm(session, user, realm_id):
-        return {"error": "That Realm doesn't exist or isn't accessible to you."}
-    if get_realm_universe_kind(session, realm_id) != "task":
-        return {"error": "That Realm isn't in a task Universe."}
-    icon = (args.get("icon") or "").strip() or "📌"
-
-    max_order = len(session.exec(select(Bucket).where(Bucket.realm_id == realm_id)).all())
-    bucket = Bucket(name=name, icon=icon, sort_order=max_order, realm_id=realm_id)
-    session.add(bucket)
-    session.commit()
-    session.refresh(bucket)
-
-    realm = session.get(Realm, realm_id)
-    return {
-        "id": bucket.id,
-        "name": bucket.name,
-        "icon": bucket.icon,
-        "realm_id": realm_id,
-        "realm_name": realm.name if realm else "",
-    }
-
 AI_CHAT_MAX_TOOL_CALLS = 6  # bounds how many response round-trips a single user message can cause - raised
 # from 3 after a real report: a plain read-only question ("do I have an Amex bill in my tasks?")
 # reliably burned all 3 round-trips just checking list_tasks with different status filters (all,
@@ -7376,14 +7286,6 @@ def ai_chat(request: Request, payload: dict = Body(...)):
                         result = _ai_execute_create_universe(session, user, args)
                         if "error" not in result:
                             place_created = {"kind": "universe", **result}
-                    elif name == "create_realm":
-                        result = _ai_execute_create_realm(session, user, args)
-                        if "error" not in result:
-                            place_created = {"kind": "realm", **result}
-                    elif name == "create_bucket":
-                        result = _ai_execute_create_bucket(session, user, args)
-                        if "error" not in result:
-                            place_created = {"kind": "bucket", **result}
                     else:
                         # Unknown tool name - answer it with an error rather than executing
                         # nothing and staying silent, so the model doesn't assume it worked.
