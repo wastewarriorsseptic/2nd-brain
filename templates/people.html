@@ -165,13 +165,24 @@
                                 <h3 class="text-lg font-semibold text-slate-900 break-words">
                                     {{ person.name }}{% if person.nickname %} <span class="text-slate-500 font-normal text-base">"{{ person.nickname }}"</span>{% endif %}
                                 </h3>
-                                <p class="text-slate-500 text-xs md:text-sm mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                                    {% if person.phone %}
-                                    <a href="tel:{{ person.phone }}" onclick="event.stopPropagation()" class="hover:text-indigo-600 hover:underline">📞 {{ person.phone }}</a>
-                                    <a href="sms:{{ person.phone }}" onclick="event.stopPropagation()" class="hover:text-indigo-600 hover:underline">💬 Text</a>
-                                    {% endif %}
-                                    {% if person.email %}<a href="mailto:{{ person.email }}" onclick="event.stopPropagation()" class="hover:text-indigo-600 hover:underline">✉️ {{ person.email }}</a>{% endif %}
+                                {% if person.phone %}
+                                <div class="flex items-center gap-2 mt-1.5">
+                                    <span class="text-slate-500 text-xs md:text-sm">{{ person.phone }}</span>
+                                    <a href="tel:{{ person.phone }}" onclick="event.stopPropagation()" title="Call {{ person.name }}"
+                                       class="w-7 h-7 shrink-0 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white flex items-center justify-center text-xs shadow transition">
+                                        📞
+                                    </a>
+                                    <a href="sms:{{ person.phone }}" onclick="event.stopPropagation()" title="Text {{ person.name }}"
+                                       class="w-7 h-7 shrink-0 rounded-full bg-sky-500 hover:bg-sky-400 text-white flex items-center justify-center text-xs shadow transition">
+                                        💬
+                                    </a>
+                                </div>
+                                {% endif %}
+                                {% if person.email %}
+                                <p class="text-slate-500 text-xs md:text-sm mt-1">
+                                    <a href="mailto:{{ person.email }}" onclick="event.stopPropagation()" class="hover:text-indigo-600 hover:underline">✉️ {{ person.email }}</a>
                                 </p>
+                                {% endif %}
                                 {% if person.tags %}
                                 <p class="text-indigo-500 text-xs mt-1">🏷️ {{ person.tags }}</p>
                                 {% endif %}

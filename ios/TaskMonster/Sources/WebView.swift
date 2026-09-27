@@ -253,7 +253,29 @@ struct WebView: UIViewRepresentable {
             decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
-            guard let url = navigationAction.request.url, let host = url.host else {
+            guard let url = navigationAction.request.url else {
+                decisionHandler(.allow)
+                return
+            }
+
+            // tel:/sms:/mailto: (and similar) have no host component at all, so the `host` guard
+            // below would otherwise treat them as an ordinary page navigation and let WKWebView
+            // try to load them - which it can't, since they aren't http(s). Reported directly: a
+            // phone number tap on the People page showed the app's own "Couldn't connect" retry
+            // screen (this failed in-webview navigation) and then kicked to the home screen (iOS
+            // separately, partially handling the same tel: URL at the OS level) - both symptoms of
+            // the same root cause. Intercepting these schemes here and handing them to the OS
+            // via UIApplication.shared.open, before WKWebView ever attempts to navigate to them,
+            // is the single clean way to place a call/open Messages/Mail - same open+cancel
+            // pattern already used for a genuinely external host below.
+            let externalSchemes: Set<String> = ["tel", "sms", "mailto", "facetime", "facetime-audio"]
+            if let scheme = url.scheme?.lowercased(), externalSchemes.contains(scheme) {
+                UIApplication.shared.open(url)
+                decisionHandler(.cancel)
+                return
+            }
+
+            guard let host = url.host else {
                 decisionHandler(.allow)
                 return
             }
