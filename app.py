@@ -233,6 +233,7 @@ def safe_apply_migrations():
             # see backfill_item_person_universe_ids below for how existing rows get populated.
             conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
             conn.execute(text('ALTER TABLE IF EXISTS person ADD COLUMN IF NOT EXISTS universe_id INTEGER;'))
+            conn.execute(text('ALTER TABLE item ADD COLUMN IF NOT EXISTS tag VARCHAR;'))
             # "IF EXISTS" on the table guards the case where this runs before create_all() has
             # ever created the person table (a brand-new DB) - ADD COLUMN IF NOT EXISTS alone
             # only guards the column, not a missing table.
@@ -273,6 +274,8 @@ def safe_apply_migrations():
                 cursor.execute('ALTER TABLE item ADD COLUMN "is_event" BOOLEAN DEFAULT 0;')
             if 'universe_id' not in item_cols:
                 cursor.execute('ALTER TABLE item ADD COLUMN "universe_id" INTEGER;')
+            if 'tag' not in item_cols:
+                cursor.execute('ALTER TABLE item ADD COLUMN "tag" VARCHAR;')
 
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='event';")
             if cursor.fetchone():
@@ -408,6 +411,11 @@ class Item(SQLModel, table=True):
     # the Timeline/Space View/Daily Digest exactly like any other task, for free, with no second
     # rendering path needed anywhere.
     is_event: bool = Field(default=False)
+    # Free-form, optional per-task label (e.g. "Personal Bills") - the lightweight replacement for
+    # Realm/Bucket sub-categorization now that a Universe is the only real organizational unit
+    # (see the Universe-only simplification). Just a plain string, never a separate table: no
+    # picker, no CRUD, no cross-task consistency enforced - exactly the free-text tag it is.
+    tag: Optional[str] = Field(default=None)
     bucket_id: int = Field(foreign_key="bucket.id")
     bucket: Optional[Bucket] = Relationship(back_populates="items")
     # Direct Universe attachment, replacing the bucket->realm->universe hop above (kept only for
@@ -2259,6 +2267,7 @@ def dashboard(
                         "description": it.description or "",
                         "recurrenceType": it.recurrence_type or "none",
                         "isRecurring": bool((it.recurrence_type and it.recurrence_type != "none") or it.recurring_group_id),
+                        "tag": it.tag or "",
                         "bucketId": it.bucket_id,
                         "realmId": b.realm_id if b else None,
                         "realmName": r.name if r else "",
@@ -2267,6 +2276,20 @@ def dashboard(
                         "universeName": u2.name if u2 else "",
                         "universeIcon": u2.icon if u2 else "",
                     })
+
+        # Autocomplete options for the Tag field, requested directly: "any new tag can take the
+        # place of any existing Realm name and will of course select moving forward" - so a user's
+        # old Realm names (their existing categories) are offered as ready-to-pick tag suggestions
+        # alongside whatever real tags are already in use, across every Universe they own or have
+        # access to, not just the one currently loaded.
+        universe_ids_all = [u.id for u in universes]
+        existing_tags = session.exec(
+            select(Item.tag).where(Item.universe_id.in_(universe_ids_all), Item.tag != None)  # noqa: E711
+        ).all() if universe_ids_all else []
+        all_owned_realms_for_tags = session.exec(select(Realm).where(Realm.user_id == user.id)).all()
+        tag_suggestions = sorted(set(
+            [t for t in existing_tags if t] + [r.name for r in all_owned_realms_for_tags if r.name]
+        ))
 
         return templates.TemplateResponse(
             request=request,
@@ -2281,6 +2304,7 @@ def dashboard(
                 "universes": universes,
                 "universes_tree": universes_tree,
                 "multiverse_tasks": multiverse_tasks,
+                "tag_suggestions": tag_suggestions,
                 "gemini_enabled": GEMINI_ENABLED,
                 "active_universe": active_universe,
                 "is_contact_universe": is_contact_universe,
@@ -3203,8 +3227,10 @@ def create_item(
     months: Optional[str] = Form(""),
     amount: Optional[float] = Form(None),
     is_shoppable: Optional[str] = Form(None),
-    description: Optional[str] = Form(None)
+    description: Optional[str] = Form(None),
+    tag: Optional[str] = Form(None)
 ):
+    tag = tag.strip() or None if tag else None
     # An unchecked checkbox sends nothing at all; a checked one sends "on" by default (or "true", since
     # the form now sets that explicitly) - parsing this ourselves as a string sidesteps any ambiguity in
     # how FastAPI/Pydantic would otherwise coerce a raw form value into a bool.
@@ -3314,7 +3340,8 @@ def create_item(
                 is_shoppable=is_shoppable_flag,
                 description=description,
                 recurring_group_id=group_id,
-                recurrence_type=recurrence_type
+                recurrence_type=recurrence_type,
+                tag=tag
             )
             session.add(new_item)
             session.commit()
@@ -3632,9 +3659,11 @@ def update_item(
     description: Optional[str] = Form(None),
     bucket_id: Optional[int] = Form(None),
     universe_id: Optional[int] = Form(None),
+    tag: Optional[str] = Form(None),
     update_series: bool = Form(False),
     from_multiverse_timeline: Optional[str] = Form(None)
 ):
+    tag = tag.strip() or None if tag else None
     redirect_url = _same_site_return_url(request)
     # The Multiverse Timeline is a client-side canvas overlay with no URL of its own, so the
     # Referer above is just whatever Universe happened to be active underneath it - saving an
@@ -3716,6 +3745,7 @@ def update_item(
             item.description = description
             item.bucket_id = target_bucket_id
             item.universe_id = target_universe_id
+            item.tag = tag
             item.recurrence_type = recurrence_type
             session.add(item)
             session.commit()
@@ -3730,6 +3760,7 @@ def update_item(
                         title=title,
                         bucket_id=target_bucket_id,
                         universe_id=target_universe_id,
+                        tag=tag,
                         due_date=target_due_date,
                         amount=amount,
                         is_shoppable=is_shoppable_flag,
@@ -3751,6 +3782,7 @@ def update_item(
             item.description = description
             item.bucket_id = target_bucket_id
             item.universe_id = target_universe_id
+            item.tag = tag
             item.recurrence_type = recurrence_type
             item.recurring_group_id = str(uuid.uuid4())
             session.add(item)
@@ -3764,6 +3796,7 @@ def update_item(
                     title=title,
                     bucket_id=target_bucket_id,
                     universe_id=target_universe_id,
+                    tag=tag,
                     due_date=target_due_date,
                     amount=amount,
                     is_shoppable=is_shoppable_flag,
@@ -3779,6 +3812,7 @@ def update_item(
             item.description = description
             item.bucket_id = target_bucket_id
             item.universe_id = target_universe_id
+            item.tag = tag
             item.recurrence_type = recurrence_type
             session.add(item)
 
@@ -5458,6 +5492,7 @@ def notes_page(request: Request, universe_id: Optional[int] = None):
                     "realm_name": r.name if r else "",
                     "realm_icon": (r.icon if r else "") or "🔮",
                     "bucket_name": b.name,
+                    "tag": it.tag or "",
                     # Only really needed on the "All" scope (a specific Universe's own checklist
                     # already says which one you're looking at via the page header) but included
                     # on every row regardless, so the template doesn't need to know which scope
@@ -5997,6 +6032,7 @@ if GEMINI_ENABLED:
                 "universe_id": {"type": "INTEGER", "description": "Must be one of the universe ids given in context."},
                 "due_date": {"type": "STRING", "description": "YYYY-MM-DD. The first occurrence's date if this is recurring."},
                 "notes": {"type": "STRING"},
+                "tag": {"type": "STRING", "description": "Optional free-form label for this task, e.g. \"Personal Bills\" - only set this when the user actually gave one, never invent it."},
                 "recurrence_type": {
                     "type": "STRING",
                     "enum": ["none", "daily", "weekly", "monthly", "yearly"],
@@ -6033,6 +6069,7 @@ if GEMINI_ENABLED:
                 "due_date": {"type": "STRING", "description": "YYYY-MM-DD"},
                 "notes": {"type": "STRING"},
                 "universe_id": {"type": "INTEGER", "description": "Moves the task to this Universe - from context. Only include this when the user actually asked to move/relocate the task somewhere else."},
+                "tag": {"type": "STRING", "description": "Optional free-form label for this task, e.g. \"Personal Bills\". Pass an empty string to clear it."},
             },
             "required": ["task_id"],
         },
@@ -6333,6 +6370,7 @@ def _ai_execute_create_task(session: Session, user: "User", args: dict) -> dict:
             recurring_group_id=group_id,
             recurrence_type=recurrence_type,
             is_shoppable=False,
+            tag=(args.get("tag") or "").strip() or None,
         )
         session.add(new_item)
         session.commit()
@@ -6377,6 +6415,8 @@ def _ai_execute_update_task(session: Session, user: "User", args: dict) -> dict:
             return {"error": "That due date wasn't in a recognizable format."}
     if "notes" in args:
         item.description = args.get("notes") or None
+    if "tag" in args:
+        item.tag = (args.get("tag") or "").strip() or None
     if "universe_id" in args and args.get("universe_id"):
         new_universe_id = args["universe_id"]
         # Same re-validation create_task already does for a universe_id the model supplies - never

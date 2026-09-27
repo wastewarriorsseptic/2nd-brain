@@ -274,8 +274,15 @@
                                 {% if not selected_universe_id %}
                                 <span class="text-[11px] text-slate-500">{{ row.universe_icon }} {{ row.universe_name }}</span>
                                 {% endif %}
-                                <span class="text-[11px] text-slate-500">{{ row.realm_icon }} {{ row.realm_name }} / {{ row.bucket_name }}</span>
                             </div>
+                            {% if row.tag %}
+                            <!-- Free-form per-task label, shown below the date - requested directly.
+                                 Replaces the old Realm/Bucket breadcrumb now that a Universe is the
+                                 only real organizational unit (see the Universe-only simplification). -->
+                            <div class="mt-1">
+                                <span class="text-[11px] text-indigo-500 font-medium">🏷️ {{ row.tag }}</span>
+                            </div>
+                            {% endif %}
                         </div>
                         <div class="flex flex-col items-end gap-1.5 shrink-0">
                             <!-- focus_item=1 - same override index.html's own aiChatTaskUrl already
