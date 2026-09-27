@@ -11,14 +11,6 @@
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 
-    <!-- Prevent Flash of Timeline View on Reload -->
-    <script>
-        (function() {
-            if (localStorage.getItem('active_dashboard_view') === 'space') {
-                document.documentElement.classList.add('preload-space-view');
-            }
-        })();
-    </script>
 
     <style>
         /* Force dark mode styling and visual clickability for native date & time pickers */
@@ -36,16 +28,14 @@
         .pac-matched { color: #818cf8; }
         .pac-icon { filter: invert(1) brightness(1.6); }
 
-        /* Immediate hide of timeline during pre-load to eliminate flicker - reported directly as
-           still visibly flashing on a fresh page load. display:flex alone wasn't enough: the
-           overlay's actual position/z-index/background all come from Tailwind utility classes
-           (fixed inset-0 z-40 bg-slate-950), and the Tailwind Play CDN JIT-compiles those
-           asynchronously after the page starts parsing - so for a brief window the overlay was
-           already display:flex but NOT yet fixed/full-screen/opaque/on top, which is exactly what
-           let the Timeline view underneath flash through. These four are plain CSS instead of
-           relying on Tailwind classes, so they're guaranteed to apply the instant this stylesheet
-           loads, with no dependency on the JIT having run yet. */
-        html.preload-space-view #space-view-overlay {
+        /* Space View is the only view now (see the Universe-only/Space-View-only simplification) -
+           always covers the page immediately on load, with no dependency on JS running first or on
+           a remembered preference. Plain CSS instead of relying on Tailwind classes, since the
+           Tailwind Play CDN JIT-compiles utility classes asynchronously after the page starts
+           parsing - reported directly as a flash of the page underneath on a fresh load, back when
+           this was conditional on a saved 'space' preference; unconditional here removes that gap
+           entirely rather than racing it. */
+        #space-view-overlay {
             display: flex !important;
             position: fixed !important;
             inset: 0 !important;
@@ -54,21 +44,18 @@
         }
 
         /* Companion to the rule above - still flashed even with that fix in place, because
-           #space-view-overlay itself sits ~580 lines into <body>, well after <main>'s entire
-           Timeline List content. The browser can paint everything above it in source order before
+           #space-view-overlay itself sits ~580 lines into <body>, well after <main>'s Timeline
+           List content above it. The browser can paint everything above it in source order before
            that element even exists in the DOM, so an overlay-only fix can't cover a gap that opens
            before the overlay exists to do any covering. #preload-curtain is the literal first node
-           in <body> for exactly that reason - covers the viewport immediately, then gets out of
-           the way (display:none) the instant preload-space-view is removed, same trigger as above. */
+           in <body> for exactly that reason - covers the viewport immediately; initSpaceCanvas()
+           removes it once Space View has actually finished setting up. */
         #preload-curtain {
-            display: none;
-        }
-        html.preload-space-view #preload-curtain {
-            display: block !important;
-            position: fixed !important;
-            inset: 0 !important;
-            z-index: 1000 !important;
-            background: #020617 !important;
+            display: block;
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            background: #020617;
         }
 
         @media (max-width: 768px) {
@@ -329,15 +316,11 @@
 <body class="bg-slate-900 text-slate-100 min-h-screen flex">
 
     <!-- Preload curtain - covers the viewport the instant <body> starts parsing, before the real
-         #space-view-overlay (~580 lines further down, after <main>'s entire Timeline List content)
-         even exists in the DOM yet. The <head> CSS rule that forces #space-view-overlay visible
-         during preload can only apply once that element exists - the browser can still paint
-         <main>'s content in the meantime, which is the actual flash reported ("shows for a brief
-         moment the non space view mode") even after that overlay-only fix. This is the very first
-         thing in <body> for exactly that reason - nothing above it in source order to leak through.
-         Pure CSS, no JS dependency: governed by the same html.preload-space-view class the <head>
-         script already sets synchronously, and disappears together with #space-view-overlay's own
-         preload styling once that class is removed. -->
+         #space-view-overlay (~580 lines further down) even exists in the DOM yet. The <head> CSS
+         rule that forces #space-view-overlay visible can only apply once that element exists - the
+         browser can still paint anything above it in the meantime, which this is the very first
+         thing in <body> to prevent (nothing above it in source order to leak through). Pure CSS, no
+         JS dependency to appear; initSpaceCanvas() hides it again once Space View is actually set up. -->
     <div id="preload-curtain"></div>
 
     <!-- Reorder pattern suggestion toast - shown after completing a shoppable task, only when a real
@@ -1057,7 +1040,7 @@
     </main>
 
     <!-- FULLSCREEN SPACE VIEW OVERLAY -->
-    <div id="space-view-overlay" class="hidden fixed inset-0 bg-slate-950 z-40 overflow-hidden flex flex-col justify-between">
+    <div id="space-view-overlay" class="fixed inset-0 bg-slate-950 z-40 overflow-hidden flex flex-col justify-between">
         <!-- Canvas Viewport -->
         <canvas id="space-canvas" class="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"></canvas>
 
@@ -1299,14 +1282,6 @@
                             class="hidden pointer-events-auto px-3.5 py-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-emerald-400/30">
                         ✓ Done
                     </button>
-                    <!-- Hidden alongside the Universe pill above (see updateSpaceTopPillLabel) while
-                         the Multiverse Timeline is showing - the launcher cluster's own 🌀 bubble is
-                         the way out of Space View entirely from here now, so this row goes fully
-                         empty rather than leaving one lone button up top. -->
-                    <button id="space-card-view-btn" onclick="toggleSpaceView()"
-                            class="pointer-events-auto px-3.5 py-1.5 bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-bold rounded-full shadow-xl transition border border-indigo-400/30">
-                        🃏 Card View
-                    </button>
                 </div>
             </div>
 
@@ -1413,18 +1388,6 @@
                 </div>
             </div>
 
-            <!-- Shown only while one Realm Timeline lane is zoomed-in-on (see
-                 focusRealmTimelineLane) - the deliberate escape hatch out of Space View's
-                 look-don't-touch snapshot into Card View's full task editing, for whichever Realm
-                 is currently focused. prepareRealmTimelineCardViewNav flips active_dashboard_view
-                 to 'timeline' before the plain navigation below actually fires, so the next page
-                 load lands on Card View instead of bouncing straight back into Space View. -->
-            <div id="realm-timeline-card-view-pill" class="hidden pointer-events-auto">
-                <a id="realm-timeline-card-view-link" href="#" onclick="prepareRealmTimelineCardViewNav()"
-                   class="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-2xl transition-all">
-                    🃏 Open in Card View →
-                </a>
-            </div>
 
         </div>
     </div>
@@ -4018,7 +3981,11 @@
                 });
             });
 
-            // Restore persistent Space View state if user was previously in Space View
+            // Space View is the only view now - set it up unconditionally on every fresh load,
+            // then restore whichever specific screen within it (e.g. the Multiverse Timeline) the
+            // user was last looking at.
+            initSpaceCanvas();
+            updateSpaceTopPillLabel();
             restoreSpaceViewOnAppOpen();
         });
 
@@ -4032,11 +3999,6 @@
         // ever catch a genuine cold start, which is the exception rather than the rule for how
         // this app actually gets "reopened" day to day.
         function restoreSpaceViewOnAppOpen() {
-            if (localStorage.getItem('active_dashboard_view') !== 'space') return;
-            if (!isSpaceViewActive) {
-                toggleSpaceView();
-                document.documentElement.classList.remove('preload-space-view');
-            }
             // Tapping into a SPECIFIC Universe (a card in the picker grid, a lane's hub in the
             // Multiverse Timeline itself, the cross-Universe "+"/chat-nav jumps) is a full page
             // navigation to /?universe_id=X - which fires this exact same restore on the page it
@@ -5869,7 +5831,12 @@
 
     <!-- SPACE VIEW CANVAS ENGINE SCRIPT -->
     <script>
-        let isSpaceViewActive = false;
+        // Space View is the only view now - always active from page load (see the Universe-only/
+        // Space-View-only simplification). Left as a real, mutable flag rather than a hardcoded
+        // true throughout the file below, since a lot of existing logic already branches on it
+        // correctly and rewriting every one of those call sites individually would be needless
+        // busywork for the same end result.
+        let isSpaceViewActive = true;
         let spaceCanvas, spaceCtx;
         let spaceRealms = [];
         let currentRealmRadius = 84;
@@ -6144,58 +6111,21 @@
         // single bucket like the Space View's own per-bucket task scan (that one skips completed
         // tasks entirely), since this digest needs every task across every realm/bucket, completed
         // or not.
+        // Single-Universe digest, filtered down from the same multiverseTasksData JSON the
+        // cross-Universe version below already builds from - this used to scrape the classic
+        // view's own .timeline-card-wrapper DOM elements for the same data, a hidden dependency
+        // that would have silently broken once that markup was removed (see the Universe-only/
+        // Space-View-only simplification). Filtering the already-correct JSON instead means this
+        // works identically whether or not any classic-view DOM exists at all.
         function computeDailyDigestData() {
-            const now = new Date();
-            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const tomorrowStart = new Date(todayStart);
-            tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-            const yesterdayStart = new Date(todayStart);
-            yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-
-            const overdue = [];
-            const dueToday = [];
-            const dueTomorrow = [];
-            const completedYesterday = [];
-
-            document.querySelectorAll('.timeline-card-wrapper').forEach(el => {
-                const title = el.getAttribute('data-title') || '';
-                const realmId = el.getAttribute('data-realm-id');
-                const bucketId = el.getAttribute('data-bucket-id');
-                const realm = realmsData.find(r => String(r.id) === String(realmId));
-                const bucket = realm ? realm.buckets.find(b => String(b.id) === String(bucketId)) : null;
-                const realmName = realm ? realm.name : '';
-                const bucketName = bucket ? bucket.name : '';
-                const entry = { title, realmName, bucketName, realmId, bucketId, itemId: el.getAttribute('data-item-id') };
-
-                if (el.getAttribute('data-completed') === 'true') {
-                    const completedAtStr = el.getAttribute('data-completed-at');
-                    if (!completedAtStr) return;
-                    const completedDate = new Date(completedAtStr);
-                    if (isNaN(completedDate.getTime())) return;
-                    const completedDayStart = new Date(completedDate.getFullYear(), completedDate.getMonth(), completedDate.getDate());
-                    if (completedDayStart.getTime() === yesterdayStart.getTime()) {
-                        completedYesterday.push(entry);
-                    }
-                    return;
-                }
-
-                const dueDateStr = el.getAttribute('data-due-date');
-                if (!dueDateStr) return;
-                const dueDate = new Date(dueDateStr + 'T00:00:00');
-                if (isNaN(dueDate.getTime())) return;
-
-                if (dueDate < todayStart) {
-                    entry.daysLate = Math.round((todayStart - dueDate) / 86400000);
-                    overdue.push(entry);
-                } else if (dueDate.getTime() === todayStart.getTime()) {
-                    dueToday.push(entry);
-                } else if (dueDate.getTime() === tomorrowStart.getTime()) {
-                    dueTomorrow.push(entry);
-                }
-            });
-
-            overdue.sort((a, b) => b.daysLate - a.daysLate);
-            return { overdue, dueToday, dueTomorrow, completedYesterday };
+            const all = computeMultiverseDailyDigestData();
+            const inActiveUniverse = (entry) => activeUniverseId != null && String(entry.universeId) === String(activeUniverseId);
+            return {
+                overdue: all.overdue.filter(inActiveUniverse),
+                dueToday: all.dueToday.filter(inActiveUniverse),
+                dueTomorrow: all.dueTomorrow.filter(inActiveUniverse),
+                completedYesterday: all.completedYesterday.filter(inActiveUniverse),
+            };
         }
 
         // Cross-Universe counterpart to computeDailyDigestData() above - built from
@@ -6221,7 +6151,7 @@
                 const entry = {
                     title: t.title, realmName: t.realmName, bucketName: t.bucketName,
                     realmId: t.realmId, bucketId: t.bucketId, itemId: t.id,
-                    universeName: t.universeName, universeIcon: t.universeIcon,
+                    universeId: t.universeId, universeName: t.universeName, universeIcon: t.universeIcon,
                 };
 
                 if (t.isCompleted) {
@@ -6605,10 +6535,6 @@
             const openMultiverseTimelineFlag = params.get('open_multiverse_timeline');
             if (!gotoItemId && !chatNav && !openMultiverseTimelineFlag) return;
 
-            if (!isSpaceViewActive) {
-                toggleSpaceView();
-                document.documentElement.classList.remove('preload-space-view');
-            }
             if (openMultiverseTimelineFlag) {
                 openMultiverseTimeline();
                 // Same cold-load snap as restoreSpaceViewOnAppOpen's own call - this handler only
@@ -6675,15 +6601,10 @@
         // redirect, which deliberately still strips itself so it doesn't re-fire the same camera
         // jump on every future refresh) - this one is "I am looking at this view right now" and must
         // NOT strip. Runs after the earlier DOMContentLoaded block that opens Space View from
-        // localStorage, so by the time this fires isSpaceViewActive already reflects that - the
-        // isSpaceViewActive check here only matters for a page that loaded with Space View off.
+        // localStorage, so by the time this fires isSpaceViewActive already reflects that.
         document.addEventListener('DOMContentLoaded', () => {
             const params = new URLSearchParams(window.location.search);
             if (params.get('mv_timeline') !== '1') return;
-            if (!isSpaceViewActive) {
-                toggleSpaceView();
-                document.documentElement.classList.remove('preload-space-view');
-            }
             openMultiverseTimeline();
             // Same cold-load snap as restoreSpaceViewOnAppOpen's own call - see its comment.
             cameraZoom = targetCameraZoom;
@@ -7166,6 +7087,11 @@
             resizeSpaceCanvas();
             window.addEventListener('resize', resizeSpaceCanvas);
             generateSpaceStars();
+
+            // Space View is set up enough to look like itself now - drop the preload curtain that's
+            // been covering the viewport since <body> started parsing (see #preload-curtain).
+            const curtain = document.getElementById('preload-curtain');
+            if (curtain) curtain.style.display = 'none';
 
             // Event Universes skip the whole realm/bucket/task orbit ring below entirely - reported
             // directly that Space View here should "behave differently", "more about having the
@@ -10286,12 +10212,12 @@
                         openMultiverseView();
                         return;
                     }
-                    if (focusOn && lane !== focusedLane) {
-                        mvSetFocus(multiverseLanes.indexOf(lane));
-                        return;
-                    }
-                    suppressMultiverseTimelineRestoreOnce();
-                    window.location.href = '/?universe_id=' + lane.id;
+                    // Tapping a Universe's hub - whether it's not focused yet, or already is -
+                    // just focuses/zooms it in place within this same Home Timeline now (requested
+                    // directly: "we just won't be tapping into each universe" - no more navigating
+                    // away to that Universe's own separate page). mvSetFocus already no-ops
+                    // correctly if this lane is already the focused one.
+                    mvSetFocus(multiverseLanes.indexOf(lane));
                     return;
                 }
             }
