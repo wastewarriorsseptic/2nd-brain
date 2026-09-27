@@ -17,12 +17,24 @@
                 padding-top: max(3rem, env(safe-area-inset-top)) !important;
             }
         }
+
+        /* Top-right "close" button, notch-aware like the body padding above - replaces the old
+           "← Back to TaskMonster" text link. Reached from Profile (and a couple of read-only
+           footer links elsewhere) as a modal-style page rather than its own destination, so
+           closing it should return wherever it was opened from, not always all the way to the
+           dashboard - see closePrivacyPage(). */
+        #privacy-close-btn {
+            top: max(1rem, calc(env(safe-area-inset-top) + 0.5rem));
+        }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen p-6 md:p-12 font-sans">
+    <button type="button" id="privacy-close-btn" onclick="closePrivacyPage()" title="Close"
+            class="fixed right-4 z-50 w-9 h-9 rounded-full bg-slate-800/90 hover:bg-slate-700 border border-slate-600/60 shadow-lg flex items-center justify-center text-slate-300 hover:text-white text-base font-bold transition">
+        ✕
+    </button>
     <div class="max-w-3xl mx-auto bg-slate-800 border border-slate-700/80 rounded-3xl p-6 md:p-10 shadow-2xl">
         <header class="mb-8 border-b border-slate-700 pb-6">
-            <a href="/" class="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors mb-2 inline-block">← Back to TaskMonster</a>
             <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight flex items-center gap-2">
                 😈 Privacy Policy
             </h1>
@@ -95,5 +107,21 @@
             </a>
         </footer>
     </div>
+
+    <script>
+        // "Close" (top-right ✕) - this page is reached as a modal-style detour from Profile (and
+        // a couple of read-only footer links elsewhere), not its own destination, so closing it
+        // should return to wherever it was opened from rather than always jumping to the
+        // dashboard. history.back() does exactly that when there IS a previous page in this tab's
+        // history (the normal case); the /settings/account fallback only matters for a page
+        // loaded with no history at all, e.g. a bookmarked or directly-typed /privacy URL.
+        function closePrivacyPage() {
+            if (window.history.length > 1) {
+                history.back();
+            } else {
+                window.location.href = '/settings/account';
+            }
+        }
+    </script>
 </body>
 </html>
