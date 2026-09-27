@@ -259,12 +259,33 @@ struct WebView: UIViewRepresentable {
             }
             let isInApp = inAppHosts.contains(where: { host == $0 || host.hasSuffix(".\($0)") })
                 && !contentSubdomainExceptions.contains(host)
-            if isInApp {
-                decisionHandler(.allow)
-            } else {
+            guard isInApp else {
                 UIApplication.shared.open(url)
                 decisionHandler(.cancel)
+                return
             }
+
+            // In-page navigations WKWebView handles internally - any link tap or form submit
+            // targeting this app's own origin - go through WKWebView's own default cache policy
+            // (.useProtocolCachePolicy), not the .reloadIgnoringLocalCacheData override the
+            // initial load and retry paths above already use (see their comments for why a stale
+            // cached response is never acceptable here). Reported directly: tapping Sign Out left
+            // the app on a stale, still-logged-in Space View instead of the fresh logged-out
+            // screen that navigation should have produced. Reissuing the navigation ourselves with
+            // the same cache-bypassing policy closes that gap for every in-app link/form tap, not
+            // just Sign Out. The cachePolicy check below is what stops this from looping forever:
+            // the manual webView.load() call is itself a navigation that re-enters this same
+            // delegate method, and letting it through once its cachePolicy already matches is what
+            // breaks the recursion instead of re-intercepting indefinitely.
+            if navigationAction.request.cachePolicy != .reloadIgnoringLocalCacheData {
+                var request = navigationAction.request
+                request.cachePolicy = .reloadIgnoringLocalCacheData
+                webView.load(request)
+                decisionHandler(.cancel)
+                return
+            }
+
+            decisionHandler(.allow)
         }
 
         // target="_blank" links (e.g. the Amazon "shoppable" links) - WKWebView has no popup

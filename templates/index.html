@@ -439,6 +439,7 @@
          read directly from JS, only from a rendered box. 0 in a normal browser tab, so this is a
          no-op there. -->
     <div id="ai-chat-safe-area-probe" style="position: fixed; top: 0; left: 0; height: 0; padding-top: env(safe-area-inset-top); pointer-events: none; visibility: hidden;"></div>
+    {% if user %}
     <div id="ai-chat-launcher-wrapper" class="fixed bottom-[71px] right-[50px] z-[70] flex items-center gap-2">
         <!-- No longer an always-on ambient bubble (the constant idle rotation through encouraging
              phrases read as clutter/distracting) - hidden by default now, and only ever shown for
@@ -468,7 +469,6 @@
                     class="absolute -bottom-6 -right-10 w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 border border-emerald-300/40 text-white text-2xl font-extrabold flex items-center justify-center shadow-lg transition">
                 +
             </button>
-            {% if user %}
             <!-- Fourth tangent circle, centered below the devil between the "+" and 🌀 badges -
                  replaces the standalone "🌌 Multiverse Timeline" button/pill that used to live in
                  Space View's bottom HUD and the Multiverse picker's own footer (both removed) with
@@ -478,9 +478,9 @@
                     class="absolute -bottom-11 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full bg-amber-500 hover:bg-amber-400 border border-amber-300/40 text-white text-xl flex items-center justify-center shadow-lg transition">
                 🏡
             </button>
-            {% endif %}
         </div>
     </div>
+    {% endif %}
 
     {% if user %}
     <!-- Standalone Notes + Events shortcuts, paired together - opposite corner from the main
