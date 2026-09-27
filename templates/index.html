@@ -1484,7 +1484,7 @@
                             data-id="{{ u.id }}" title="Share Universe"
                             class="universe-card-action hidden absolute -bottom-1 -right-1 z-10 w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-indigo-400 hover:border-indigo-400/50 text-xs flex items-center justify-center transition">👥</button>
                     {% endif %}
-                    <a href="/?universe_id={{ u.id }}" onclick="suppressMultiverseTimelineRestoreOnce()" class="universe-card-link flex flex-col items-center gap-2 w-full">
+                    <a href="/?universe_id={{ u.id }}" onclick="return selectUniverseFromPicker(event, {{ u.id }});" class="universe-card-link flex flex-col items-center gap-2 w-full">
                         <div class="relative w-20 h-20">
                             {% if pending_for_u and seconds_remaining is not none %}
                             <!-- Green 24h countdown ring around the whole circle (see
@@ -6852,6 +6852,20 @@
             const url = new URL(window.location.href);
             url.searchParams.delete('open_multiverse');
             history.replaceState({}, '', url.pathname + url.search);
+        }
+
+        // Tapping a Universe card here used to navigate to that Universe's own separate page (a
+        // "deeper dive" showing its Realms) - requested directly to instead land in the same Home
+        // Timeline every other Universe-focusing tap already uses now, with this one selected, no
+        // separate screen. openMultiverseTimeline() always defaults focus to the All Tasks lane and
+        // rebuilds multiverseLanes fresh, so the target lane is looked up AFTER it returns (not
+        // before) and focused on top of that default.
+        function selectUniverseFromPicker(event, universeId) {
+            event.preventDefault();
+            openMultiverseTimeline();
+            const idx = multiverseLanes.findIndex(l => String(l.id) === String(universeId));
+            if (idx >= 0) mvSetFocus(idx);
+            return false;
         }
 
         // Starts collapsed, deliberately NOT persisted across reloads - same reasoning as
