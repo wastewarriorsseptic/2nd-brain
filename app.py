@@ -270,6 +270,10 @@ def safe_apply_migrations():
             # ever created the person table (a brand-new DB) - ADD COLUMN IF NOT EXISTS alone
             # only guards the column, not a missing table.
             conn.execute(text('ALTER TABLE IF EXISTS person ADD COLUMN IF NOT EXISTS nickname VARCHAR;'))
+            # Contacts-app sync (see ContactsSyncManager/the /people/sync/ endpoint) - apple_contact_id
+            # ties a Person row back to the CNContact it was imported/synced from.
+            conn.execute(text('ALTER TABLE IF EXISTS person ADD COLUMN IF NOT EXISTS apple_contact_id VARCHAR;'))
+            conn.execute(text('ALTER TABLE IF EXISTS person ADD COLUMN IF NOT EXISTS synced_at TIMESTAMP;'))
             conn.execute(text('ALTER TABLE IF EXISTS pendinguniverseinvite ADD COLUMN IF NOT EXISTS token VARCHAR;'))
             conn.execute(text('ALTER TABLE IF EXISTS pendinguniverseinvite ADD COLUMN IF NOT EXISTS created_at TIMESTAMP;'))
             conn.execute(text('ALTER TABLE IF EXISTS pendinginvite ADD COLUMN IF NOT EXISTS token VARCHAR;'))
@@ -376,6 +380,10 @@ def safe_apply_migrations():
                     cursor.execute('ALTER TABLE person ADD COLUMN "nickname" VARCHAR;')
                 if 'universe_id' not in person_cols:
                     cursor.execute('ALTER TABLE person ADD COLUMN "universe_id" INTEGER;')
+                if 'apple_contact_id' not in person_cols:
+                    cursor.execute('ALTER TABLE person ADD COLUMN "apple_contact_id" VARCHAR;')
+                if 'synced_at' not in person_cols:
+                    cursor.execute('ALTER TABLE person ADD COLUMN "synced_at" TIMESTAMP;')
 
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='pendinguniverseinvite';")
             if cursor.fetchone():
@@ -619,6 +627,14 @@ class Person(SQLModel, table=True):
     bucket_id: int = Field(foreign_key="bucket.id")
     bucket: Optional[Bucket] = Relationship(back_populates="people")
     universe_id: Optional[int] = Field(default=None, foreign_key="universe.id")
+    # Set only for a Person imported/synced from the iPhone's own Contacts app (see the
+    # ContactsSyncManager native bridge and /people/sync/) - the CNContact identifier that row
+    # was created from, used to match a later re-pick or background change-notification update
+    # back to the same row instead of creating a duplicate. None for a person added by hand.
+    apple_contact_id: Optional[str] = Field(default=None, index=True)
+    # Last time this row was actually refreshed from the phone (a fresh pick or a background
+    # sync) - drives the "📱 Synced" badge's tooltip. Never set for a manually-added person.
+    synced_at: Optional[datetime] = None
 
 class RealmShare(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -2720,6 +2736,11 @@ def create_universe(request: Request, name: str = Form(...), icon: str = Form("�
             session.add(universe)
             session.commit()
             session.refresh(universe)
+            # A contact-kind Universe has no Space View rendering at all - send it to its own
+            # standalone page instead (see people_page), with new=1 so that page can emphasize
+            # the "add from phone" CTA for what's necessarily an empty, brand-new list.
+            if kind == "contact":
+                return RedirectResponse(url=f"/people?universe_id={universe.id}&new=1", status_code=303)
             return RedirectResponse(url=f"/?universe_id={universe.id}", status_code=303)
     return RedirectResponse(url="/", status_code=303)
 
@@ -3420,8 +3441,77 @@ def delete_bucket(request: Request, bucket_id: int = Form(...)):
     return RedirectResponse(url="/", status_code=303)
 
 # --- Person Endpoints ---
+@app.get("/people", response_class=HTMLResponse)
+def people_page(request: Request, universe_id: Optional[int] = None, new: Optional[int] = None):
+    """Standalone page for browsing/managing People (contact-kind Universes) - mirrors
+    notes_page's own structure (a Universe-scope strip at the top, "All" vs one specific
+    Universe) since Space View has no rendering logic for a contact-kind Universe at all -
+    tapping into one there used to silently strand the user on the Multiverse Timeline instead
+    of showing their contacts. This page is Contacts' own home now, the same way Notes/Calendar
+    already are for their own concerns - see create_universe/create_person/update_person/
+    delete_person and the Multiverse picker's own kind check, all of which now land here instead
+    of the old /?realm_id=/?universe_id= Space View path for anything contact-kind."""
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+
+        universes = session.exec(
+            select(Universe).where(Universe.user_id == user.id, Universe.kind == "contact").order_by(Universe.sort_order)
+        ).all()
+        universe_by_id = {u.id: u for u in universes}
+        universe_ids = [u.id for u in universes]
+
+        selected_universe = universe_by_id.get(universe_id) if universe_id else None
+        if universe_id and not selected_universe:
+            # Not one of this user's own Contact Universes (wrong id, wrong kind, or someone
+            # else's) - fall back to "All" rather than leaking another user's data.
+            universe_id = None
+
+        if universe_id:
+            people_query = select(Person).where(Person.universe_id == universe_id)
+        elif universe_ids:
+            people_query = select(Person).where(Person.universe_id.in_(universe_ids))
+        else:
+            people_query = select(Person).where(False)
+        people = session.exec(people_query).all()
+
+        # Same iOS-Contacts-style grouping the A-Z scrubber needs: sorted by name, bucketed by
+        # first letter (a non-alphabetic first character collapses into a single "#" group, the
+        # same convention the native Contacts app itself uses).
+        people.sort(key=lambda p: (p.name or "").strip().lower())
+        people_by_letter = []
+        current_letter = None
+        for p in people:
+            first = (p.name or "").strip()[:1].upper()
+            letter = first if first.isalpha() else "#"
+            if letter != current_letter:
+                people_by_letter.append({"letter": letter, "people": []})
+                current_letter = letter
+            people_by_letter[-1]["people"].append(p)
+
+        return templates.TemplateResponse(
+            request=request,
+            name="people.html",
+            context={
+                "user": user,
+                "people_by_letter": people_by_letter,
+                "people_count": len(people),
+                "universes": universes,
+                "universe_by_id": universe_by_id,
+                "selected_universe_id": universe_id,
+                "selected_universe": selected_universe,
+                "events_universe_href": get_events_universe_href(session, user.id),
+                "gemini_enabled": GEMINI_ENABLED,
+                # Set only right after creating a brand-new, necessarily-empty Contact Universe -
+                # lets the template emphasize the "add from phone" CTA instead of the plain
+                # generic empty state.
+                "prompt_import": bool(new),
+            }
+        )
+
 @app.get("/people/new", response_class=HTMLResponse)
-def new_person_form(request: Request):
+def new_person_form(request: Request, back_url: Optional[str] = None):
     """Standalone page (not a modal) for the global "New Contact" quick-create tile on the
     dashboard - reachable from any Universe, mirroring how /events/new already works regardless
     of which Universe is currently active. A modal was deliberately avoided here: the existing
@@ -3463,6 +3553,10 @@ def new_person_form(request: Request):
                 "buckets_by_realm": buckets_by_realm,
                 "universe_by_id": universe_by_id,
                 "default_bucket_id": default_bucket.id,
+                # People's own standalone page - not "/", which used to be this close button's
+                # only fallback and would've dropped the user back into Space View instead of
+                # where they actually came from.
+                "back_url": back_url or "/people",
             }
         )
 
@@ -3496,6 +3590,16 @@ def create_person(
         elif bucket_id:
             if not user_can_access_bucket(session, user, bucket_id):
                 return RedirectResponse(url="/", status_code=303)
+            # The "New Contact" quick-create form (person_form.html) only ever submits bucket_id,
+            # never universe_id - without resolving it here too, the resulting Person row's own
+            # universe_id stayed NULL forever (only the REDIRECT target derived it, not the row
+            # itself), which made it invisible to /people's own universe_id-scoped queries. Found
+            # directly while testing: contacts added via "+ New Contact" never showed up on the
+            # page they'd just been redirected back to.
+            bucket = session.get(Bucket, bucket_id)
+            realm = session.get(Realm, bucket.realm_id) if bucket else None
+            if realm and realm.universe_id:
+                universe = session.get(Universe, realm.universe_id)
         else:
             return RedirectResponse(url="/", status_code=303)
         parsed_birthday = None
@@ -3512,9 +3616,15 @@ def create_person(
         )
         session.add(person)
         session.commit()
-        bucket = session.get(Bucket, bucket_id)
-        realm_id = bucket.realm_id if bucket else None
-    return RedirectResponse(url=f"/?realm_id={realm_id}" if realm_id else "/", status_code=303)
+        redirect_universe_id = person.universe_id
+        if not redirect_universe_id:
+            bucket = session.get(Bucket, bucket_id)
+            realm = session.get(Realm, bucket.realm_id) if bucket else None
+            redirect_universe_id = realm.universe_id if realm else None
+    # Contacts have their own standalone page now (Space View has no rendering for a
+    # contact-kind Universe) - always land back on /people, never /?realm_id=, which used to
+    # silently strand the user on the Multiverse Timeline instead of their new contact.
+    return RedirectResponse(url=f"/people?universe_id={redirect_universe_id}" if redirect_universe_id else "/people", status_code=303)
 
 @app.post("/people/update/")
 def update_person(
@@ -3552,6 +3662,14 @@ def update_person(
                 return RedirectResponse(url="/", status_code=303)
             if get_bucket_universe_kind(session, bucket_id) != "contact":
                 return RedirectResponse(url="/", status_code=303)
+            # Same universe_id backfill create_person now does for its own bucket_id-only path -
+            # the classic index.html edit-person modal only ever submits bucket_id, never
+            # universe_id (its Universe <select> has no `name` attribute), which otherwise left
+            # this row's universe_id untouched forever on an edit through that older modal.
+            bucket = session.get(Bucket, bucket_id)
+            realm = session.get(Realm, bucket.realm_id) if bucket else None
+            if realm and realm.universe_id:
+                target_universe = session.get(Universe, realm.universe_id)
         parsed_birthday = None
         if birthday:
             try:
@@ -3571,24 +3689,85 @@ def update_person(
         person.tags = tags or None
         session.add(person)
         session.commit()
-        bucket = session.get(Bucket, person.bucket_id)
-        realm_id = bucket.realm_id if bucket else None
-    return RedirectResponse(url=f"/?realm_id={realm_id}" if realm_id else "/", status_code=303)
+        redirect_universe_id = person.universe_id
+        if not redirect_universe_id:
+            bucket = session.get(Bucket, person.bucket_id)
+            realm = session.get(Realm, bucket.realm_id) if bucket else None
+            redirect_universe_id = realm.universe_id if realm else None
+    return RedirectResponse(url=f"/people?universe_id={redirect_universe_id}" if redirect_universe_id else "/people", status_code=303)
 
 @app.post("/people/delete/")
 def delete_person(request: Request, person_id: int = Form(...)):
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user_can_access_person(session, user, person_id):
-            return RedirectResponse(url="/", status_code=303)
+            return RedirectResponse(url="/people", status_code=303)
         person = session.get(Person, person_id)
         if person:
-            bucket = session.get(Bucket, person.bucket_id)
-            realm_id = bucket.realm_id if bucket else None
+            redirect_universe_id = person.universe_id
+            if not redirect_universe_id:
+                bucket = session.get(Bucket, person.bucket_id)
+                realm = session.get(Realm, bucket.realm_id) if bucket else None
+                redirect_universe_id = realm.universe_id if realm else None
             session.delete(person)
             session.commit()
-            return RedirectResponse(url=f"/?realm_id={realm_id}" if realm_id else "/", status_code=303)
-    return RedirectResponse(url="/", status_code=303)
+            return RedirectResponse(url=f"/people?universe_id={redirect_universe_id}" if redirect_universe_id else "/people", status_code=303)
+    return RedirectResponse(url="/people", status_code=303)
+
+@app.post("/people/sync/")
+def sync_people_from_phone(request: Request, payload: dict = Body(...)):
+    """Called by the native iOS Contacts bridge (ContactsSyncManager.swift) after the user picks
+    contacts from their iPhone, and again later whenever CNContactStoreDidChange fires for a
+    previously-picked contact - JSON in, JSON out, no redirect (the page reloads itself once this
+    resolves). Authenticated the same way every other POST route is: the session cookie, already
+    shared with the native WKWebView.
+
+    Create-or-update by apple_contact_id makes this idempotent by design: re-picking an already-
+    synced contact, or a background change-notification re-push, both just update the existing
+    row rather than creating a duplicate. Deliberately one-way and narrow - only name/phone/email
+    (the fields the phone actually has) ever get overwritten here; tags/notes/company/role/
+    birthday are TaskMonster-only fields this endpoint never touches, so they survive every sync."""
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return JSONResponse({"ok": False, "error": "Not logged in."}, status_code=401)
+
+        universe_id = payload.get("universe_id")
+        contacts = payload.get("contacts") or []
+        if not universe_id or not user_can_access_universe(session, user, universe_id):
+            return JSONResponse({"ok": False, "error": "That universe doesn't exist or isn't yours."}, status_code=400)
+        universe = session.get(Universe, universe_id)
+        if not universe or universe.kind != "contact":
+            return JSONResponse({"ok": False, "error": "That universe isn't a People universe."}, status_code=400)
+
+        bucket_id = get_or_create_default_contact_bucket(session, user.id, universe).id
+        now = datetime.utcnow()
+        created = 0
+        updated = 0
+        for c in contacts:
+            apple_id = (c.get("apple_contact_id") or "").strip()
+            name = (c.get("name") or "").strip()
+            if not apple_id or not name:
+                continue
+            existing = session.exec(
+                select(Person).where(Person.apple_contact_id == apple_id, Person.universe_id == universe_id)
+            ).first()
+            if existing:
+                existing.name = name
+                existing.phone = c.get("phone") or None
+                existing.email = c.get("email") or None
+                existing.synced_at = now
+                session.add(existing)
+                updated += 1
+            else:
+                session.add(Person(
+                    name=name, bucket_id=bucket_id, universe_id=universe_id,
+                    phone=c.get("phone") or None, email=c.get("email") or None,
+                    apple_contact_id=apple_id, synced_at=now,
+                ))
+                created += 1
+        session.commit()
+    return JSONResponse({"ok": True, "created": created, "updated": updated})
 
 # --- Item Endpoints ---
 @app.post("/items/")
@@ -7148,7 +7327,11 @@ def _ai_execute_navigate_to_place(session: Session, user: "User", args: dict) ->
         if not user_owns_universe(session, user, place_id):
             return {"error": "That universe doesn't exist or isn't yours."}
         universe = session.get(Universe, place_id)
-        return {"kind": "universe", "id": universe.id, "name": universe.name, "icon": universe.icon or "😈"}
+        # universe_kind (task/contact/event) - distinct from the "kind" field above, which is the
+        # PLACE kind (universe/realm/bucket) this whole function dispatches on. The client needs
+        # this to route a contact-kind destination to the standalone People page instead of Space
+        # View, which has no rendering for one (see navigateToPlaceFromChat in index.html).
+        return {"kind": "universe", "id": universe.id, "name": universe.name, "icon": universe.icon or "😈", "universe_kind": universe.kind}
 
     elif kind == "realm":
         if not user_can_access_realm(session, user, place_id):

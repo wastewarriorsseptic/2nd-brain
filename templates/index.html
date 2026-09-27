@@ -501,6 +501,10 @@
            class="w-14 h-14 rounded-full bg-fuchsia-500 hover:bg-fuchsia-400 border border-fuchsia-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
             🎉
         </a>
+        <a href="/people" id="people-quick-btn" title="People"
+           class="w-14 h-14 rounded-full bg-emerald-500 hover:bg-emerald-400 border border-emerald-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
+            👥
+        </a>
     </div>
 
     <!-- Top-right floating Profile button - the app's account-level home (sign out, privacy
@@ -1574,7 +1578,7 @@
                             data-id="{{ u.id }}" title="Share Universe"
                             class="universe-card-action hidden absolute -bottom-1 -right-1 z-10 w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-indigo-400 hover:border-indigo-400/50 text-xs flex items-center justify-center transition">👥</button>
                     {% endif %}
-                    <a href="/?universe_id={{ u.id }}" onclick="return selectUniverseFromPicker(event, {{ u.id }});" class="universe-card-link flex flex-col items-center gap-2 w-full">
+                    <a href="{{ '/people?universe_id=' ~ u.id if u.kind == 'contact' else '/?universe_id=' ~ u.id }}" onclick="return selectUniverseFromPicker(event, {{ u.id }}, {{ u.kind|tojson }});" class="universe-card-link flex flex-col items-center gap-2 w-full">
                         <div class="relative w-20 h-20">
                             {% if pending_for_u and seconds_remaining is not none %}
                             <!-- Green 24h countdown ring around the whole circle (see
@@ -5202,7 +5206,12 @@
         function navigateToPlaceFromChat(place) {
             if (!place || !place.kind || !place.id) return;
             let url;
-            if (place.kind === 'universe') {
+            if (place.kind === 'universe' && place.universe_kind === 'contact') {
+                // A contact-kind Universe has no rendering in Space View at all - People has its
+                // own standalone page now (see people_page in app.py), no chat_nav needed since
+                // that page has no camera-focus concept to speak of.
+                url = '/people?universe_id=' + place.id;
+            } else if (place.kind === 'universe') {
                 url = '/?universe_id=' + place.id + '&chat_nav=1';
             } else if (place.kind === 'realm') {
                 url = '/?realm_id=' + place.id + '&chat_nav=1';
@@ -6613,7 +6622,17 @@
         // separate screen. openMultiverseTimeline() always defaults focus to the All Tasks lane and
         // rebuilds multiverseLanes fresh, so the target lane is looked up AFTER it returns (not
         // before) and focused on top of that default.
-        function selectUniverseFromPicker(event, universeId) {
+        function selectUniverseFromPicker(event, universeId, kind) {
+            // A contact-kind Universe has no rendering of its own anywhere in Space View (no
+            // lane, no orbit ring) - reported directly as "when i tap people it takes me to All
+            // Tasks", since mvSetFocus below would just find nothing and leave the Multiverse
+            // Timeline sitting there instead. People have their own standalone page now (see
+            // people_page in app.py), the same way Notes/Calendar already do.
+            if (kind === 'contact') {
+                event.preventDefault();
+                window.location.href = '/people?universe_id=' + universeId;
+                return false;
+            }
             event.preventDefault();
             openMultiverseTimeline();
             const idx = multiverseLanes.findIndex(l => String(l.id) === String(universeId));

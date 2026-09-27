@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#020617">
+    <title>{{ (selected_universe.name if selected_universe else 'People') }} - TaskMonster</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes ai-chat-launcher-float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-6px); }
+        }
+        @keyframes ai-chat-quick-task-float-breathe {
+            0%, 100% { transform: translateY(0) scale(1); }
+            50% { transform: translateY(-3px) scale(1.06); }
+        }
+        @keyframes ai-chat-timeline-repel-breathe {
+            0%, 100% { transform: translateX(-50%) translateY(0) scale(1); }
+            50% { transform: translateX(-50%) translateY(4px) scale(1.06); }
+        }
+        #ai-chat-launcher { animation: ai-chat-quick-task-float-breathe 3.2s ease-in-out infinite; }
+        #multiverse-timeline-quick-btn { animation: ai-chat-timeline-repel-breathe 3.2s ease-in-out infinite; }
+        #notes-quick-btn, #calendar-quick-btn, #events-quick-btn { animation: ai-chat-launcher-float 3.2s ease-in-out infinite; }
+        #calendar-quick-btn { animation-delay: -0.8s; }
+        #events-quick-btn { animation-delay: -1.6s; }
+        #ai-chat-launcher:hover, #multiverse-timeline-quick-btn:hover,
+        #notes-quick-btn:hover, #calendar-quick-btn:hover, #events-quick-btn:hover {
+            animation-play-state: paused;
+        }
+        /* Same starfield technique as notes.html/calendar.html - a couple dozen small
+           absolutely-positioned twinkling divs, matching Space View's own dark background so this
+           standalone page reads as an extension of it rather than a jarring flat page. */
+        @keyframes people-space-star-twinkle {
+            0%, 100% { opacity: var(--star-min-o, 0.12); }
+            50% { opacity: var(--star-max-o, 0.34); }
+        }
+        .people-space-star {
+            position: absolute;
+            border-radius: 9999px;
+            animation-name: people-space-star-twinkle;
+            animation-timing-function: ease-in-out;
+            animation-iteration-count: infinite;
+        }
+        /* iOS Contacts-style right-edge A-Z scrubber - fixed, narrow, one letter per line. Text
+           kept unselectable so a drag scrubs instead of highlighting text (same reasoning the
+           Universe strip's own user-select:none guards against, see notes.html). */
+        #people-az-scrubber {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+            touch-action: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+    <div id="people-space-stars" class="fixed inset-0 pointer-events-none overflow-hidden"></div>
+    <div class="relative z-10 max-w-2xl mx-auto p-4 md:p-6 pr-10">
+        <!-- Universe-scope strip - same look/behavior as Notes' own #notes-universe-strip, just
+             scoped to People (contact-kind) Universes instead of Task ones. Each circle here is a
+             separate "batch" of contacts (e.g. Family, Customers) - tapping one filters the list
+             below to just that Universe's people; "All" aggregates every People Universe. -->
+        <div id="people-universe-strip" class="flex items-start gap-3 overflow-x-auto pb-1 mb-4 -mx-1 px-1"
+             style="padding-top: calc(env(safe-area-inset-top, 0px) + 0.375rem);">
+            <a href="/people" class="shrink-0 flex flex-col items-center gap-1 w-14">
+                <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if not selected_universe_id else 'border-slate-700 bg-slate-900 hover:border-indigo-500/60' }}">
+                    ✨
+                </div>
+                <span class="text-[10px] font-bold text-center truncate w-full {{ 'text-white' if not selected_universe_id else 'text-slate-400' }}">All</span>
+            </a>
+            {% for u in universes %}
+            <a href="/people?universe_id={{ u.id }}" class="shrink-0 flex flex-col items-center gap-1 w-14">
+                <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if selected_universe_id == u.id else 'border-slate-700 bg-slate-900 hover:border-indigo-500/60' }}">
+                    {{ u.icon or '👥' }}
+                </div>
+                <span class="text-[10px] font-bold text-center truncate w-full {{ 'text-white' if selected_universe_id == u.id else 'text-slate-400' }}">{{ u.name }}</span>
+            </a>
+            {% endfor %}
+            <a href="#" onclick="document.getElementById('add-universe-modal').classList.remove('hidden'); return false;" class="shrink-0 flex flex-col items-center gap-1 w-14">
+                <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 border-dashed border-slate-700 bg-slate-900 hover:border-indigo-500/60 text-slate-400 transition">
+                    +
+                </div>
+                <span class="text-[10px] font-bold text-center truncate w-full text-slate-500">New</span>
+            </a>
+        </div>
+
+        <div class="bg-white rounded-3xl p-5 md:p-6 flex flex-col shadow-2xl" style="min-height: calc(100vh - 230px);">
+            <div class="flex items-center justify-between gap-2 mb-4 shrink-0">
+                <h2 class="text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                    {% if selected_universe %}{{ selected_universe.icon or '👥' }} {{ selected_universe.name }}{% else %}👥 All{% endif %}
+                </h2>
+                <a href="/people/new?back_url=/people{{ ('?universe_id=' ~ selected_universe_id) if selected_universe_id else '' }}"
+                   class="w-9 h-9 shrink-0 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xl font-extrabold flex items-center justify-center shadow-lg shadow-indigo-600/30 transition-all">
+                    +
+                </a>
+            </div>
+
+            {% if prompt_import %}
+            <!-- Only shown right after creating a brand-new (necessarily empty) People Universe -
+                 see create_universe's redirect with new=1. Actionable only inside the native app,
+                 where window.webkit.messageHandlers.contactsSync actually exists; on plain web
+                 there's no way to reach the phone's Contacts at all, so this renders as an inert
+                 explanation instead of a dead button. -->
+            <div id="people-import-cta" class="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 mb-4 text-center">
+                <p class="text-slate-700 text-sm font-semibold mb-2">📱 Import a few contacts from your iPhone to get started</p>
+                <button type="button" onclick="openPhoneContactPicker()" id="people-import-cta-btn"
+                        class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-xl transition">
+                    Add from Phone
+                </button>
+                <p id="people-import-cta-web-note" class="hidden text-slate-500 text-xs mt-2">Available in the iPhone app - add people manually below for now.</p>
+            </div>
+            {% endif %}
+
+            <div class="flex items-center justify-between gap-2 mb-3 shrink-0">
+                <span class="text-slate-500 text-xs font-semibold">{{ people_count }} {{ 'person' if people_count == 1 else 'people' }}</span>
+                <button type="button" onclick="openPhoneContactPicker()" id="people-add-more-btn"
+                        class="hidden text-xs font-semibold text-indigo-500 hover:text-indigo-700 transition-colors">
+                    + Add more from phone
+                </button>
+            </div>
+
+            <div class="flex-1 min-h-0 overflow-y-auto -mx-1 px-1" id="people-list-scroll">
+                {% for group in people_by_letter %}
+                <div id="people-letter-{{ group.letter }}" class="scroll-mt-2">
+                    <h3 class="sticky top-0 bg-white/95 backdrop-blur-sm text-slate-400 text-xs font-extrabold uppercase tracking-wide py-1.5 z-10">{{ group.letter }}</h3>
+                    <div class="space-y-3 mb-4">
+                        {% for person in group.people %}
+                        <div class="person-card-wrapper border border-slate-200 bg-slate-50 rounded-2xl p-4 flex items-start justify-between gap-4"
+                             data-person-id="{{ person.id }}"
+                             data-name="{{ person.name }}"
+                             data-nickname="{{ person.nickname or '' }}"
+                             data-phone="{{ person.phone or '' }}"
+                             data-email="{{ person.email or '' }}"
+                             data-notes="{{ person.notes or '' }}"
+                             data-birthday="{{ person.birthday.strftime('%Y-%m-%d') if person.birthday else '' }}"
+                             data-company="{{ person.company or '' }}"
+                             data-role="{{ person.role or '' }}"
+                             data-tags="{{ person.tags or '' }}"
+                             data-universe-id="{{ person.universe_id or '' }}"
+                             data-apple-contact-id="{{ person.apple_contact_id or '' }}">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex flex-wrap items-center gap-1.5 mb-1.5">
+                                    {% if person.apple_contact_id %}
+                                    <span class="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 text-[11px] font-semibold px-2 py-0.5 rounded-full" title="Synced from your iPhone Contacts{{ ' - last updated ' ~ person.synced_at.strftime('%b %d, %Y') if person.synced_at else '' }}">
+                                        📱 Synced
+                                    </span>
+                                    {% endif %}
+                                    {% if person.company or person.role %}
+                                    <span class="bg-slate-200 text-slate-600 border border-slate-300/60 text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                                        💼 {{ person.role }}{% if person.role and person.company %} at {% endif %}{{ person.company }}
+                                    </span>
+                                    {% endif %}
+                                    {% if person.birthday %}
+                                    <span class="bg-amber-500/10 text-amber-600 border border-amber-500/20 text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                                        🎂 {{ person.birthday.strftime('%b %d') }}
+                                    </span>
+                                    {% endif %}
+                                </div>
+                                <h3 class="text-lg font-semibold text-slate-900 break-words">
+                                    {{ person.name }}{% if person.nickname %} <span class="text-slate-500 font-normal text-base">"{{ person.nickname }}"</span>{% endif %}
+                                </h3>
+                                <p class="text-slate-500 text-xs md:text-sm mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                                    {% if person.phone %}
+                                    <a href="tel:{{ person.phone }}" onclick="event.stopPropagation()" class="hover:text-indigo-600 hover:underline">📞 {{ person.phone }}</a>
+                                    <a href="sms:{{ person.phone }}" onclick="event.stopPropagation()" class="hover:text-indigo-600 hover:underline">💬 Text</a>
+                                    {% endif %}
+                                    {% if person.email %}<a href="mailto:{{ person.email }}" onclick="event.stopPropagation()" class="hover:text-indigo-600 hover:underline">✉️ {{ person.email }}</a>{% endif %}
+                                </p>
+                                {% if person.tags %}
+                                <p class="text-indigo-500 text-xs mt-1">🏷️ {{ person.tags }}</p>
+                                {% endif %}
+                                {% if person.notes %}
+                                <p class="text-slate-500 text-xs md:text-sm mt-1 break-words">{{ person.notes }}</p>
+                                {% endif %}
+                            </div>
+                            <div class="flex items-center gap-1 shrink-0">
+                                <button onclick="openEditPerson(this)" title="Edit Person"
+                                        class="text-slate-400 hover:text-indigo-600 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-200/70">
+                                    ✏️
+                                </button>
+                                <form action="/people/delete/" method="POST" onsubmit='return confirm({{ ("Delete " ~ person.name ~ "?")|tojson }});' class="inline">
+                                    <input type="hidden" name="person_id" value="{{ person.id }}">
+                                    <button type="submit" title="Delete Person" class="text-slate-400 hover:text-red-500 text-sm transition px-2 py-1 rounded-lg hover:bg-slate-200/70">🗑️</button>
+                                </form>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+
+                {% if not people_by_letter %}
+                <div class="text-center py-12 md:py-16 bg-slate-100 border border-slate-200 rounded-2xl px-4">
+                    <p class="text-slate-500 text-base md:text-lg font-medium">No people yet</p>
+                    <p class="text-slate-400 text-xs md:text-sm mt-1">Add someone with the + above, or import a few from your iPhone.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- A-Z scrubber - iOS Contacts-style. Letters with no contacts render dimmed rather than
+         omitted, so the strip's full A-Z shape stays stable and recognizable regardless of scope. -->
+    <div id="people-az-scrubber" class="fixed right-1 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-[1px] py-2">
+        {% set present_letters = people_by_letter|map(attribute='letter')|list %}
+        {% for letter in ['#','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'] %}
+        <span data-letter="{{ letter }}" class="text-[9px] font-bold leading-none px-1 {{ 'text-indigo-300' if letter in present_letters else 'text-slate-700' }}">{{ letter }}</span>
+        {% endfor %}
+    </div>
+
+    <!-- Edit Person modal - simplified from index.html's own version: a plain Universe select
+         (this page's own contact-only `universes` list) instead of the full Universe/Realm/Bucket
+         cascade, since Realm/Bucket are an invisible implementation detail here (every Contact
+         Universe has exactly one auto-provisioned default bucket - see
+         get_or_create_default_contact_bucket) rather than something worth exposing on this page. -->
+    <!-- z-[80], not the usual z-50 modal layer - the launcher cluster below sits at z-[70], which
+         silently swallowed clicks aimed at this modal's own Save/Cancel buttons whenever they
+         happened to overlap it (found directly while testing: tapping "Save Changes" near the
+         bottom of the screen hit the 🏡 Multiverse Timeline link underneath it instead). Same
+         class of bug as the Space View overlay/App Store badge z-index issues fixed earlier this
+         session - a modal must always out-stack the persistent launcher chrome around it. -->
+    <div id="edit-person-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[80]">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 md:p-6 w-full max-w-sm sm:max-w-md shadow-2xl max-h-[90vh] overflow-y-auto overscroll-contain">
+            <h3 class="text-lg md:text-xl font-bold text-white mb-4 pb-3 border-b border-slate-700/60">Edit Person</h3>
+            <form action="/people/update/" method="POST" class="space-y-3.5">
+                <input type="hidden" name="person_id" id="edit-person-id">
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Universe</label>
+                    <select name="universe_id" id="edit-person-universe-select" class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                        {% for u in universes %}
+                        <option value="{{ u.id }}">{{ u.icon or '👥' }} {{ u.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Name</label>
+                        <input type="text" name="name" id="edit-person-name" required
+                               class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Nickname</label>
+                        <input type="text" name="nickname" id="edit-person-nickname" placeholder="e.g. Janey"
+                               class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Phone</label>
+                        <input type="tel" name="phone" id="edit-person-phone"
+                               class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Email</label>
+                        <input type="email" name="email" id="edit-person-email"
+                               class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                    </div>
+                </div>
+                <p id="edit-person-synced-note" class="hidden text-[11px] text-emerald-400">📱 Name/phone/email come from your iPhone Contacts and update automatically - edit them there instead.</p>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Company</label>
+                        <input type="text" name="company" id="edit-person-company"
+                               class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Role</label>
+                        <input type="text" name="role" id="edit-person-role"
+                               class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                    </div>
+                </div>
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Birthday (Optional)</label>
+                    <input type="date" name="birthday" id="edit-person-birthday" onclick="this.showPicker()"
+                           class="w-full min-w-0 h-[38px] min-h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border appearance-none text-left leading-normal cursor-pointer">
+                </div>
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Tags</label>
+                    <input type="text" name="tags" id="edit-person-tags"
+                           class="w-full min-w-0 h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border">
+                </div>
+                <div class="w-full">
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Notes</label>
+                    <textarea name="notes" id="edit-person-notes" rows="2"
+                              class="w-full min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition box-border"></textarea>
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="document.getElementById('edit-person-modal').classList.add('hidden')"
+                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium transition">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition shadow-lg shadow-indigo-600/20">
+                        Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- New Universe modal - same simple create form index.html's own multiverse picker uses,
+         restricted to kind=contact here (this page only ever needs a People Universe). -->
+    <div id="add-universe-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[80]">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 md:p-6 w-full max-w-sm shadow-2xl">
+            <h3 class="text-lg font-bold text-white mb-4">New People Universe</h3>
+            <form action="/universes/" method="POST" class="space-y-3">
+                <input type="hidden" name="kind" value="contact">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Icon</label>
+                    <input type="text" name="icon" value="👥" maxlength="4"
+                           class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Name</label>
+                    <input type="text" name="name" required placeholder="e.g. Customers"
+                           class="w-full h-[38px] bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500">
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="document.getElementById('add-universe-modal').classList.add('hidden')"
+                            class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium transition">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition shadow-lg shadow-indigo-600/20">
+                        Create
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Same star-generation approach as notes.html/calendar.html's own starfield.
+        (function generatePeopleSpaceStars() {
+            const container = document.getElementById('people-space-stars');
+            if (!container) return;
+            const count = 40;
+            for (let i = 0; i < count; i++) {
+                const star = document.createElement('div');
+                star.className = 'people-space-star';
+                const size = Math.random() * 2 + 1;
+                star.style.width = size + 'px';
+                star.style.height = size + 'px';
+                star.style.top = Math.random() * 100 + '%';
+                star.style.left = Math.random() * 100 + '%';
+                star.style.background = ['#a5b4fc', '#fcd34d', '#7dd3fc', '#fda4af'][i % 4];
+                star.style.animationDuration = (2 + Math.random() * 3) + 's';
+                star.style.animationDelay = (Math.random() * -4) + 's';
+                star.style.setProperty('--star-min-o', 0.1 + Math.random() * 0.1);
+                star.style.setProperty('--star-max-o', 0.25 + Math.random() * 0.3);
+                container.appendChild(star);
+            }
+        })();
+
+        function openEditPerson(el) {
+            // The button itself carries no data-* of its own - all the fields live on the card
+            // wrapper it's inside, same single source of truth the delete form's hidden input
+            // also reads from indirectly (no duplication needed across every actionable element).
+            const card = el.closest('.person-card-wrapper');
+            document.getElementById('edit-person-id').value = card.dataset.personId;
+            document.getElementById('edit-person-name').value = card.dataset.name;
+            document.getElementById('edit-person-nickname').value = card.dataset.nickname;
+            document.getElementById('edit-person-phone').value = card.dataset.phone;
+            document.getElementById('edit-person-email').value = card.dataset.email;
+            document.getElementById('edit-person-notes').value = card.dataset.notes;
+            document.getElementById('edit-person-birthday').value = card.dataset.birthday;
+            document.getElementById('edit-person-company').value = card.dataset.company;
+            document.getElementById('edit-person-role').value = card.dataset.role;
+            document.getElementById('edit-person-tags').value = card.dataset.tags;
+
+            const universeSelect = document.getElementById('edit-person-universe-select');
+            if (universeSelect && card.dataset.universeId) universeSelect.value = card.dataset.universeId;
+
+            // A synced person's name/phone/email are owned by the phone - editing them here would
+            // just get silently overwritten on the next sync, so disable them rather than let that
+            // confuse someone who thinks their edit stuck.
+            const isSynced = !!card.dataset.appleContactId;
+            ['edit-person-name', 'edit-person-phone', 'edit-person-email'].forEach(id => {
+                document.getElementById(id).disabled = isSynced;
+            });
+            document.getElementById('edit-person-synced-note').classList.toggle('hidden', !isSynced);
+
+            document.getElementById('edit-person-modal').classList.remove('hidden');
+        }
+
+        // A-Z scrubber: tap or drag along the right-edge letter strip to jump the list to that
+        // letter's section. Dimmed letters (no contacts) still occupy a slot so the strip's shape
+        // stays a stable, recognizable full A-Z - but tapping one is a no-op (nothing to jump to).
+        (function setupPeopleAZScrubber() {
+            const scrubber = document.getElementById('people-az-scrubber');
+            if (!scrubber) return;
+            const spans = Array.from(scrubber.querySelectorAll('span[data-letter]'));
+
+            function jumpTo(clientY) {
+                let nearest = null, nearestDist = Infinity;
+                for (const span of spans) {
+                    const rect = span.getBoundingClientRect();
+                    const mid = rect.top + rect.height / 2;
+                    const dist = Math.abs(clientY - mid);
+                    if (dist < nearestDist) { nearestDist = dist; nearest = span; }
+                }
+                if (!nearest) return;
+                const letter = nearest.dataset.letter;
+                const target = document.getElementById('people-letter-' + letter);
+                if (target) target.scrollIntoView({ block: 'start' });
+            }
+
+            let scrubbing = false;
+            let rafPending = false;
+            function onMove(clientY) {
+                if (rafPending) return;
+                rafPending = true;
+                requestAnimationFrame(() => { jumpTo(clientY); rafPending = false; });
+            }
+            scrubber.addEventListener('pointerdown', (e) => { scrubbing = true; onMove(e.clientY); });
+            scrubber.addEventListener('pointermove', (e) => { if (scrubbing) onMove(e.clientY); });
+            window.addEventListener('pointerup', () => { scrubbing = false; });
+            scrubber.addEventListener('touchstart', (e) => { onMove(e.touches[0].clientY); }, { passive: true });
+            scrubber.addEventListener('touchmove', (e) => { onMove(e.touches[0].clientY); }, { passive: true });
+        })();
+
+        // iPhone Contacts sync - only actionable inside the native app, where this message
+        // handler actually exists. On plain web the "Add from phone" buttons stay inert/explained
+        // rather than doing nothing silently.
+        const contactsBridge = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.contactsSync);
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!contactsBridge) {
+                const ctaBtn = document.getElementById('people-import-cta-btn');
+                const ctaNote = document.getElementById('people-import-cta-web-note');
+                if (ctaBtn) ctaBtn.classList.add('hidden');
+                if (ctaNote) ctaNote.classList.remove('hidden');
+            } else {
+                const addMoreBtn = document.getElementById('people-add-more-btn');
+                if (addMoreBtn) addMoreBtn.classList.remove('hidden');
+            }
+        });
+
+        function openPhoneContactPicker() {
+            if (!contactsBridge) return;
+            const params = new URLSearchParams(window.location.search);
+            const universeId = params.get('universe_id') || {{ (selected_universe_id or '')|tojson }};
+            window.webkit.messageHandlers.contactsSync.postMessage({ action: 'pick', universe_id: universeId ? Number(universeId) : null });
+        }
+
+        // Called by the native side after a picker result or a background change-notification
+        // sync - see ContactsSyncManager.swift. Guarded existence check is what lets native call
+        // this unconditionally without checking whether the page happens to be on /people.
+        window.__contactsPicked = function(payload) {
+            fetch('/people/sync/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            }).then(() => window.location.reload());
+        };
+    </script>
+
+    <!-- Same floating launcher cluster as the main app/Notes/Calendar. -->
+    <div id="ai-chat-launcher-wrapper" class="fixed bottom-[71px] right-[50px] z-[70] flex items-center gap-2">
+        <div class="relative">
+            <a href="/" id="ai-chat-launcher" title="Back to TaskMonster"
+               class="relative -top-1 w-14 h-14 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border border-indigo-400/30 shadow-2xl flex items-center justify-center text-2xl transition">
+                😈
+            </a>
+            <a href="/?open_multiverse_timeline=1" id="multiverse-timeline-quick-btn" title="Multiverse Timeline"
+               class="absolute -bottom-11 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full bg-amber-500 hover:bg-amber-400 border border-amber-300/40 text-white text-xl flex items-center justify-center shadow-lg transition">
+                🏡
+            </a>
+        </div>
+    </div>
+
+    <div class="fixed bottom-[40px] left-[16px] z-[70] flex items-center gap-2">
+        <a href="/notes" id="notes-quick-btn" title="Notes"
+           class="w-14 h-14 rounded-full bg-yellow-500 hover:bg-yellow-400 border border-yellow-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
+            📝
+        </a>
+        <a href="/calendar" id="calendar-quick-btn" title="Calendar"
+           class="w-14 h-14 rounded-full bg-sky-500 hover:bg-sky-400 border border-sky-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
+            📅
+        </a>
+        <a href="{{ events_universe_href }}" id="events-quick-btn" title="Events"
+           onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
+           class="w-14 h-14 rounded-full bg-fuchsia-500 hover:bg-fuchsia-400 border border-fuchsia-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
+            🎉
+        </a>
+        <div id="people-quick-btn" title="People"
+             class="w-14 h-14 rounded-full bg-emerald-500 border border-emerald-300/40 shadow-2xl flex items-center justify-center text-2xl">
+            👥
+        </div>
+    </div>
+</body>
+</html>
