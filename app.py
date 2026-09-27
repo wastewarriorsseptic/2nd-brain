@@ -9,6 +9,7 @@ import json as _json
 import re
 import difflib
 import httpx
+import bcrypt
 import iap
 from urllib.parse import quote, urlparse
 from datetime import datetime, timedelta, timezone, date
@@ -225,6 +226,7 @@ def safe_apply_migrations():
             # straight from create_all() below, making this a harmless no-op there.
             conn.execute(text('ALTER TABLE IF EXISTS note ADD COLUMN IF NOT EXISTS realm_id INTEGER;'))
             conn.execute(text('ALTER TABLE IF EXISTS note ADD COLUMN IF NOT EXISTS source_item_id INTEGER;'))
+            conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT \'UTC\';'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS pro_until TIMESTAMP;'))
             conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_original_transaction_id VARCHAR;'))
@@ -322,6 +324,8 @@ def safe_apply_migrations():
 
             cursor.execute("PRAGMA table_info(users);")
             user_cols = [col[1] for col in cursor.fetchall()]
+            if 'password_hash' not in user_cols:
+                cursor.execute('ALTER TABLE users ADD COLUMN "password_hash" VARCHAR;')
             if 'timezone' not in user_cols:
                 cursor.execute('ALTER TABLE users ADD COLUMN "timezone" VARCHAR DEFAULT "UTC";')
             if 'pro_until' not in user_cols:
@@ -380,6 +384,14 @@ class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     email: str = Field(unique=True, index=True)
     name: str = "User"
+    # Only ever set by /signup (email + password) - a Google/Apple-only account has this as None,
+    # and stays sign-in-with-that-provider-only. Deliberately never set outside actual signup, even
+    # if an email/password submission for /signup matches an email that already exists via Google/
+    # Apple - see find_or_create_user_and_log_in's own "accounts are keyed by email" design and the
+    # signup route's own comment for why silently attaching a password to an existing account
+    # would be an account-takeover vector without an email-ownership verification step this app
+    # doesn't have yet.
+    password_hash: Optional[str] = Field(default=None)
     timezone: str = Field(default="UTC")
     # TaskMonster Pro (auto-renewing Apple subscription): active while pro_until is in the future.
     # Set/extended only from a signature-verified Apple transaction - see iap.py / /iap/verify/.
@@ -767,6 +779,10 @@ RATE_RULES = [
     ("POST", re.compile(r"^/api/events/$"), "api-event", 60, 3600),
     ("POST", re.compile(r"^/events/[^/]+/respond$"), "rsvp", 30, 3600),
     ("GET", re.compile(r"^/api/places/search$"), "places", 60, 60),
+    # Brute-force protection for email/password auth - IP-keyed (see "who" below), since neither
+    # of these has a signed-in user yet when they're hit.
+    ("POST", re.compile(r"^/login-with-email$"), "login-attempt", 10, 3600),
+    ("POST", re.compile(r"^/signup$"), "signup-attempt", 5, 3600),
 ]
 _rate_hits: dict = {}
 
@@ -1712,18 +1728,21 @@ def on_startup():
     run_expire_stale_invites()
     scheduler.add_job(run_expire_stale_invites, 'interval', minutes=30)
 
-def find_or_create_user_and_log_in(request: Request, email: str, name: str):
-    """Shared by every sign-in provider (Google, Apple, ...) - looks up or creates the User by email,
-    sets up default realms for brand-new accounts, claims any pending realm-share and universe-share
-    invites sent to this email, and stores the session. Keying purely on email (not provider) means
-    someone who signs in with Google today and Apple tomorrow, using the same email address, lands
-    on the same account."""
+def find_or_create_user_and_log_in(request: Request, email: str, name: str, password_hash: Optional[str] = None):
+    """Shared by every sign-in provider (Google, Apple, email/password...) - looks up or creates the
+    User by email, sets up default realms for brand-new accounts, claims any pending realm-share and
+    universe-share invites sent to this email, and stores the session. Keying purely on email (not
+    provider) means someone who signs in with Google today and Apple tomorrow, using the same email
+    address, lands on the same account. password_hash is ONLY ever used on the create branch below
+    (from /signup, right after hashing a brand-new password) - an existing account's password_hash
+    is never touched here, by a Google/Apple login or otherwise, so this can never become a way to
+    silently attach/overwrite a password on someone else's account."""
     email = email.lower()
 
     with Session(engine) as session:
         user = session.exec(select(User).where(User.email == email)).first()
         if not user:
-            user = User(email=email, name=name)
+            user = User(email=email, name=name, password_hash=password_hash)
             session.add(user)
             session.commit()
             session.refresh(user)
@@ -1887,6 +1906,61 @@ async def auth_callback(request: Request):
     post_login_redirect = request.session.pop('post_login_redirect', None)
     return RedirectResponse(url=post_login_redirect or "/", status_code=303)
 
+def _hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+def _verify_password(password: str, password_hash: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    except ValueError:
+        # A malformed/unrecognized hash - shouldn't happen for anything this app itself wrote, but
+        # fails closed (never authenticates) rather than raising a 500 into the login flow.
+        return False
+
+@app.post("/signup")
+def signup(request: Request, email: str = Form(...), password: str = Form(...), name: str = Form("")):
+    """The third sign-in option alongside Google/Apple - plain email + password, for anyone who'd
+    rather not go through either. No email-confirmation step (unlike Google/Apple, which already
+    assert a verified address themselves) - a deliberate v1 scope cut, not an oversight; nothing
+    here reads/writes anything sensitive enough yet to justify building that flow first."""
+    email = email.strip().lower()
+    if not email or "@" not in email:
+        return RedirectResponse(url="/?signup_error=email", status_code=303)
+    if len(password) < 8:
+        return RedirectResponse(url="/?signup_error=password", status_code=303)
+
+    with Session(engine) as session:
+        existing = session.exec(select(User).where(User.email == email)).first()
+        if existing:
+            # Never reveal whether that's a plain email collision or an existing Google/Apple-only
+            # account with no password of its own - same "don't leak account existence" reasoning
+            # login-with-email's own generic error uses below. A real "sign in instead, or reset
+            # your password" flow is future work, not this pass.
+            return RedirectResponse(url="/?signup_error=exists", status_code=303)
+
+    password_hash = _hash_password(password)
+    display_name = name.strip() or email.split("@")[0]
+    find_or_create_user_and_log_in(request, email, display_name, password_hash=password_hash)
+
+    post_login_redirect = request.session.pop('post_login_redirect', None)
+    return RedirectResponse(url=post_login_redirect or "/", status_code=303)
+
+@app.post("/login-with-email")
+def login_with_email(request: Request, email: str = Form(...), password: str = Form(...)):
+    email = email.strip().lower()
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.email == email)).first()
+        if not user or not user.password_hash or not _verify_password(password, user.password_hash):
+            # The same generic error whether the email doesn't exist, has no password set at all
+            # (a Google/Apple-only account), or the password is just wrong - never confirms which,
+            # so this can't be used to enumerate registered emails.
+            return RedirectResponse(url="/?login_error=1", status_code=303)
+        user_name = user.name
+
+    find_or_create_user_and_log_in(request, email, user_name)
+    post_login_redirect = request.session.pop('post_login_redirect', None)
+    return RedirectResponse(url=post_login_redirect or "/", status_code=303)
+
 @app.get("/login/apple")
 async def login_apple(request: Request):
     if not APPLE_SIGNIN_ENABLED:
@@ -1960,6 +2034,8 @@ def dashboard(
     realm_id: Optional[int] = None,
     bucket_id: Optional[int] = None,
     universe_id: Optional[int] = None,
+    login_error: Optional[str] = None,
+    signup_error: Optional[str] = None,
 ):
     with Session(engine) as session:
         user = get_current_user(request, session)
@@ -1975,6 +2051,8 @@ def dashboard(
                     "today": today_date,
                     "apple_signin_enabled": APPLE_SIGNIN_ENABLED,
                     "gemini_enabled": GEMINI_ENABLED,
+                    "login_error": login_error,
+                    "signup_error": signup_error,
                     # The <script> block's `allUniversesData` is built via |tojson (not a plain
                     # {% for %} loop like realmsData), so an actually-missing key here crashes
                     # the whole page with a 500 for every logged-out request - this happened in
