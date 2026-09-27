@@ -15,16 +15,21 @@
             0%, 100% { transform: translateY(0) scale(1); }
             50% { transform: translateY(-3px) scale(1.06); }
         }
+        @keyframes ai-chat-plus-repel-breathe {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(7px, -3px) scale(1.06); }
+        }
         @keyframes ai-chat-timeline-repel-breathe {
             0%, 100% { transform: translateX(-50%) translateY(0) scale(1); }
             50% { transform: translateX(-50%) translateY(4px) scale(1.06); }
         }
         #ai-chat-launcher { animation: ai-chat-quick-task-float-breathe 3.2s ease-in-out infinite; }
+        #ai-chat-quick-task-btn { animation: ai-chat-plus-repel-breathe 3.2s ease-in-out infinite; }
         #multiverse-timeline-quick-btn { animation: ai-chat-timeline-repel-breathe 3.2s ease-in-out infinite; }
         #notes-quick-btn, #calendar-quick-btn, #events-quick-btn { animation: ai-chat-launcher-float 3.2s ease-in-out infinite; }
         #calendar-quick-btn { animation-delay: -0.8s; }
         #events-quick-btn { animation-delay: -1.6s; }
-        #ai-chat-launcher:hover, #multiverse-timeline-quick-btn:hover,
+        #ai-chat-launcher:hover, #ai-chat-quick-task-btn:hover, #multiverse-timeline-quick-btn:hover,
         #notes-quick-btn:hover, #calendar-quick-btn:hover, #events-quick-btn:hover {
             animation-play-state: paused;
         }
@@ -460,6 +465,10 @@
             <a href="/" id="ai-chat-launcher" title="Back to TaskMonster"
                class="relative -top-1 w-14 h-14 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border border-indigo-400/30 shadow-2xl flex items-center justify-center text-2xl transition">
                 😈
+            </a>
+            <a href="/" id="ai-chat-quick-task-btn" title="Add a new task"
+               class="absolute -bottom-6 -right-10 w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 border border-emerald-300/40 text-white text-2xl font-extrabold flex items-center justify-center shadow-lg transition">
+                +
             </a>
             <a href="/?open_multiverse_timeline=1" id="multiverse-timeline-quick-btn" title="Multiverse Timeline"
                class="absolute -bottom-11 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full bg-amber-500 hover:bg-amber-400 border border-amber-300/40 text-white text-xl flex items-center justify-center shadow-lg transition">
