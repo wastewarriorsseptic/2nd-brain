@@ -1061,9 +1061,6 @@
         <!-- Canvas Viewport -->
         <canvas id="space-canvas" class="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"></canvas>
 
-        <!-- TEMPORARY diagnostic overlay, round 3. Remove once confirmed fixed. -->
-        <div id="space-debug-log" style="position:fixed; top:0; left:0; right:0; z-index:9999; pointer-events:none; background:rgba(0,0,0,0.75); color:#4ade80; font:10px/1.3 monospace; padding:4px 6px; max-height:32vh; overflow:hidden; white-space:pre-wrap;"></div>
-
         {% if is_event_universe %}
         <!-- Event Universe Space View: reported directly that this should "behave differently"
              from the normal Task-universe realm/bucket/task orbit ring - "more about having the
@@ -5930,15 +5927,6 @@
             }
             return hit;
         }
-        // TEMPORARY diagnostic logger, round 3. Remove once confirmed fixed.
-        const spaceDebugLines = [];
-        function spaceDebugLog(msg) {
-            const t = new Date().toISOString().slice(11, 23);
-            spaceDebugLines.push(`${t} ${msg}`);
-            if (spaceDebugLines.length > 16) spaceDebugLines.shift();
-            const el = document.getElementById('space-debug-log');
-            if (el) el.textContent = spaceDebugLines.join('\n');
-        }
         let cameraOffset = { x: 0, y: 0 };
         let targetCameraOffset = { x: 0, y: 0 };
         let cameraZoom = 1;
@@ -9049,6 +9037,15 @@
         // point-in-rect. Falls back to just the dot's own padded box when the label isn't currently
         // drawn (task._labelRect is null while faded/selected - see the draw loop above).
         function mvTaskHitTest(task, worldX, worldY) {
+            // A hidden task (currently selected, or faded out sliding under the hub) draws nothing at
+            // all - the HUD shows the selected task instead. Its fallback padded-dot box still sits at
+            // a real, valid position (task.x keeps updating every frame regardless), which on a
+            // crowded/zoomed-out timeline can genuinely overlap where a real, VISIBLE neighbor is
+            // drawn a short distance away. Found on-device via the debug log: a tap landing dead-center
+            // on a clearly visible neighbor kept matching the invisible selected task instead, because
+            // it happened to come first in iteration order over that same screen area. There is no
+            // legitimate way to tap something that isn't drawn, so it's excluded here entirely.
+            if (task._hidden) return false;
             const hitX = mvTaskHitX(task);
             const pad = task.radius + 40;
             let minX = hitX - pad, maxX = hitX + pad, minY = task.y - pad, maxY = task.y + pad;
@@ -9991,7 +9988,7 @@
                     const fade = mvClamp((Math.abs(task.x - lane.x) - lane.hubRadius - 30) / 140, 0, 1);
                     const scanDim = (lane._fw || 0) > 0.3 ? (0.55 + 0.45 * (task._wt / Math.max(lane._fw, 0.0001))) : 1;
                     task._vis = fade * (lane._alpha ?? 1) * Math.min(1, scanDim);
-                    if (fade <= 0.02) { task._labelRect = null; task._dotX = null; return; }
+                    if (fade <= 0.02) { task._labelRect = null; task._dotX = null; task._hidden = true; return; }
 
                     // The selected task's dot, date, and title all live in the HUD card above instead
                     // - none of it is needed a second time here. Snipped before any of it draws,
@@ -9999,8 +9996,15 @@
                     if (lane._selectedTask === task && (lane._fw || 0) > 0.05) {
                         task._labelRect = null;
                         task._dotX = null;
+                        task._hidden = true;
                         return;
                     }
+
+                    // Nothing is drawn here for either of the two returns above, so - unlike
+                    // task.x/_tk/_pillOffset, which stay mathematically valid even while hidden -
+                    // there's genuinely no correct on-screen spot left for a hit-test to test against.
+                    // A tap can only ever land on this task while it's actually visible.
+                    task._hidden = false;
 
                     spaceCtx.save();
                     spaceCtx.globalAlpha = task._vis;
@@ -10328,13 +10332,11 @@
                     if (mvTaskHitTest(task, worldX, worldY)) {
                         clickedTask = task;
                         clickedLane = lane;
-                        spaceDebugLog(`hit id=${task.id} "${(task.title||'').slice(0,20)}" x=${task.x.toFixed(0)} vis=${task._vis?.toFixed(2)} sel=${lane._selectedTask===task}`);
                         break;
                     }
                 }
                 if (clickedTask) break;
             }
-            spaceDebugLog(`worldX=${worldX.toFixed(0)} worldY=${worldY.toFixed(0)} clickedTask=${clickedTask?.id ?? 'NONE'}`);
 
             if (!clickedTask) return;
 
@@ -10345,16 +10347,12 @@
             if (focusOn) {
                 // Tapping the selected task opens its card; tapping a neighbor scrolls to it.
                 const selected = mvSelectedTaskFor(focusedLane, focusedLane._scrollIdxTarget || 0);
-                spaceDebugLog(`focusedLane=${focusedLane.id} scrollIdxTarget=${focusedLane._scrollIdxTarget} selected=${selected?.id} L(clicked)=${mvTaskL(clickedTask)}`);
                 if (clickedTask === selected) {
-                    spaceDebugLog(`-> mvOpenHud (was already selected)`);
                     mvOpenHud(clickedTask);
                     triggerHapticFeedback('light');
                 } else {
                     const rng = mvScrollRange(focusedLane);
-                    const newTarget = mvClamp(mvTaskL(clickedTask), rng.min, rng.max);
-                    focusedLane._scrollIdxTarget = newTarget;
-                    spaceDebugLog(`-> scroll target set to ${newTarget}`);
+                    focusedLane._scrollIdxTarget = mvClamp(mvTaskL(clickedTask), rng.min, rng.max);
                     triggerHapticFeedback('light');
                 }
                 return;
@@ -12002,7 +12000,6 @@
                 if (longPressFired) {
                     // The long press already revealed the trash icon this gesture - swallow this tap
                     // so it doesn't also register as a normal realm-select tap.
-                    spaceDebugLog('END swallowed: longPressFired');
                     longPressFired = false;
                     return;
                 }
@@ -12015,10 +12012,7 @@
                 // still count as part of the same multi-touch gesture).
                 if (!gestureMoved && !gestureWasMultiTouch && e.changedTouches.length === 1) {
                     const touch = e.changedTouches[0];
-                    spaceDebugLog(`END tap x=${touch.clientX.toFixed(0)} y=${touch.clientY.toFixed(0)}`);
                     detectClickNode(touch.clientX, touch.clientY);
-                } else {
-                    spaceDebugLog(`END swallowed moved=${gestureMoved} multi=${gestureWasMultiTouch} n=${e.changedTouches.length}`);
                 }
                 if (e.touches.length === 0) {
                     gestureMoved = false;
