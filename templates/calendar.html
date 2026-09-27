@@ -195,7 +195,7 @@
                         {% if wd.is_today %}<span class="text-[9px] font-bold text-indigo-600 bg-indigo-100 rounded-full px-1.5 py-0.5">Today</span>{% endif %}
                     </div>
                     {% for t in wd.tasks %}
-                    <div class="flex items-center gap-2.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200 mb-1.5" data-row-item-id="{{ t.id }}">
+                    <div class="flex items-center gap-2.5 p-2.5 rounded-xl border mb-1.5 {{ 'bg-red-50/60 border-red-100' if t.is_overdue else 'bg-slate-50 border-slate-200' }}" data-row-item-id="{{ t.id }}">
                         <button type="button" onclick="toggleCalTaskComplete(this, {{ t.id }})" ontouchstart="try { window.webkit.messageHandlers.haptics.postMessage('rigid'); } catch (e) {}" title="{{ 'Mark Incomplete' if t.is_completed else 'Mark Complete' }}"
                                 class="shrink-0 w-5 h-5 rounded-full border flex items-center justify-center transition {% if t.is_completed %}bg-emerald-500 border-emerald-500 text-white font-bold{% else %}border-slate-400 hover:border-emerald-500 text-transparent hover:text-emerald-500/50{% endif %}">
                             ✓
@@ -250,7 +250,7 @@
                  checklist, reported directly as what was missing from the month grid on mobile. -->
             <div class="flex-1 overflow-y-auto space-y-2.5 pb-32">
                 {% for t in day_tasks %}
-                <div class="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200" data-row-item-id="{{ t.id }}">
+                <div class="flex items-start gap-3 p-3.5 rounded-2xl border {{ 'bg-red-50/60 border-red-100' if t.is_overdue else 'bg-slate-50 border-slate-200' }}" data-row-item-id="{{ t.id }}">
                     <button type="button" onclick="toggleCalTaskComplete(this, {{ t.id }})" ontouchstart="try { window.webkit.messageHandlers.haptics.postMessage('rigid'); } catch (e) {}" title="{{ 'Mark Incomplete' if t.is_completed else 'Mark Complete' }}"
                             class="shrink-0 mt-0.5 w-6 h-6 rounded-full border flex items-center justify-center transition {% if t.is_completed %}bg-emerald-500 border-emerald-500 text-white font-bold{% else %}border-slate-400 hover:border-emerald-500 text-transparent hover:text-emerald-500/50{% endif %}">
                         ✓

@@ -283,7 +283,7 @@
                  just gives the scrollable list enough room to clear them at the very bottom. -->
             <div class="flex-1 overflow-y-auto space-y-2.5 pb-32">
                 {% for row in checklist %}
-                    <div class="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200" data-row-item-id="{{ row.item_id }}">
+                    <div class="flex items-start gap-3 p-3.5 rounded-2xl border {{ 'bg-red-50/60 border-red-100' if row.is_overdue else 'bg-slate-50 border-slate-200' }}" data-row-item-id="{{ row.item_id }}">
                         <!-- fetch() with X-Requested-With, same as Space View's own completion
                              toggle - reported directly with a screen recording: the checklist's old
                              plain form POST did a full page reload on every complete/incomplete tap,
