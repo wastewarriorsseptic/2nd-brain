@@ -1554,6 +1554,25 @@ def backfill_item_person_universe_ids():
                 person.universe_id = realm.universe_id
         session.commit()
 
+def backfill_item_tags_from_realm_names():
+    """One-time-per-row migration: for any task still missing a tag, sets it to the name of the
+    Realm it used to live in - "any new tag can take the place of any existing Realm name" applied
+    retroactively to data that predates the tag field itself, not just as an autocomplete
+    suggestion going forward. Skips the auto-provisioned "General" realm (see
+    get_or_create_default_task_bucket_in_universe) - that's a synthetic bucket-satisfying
+    placeholder every task created after the Realm/Bucket flattening (chat, the Add Task modal)
+    gets routed through, never a real user-chosen Realm, so stamping "General" on those would be
+    worse than just leaving them tag-less. Idempotent - only ever touches rows where tag is still
+    NULL, safe to run on every process start."""
+    with Session(engine) as session:
+        untagged_items = session.exec(select(Item).where(Item.tag == None)).all()  # noqa: E711
+        for item in untagged_items:
+            bucket = session.get(Bucket, item.bucket_id)
+            realm = session.get(Realm, bucket.realm_id) if bucket else None
+            if realm and realm.name and realm.name != "General":
+                item.tag = realm.name
+        session.commit()
+
 def backfill_universe_shares_from_realm_shares():
     """One-time migration: Realm-level sharing (RealmShare/PendingInvite) is retired in favor of
     the Universe-level sharing that already exists and already grants access to everything
@@ -1626,6 +1645,7 @@ def run_startup_schema_setup():
                 backfill_important_dates_universes()
                 backfill_pending_invite_tokens()
                 backfill_item_person_universe_ids()
+                backfill_item_tags_from_realm_names()
                 backfill_universe_shares_from_realm_shares()
             return
         except OperationalError as e:
