@@ -9017,6 +9017,39 @@
         // whichever task has L === round(c).
         function mvTaskL(task) { return task._side === 'right' ? task._sideIdx : -(task._sideIdx + 1); }
 
+        // The world-space x a click/touch hit-test should test against for this task's node - the
+        // same edge-avoidance-shifted center the dot and label actually draw at (task.x + tk *
+        // pillOffset, mirroring the draw loop's own dotX calc), but computed fresh here from task.x/
+        // _tk/_pillOffset instead of read from a cached copy. All three of those are recomputed every
+        // single frame for every task by mvApplyLaneLayout/resolveSweepTask regardless of whether the
+        // task is currently drawn or selected, so - unlike a value only ever set inside the
+        // (sometimes-skipped) draw loop - this can never go stale relative to what's on screen right
+        // now, while still landing exactly on the shifted position rather than the unshifted task.x
+        // (whose mismatch with the drawn dot on a narrow mobile viewport, where the edge-avoidance
+        // shift kicks in far more often, was the original version of this same tap bug).
+        function mvTaskHitX(task) { return task.x + (task._tk || 1) * (task._pillOffset || 0); }
+
+        // Whole-task tap target: instead of testing the dot's circle and the label's rect as two
+        // separate shapes (a tap landing in the gap between them, or in the space around the date
+        // line above the title, hit neither and silently did nothing - reported directly, with a
+        // screenshot circling the WHOLE dot+date+title area as what should be tappable), this unions
+        // both into one bounding box spanning from the dot out to the label and tests a single
+        // point-in-rect. Falls back to just the dot's own padded box when the label isn't currently
+        // drawn (task._labelRect is null while faded/selected - see the draw loop above).
+        function mvTaskHitTest(task, worldX, worldY) {
+            const hitX = mvTaskHitX(task);
+            const pad = task.radius + 40;
+            let minX = hitX - pad, maxX = hitX + pad, minY = task.y - pad, maxY = task.y + pad;
+            const r = task._labelRect;
+            if (r) {
+                minX = Math.min(minX, r.x);
+                maxX = Math.max(maxX, r.x + r.w);
+                minY = Math.min(minY, r.y);
+                maxY = Math.max(maxY, r.y + r.h);
+            }
+            return worldX >= minX && worldX <= maxX && worldY >= minY && worldY <= maxY;
+        }
+
         function mvSelectedTaskFor(lane, c) {
             if (!lane || !lane.tasks.length) return null;
             let L = Math.round(c);
@@ -10280,11 +10313,7 @@
             for (const lane of multiverseLanes) {
                 for (const task of lane.tasks) {
                     if (task._vis !== undefined && task._vis < 0.35) continue;
-                    const dist = Math.hypot(worldX - task.x, worldY - task.y);
-                    const hitNode = dist <= task.radius + 40;
-                    const r = task._labelRect;
-                    const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
-                    if (hitNode || hitLabel) {
+                    if (mvTaskHitTest(task, worldX, worldY)) {
                         clickedTask = task;
                         clickedLane = lane;
                         break;
@@ -10507,11 +10536,7 @@
             for (const lane of hitTestLanes) {
                 for (const task of lane.tasks) {
                     if (task._vis !== undefined && task._vis < 0.35) continue;
-                    const dist = Math.hypot(worldX - task.x, worldY - task.y);
-                    const hitNode = dist <= task.radius + 40;
-                    const r = task._labelRect;
-                    const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
-                    if (hitNode || hitLabel) {
+                    if (mvTaskHitTest(task, worldX, worldY)) {
                         clickedTask = task;
                         clickedLane = lane;
                         break;
@@ -11808,11 +11833,7 @@
                         if (isMultiverseStackedView) {
                             multiverseLanes.forEach(lane => {
                                 lane.tasks.forEach(task => {
-                                    const dist = Math.hypot(worldX - task.x, worldY - task.y);
-                                    const hitNode = dist <= task.radius + 40;
-                                    const r = task._labelRect;
-                                    const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
-                                    if (hitNode || hitLabel) pressedTask = task;
+                                    if (mvTaskHitTest(task, worldX, worldY)) pressedTask = task;
                                 });
                             });
                         } else if (activeSelectedRealm) {
@@ -11820,11 +11841,7 @@
                                 if (activeSelectedBucket && activeSelectedBucket.id !== bucket.id) return;
                                 if (bucket.isAddButton) return;
                                 bucket.tasks.forEach(task => {
-                                    const dist = Math.hypot(worldX - task.x, worldY - task.y);
-                                    const hitNode = dist <= task.radius + 40;
-                                    const r = task._labelRect;
-                                    const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
-                                    if (hitNode || hitLabel) pressedTask = task;
+                                    if (mvTaskHitTest(task, worldX, worldY)) pressedTask = task;
                                 });
                             });
                         }
@@ -12434,11 +12451,7 @@
                         if (Math.hypot(worldX - lane.x, worldY - lane.y) <= lane.hubRadius + 10) return true;
                         const pillRect = lane._namePillRect;
                         if (pillRect && worldX >= pillRect.x && worldX <= pillRect.x + pillRect.w && worldY >= pillRect.y && worldY <= pillRect.y + pillRect.h) return true;
-                        return lane.tasks.some(task => {
-                            if (Math.hypot(worldX - task.x, worldY - task.y) <= task.radius + 40) return true;
-                            const labelRect = task._labelRect;
-                            return labelRect && worldX >= labelRect.x && worldX <= labelRect.x + labelRect.w && worldY >= labelRect.y && worldY <= labelRect.y + labelRect.h;
-                        });
+                        return lane.tasks.some(task => mvTaskHitTest(task, worldX, worldY));
                     });
                     if (!hitSomething) {
                         exitMultiverseTimelineReorderMode();
@@ -12503,17 +12516,11 @@
                     });
 
                     bucket.tasks.forEach(task => {
-                        const dist = Math.hypot(worldX - task.x, worldY - task.y);
-                        const hitNode = dist <= task.radius + 40;
-
                         // Tapping the task's text label now does exactly what tapping its dot does -
                         // task._labelRect is only ever set while this task's own label is actually
                         // rendered (inside its own bucket's view), so there's no risk of a stale rect
                         // from a different bucket being checked here.
-                        const r = task._labelRect;
-                        const hitLabel = r && worldX >= r.x && worldX <= r.x + r.w && worldY >= r.y && worldY <= r.y + r.h;
-
-                        if (hitNode || hitLabel) {
+                        if (mvTaskHitTest(task, worldX, worldY)) {
                             clickedTask = task;
                         }
                     });
