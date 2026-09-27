@@ -120,15 +120,16 @@
                 <h2 class="text-lg font-extrabold text-slate-900 flex items-center gap-2 min-w-0 truncate">
                     {% if selected_universe %}{{ selected_universe.icon or '😈' }} {{ selected_universe.name }}{% else %}✨ All{% endif %}
                 </h2>
-                {% if selected_universe_id %}
-                <!-- Same cross-Universe "+" flow the launcher cluster's own quick-task badge and
-                     Multiverse Timeline lanes already use (open_add_task=1 - see the
-                     DOMContentLoaded handler in index.html) rather than a second, calendar-specific
-                     task-creation UI - one real "add a task" surface, reused everywhere. -->
-                <a href="/?universe_id={{ selected_universe_id }}&open_add_task=1"
-                   class="w-9 h-9 shrink-0 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xl font-extrabold flex items-center justify-center shadow-lg shadow-indigo-600/30 transition-all">
+                {% if gemini_enabled %}
+                <!-- Same tiny task-creation chat Notes' own "+" opens (see openNotesTaskChat there,
+                     and cal-task-chat-modal below) - reported directly, wanting the same "+" here
+                     too. A specific Universe forces the destination (notes_task_universe_id); "All"
+                     has no single implied one, so the model asks (notes_task_all_tasks) instead -
+                     both reuse the exact same /ai/chat/ mechanism Notes already established. -->
+                <button type="button" onclick="openCalTaskChat()"
+                        class="w-9 h-9 shrink-0 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xl font-extrabold flex items-center justify-center shadow-lg shadow-indigo-600/30 transition-all">
                     +
-                </a>
+                </button>
                 {% endif %}
             </div>
 
@@ -365,6 +366,238 @@
         </div>
     </div>
 
+    {% if gemini_enabled %}
+    <!-- Same tiny task-creation chat as Notes' own "+" (see notes.html's own comment for the full
+         rationale) - opened by the "+" next to this page's own header. A specific Universe forces
+         the destination (notes_task_universe_id); "All" has no single implied one, so the model
+         asks which Universe (and optionally a tag) instead (notes_task_all_tasks) - see ai_chat()
+         in app.py. Reported directly, wanting the same "+"-opens-a-chat flow here too instead of
+         the old open_add_task=1 redirect into index.html's own Add Task modal. -->
+    <div id="cal-task-chat-modal" class="hidden fixed inset-0 z-[80] flex items-center justify-center px-4" style="background: rgba(2, 6, 23, 0.55);" onclick="if (event.target === this) closeCalTaskChat();">
+        <div id="cal-task-chat-card" class="bg-white rounded-3xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden" style="max-height: 80vh;">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 shrink-0">
+                <span class="text-sm font-extrabold text-indigo-600 uppercase tracking-wide">😈 New Task</span>
+                <button type="button" onclick="closeCalTaskChat()" class="text-slate-400 hover:text-slate-700 text-xs font-bold px-1">✕</button>
+            </div>
+            <div id="cal-task-chat-messages" class="flex-1 min-h-0 overflow-y-auto p-3 space-y-2.5 text-sm bg-slate-50"></div>
+            <!-- Deliberately a plain <div>, not a <form> - same reasoning as Notes' own version: a
+                 native form submission (a real GET navigation, no action/method set) would look
+                 exactly like "it just closes" - the whole page reloads, wiping the open modal. -->
+            <div id="cal-task-chat-form" class="p-2.5 border-t border-slate-200 flex gap-2 shrink-0 bg-white">
+                <input id="cal-task-chat-input" type="text" autocomplete="off" placeholder="e.g. Pay the water bill Friday"
+                       class="flex-1 min-w-0 bg-slate-100 border border-slate-200 rounded-xl px-3.5 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500">
+                <button type="button" onclick="handleCalTaskChatSubmit(event)" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/20 transition-all shrink-0">Send</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if gemini_enabled %}
+    <script>
+        // null from "All" (no single implied Universe) - notesTaskChatUniverseId's own counterpart
+        // in notes.html, same meaning here.
+        const calTaskChatUniverseId = {{ selected_universe_id | tojson }};
+        let calTaskChatSending = false;
+        // Set the moment any message in this chat session actually creates a task - closeCalTaskChat
+        // only bothers reloading the page (the one way this view picks up a newly-created task) when
+        // this is true, so closing after a pure Q&A/error exchange doesn't force an unnecessary reload.
+        let calTaskChatCreatedAny = false;
+
+        // Mirrors renderNotesTaskChatBubble in notes.html exactly - see its own comment.
+        function renderCalTaskChatBubble(role, text, variant, navTarget) {
+            const messages = document.getElementById('cal-task-chat-messages');
+            if (!messages) return null;
+            const bubble = document.createElement('div');
+            let bubbleClass = 'max-w-[85%] rounded-2xl px-3 py-2 whitespace-pre-wrap break-words shadow-sm ';
+            if (variant === 'task_created') {
+                bubbleClass += 'mr-auto bg-emerald-50 border border-emerald-200 text-emerald-800';
+            } else if (variant === 'error') {
+                bubbleClass += 'mr-auto bg-rose-50 border border-rose-200 text-rose-700';
+            } else if (variant === 'login_required') {
+                bubbleClass += 'mr-auto bg-indigo-50 border border-indigo-200 text-indigo-800';
+            } else if (role === 'user') {
+                bubbleClass += 'ml-auto bg-indigo-600 text-white shadow-indigo-600/20';
+            } else {
+                bubbleClass += 'mr-auto bg-white border border-slate-200 text-slate-700';
+            }
+            bubble.className = bubbleClass;
+            bubble.textContent = text;
+            if (navTarget && navTarget.universe_id && navTarget.id) {
+                const link = document.createElement('button');
+                link.type = 'button';
+                link.className = 'mt-2 block text-left text-emerald-700 hover:text-emerald-900 underline underline-offset-2 font-bold';
+                link.textContent = '🎯 Go to this task';
+                link.onclick = () => goToCalTaskChatTask(navTarget);
+                bubble.appendChild(link);
+            }
+            if (variant === 'login_required') {
+                const link = document.createElement('a');
+                link.href = '/login';
+                link.className = 'mt-2 block text-left text-indigo-600 hover:text-indigo-900 underline underline-offset-2 font-bold';
+                link.textContent = '🔑 Sign in with Google';
+                bubble.appendChild(link);
+            }
+            messages.appendChild(bubble);
+            messages.scrollTop = messages.scrollHeight;
+            return bubble;
+        }
+
+        function renderCalTaskChatThinkingBubble() {
+            const messages = document.getElementById('cal-task-chat-messages');
+            if (!messages) return null;
+            const bubble = document.createElement('div');
+            bubble.className = 'mr-auto max-w-[85%] rounded-2xl px-3 py-2 bg-white border border-slate-200 shadow-sm flex items-center';
+            bubble.innerHTML = '<span class="text-lg inline-block" style="animation: ai-chat-launcher-float 1.3s ease-in-out infinite;">😈</span>';
+            messages.appendChild(bubble);
+            messages.scrollTop = messages.scrollHeight;
+            return bubble;
+        }
+
+        function goToCalTaskChatTask(nav) {
+            if (!nav || !nav.universe_id || !nav.id) return;
+            try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}
+            window.location.href = '/?universe_id=' + nav.universe_id + '&goto_item=' + nav.id + '&focus_item=1';
+        }
+
+        function openCalTaskChat() {
+            const modal = document.getElementById('cal-task-chat-modal');
+            const messages = document.getElementById('cal-task-chat-messages');
+            if (!modal || !messages) return;
+            messages.innerHTML = '';
+            calTaskChatCreatedAny = false;
+            {% if selected_universe %}
+            renderCalTaskChatBubble('assistant', 'What task would you like me to create in ' + {{ selected_universe.name | tojson }} + '?');
+            {% else %}
+            renderCalTaskChatBubble('assistant', "What task would you like to add? Let me know which list it belongs to, and a tag if you'd like one.");
+            {% endif %}
+            modal.classList.remove('hidden');
+            const input = document.getElementById('cal-task-chat-input');
+            if (input) { input.value = ''; input.focus(); }
+            syncCalTaskChatToViewport();
+        }
+
+        // Reloads the current URL (view/year/month/day/universe_id, whatever was already there) -
+        // unlike Notes' own version this never needs to pick a different destination, since this
+        // page's whole state already lives in its own URL.
+        function closeCalTaskChat() {
+            const modal = document.getElementById('cal-task-chat-modal');
+            if (modal) modal.classList.add('hidden');
+            resetCalTaskChatLayout();
+            if (calTaskChatCreatedAny) {
+                window.location.reload();
+            }
+        }
+
+        function resetCalTaskChatLayout() {
+            const modal = document.getElementById('cal-task-chat-modal');
+            const card = document.getElementById('cal-task-chat-card');
+            if (modal) { modal.style.alignItems = ''; modal.style.paddingTop = ''; }
+            if (card) card.style.maxHeight = '80vh';
+        }
+
+        // Mirrors syncNotesTaskChatToViewport in notes.html exactly - see its own comment for the
+        // full rationale.
+        function syncCalTaskChatToViewport() {
+            const modal = document.getElementById('cal-task-chat-modal');
+            const card = document.getElementById('cal-task-chat-card');
+            const input = document.getElementById('cal-task-chat-input');
+            if (!modal || !card || modal.classList.contains('hidden')) return;
+            const keyboardLikelyOpen = window.innerWidth < 768 && document.activeElement === input;
+            if (!keyboardLikelyOpen || !window.visualViewport) {
+                resetCalTaskChatLayout();
+                return;
+            }
+            const vv = window.visualViewport;
+            const safeAreaProbe = document.getElementById('cal-safe-area-probe');
+            const safeAreaTop = safeAreaProbe ? safeAreaProbe.getBoundingClientRect().height : 0;
+            const TOP_MARGIN = Math.max(16, safeAreaTop + 8);
+            const BOTTOM_GAP = 10;
+            const top = Math.max(0, vv.offsetTop + TOP_MARGIN);
+            const maxHeight = Math.max(vv.height - TOP_MARGIN - BOTTOM_GAP, 160);
+            modal.style.alignItems = 'flex-start';
+            modal.style.paddingTop = `${top}px`;
+            card.style.maxHeight = `${maxHeight}px`;
+            const messages = document.getElementById('cal-task-chat-messages');
+            if (messages) messages.scrollTop = messages.scrollHeight;
+        }
+
+        let calTaskChatViewportSettleTimer = null;
+        function syncCalTaskChatToViewportSoon() {
+            syncCalTaskChatToViewport();
+            clearTimeout(calTaskChatViewportSettleTimer);
+            calTaskChatViewportSettleTimer = setTimeout(syncCalTaskChatToViewport, 180);
+        }
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', syncCalTaskChatToViewportSoon);
+            window.visualViewport.addEventListener('scroll', syncCalTaskChatToViewportSoon);
+        }
+        const calTaskChatInputEl = document.getElementById('cal-task-chat-input');
+        if (calTaskChatInputEl) {
+            calTaskChatInputEl.addEventListener('focus', syncCalTaskChatToViewportSoon);
+            calTaskChatInputEl.addEventListener('blur', () => {
+                clearTimeout(calTaskChatViewportSettleTimer);
+                calTaskChatViewportSettleTimer = setTimeout(syncCalTaskChatToViewport, 250);
+            });
+            calTaskChatInputEl.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.isComposing) {
+                    e.preventDefault();
+                    handleCalTaskChatSubmit(e);
+                }
+            });
+        }
+
+        async function handleCalTaskChatSubmit(event) {
+            event.preventDefault();
+            if (calTaskChatSending) return false;
+            const input = document.getElementById('cal-task-chat-input');
+            const text = input.value.trim();
+            if (!text) return false;
+            input.value = '';
+            renderCalTaskChatBubble('user', text);
+            const thinking = renderCalTaskChatThinkingBubble();
+            calTaskChatSending = true;
+            try {
+                const chatPayload = calTaskChatUniverseId
+                    ? { message: text, intent: 'create_task', notes_task_universe_id: calTaskChatUniverseId }
+                    : { message: text, intent: 'create_task', notes_task_all_tasks: true };
+                const res = await fetch('/ai/chat/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(chatPayload)
+                });
+                const data = await res.json();
+                if (thinking) thinking.remove();
+                if (!res.ok || !data.ok) {
+                    const errorVariant = data.code === 'login_required' ? 'login_required' : 'error';
+                    renderCalTaskChatBubble('assistant', data.error || 'Something went wrong - try again.', errorVariant);
+                    return false;
+                }
+                const replyBubble = renderCalTaskChatBubble('assistant', data.reply, data.task_created ? 'task_created' : undefined, data.task_created);
+                if (data.task_created) {
+                    calTaskChatCreatedAny = true;
+                    if (typeof confetti === 'function' && replyBubble) {
+                        const rect = replyBubble.getBoundingClientRect();
+                        confetti({
+                            particleCount: 65,
+                            spread: 80,
+                            origin: { x: (rect.left + rect.width / 2) / window.innerWidth, y: (rect.top + rect.height / 2) / window.innerHeight },
+                            colors: ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#3b82f6'],
+                            disableForReducedMotion: true
+                        });
+                    }
+                }
+                input.focus();
+            } catch (e) {
+                if (thinking) thinking.remove();
+                renderCalTaskChatBubble('assistant', 'Something went wrong - try again.', 'error');
+            } finally {
+                calTaskChatSending = false;
+            }
+            return false;
+        }
+    </script>
+    {% endif %}
+
     <script>
         function generateCalSpaceStars() {
             const container = document.getElementById('cal-space-stars');
@@ -560,15 +793,15 @@
            class="w-14 h-14 rounded-full bg-yellow-500 hover:bg-yellow-400 border border-yellow-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
             📝
         </a>
+        <div id="calendar-quick-btn" title="Calendar"
+             class="w-14 h-14 rounded-full bg-sky-500 border border-sky-300/40 shadow-2xl flex items-center justify-center text-2xl">
+            📅
+        </div>
         <a href="{{ events_universe_href }}" id="events-quick-btn" title="Events"
            onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
            class="w-14 h-14 rounded-full bg-fuchsia-500 hover:bg-fuchsia-400 border border-fuchsia-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
             🎉
         </a>
-        <div id="calendar-quick-btn" title="Calendar"
-             class="w-14 h-14 rounded-full bg-sky-500 border border-sky-300/40 shadow-2xl flex items-center justify-center text-2xl">
-            📅
-        </div>
     </div>
 </body>
 </html>

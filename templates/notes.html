@@ -974,14 +974,14 @@
              class="w-14 h-14 rounded-full bg-yellow-500 border border-yellow-300/40 shadow-2xl flex items-center justify-center text-2xl">
             📝
         </div>
+        <a href="/calendar" id="calendar-quick-btn" title="Calendar"
+           class="w-14 h-14 rounded-full bg-sky-500 hover:bg-sky-400 border border-sky-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
+            📅
+        </a>
         <a href="{{ events_universe_href }}" id="events-quick-btn" title="Events"
            onclick="try { sessionStorage.setItem('suppress_mv_timeline_restore_until', String(Date.now() + 8000)); } catch (e) {}"
            class="w-14 h-14 rounded-full bg-fuchsia-500 hover:bg-fuchsia-400 border border-fuchsia-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
             🎉
-        </a>
-        <a href="/calendar" id="calendar-quick-btn" title="Calendar"
-           class="w-14 h-14 rounded-full bg-sky-500 hover:bg-sky-400 border border-sky-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
-            📅
         </a>
     </div>
 </body>
