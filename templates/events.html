@@ -91,7 +91,7 @@
         <div class="bg-white rounded-3xl p-5 md:p-6 flex flex-col shadow-2xl" style="min-height: calc(100vh - 230px);">
             <div class="flex items-center justify-between gap-2 mb-3 shrink-0">
                 <h2 class="text-lg font-extrabold text-slate-900 flex items-center gap-2">
-                    {% if selected_universe %}{{ selected_universe.icon or '🎉' }} {{ selected_universe.name }}{% else %}🎉 All{% endif %}
+                    {% if selected_universe %}{{ selected_universe.icon or '🎉' }} {{ selected_universe.name }}{% else %}✨ All{% endif %}
                 </h2>
                 <a href="/events/new?back_url=/events{{ ('?universe_id=' ~ selected_universe_id) if selected_universe_id else '' }}"
                    class="w-9 h-9 shrink-0 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xl font-extrabold flex items-center justify-center shadow-lg shadow-indigo-600/30 transition-all">

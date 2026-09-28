@@ -123,8 +123,14 @@
         </div>
 
         <!-- Full white paper surface, same as Notes' own checklist card - a month grid instead of
-             a checklist, but the same "this Universe's own note" framing. -->
-        <div class="bg-white rounded-3xl p-5 md:p-6 flex flex-col shadow-2xl" style="min-height: calc(100vh - 230px);">
+             a checklist, but the same "this Universe's own note" framing. Fixed height (not just
+             min-height) - unlike Notes/People/Events' single content list, Calendar has 4 separate
+             view modes (Day/Week/Month/Overdue) that can each carry very different amounts of
+             built-in chrome (a full 6-row month grid vs. a short agenda), so a min-height floor let
+             the card balloon taller than the other 3 pages whenever a view's content exceeded that
+             floor. A real height + min-h-0 on each view's own scroll wrapper (below) forces every
+             view to scroll internally within the exact same card size instead. -->
+        <div class="bg-white rounded-3xl p-5 md:p-6 flex flex-col shadow-2xl" style="height: calc(100vh - 230px);">
             <div class="flex items-center justify-between gap-2 mb-3 shrink-0">
                 <h2 class="text-lg font-extrabold text-slate-900 flex items-center gap-2 min-w-0 truncate">
                     {% if selected_universe %}{{ selected_universe.icon or '😈' }} {{ selected_universe.name }}{% else %}✨ All{% endif %}
@@ -209,7 +215,7 @@
                  to) with a real complete checkbox. Lighter than Day view's own cards (no
                  description/realm/bucket line) since a week's worth needs to stay scannable, but
                  nothing about a task's own title/time is ever hidden. -->
-            <div class="flex-1 overflow-y-auto pb-32">
+            <div class="flex-1 min-h-0 overflow-y-auto pb-32">
                 {% for wd in week_days %}
                 <div class="mb-4">
                     <div class="flex items-center gap-2 mb-1.5 px-0.5">
@@ -271,7 +277,7 @@
             <!-- Day list - full task rows with a real complete checkbox, same
                  fetch()-with-X-Requested-With toggle pattern (and confetti) as Notes' own
                  checklist, reported directly as what was missing from the month grid on mobile. -->
-            <div class="flex-1 overflow-y-auto space-y-2.5 pb-32">
+            <div class="flex-1 min-h-0 overflow-y-auto space-y-2.5 pb-32">
                 {% for t in day_tasks %}
                 <div class="flex items-start gap-3 p-3.5 rounded-2xl border {{ 'bg-red-50/60 border-red-100' if t.is_overdue else 'bg-slate-50 border-slate-200' }}" data-row-item-id="{{ t.id }}">
                     <button type="button" onclick="toggleCalTaskComplete(this, {{ t.id }})" ontouchstart="try { window.webkit.messageHandlers.haptics.postMessage('rigid'); } catch (e) {}" title="{{ 'Mark Incomplete' if t.is_completed else 'Mark Complete' }}"
@@ -312,7 +318,7 @@
             <!-- Flat list, oldest-first, across every day/Universe in scope - unlike Day/Week/Month
                  this never changes with date navigation, so each row shows its own due date instead
                  of relying on a shared header for it. -->
-            <div class="flex-1 overflow-y-auto space-y-2.5 pb-32">
+            <div class="flex-1 min-h-0 overflow-y-auto space-y-2.5 pb-32">
                 {% for t in overdue_tasks %}
                 <div class="flex items-start gap-3 p-3.5 rounded-2xl border bg-red-50/60 border-red-100" data-row-item-id="{{ t.id }}">
                     <button type="button" onclick="toggleCalTaskComplete(this, {{ t.id }})" ontouchstart="try { window.webkit.messageHandlers.haptics.postMessage('rigid'); } catch (e) {}" title="Mark Complete"
@@ -380,7 +386,7 @@
 
             <!-- pb-32 - same reasoning as Notes' own checklist: clears the floating launcher
                  cluster fixed over the bottom of the screen regardless of scroll position. -->
-            <div class="flex-1 overflow-y-auto pb-32">
+            <div class="flex-1 min-h-0 overflow-y-auto pb-32">
                 <div class="grid grid-cols-7 gap-1">
                     {% for week in weeks %}
                         {% for cell in week %}
