@@ -22,6 +22,8 @@
 	<string>TaskMonster uses your mic for voice dictation when adding tasks through the AI assistant.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>TaskMonster uses on-device speech recognition to turn your voice into task text when you tap the mic in AI chat.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>TaskMonster can import contacts you pick from your iPhone into a People list, and keep them updated if you edit them in Contacts.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

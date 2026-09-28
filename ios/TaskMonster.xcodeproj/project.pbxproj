@@ -12,11 +12,13 @@
 		61C7B169E795D8981455B3B4 /* TaskMonsterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7352B7DC9A295E4CB981DC26 /* TaskMonsterApp.swift */; };
 		8D04F3352CB4ED8D1DE41788 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1FDAF22189CD50DD6EA7125 /* ContentView.swift */; };
 		93A3AE2309A663F26CAA920D /* PurchaseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0BFA717648DC5C34B6EAB5 /* PurchaseManager.swift */; };
+		DA5EFF5741E76D04CDC92F3E /* ContactsSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E31D3F74141F6C95F82E94E5 /* ContactsSyncManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		2DFA104D8B25B44AF43086E5 /* TaskMonster.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TaskMonster.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4C0BFA717648DC5C34B6EAB5 /* PurchaseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PurchaseManager.swift; sourceTree = "<group>"; };
+		E31D3F74141F6C95F82E94E5 /* ContactsSyncManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsSyncManager.swift; sourceTree = "<group>"; };
 		7352B7DC9A295E4CB981DC26 /* TaskMonsterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskMonsterApp.swift; sourceTree = "<group>"; };
 		A65675CE813FA1DC17A44559 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CE80A7BB1D56C4E8EF6B1C5E /* WebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebView.swift; sourceTree = "<group>"; };
@@ -45,6 +47,7 @@
 			isa = PBXGroup;
 			children = (
 				D1FDAF22189CD50DD6EA7125 /* ContentView.swift */,
+				E31D3F74141F6C95F82E94E5 /* ContactsSyncManager.swift */,
 				4C0BFA717648DC5C34B6EAB5 /* PurchaseManager.swift */,
 				7352B7DC9A295E4CB981DC26 /* TaskMonsterApp.swift */,
 				CE80A7BB1D56C4E8EF6B1C5E /* WebView.swift */,
@@ -132,6 +135,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8D04F3352CB4ED8D1DE41788 /* ContentView.swift in Sources */,
+				DA5EFF5741E76D04CDC92F3E /* ContactsSyncManager.swift in Sources */,
 				93A3AE2309A663F26CAA920D /* PurchaseManager.swift in Sources */,
 				61C7B169E795D8981455B3B4 /* TaskMonsterApp.swift in Sources */,
 				3A270B70233B50F666083EDC /* WebView.swift in Sources */,

@@ -39,6 +39,8 @@ struct WebView: UIViewRepresentable {
         config.userContentController.add(context.coordinator, name: "speechRecognition")
         // TaskMonster Pro subscription (StoreKit 2) - see PurchaseManager.
         config.userContentController.add(context.coordinator, name: "purchases")
+        // One-way iPhone Contacts import for the People page - see ContactsSyncManager.
+        config.userContentController.add(context.coordinator, name: "contactsSync")
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
@@ -63,6 +65,7 @@ struct WebView: UIViewRepresentable {
         webView.backgroundColor = UIColor(red: 0.0588, green: 0.0902, blue: 0.1647, alpha: 1)
         context.coordinator.attach(webView: webView, url: url)
         PurchaseManager.shared.webView = webView
+        ContactsSyncManager.shared.webView = webView
         // .reloadIgnoringLocalCacheData, not the default .useProtocolCachePolicy - the site's own
         // response carries no Cache-Control/Last-Modified headers at all, which is exactly the
         // condition under which NSURLCache applies its own heuristic freshness lifetime instead of
@@ -373,6 +376,9 @@ struct WebView: UIViewRepresentable {
 
             case "purchases":
                 Task { @MainActor in PurchaseManager.shared.handleMessage(message.body) }
+
+            case "contactsSync":
+                Task { @MainActor in ContactsSyncManager.shared.handleMessage(message.body) }
 
             case "speechRecognition":
                 let command = (message.body as? String) ?? ""
