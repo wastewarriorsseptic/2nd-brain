@@ -8263,10 +8263,13 @@
             // the zoomed-out floor (see zoomSpace's own 0.12 floor) rather than needing an even
             // more extreme zoom to avoid edge-clipping.
             const stepSpacing = 340;
-            // Gap between the hub's own edge and the nearest task on either side - kept distinct
-            // from stepSpacing (the gap BETWEEN two tasks) so the hub always reads as clearly set
-            // apart from its own timeline, not just another evenly-spaced node in the chain.
-            const startGap = 240;
+            // Was a separate, smaller 240 - reported directly from a screenshot: with two tasks
+            // sharing the nearest overdue slot close together and only one upcoming task sitting
+            // much further out, the layout read as an uneven cluster-plus-straggler instead of one
+            // evenly spaced line. Matching this to stepSpacing makes the hub-to-first-task gap the
+            // same as every other task-to-task gap, so the whole chain (hub included) reads as a
+            // single uniform sequence.
+            const startGap = stepSpacing;
 
             lanes.forEach((lane, laneIdx) => {
                 lane.hubRadius = hubRadius;
@@ -8482,10 +8485,11 @@
             const isMobile = window.innerWidth < 768;
             const laneSpacing = isMobile ? 460 : 400;
             const hubRadius = isMobile ? 76 : 60;
-            // Same tightened spacing as buildMultiverseLanes' own copy of these constants (see its
-            // comment) - kept in sync since both share the identical hub+horizontal-chain layout.
+            // Same tightened, now-uniform spacing as buildMultiverseLanes' own copy of these
+            // constants (see its comment) - kept in sync since both share the identical
+            // hub+horizontal-chain layout.
             const stepSpacing = 340;
-            const startGap = 240;
+            const startGap = stepSpacing;
 
             lanes.forEach((lane, laneIdx) => {
                 lane.hubRadius = hubRadius;

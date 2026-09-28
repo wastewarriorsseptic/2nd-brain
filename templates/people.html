@@ -168,11 +168,21 @@
                                 {% if person.phone %}
                                 <div class="flex items-center gap-2 mt-1.5">
                                     <span class="text-slate-500 text-xs md:text-sm">{{ person.phone }}</span>
-                                    <a href="tel:{{ person.phone }}" onclick="event.stopPropagation()" title="Call {{ person.name }}"
+                                    <!-- target="_blank" is deliberate, not decorative - WKWebView has no
+                                         real popup window, so the native app's own createWebViewWith
+                                         handler catches any target="_blank" link and hands it straight
+                                         to UIApplication.shared.open regardless of URL scheme (the same
+                                         path an external shopping link already uses). A plain same-window
+                                         tel:/sms: href instead falls through decidePolicyFor, which - on
+                                         whatever build is currently on the user's phone - doesn't intercept
+                                         those schemes yet and shows a "Couldn't connect" error. This routes
+                                         around that without needing a new TestFlight build; harmless no-op
+                                         on a plain web browser (tel:/sms: just prompt the same either way). -->
+                                    <a href="tel:{{ person.phone }}" target="_blank" onclick="event.stopPropagation()" title="Call {{ person.name }}"
                                        class="w-7 h-7 shrink-0 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white flex items-center justify-center text-xs shadow transition">
                                         📞
                                     </a>
-                                    <a href="sms:{{ person.phone }}" onclick="event.stopPropagation()" title="Text {{ person.name }}"
+                                    <a href="sms:{{ person.phone }}" target="_blank" onclick="event.stopPropagation()" title="Text {{ person.name }}"
                                        class="w-7 h-7 shrink-0 rounded-full bg-sky-500 hover:bg-sky-400 text-white flex items-center justify-center text-xs shadow transition">
                                         💬
                                     </a>
@@ -180,7 +190,7 @@
                                 {% endif %}
                                 {% if person.email %}
                                 <p class="text-slate-500 text-xs md:text-sm mt-1">
-                                    <a href="mailto:{{ person.email }}" onclick="event.stopPropagation()" class="hover:text-indigo-600 hover:underline">✉️ {{ person.email }}</a>
+                                    <a href="mailto:{{ person.email }}" target="_blank" onclick="event.stopPropagation()" class="hover:text-indigo-600 hover:underline">✉️ {{ person.email }}</a>
                                 </p>
                                 {% endif %}
                                 {% if person.tags %}
