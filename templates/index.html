@@ -1209,18 +1209,14 @@
                     <input type="text" name="title" id="event-quick-title-input" required placeholder="e.g. Sarah's Birthday Dinner"
                            class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
 
-                    <!-- Optional Realm pin - blank still lands in the auto-provisioned General
-                         Realm exactly as before (a true one-off event needs zero decisions here),
-                         but picking one groups this event the same way Space View now organizes
-                         the whole floating deck by Realm (see renderEventUniverseCards) - reported
-                         directly that Events should "follow the same rules like notes and tasks". -->
-                    <select name="realm_id" id="event-quick-realm-select"
-                            class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
-                        <option value="">🔮 General (no Realm)</option>
-                        {% for r in realms %}
-                        <option value="{{ r.id }}">{{ r.icon or '🔮' }} {{ r.name }}</option>
-                        {% endfor %}
-                    </select>
+                    <!-- Optional Tag - blank still lands in the auto-provisioned General/Events
+                         bucket exactly as before (a true one-off event needs zero decisions here),
+                         but filling it in groups this event the same way Space View now organizes
+                         the whole floating deck (see renderEventUniverseCards) - reported directly
+                         that Events should "follow the same rules like notes and tasks" (Universe +
+                         Tag, no Realm/Bucket picker). -->
+                    <input type="text" name="tag" id="event-quick-tag-input" placeholder="Tag (optional, e.g. Family, Work)"
+                           class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
 
                     <!-- Reported directly as too cluttered - the raw mm/dd/yyyy segments and the
                          truncated "Time (optiona..." select ate most of the row just showing
@@ -2875,11 +2871,6 @@
             { id: {{ u.id }}, name: {{ u.name|tojson }}, icon: {{ (u.icon or '🎉')|tojson }} },
             {% endif %}{% endfor %}
         ];
-        // Realm/Bucket options grouped per Universe (see event_universe_realms_data's own
-        // docstring in app.py) - eventUniverseCards now spans every Event Universe at once (the
-        // "All Universes" default), so the Realm/Bucket dropdowns need every Universe's own
-        // structure available, not just the active one's realmsData.
-        const eventUniverseRealmsData = {{ (event_universe_realms_data|default([]))|tojson }};
         // Space View's own core hub (see renderSpaceFrame) draws this instead of a hardcoded 😈 -
         // the devil is TaskMonster's own mascot/brand, not a stand-in for whatever Universe you're
         // actually looking at, and showing it regardless of Universe read as not making sense once
@@ -7275,13 +7266,13 @@
             const modal = document.getElementById('event-quick-create-modal');
             if (!modal) return;
             modal.classList.remove('hidden');
-            // Pre-pin to whichever Realm filter chip is currently active (see
-            // renderEventUniverseCards/eventCardsRealmFilter) - tapping "+ New Event" while looking
-            // at one Realm's section should default there instead of always falling back to
-            // General, same as creating a Task from inside an already-selected Realm does.
-            const realmSelect = document.getElementById('event-quick-realm-select');
-            if (realmSelect) {
-                realmSelect.value = (eventCardsRealmFilter && eventCardsRealmFilter !== 'uncategorized') ? eventCardsRealmFilter : '';
+            // Pre-pin to whichever Tag filter is currently active (see
+            // renderEventUniverseCards/eventCardsTagFilter) - tapping "+ New Event" while looking
+            // at one Tag's section should default there instead of always starting blank, same as
+            // creating a Task from inside an already-selected Realm used to.
+            const tagInput = document.getElementById('event-quick-tag-input');
+            if (tagInput) {
+                tagInput.value = eventCardsTagFilter || '';
             }
             const titleInput = document.getElementById('event-quick-title-input');
             if (titleInput) setTimeout(() => titleInput.focus(), 50);
@@ -7337,8 +7328,9 @@
         // null ("✨ All Universes") - reported directly, wanting that to be the default view rather
         // than always narrowed to whichever Universe happened to be active on page load.
         let eventCardsUniverseFilter = null;
-        let eventCardsRealmFilter = null;
-        let eventCardsBucketFilter = null;
+        // Replaces the old Realm/Bucket filters (see the Universe+Tag cleanup) - a plain string
+        // match against each card's own tag, or null for "every tag".
+        let eventCardsTagFilter = null;
         // Past events default to hidden - reported directly, wanting the main timeline to open
         // on what's coming up rather than leading with what's already happened. A "Past Events"
         // pill (only shown once there IS a past event to reveal) toggles the column back on.
@@ -7351,19 +7343,12 @@
 
         function setEventCardsUniverseFilter(universeKey) {
             eventCardsUniverseFilter = universeKey;
-            eventCardsRealmFilter = null;
-            eventCardsBucketFilter = null;
+            eventCardsTagFilter = null;
             renderEventUniverseCards();
         }
 
-        function setEventCardsRealmFilter(realmKey) {
-            eventCardsRealmFilter = realmKey;
-            eventCardsBucketFilter = null;
-            renderEventUniverseCards();
-        }
-
-        function setEventCardsBucketFilter(bucketKey) {
-            eventCardsBucketFilter = bucketKey;
+        function setEventCardsTagFilter(tagKey) {
+            eventCardsTagFilter = tagKey;
             renderEventUniverseCards();
         }
 
@@ -7498,50 +7483,17 @@
             const inner = document.createElement('div');
             inner.className = 'h-full flex flex-col';
 
-            // Realm/Bucket options built from eventUniverseRealmsData - the real structure of
-            // every Event Universe the user owns (same server-rendered shape realmsData uses for
-            // the single active Universe elsewhere), scoped down to whichever Universe(s) are
-            // currently selected. A brand-new Realm/Bucket with zero events in it yet still needs
-            // to show up here to be selectable at all (that's the whole point of letting someone
-            // route an event straight into a specific truck/bucket); building the list purely from
-            // existing events made an empty Realm/Bucket invisible until something was already
-            // filed into it. An "Uncategorized" entry is still added on top, but only when at least
-            // one event actually has no realm/bucket pin, since eventUniverseRealmsData has no such
-            // row itself.
-            const relevantUniverseEntries = eventUniverseRealmsData.filter((u) =>
-                eventCardsUniverseFilter === null || String(u.universeId) === eventCardsUniverseFilter
+            // Tag options built straight from eventUniverseCards' own tag field (no server-side
+            // structure to walk, unlike the old Realm/Bucket dropdowns - a tag is just a string on
+            // the event itself), scoped to whichever Universe is currently selected. An empty/blank
+            // tag doesn't get its own "Untagged" entry - most events have no tag at all, and that's
+            // exactly what "All Tags" already shows.
+            const relevantCardsForTags = eventUniverseCards.filter((ev) =>
+                eventCardsUniverseFilter === null || String(ev.universeId) === eventCardsUniverseFilter
             );
-            const realmsById = new Map();
-            relevantUniverseEntries.forEach((u) => {
-                (u.realms || []).forEach((r) => {
-                    realmsById.set(String(r.id), { key: String(r.id), name: r.name, icon: r.icon || '🔮' });
-                });
-            });
-            if (eventUniverseCards.some((ev) =>
-                ev.realmId == null && (eventCardsUniverseFilter === null || String(ev.universeId) === eventCardsUniverseFilter)
-            )) {
-                realmsById.set('uncategorized', { key: 'uncategorized', name: 'Uncategorized', icon: '🔮' });
-            }
-            const realmList = Array.from(realmsById.values());
-
-            const bucketsById = new Map();
-            relevantUniverseEntries.forEach((u) => {
-                (u.realms || []).forEach((r) => {
-                    if (eventCardsRealmFilter !== null && String(r.id) !== eventCardsRealmFilter) return;
-                    (r.buckets || []).forEach((b) => {
-                        bucketsById.set(String(b.id), { key: String(b.id), name: b.name });
-                    });
-                });
-            });
-            const hasUncategorizedBucket = eventUniverseCards.some((ev) => {
-                if (eventCardsUniverseFilter !== null && String(ev.universeId) !== eventCardsUniverseFilter) return false;
-                if (eventCardsRealmFilter !== null && (ev.realmId != null ? String(ev.realmId) : 'uncategorized') !== eventCardsRealmFilter) return false;
-                return ev.bucketId == null;
-            });
-            if (hasUncategorizedBucket) {
-                bucketsById.set('uncategorized', { key: 'uncategorized', name: 'Uncategorized' });
-            }
-            const bucketList = Array.from(bucketsById.values());
+            const tagList = Array.from(new Set(
+                relevantCardsForTags.map((ev) => (ev.tag || '').trim()).filter((t) => t.length > 0)
+            )).sort((a, b) => a.localeCompare(b));
 
             const headerRow = document.createElement('div');
             headerRow.className = 'shrink-0 flex items-end gap-2 pointer-events-none mb-3 flex-wrap';
@@ -7553,12 +7505,11 @@
             addTile.innerHTML = '<span>✨</span><span>New Event</span>';
             headerRow.appendChild(addTile);
 
-            // Wraps a <select> with its own small uppercase label above it (Universe/Realm/Bucket)
-            // - reported directly, wanting it always clear which dropdown is which rather than
-            // three unlabeled selects. Always shown now too (used to hide below 2 options) - even
-            // a single Realm/Bucket is worth seeing and labeled, both for discoverability (this is
-            // literally how you find out what structure exists) and consistency, rather than
-            // popping in only once there's something to switch between.
+            // Wraps a <select> with its own small uppercase label above it (Universe/Tag) -
+            // reported directly, wanting it always clear which dropdown is which rather than
+            // unlabeled selects. Always shown once there's more than one option, both for
+            // discoverability (this is literally how you find out what tags exist) and
+            // consistency, rather than popping in only once there's something to switch between.
             function buildLabeledSelect(labelText) {
                 const wrap = document.createElement('div');
                 wrap.className = 'pointer-events-auto flex flex-col gap-0.5';
@@ -7574,9 +7525,9 @@
             }
 
             // "✨ All Universes" (the default - eventCardsUniverseFilter starts null) shows every
-            // Event Universe's cards combined on one timeline, same "All X" pattern as the Realm/
-            // Bucket dropdowns right below - reported directly, wanting that same behavior here
-            // too. This also is what actually FIXES a second Event Universe (e.g. a dedicated
+            // Event Universe's cards combined on one timeline, same "All X" pattern as the Tag
+            // dropdown right below - reported directly, wanting that same behavior here too.
+            // This also is what actually FIXES a second Event Universe (e.g. a dedicated
             // "Dispatch" alongside a personal "Events") being reachable at all - previously the
             // standalone "🎉 Events" launcher only ever landed on the first one by sort_order, and
             // there was no way to see the other's events without a full page switch. Purely a
@@ -7599,45 +7550,27 @@
                 universeSelect.onchange = () => setEventCardsUniverseFilter(universeSelect.value || null);
             }
 
-            if (realmList.length > 0) {
-                const realmSelect = buildLabeledSelect('Realm');
+            if (tagList.length > 0) {
+                const tagSelect = buildLabeledSelect('Tag');
                 const allOpt = document.createElement('option');
                 allOpt.value = '';
-                allOpt.textContent = 'All Realms';
-                if (eventCardsRealmFilter === null) allOpt.selected = true;
-                realmSelect.appendChild(allOpt);
-                realmList.forEach((realm) => {
+                allOpt.textContent = 'All Tags';
+                if (eventCardsTagFilter === null) allOpt.selected = true;
+                tagSelect.appendChild(allOpt);
+                tagList.forEach((tag) => {
                     const opt = document.createElement('option');
-                    opt.value = realm.key;
-                    opt.textContent = `${realm.icon} ${realm.name}`;
-                    if (eventCardsRealmFilter === realm.key) opt.selected = true;
-                    realmSelect.appendChild(opt);
+                    opt.value = tag;
+                    opt.textContent = tag;
+                    if (eventCardsTagFilter === tag) opt.selected = true;
+                    tagSelect.appendChild(opt);
                 });
-                realmSelect.onchange = () => setEventCardsRealmFilter(realmSelect.value || null);
-            }
-
-            if (bucketList.length > 0) {
-                const bucketSelect = buildLabeledSelect('Bucket');
-                const allOpt = document.createElement('option');
-                allOpt.value = '';
-                allOpt.textContent = 'All Buckets';
-                if (eventCardsBucketFilter === null) allOpt.selected = true;
-                bucketSelect.appendChild(allOpt);
-                bucketList.forEach((bucket) => {
-                    const opt = document.createElement('option');
-                    opt.value = bucket.key;
-                    opt.textContent = bucket.name;
-                    if (eventCardsBucketFilter === bucket.key) opt.selected = true;
-                    bucketSelect.appendChild(opt);
-                });
-                bucketSelect.onchange = () => setEventCardsBucketFilter(bucketSelect.value || null);
+                tagSelect.onchange = () => setEventCardsTagFilter(tagSelect.value || null);
             }
             inner.appendChild(headerRow);
 
             const visibleCards = eventUniverseCards.filter((ev) => {
                 if (eventCardsUniverseFilter !== null && String(ev.universeId) !== eventCardsUniverseFilter) return false;
-                if (eventCardsRealmFilter !== null && (ev.realmId != null ? String(ev.realmId) : 'uncategorized') !== eventCardsRealmFilter) return false;
-                if (eventCardsBucketFilter !== null && (ev.bucketId != null ? String(ev.bucketId) : 'uncategorized') !== eventCardsBucketFilter) return false;
+                if (eventCardsTagFilter !== null && (ev.tag || '').trim() !== eventCardsTagFilter) return false;
                 return true;
             });
 

@@ -1393,48 +1393,41 @@ def get_or_create_important_dates_universe(session: Session, user_id: int) -> "U
 
     return universe
 
-def get_or_create_default_event_bucket(session: Session, user_id: int, target_universe: Optional["Universe"] = None, target_realm: Optional["Realm"] = None) -> "Bucket":
+def get_or_create_default_event_bucket(session: Session, user_id: int, target_universe: Optional["Universe"] = None) -> "Bucket":
     """Reported directly: picking a Universe/Realm/Bucket up front made creating a quick event
     feel like more organizational overhead than it should - most events don't need a decision
     about where they live at all. Every account gets one default Events Universe -> General Realm
     -> Events Bucket, auto-created the first time it's needed (not at signup, unlike Important
-    Dates - most users never touch Events at all) - the event form pre-selects this bucket so
-    creating an event needs no organizing decision by default, while still surfacing the full
-    picker (see new_event_form) for anyone who wants their own structure, e.g. separate Realms per
-    client type for a business.
+    Dates - most users never touch Events at all). The event form and Space View's own quick-
+    create card both resolve their event's actual bucket through here - Universe is the only
+    organizing decision either one asks for, an optional Tag covers the rest (see the
+    "no Buckets/Realms in UI" rule).
 
     Pass target_universe to provision this same General Realm -> Events Bucket pair inside an
     ALREADY-CHOSEN Universe instead - used by Space View's inline quick-create card (reported
     directly: an event created while looking at e.g. "Life Events" should land right there, not
-    always get shunted off to the separate auto-provisioned Events Universe).
-
-    Pass target_realm to skip General entirely and land inside a Realm the user picked explicitly
-    - the same quick-create form now offers an optional Realm dropdown so a one-off event can still
-    be organized the same way Notes and Tasks are, reported directly. target_realm wins over
-    target_universe when both are given (a chosen Realm already implies its own Universe)."""
-    if target_realm is not None:
-        realm = target_realm
-    else:
-        universe = target_universe
-        if universe is None:
-            universe = session.exec(
-                select(Universe).where(Universe.user_id == user_id, Universe.name == "Events", Universe.kind == "event")
-            ).first()
-            if not universe:
-                max_order = len(session.exec(select(Universe).where(Universe.user_id == user_id)).all())
-                universe = Universe(name="Events", icon="🎉", kind="event", sort_order=max_order, user_id=user_id)
-                session.add(universe)
-                session.commit()
-                session.refresh(universe)
-
-        realm = session.exec(
-            select(Realm).where(Realm.universe_id == universe.id, Realm.name == "General")
+    always get shunted off to the separate auto-provisioned Events Universe) and by the full
+    event form once the user's own Universe pick is known."""
+    universe = target_universe
+    if universe is None:
+        universe = session.exec(
+            select(Universe).where(Universe.user_id == user_id, Universe.name == "Events", Universe.kind == "event")
         ).first()
-        if not realm:
-            realm = Realm(name="General", icon="🎉", sort_order=0, user_id=user_id, universe_id=universe.id)
-            session.add(realm)
+        if not universe:
+            max_order = len(session.exec(select(Universe).where(Universe.user_id == user_id)).all())
+            universe = Universe(name="Events", icon="🎉", kind="event", sort_order=max_order, user_id=user_id)
+            session.add(universe)
             session.commit()
-            session.refresh(realm)
+            session.refresh(universe)
+
+    realm = session.exec(
+        select(Realm).where(Realm.universe_id == universe.id, Realm.name == "General")
+    ).first()
+    if not realm:
+        realm = Realm(name="General", icon="🎉", sort_order=0, user_id=user_id, universe_id=universe.id)
+        session.add(realm)
+        session.commit()
+        session.refresh(realm)
 
     bucket = session.exec(
         select(Bucket).where(Bucket.realm_id == realm.id, Bucket.name == "Events")
@@ -2505,7 +2498,6 @@ def dashboard(
         # scoped to just active_universe for the rest of the page (sidebar, Card View) - the
         # events deck is the one surface meant to span every Event Universe at once.
         event_universe_cards = []
-        event_universe_realms_data = []
         if is_event_universe:
             event_universes_owned = [u for u in universes if u.kind == "event" and u.user_id == user.id]
             event_universe_ids = [u.id for u in event_universes_owned]
@@ -2515,8 +2507,9 @@ def dashboard(
             all_event_realm_ids = [r.id for r in all_event_realms]
             all_event_buckets = session.exec(select(Bucket).where(Bucket.realm_id.in_(all_event_realm_ids))).all() if all_event_realm_ids else []
             realm_by_id_for_events = {r.id: r for r in all_event_realms}
-            bucket_by_id_for_events = {b.id: b for b in all_event_buckets}
-            realm_by_bucket_id = {b.id: realm_by_id_for_events.get(b.realm_id) for b in all_event_buckets}
+            # Only ever used to resolve each event's Universe (bucket -> realm -> universe) below -
+            # Realm/Bucket themselves haven't been exposed in the events UI since the Universe+Tag
+            # cleanup, so nothing here needs a bucket_by_id/realm_by_bucket_id lookup of its own.
             universe_by_bucket_id = {
                 b.id: event_universe_by_id.get(realm_by_id_for_events[b.realm_id].universe_id)
                 for b in all_event_buckets if b.realm_id in realm_by_id_for_events
@@ -2553,8 +2546,6 @@ def dashboard(
                 info = events_by_item_id_all.get(it.id)
                 if not info:
                     continue
-                realm = realm_by_bucket_id.get(it.bucket_id)
-                bucket = bucket_by_id_for_events.get(it.bucket_id)
                 universe = universe_by_bucket_id.get(it.bucket_id)
                 event_universe_cards.append({
                     "itemId": it.id,
@@ -2571,33 +2562,10 @@ def dashboard(
                     "isPrivate": info["is_private"],
                     "isDraft": info["is_draft"],
                     "isPast": it.due_date < datetime.utcnow(),
-                    "realmId": realm.id if realm else None,
-                    "realmName": realm.name if realm else None,
-                    "realmIcon": (realm.icon or "🔮") if realm else None,
-                    "bucketId": bucket.id if bucket else None,
-                    "bucketName": bucket.name if bucket else None,
+                    "tag": it.tag or "",
                     "universeId": universe.id if universe else None,
                     "universeName": universe.name if universe else None,
                     "universeIcon": (universe.icon or "🎉") if universe else None,
-                })
-
-            # Realm/Bucket dropdown OPTIONS, grouped per Universe - realmsData (used for every
-            # other Universe kind's own dropdowns) only ever covers the single active_universe, so
-            # it can't supply Realm/Bucket options once the events deck spans every Universe at
-            # once. Mirrors realmsData's own {id, name, icon, buckets: [{id, name}]} shape per
-            # Realm, just grouped one level up by universeId.
-            for u in event_universes_owned:
-                event_universe_realms_data.append({
-                    "universeId": u.id,
-                    "realms": [
-                        {
-                            "id": r.id,
-                            "name": r.name,
-                            "icon": r.icon or "🔮",
-                            "buckets": [{"id": b.id, "name": b.name} for b in all_event_buckets if b.realm_id == r.id],
-                        }
-                        for r in all_event_realms if r.universe_id == u.id
-                    ],
                 })
 
         # Full tree of every Universe/Realm/Bucket the user OWNS (not shared-with-them realms -
@@ -2710,7 +2678,6 @@ def dashboard(
                 "is_event_universe": is_event_universe,
                 "events_by_item_id": events_by_item_id,
                 "event_universe_cards": event_universe_cards,
-                "event_universe_realms_data": event_universe_realms_data,
                 "events_universe_href": get_events_universe_href(session, user.id),
                 "google_places_enabled": GOOGLE_PLACES_ENABLED,
                 "google_maps_api_key": GOOGLE_MAPS_API_KEY,
@@ -5177,16 +5144,15 @@ def create_event_quick(
     guest_emails: Optional[str] = Form(""),
     is_private: Optional[str] = Form(None),
     is_draft: Optional[str] = Form(None),
-    realm_id: Optional[int] = Form(None),
+    tag: Optional[str] = Form(None),
 ):
     """Space View's always-available fun quick-create form (opened from the "+ New Event" tile in
     the floating card deck - see renderEventUniverseCards in index.html) posts here instead of the
     full /events/ form: no bucket picker, no description, default reminders. The bucket is
     resolved from whichever Universe was on screen when the form was submitted (see
     get_or_create_default_event_bucket's target_universe param) so the event lands right there.
-    realm_id is the form's optional Realm dropdown (blank = the auto-provisioned General Realm,
-    same as before) - lets a one-off event still get filed under real structure without leaving
-    Space View, reported directly."""
+    tag is the form's own optional Tag field - lets a one-off event still get filed under some
+    light structure without leaving Space View or picking a Realm/Bucket, reported directly."""
     requires_rsvp_flag = requires_rsvp is not None and requires_rsvp.strip().lower() in ("true", "on", "1", "yes")
     is_private_flag = is_private is not None and is_private.strip().lower() in ("true", "on", "1", "yes")
     is_draft_flag = is_draft is not None and is_draft.strip().lower() in ("true", "on", "1", "yes")
@@ -5209,13 +5175,7 @@ def create_event_quick(
         if not universe or universe.user_id != user.id:
             return RedirectResponse(url="/", status_code=303)
 
-        target_realm = None
-        if realm_id:
-            candidate_realm = session.get(Realm, realm_id)
-            if candidate_realm and candidate_realm.universe_id == universe.id and candidate_realm.user_id == user.id:
-                target_realm = candidate_realm
-
-        bucket = get_or_create_default_event_bucket(session, user.id, target_universe=universe, target_realm=target_realm)
+        bucket = get_or_create_default_event_bucket(session, user.id, target_universe=universe)
 
         emails = [e.strip().lower() for e in re.split(r"[,\n]+", guest_emails or "") if e.strip()]
         new_event = _create_event_core(
@@ -5229,6 +5189,7 @@ def create_event_quick(
             guest_emails=emails,
             is_private=is_private_flag,
             is_draft=is_draft_flag,
+            tag=tag,
         )
         share_token = new_event.share_token
 
