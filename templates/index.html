@@ -8263,13 +8263,15 @@
             // the zoomed-out floor (see zoomSpace's own 0.12 floor) rather than needing an even
             // more extreme zoom to avoid edge-clipping.
             const stepSpacing = 340;
-            // Was a separate, smaller 240 - reported directly from a screenshot: with two tasks
-            // sharing the nearest overdue slot close together and only one upcoming task sitting
-            // much further out, the layout read as an uneven cluster-plus-straggler instead of one
-            // evenly spaced line. Matching this to stepSpacing makes the hub-to-first-task gap the
-            // same as every other task-to-task gap, so the whole chain (hub included) reads as a
-            // single uniform sequence.
-            const startGap = stepSpacing;
+            // Was 300, then briefly set equal to stepSpacing (340) to make every gap "uniform" -
+            // that was backwards. Reported directly, twice, from screenshots: the real complaint
+            // was a single upcoming task sitting far from the hub with a big empty gap in between
+            // (only one task on that side, so there's no neighbor to be "evenly spaced" against
+            // in the first place) - "slide that task over" close to the hub, not push it further
+            // out. Pulled tight instead: the nearest task on either side now sits close to the
+            // hub regardless of how many tasks are on that side, and stepSpacing alone governs
+            // the gap between two tasks that ARE next to each other.
+            const startGap = 130;
 
             lanes.forEach((lane, laneIdx) => {
                 lane.hubRadius = hubRadius;
@@ -8485,11 +8487,10 @@
             const isMobile = window.innerWidth < 768;
             const laneSpacing = isMobile ? 460 : 400;
             const hubRadius = isMobile ? 76 : 60;
-            // Same tightened, now-uniform spacing as buildMultiverseLanes' own copy of these
-            // constants (see its comment) - kept in sync since both share the identical
-            // hub+horizontal-chain layout.
+            // Same spacing as buildMultiverseLanes' own copy of these constants (see its comment)
+            // - kept in sync since both share the identical hub+horizontal-chain layout.
             const stepSpacing = 340;
-            const startGap = stepSpacing;
+            const startGap = 130;
 
             lanes.forEach((lane, laneIdx) => {
                 lane.hubRadius = hubRadius;
