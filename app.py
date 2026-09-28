@@ -4620,11 +4620,13 @@ def new_event_form(request: Request):
         if not user:
             return RedirectResponse(url="/login", status_code=303)
 
-        # Guarantees there's always at least one valid bucket to pre-select - without this, a
-        # brand-new user with no Event Universe yet would hit an empty, unusable picker. This is
-        # also what lets the picker itself stay collapsed/optional in the template: most events
-        # need no organizing decision at all, they just land in this default spot.
-        default_bucket = get_or_create_default_event_bucket(session, user.id)
+        # Guarantees there's always at least one valid Universe to pre-select - without this, a
+        # brand-new user with no Event Universe yet would hit an empty, unusable picker. The
+        # actual bucket this lands in (General Realm -> Events Bucket inside whichever Universe
+        # gets picked) is resolved server-side by get_or_create_default_event_bucket at submit
+        # time - the form itself only ever asks for a Universe (the strip, matching Notes/
+        # Calendar/People's own) plus an optional Tag, no Buckets/Realms in the UI.
+        default_universe = get_or_create_default_event_bucket(session, user.id).realm.universe
 
         # Spans every Task-bearing Universe the user owns (both "task" and "event" kind) - not just
         # dedicated Event Universes. Reported directly: an event still needs to be pick-able into an
@@ -4634,28 +4636,14 @@ def new_event_form(request: Request):
         task_bearing_universes = session.exec(
             select(Universe).where(Universe.user_id == user.id, Universe.kind.in_(["task", "event"])).order_by(Universe.sort_order)
         ).all()
-        universe_ids = [u.id for u in task_bearing_universes]
-        realms = session.exec(
-            select(Realm).where(Realm.user_id == user.id, Realm.universe_id.in_(universe_ids)).order_by(Realm.sort_order)
-        ).all() if universe_ids else []
-        realm_ids = [r.id for r in realms]
-        buckets = session.exec(
-            select(Bucket).where(Bucket.realm_id.in_(realm_ids)).order_by(Bucket.sort_order)
-        ).all() if realm_ids else []
-        buckets_by_realm = {}
-        for b in buckets:
-            buckets_by_realm.setdefault(b.realm_id, []).append(b)
-        universe_by_id = {u.id: u for u in task_bearing_universes}
 
         return templates.TemplateResponse(
             request=request,
             name="event_form.html",
             context={
                 "user": user,
-                "realms": realms,
-                "buckets_by_realm": buckets_by_realm,
-                "universe_by_id": universe_by_id,
-                "default_bucket_id": default_bucket.id,
+                "universes": task_bearing_universes,
+                "default_universe_id": default_universe.id,
                 "google_places_enabled": GOOGLE_PLACES_ENABLED,
                 "google_maps_api_key": GOOGLE_MAPS_API_KEY,
             }
@@ -4682,28 +4670,22 @@ def edit_event_form(request: Request, share_token: str):
         task_bearing_universes = session.exec(
             select(Universe).where(Universe.user_id == user.id, Universe.kind.in_(["task", "event"])).order_by(Universe.sort_order)
         ).all()
-        universe_ids = [u.id for u in task_bearing_universes]
-        realms = session.exec(
-            select(Realm).where(Realm.user_id == user.id, Realm.universe_id.in_(universe_ids)).order_by(Realm.sort_order)
-        ).all() if universe_ids else []
-        realm_ids = [r.id for r in realms]
-        buckets = session.exec(
-            select(Bucket).where(Bucket.realm_id.in_(realm_ids)).order_by(Bucket.sort_order)
-        ).all() if realm_ids else []
-        buckets_by_realm = {}
-        for b in buckets:
-            buckets_by_realm.setdefault(b.realm_id, []).append(b)
-        universe_by_id = {u.id: u for u in task_bearing_universes}
+
+        # item.universe_id isn't reliably populated for events created before this Universe+Tag
+        # cleanup (_create_event_core didn't used to set it) - resolved fresh from the item's own
+        # bucket->realm chain instead, which is always correct regardless of when the event was
+        # created.
+        bucket = session.get(Bucket, item.bucket_id)
+        realm = session.get(Realm, bucket.realm_id) if bucket else None
+        default_universe_id = realm.universe_id if realm else None
 
         return templates.TemplateResponse(
             request=request,
             name="event_form.html",
             context={
                 "user": user,
-                "realms": realms,
-                "buckets_by_realm": buckets_by_realm,
-                "universe_by_id": universe_by_id,
-                "default_bucket_id": item.bucket_id,
+                "universes": task_bearing_universes,
+                "default_universe_id": default_universe_id,
                 "google_places_enabled": GOOGLE_PLACES_ENABLED,
                 "google_maps_api_key": GOOGLE_MAPS_API_KEY,
                 "is_edit": True,
@@ -4719,7 +4701,8 @@ def edit_event(
     request: Request,
     share_token: str,
     title: str = Form(...),
-    bucket_id: int = Form(...),
+    universe_id: int = Form(...),
+    tag: Optional[str] = Form(None),
     due_date: str = Form(...),
     due_time: Optional[str] = Form(None),
     emoji: str = Form("🎉"),
@@ -4760,14 +4743,22 @@ def edit_event(
         event = session.exec(select(Event).where(Event.share_token == share_token)).first()
         if not event or event.user_id != user.id:
             return RedirectResponse(url="/", status_code=303)
-        if not user_can_access_bucket(session, user, bucket_id):
+
+        universe = session.get(Universe, universe_id)
+        if not universe or universe.user_id != user.id:
             return RedirectResponse(url=f"/events/{share_token}/edit", status_code=303)
+        # Moving an event to a different Universe than it currently lives in resolves (or
+        # provisions) that Universe's own General/Events bucket - same as picking it fresh in
+        # new_event_form, just applied on an existing event instead.
+        bucket = get_or_create_default_event_bucket(session, user.id, target_universe=universe)
 
         item = session.get(Item, event.item_id)
         was_draft = event.is_draft
 
         item.title = title
-        item.bucket_id = bucket_id
+        item.bucket_id = bucket.id
+        item.universe_id = universe.id
+        item.tag = (tag or "").strip() or None
         item.due_date = base_due_date
         item.description = description
         session.add(item)
@@ -5002,18 +4993,28 @@ def _create_event_core(
     location: Optional[str] = None,
     is_private: bool = False,
     is_draft: bool = False,
+    tag: Optional[str] = None,
 ) -> "Event":
     """Shared by BOTH the in-app creation form (create_event) and the external API
     (api_create_event) - the one place that actually builds the Item+Event+EventGuest rows, sends
     invite emails, and schedules reminders, so the two entry points can never quietly drift apart
     from each other. Callers are responsible for their own auth/validation and turning whatever
     request shape they received (form fields, JSON body) into these plain arguments first."""
+    bucket = session.get(Bucket, bucket_id)
+    realm = session.get(Realm, bucket.realm_id) if bucket else None
     new_item = Item(
         title=title,
         bucket_id=bucket_id,
+        # Resolved from the bucket's own realm rather than trusting a caller to pass it -
+        # every event used to go through life with this left None (nothing set it), which was
+        # fine as long as every reader fell back to the bucket->realm->universe chain, but the
+        # Universe+Tag event form now needs a reliable universe_id straight off the Item to
+        # pre-select its Universe strip on edit.
+        universe_id=realm.universe_id if realm else None,
         due_date=base_due_date,
         description=description,
         is_event=True,
+        tag=(tag or "").strip() or None,
     )
     session.add(new_item)
     session.commit()
@@ -5099,7 +5100,8 @@ def _send_draft_event(session: Session, user: "User", event: "Event", item: "Ite
 def create_event(
     request: Request,
     title: str = Form(...),
-    bucket_id: int = Form(...),
+    universe_id: int = Form(...),
+    tag: Optional[str] = Form(None),
     due_date: str = Form(...),
     due_time: Optional[str] = Form(None),
     emoji: str = Form("🎉"),
@@ -5130,14 +5132,19 @@ def create_event(
 
     with Session(engine) as session:
         user = get_current_user(request, session)
-        if not user or not user_can_access_bucket(session, user, bucket_id):
+        if not user:
             return RedirectResponse(url="/login", status_code=303)
+
+        universe = session.get(Universe, universe_id)
+        if not universe or universe.user_id != user.id:
+            return RedirectResponse(url="/events/new", status_code=303)
+        bucket = get_or_create_default_event_bucket(session, user.id, target_universe=universe)
 
         emails = [e.strip().lower() for e in re.split(r"[,\n]+", guest_emails or "") if e.strip()]
         new_event = _create_event_core(
             session, user,
             title=title,
-            bucket_id=bucket_id,
+            bucket_id=bucket.id,
             base_due_date=base_due_date,
             emoji=emoji,
             description=description,
@@ -5148,6 +5155,7 @@ def create_event(
             guest_emails=emails,
             is_private=is_private_flag,
             is_draft=is_draft_flag,
+            tag=tag,
         )
         share_token = new_event.share_token
 

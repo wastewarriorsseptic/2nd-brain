@@ -2,42 +2,80 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#020617">
     <title>{{ 'Edit Event' if is_edit else 'New Event' }} - TaskMonster</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Google Places' own autocomplete dropdown ships with light-mode styling that doesn't
-           follow this page's dark theme - overridden here rather than left illegible. */
-        .pac-container { background: #1e293b; border: 1px solid #475569; border-radius: 0.75rem; margin-top: 4px; font-family: inherit; }
-        .pac-item { color: #cbd5e1; border-color: #334155; padding: 8px 12px; font-size: 13px; }
-        .pac-item:hover, .pac-item-selected { background: #334155; }
-        .pac-item-query { color: #f1f5f9; }
-        .pac-matched { color: #818cf8; }
-        .pac-icon { filter: invert(1) brightness(1.6); }
+        /* Same starfield technique as notes.html/calendar.html/people.html - a couple dozen small
+           absolutely-positioned twinkling divs, matching Space View's own dark background so this
+           page reads as the same surface those do, not a different shade. */
+        @keyframes event-space-star-twinkle {
+            0%, 100% { opacity: var(--star-min-o, 0.12); }
+            50% { opacity: var(--star-max-o, 0.34); }
+        }
+        .event-space-star {
+            position: absolute;
+            border-radius: 9999px;
+            animation-name: event-space-star-twinkle;
+            animation-timing-function: ease-in-out;
+            animation-iteration-count: infinite;
+        }
+        #event-universe-strip, #event-universe-strip * {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        /* Google Places' own autocomplete dropdown ships with light-mode styling - kept as-is
+           since it already matches this page's now-light form card. */
+        .pac-container { border-radius: 0.75rem; margin-top: 4px; font-family: inherit; }
     </style>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen p-3 md:p-10 font-sans">
-    <div class="max-w-xl mx-auto">
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+    <div id="event-space-stars" class="fixed inset-0 pointer-events-none overflow-hidden"></div>
+    <div class="relative z-10 max-w-xl mx-auto p-4 md:p-6"
+         style="padding-top: calc(env(safe-area-inset-top, 0px) + 0.375rem);">
+
+        <!-- Universe strip - same look as Notes/Calendar/People's own #notes-universe-strip/
+             #cal-universe-strip/#people-universe-strip, just repurposed here as a required
+             single-select (no "All", no "+New") instead of a view-scope filter: every event has
+             to land in exactly one Universe, and this picks which, replacing the old collapsed
+             Realm/Bucket dropdown entirely - Universe + an optional Tag below is the whole
+             "organize this" decision now, same as every other creation form in the app. -->
+        <div id="event-universe-strip" class="flex items-start gap-3 overflow-x-auto pb-1 mb-4 -mx-1 px-1">
+            {% for u in universes %}
+            <button type="button" onclick="selectEventUniverse({{ u.id }})" data-universe-id="{{ u.id }}"
+                    class="event-universe-circle shrink-0 flex flex-col items-center gap-1 w-14">
+                <div class="event-universe-circle-dot w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if u.id == default_universe_id else 'border-slate-700 bg-slate-900 hover:border-indigo-500/60' }}">
+                    {{ u.icon or '🎉' }}
+                </div>
+                <span class="event-universe-circle-label text-[10px] font-bold text-center truncate w-full {{ 'text-white' if u.id == default_universe_id else 'text-slate-400' }}">{{ u.name }}</span>
+            </button>
+            {% endfor %}
+        </div>
+
         <!-- Anchored to the card's own corner rather than a fixed "Back to TaskMonster" link above
              it - reported directly ("needs the X instead of back... it's hard to X out of it").
              That link also sat at a bare top of the page with no safe-area consideration, landing
              right under the phone's status bar; putting the close button inside the card (which
              already has its own top padding) sidesteps that overlap too. -->
-        <div class="bg-slate-800 border border-slate-700/80 rounded-3xl p-5 md:p-8 shadow-2xl relative">
-            <a href="{{ back_url or '/' }}" aria-label="Close" class="absolute top-3 right-3 w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white transition-colors bg-slate-900/80 rounded-full border border-slate-700/60 z-10">
+        <div class="bg-white rounded-3xl p-5 md:p-6 shadow-2xl relative">
+            <a href="{{ back_url or '/' }}" aria-label="Close" class="absolute top-3 right-3 w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-700 transition-colors bg-slate-100 rounded-full border border-slate-200 z-10">
                 ✕
             </a>
-            <h1 class="text-xl font-extrabold text-white tracking-tight flex items-center gap-2 mb-0.5 pr-10">
+            <h1 class="text-lg font-extrabold text-slate-900 tracking-tight flex items-center gap-2 mb-0.5 pr-10">
                 {{ '✏️ Edit Event' if is_edit else '🎉 New Event' }}
             </h1>
             <p class="text-slate-500 text-xs mb-4">Send a cool, shareable invite for a specific day - with or without RSVPs.</p>
 
             <form action="{{ ('/events/' + event.share_token + '/edit') if is_edit else '/events/' }}" method="POST" class="space-y-3" id="event-create-form">
+                <input type="hidden" name="universe_id" id="event-universe-id-input" value="{{ default_universe_id }}">
+
                 <div>
                     <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Title</label>
                     <input type="text" name="title" required placeholder="e.g. Sarah's Birthday Dinner"
                            value="{{ item.title if is_edit else '' }}"
-                           class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                           class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500">
                 </div>
 
                 <!-- Emoji folded into the same row as Date/Time (was its own full-width section
@@ -48,17 +86,17 @@
                         <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Date</label>
                         <input type="date" name="due_date" required
                                value="{{ item.due_date.strftime('%Y-%m-%d') if is_edit else '' }}"
-                               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+                               class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-sm text-slate-900 focus:outline-none focus:border-indigo-500">
                     </div>
                     <div>
                         <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Time</label>
                         <select name="due_time" id="event-form-due-time-select"
-                               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"></select>
+                               class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-sm text-slate-900 focus:outline-none focus:border-indigo-500"></select>
                     </div>
                     <div>
                         <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Emoji</label>
                         <input type="text" name="emoji" value="{{ event.emoji if is_edit else '🎉' }}" maxlength="8"
-                               class="w-12 h-[38px] bg-slate-900 border border-slate-700 rounded-xl text-lg text-center focus:outline-none focus:border-indigo-500">
+                               class="w-12 h-[38px] bg-slate-50 border border-slate-200 rounded-xl text-lg text-center focus:outline-none focus:border-indigo-500">
                     </div>
                 </div>
 
@@ -67,48 +105,23 @@
                     <input type="text" name="location" id="event-location-input" autocomplete="off"
                            value="{{ event.location or '' if is_edit else '' }}"
                            placeholder="Start typing an address or place…"
-                           class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-ellipsis">
+                           class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 text-ellipsis">
                     {% if not google_places_enabled %}
-                    <div id="event-location-suggestions" class="hidden absolute z-20 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden"></div>
+                    <div id="event-location-suggestions" class="hidden absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden"></div>
                     {% endif %}
                 </div>
 
-                <!-- Collapsed by default - most events need no organizing decision at all, they
-                     just land in the auto-created default Events bucket (see
-                     get_or_create_default_event_bucket in app.py). The <select> stays in the DOM
-                     either way so its value still submits when this is left collapsed - only the
-                     wrapper's visibility toggles, nothing about the field itself. Expand this for
-                     business-style organization (e.g. separate Realms per client type). -->
                 <div>
-                    <button type="button" onclick="toggleEventOrganize()" id="event-organize-toggle"
-                            class="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors">
-                        📁 Organize this (optional) ›
-                    </button>
-                    <div id="event-organize-body" class="hidden mt-2">
-                        <!-- Grouped by Universe (optgroup) since this now spans every Task-bearing
-                             Universe, not just dedicated Event ones - e.g. picking a bucket inside
-                             an existing "Life Events" Universe so the event shows up right there,
-                             not siloed off in a separate Events-only picker. -->
-                        <select name="bucket_id" required
-                                class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
-                            {% for universe_id, realm_group in realms|groupby('universe_id') %}
-                                {% set universe = universe_by_id.get(universe_id) %}
-                                <optgroup label="{{ universe.icon if universe else '' }} {{ universe.name if universe else 'Universe' }}">
-                                    {% for realm in realm_group %}
-                                        {% for bucket in buckets_by_realm.get(realm.id, []) %}
-                                            <option value="{{ bucket.id }}" {{ 'selected' if bucket.id == default_bucket_id else '' }}>{{ realm.icon }} {{ realm.name }} / {{ bucket.name }}</option>
-                                        {% endfor %}
-                                    {% endfor %}
-                                </optgroup>
-                            {% endfor %}
-                        </select>
-                    </div>
+                    <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Tag (optional)</label>
+                    <input type="text" name="tag" placeholder="e.g. Family, Work, Client X"
+                           value="{{ item.tag or '' if is_edit else '' }}"
+                           class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500">
                 </div>
 
                 <div>
                     <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Note (optional)</label>
                     <textarea name="description" rows="2" placeholder="Anything guests should know"
-                              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none">{{ item.description or '' if is_edit else '' }}</textarea>
+                              class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 resize-none">{{ item.description or '' if is_edit else '' }}</textarea>
                 </div>
 
                 <!-- Verbose inline parentheticals ("turn off for a plain confirmation...", "the
@@ -116,46 +129,46 @@
                      right in the same sentence as each option - reported directly ("it's a mess"),
                      trimmed to a short label plus a smaller, dimmer sub-line instead so the actual
                      choice reads at a glance and the explanation is there without competing with it. -->
-                <div class="border-t border-slate-700/80 pt-3.5 space-y-2.5">
+                <div class="border-t border-slate-200 pt-3.5 space-y-2.5">
                     <label class="flex items-start gap-2.5 cursor-pointer">
                         <input type="checkbox" name="requires_rsvp" value="true" {{ 'checked' if (not is_edit) or event.requires_rsvp else '' }}
-                               class="w-4 h-4 mt-0.5 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
-                        <span class="text-sm text-slate-200 leading-tight">Ask guests to RSVP<br><span class="text-[11px] text-slate-500">Off = a plain heads-up, e.g. an appointment</span></span>
+                               class="w-4 h-4 mt-0.5 rounded border-slate-300 bg-white text-indigo-600 focus:ring-indigo-500">
+                        <span class="text-sm text-slate-700 leading-tight">Ask guests to RSVP<br><span class="text-[11px] text-slate-400">Off = a plain heads-up, e.g. an appointment</span></span>
                     </label>
 
                     <label class="flex items-start gap-2.5 cursor-pointer">
                         <input type="checkbox" name="is_private" value="true" id="event-is-private" {{ 'checked' if is_edit and event.is_private else '' }}
-                               class="w-4 h-4 mt-0.5 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
-                        <span class="text-sm text-slate-200 leading-tight">🔒 Private invite<br><span class="text-[11px] text-slate-500">Only people you invite can open it</span></span>
+                               class="w-4 h-4 mt-0.5 rounded border-slate-300 bg-white text-indigo-600 focus:ring-indigo-500">
+                        <span class="text-sm text-slate-700 leading-tight">🔒 Private invite<br><span class="text-[11px] text-slate-400">Only people you invite can open it</span></span>
                     </label>
 
                     <label class="flex items-start gap-2.5 cursor-pointer">
                         <input type="checkbox" name="is_draft" value="true" id="event-is-draft" {{ 'checked' if is_edit and event.is_draft else '' }}
-                               class="w-4 h-4 mt-0.5 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
-                        <span class="text-sm text-slate-200 leading-tight">📝 Save as draft<br><span class="text-[11px] text-slate-500">Nothing sends until you do</span></span>
+                               class="w-4 h-4 mt-0.5 rounded border-slate-300 bg-white text-indigo-600 focus:ring-indigo-500">
+                        <span class="text-sm text-slate-700 leading-tight">📝 Save as draft<br><span class="text-[11px] text-slate-400">Nothing sends until you do</span></span>
                     </label>
 
                     <div>
                         <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Invite people (optional)</label>
                         <textarea name="guest_emails" rows="2" placeholder="friend@example.com, another@example.com"
-                                  class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none">{{ existing_guest_emails if is_edit else '' }}</textarea>
-                        <p class="text-[11px] text-slate-500 mt-1" id="event-guest-emails-hint">{{ 'Anyone already on the list stays even if removed from here - deleting a guest isn\'t supported yet. New emails get invited when you save.' if is_edit else "You'll also get a shareable link next, so this is optional." }}</p>
+                                  class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 resize-none">{{ existing_guest_emails if is_edit else '' }}</textarea>
+                        <p class="text-[11px] text-slate-400 mt-1" id="event-guest-emails-hint">{{ 'Anyone already on the list stays even if removed from here - deleting a guest isn\'t supported yet. New emails get invited when you save.' if is_edit else "You'll also get a shareable link next, so this is optional." }}</p>
                     </div>
                 </div>
 
                 <!-- Reminders collapsed onto two tight rows instead of a whole bordered section
                      with its own heading - same "less mess" trim as the checkboxes above. -->
-                <div class="border-t border-slate-700/80 pt-3.5 space-y-2">
+                <div class="border-t border-slate-200 pt-3.5 space-y-2">
                     <label class="flex items-center gap-2.5 cursor-pointer">
                         <input type="checkbox" name="remind_day_before" value="true" {{ 'checked' if (not is_edit) or event.remind_day_before else '' }}
-                               class="w-4 h-4 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500">
-                        <span class="text-sm text-slate-200">Remind the day before</span>
+                               class="w-4 h-4 rounded border-slate-300 bg-white text-indigo-600 focus:ring-indigo-500">
+                        <span class="text-sm text-slate-700">Remind the day before</span>
                     </label>
                     <div class="flex items-center gap-2">
-                        <span class="text-sm text-slate-200 shrink-0">Remind</span>
+                        <span class="text-sm text-slate-700 shrink-0">Remind</span>
                         <input type="number" name="reminder_minutes_before" value="{{ event.reminder_minutes_before if (is_edit and event.reminder_minutes_before is not none) else 60 }}" min="0" step="5"
-                               class="w-16 bg-slate-900 border border-slate-700 rounded-xl px-2 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500">
-                        <span class="text-sm text-slate-200">min before</span>
+                               class="w-16 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:border-indigo-500">
+                        <span class="text-sm text-slate-700">min before</span>
                     </div>
                 </div>
 
@@ -168,6 +181,19 @@
     </div>
 
     <script>
+        function selectEventUniverse(universeId) {
+            document.getElementById('event-universe-id-input').value = universeId;
+            document.querySelectorAll('.event-universe-circle').forEach((btn) => {
+                const selected = String(btn.getAttribute('data-universe-id')) === String(universeId);
+                const dot = btn.querySelector('.event-universe-circle-dot');
+                const label = btn.querySelector('.event-universe-circle-label');
+                dot.className = 'event-universe-circle-dot w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 transition '
+                    + (selected ? 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' : 'border-slate-700 bg-slate-900 hover:border-indigo-500/60');
+                label.className = 'event-universe-circle-label text-[10px] font-bold text-center truncate w-full '
+                    + (selected ? 'text-white' : 'text-slate-400');
+            });
+        }
+
         // Native <input type="time"> steppers don't reliably honor the `step` attribute in every
         // browser's own picker UI (Chrome's desktop dropdown in particular still lists every
         // single minute regardless) - reported directly. A plain <select> built from a fixed
@@ -205,13 +231,6 @@
             document.getElementById('event-form-due-time-select'),
             {{ (item.due_date.strftime('%H:%M')|tojson) if is_edit else 'null' }}
         );
-
-        function toggleEventOrganize() {
-            const body = document.getElementById('event-organize-body');
-            const toggle = document.getElementById('event-organize-toggle');
-            const isHidden = body.classList.toggle('hidden');
-            toggle.textContent = isHidden ? '📁 Organize this (optional) ›' : '📁 Organize this (optional) ⌄';
-        }
 
         // A private event (see the 🔒 checkbox above) is only ever viewable via a specific
         // guest's own personal link - with no guest emails at all, nobody but the creator could
@@ -299,7 +318,7 @@
                         const results = (data && data.results) || [];
                         if (!results.length) { hideSuggestions(); return; }
                         box.innerHTML = results.map(r =>
-                            `<button type="button" class="block w-full text-left px-3.5 py-2.5 text-sm text-slate-200 hover:bg-slate-800 transition-colors border-b border-slate-800 last:border-b-0">${escapeHtmlLocal(r.description)}</button>`
+                            `<button type="button" class="block w-full text-left px-3.5 py-2.5 text-sm text-slate-700 hover:bg-slate-100 transition-colors border-b border-slate-100 last:border-b-0">${escapeHtmlLocal(r.description)}</button>`
                         ).join('');
                         box.classList.remove('hidden');
                         Array.from(box.children).forEach((btn, i) => {
@@ -328,6 +347,26 @@
         }
         setupFreeLocationAutocomplete('event-location-input', 'event-location-suggestions');
         {% endif %}
+
+        function generateEventSpaceStars() {
+            const container = document.getElementById('event-space-stars');
+            if (!container) return;
+            const STAR_COUNT = 14;
+            let html = '';
+            for (let i = 0; i < STAR_COUNT; i++) {
+                const size = (1 + Math.random() * 1.4).toFixed(2);
+                const maxOVal = 0.25 + Math.random() * 0.2;
+                const minO = (maxOVal * (0.6 + Math.random() * 0.15)).toFixed(2);
+                const maxO = maxOVal.toFixed(2);
+                const left = (Math.random() * 100).toFixed(2);
+                const top = (Math.random() * 100).toFixed(2);
+                const delay = (Math.random() * 6).toFixed(2);
+                const duration = (8 + Math.random() * 8).toFixed(2);
+                html += `<div class="event-space-star" style="left:${left}%; top:${top}%; width:${size}px; height:${size}px; background: rgba(226, 232, 240, ${maxO}); animation-delay: ${delay}s; animation-duration: ${duration}s; --star-min-o: ${minO}; --star-max-o: ${maxO};"></div>`;
+            }
+            container.innerHTML = html;
+        }
+        document.addEventListener('DOMContentLoaded', generateEventSpaceStars);
     </script>
     {% if google_places_enabled %}
     <script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=places&callback=initGooglePlacesAutocomplete" async defer></script>
