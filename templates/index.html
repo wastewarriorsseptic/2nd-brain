@@ -8257,11 +8257,16 @@
             // the hub's own name/task labels without touching task spacing (startGap/stepSpacing
             // below are unchanged) - purely a smaller circle, same layout otherwise.
             const hubRadius = isMobile ? 76 : 60;
-            const stepSpacing = 420;
+            // Was 420/300 - requested directly, wanting 7 tasks comfortably on screen at once
+            // (3 left of the hub, the hub itself, 3 right) instead of 2-3 with the far ones
+            // clipped at the screen edge. Tightened ~20% so 3-per-side fits with real margin at
+            // the zoomed-out floor (see zoomSpace's own 0.12 floor) rather than needing an even
+            // more extreme zoom to avoid edge-clipping.
+            const stepSpacing = 340;
             // Gap between the hub's own edge and the nearest task on either side - kept distinct
             // from stepSpacing (the gap BETWEEN two tasks) so the hub always reads as clearly set
             // apart from its own timeline, not just another evenly-spaced node in the chain.
-            const startGap = 300;
+            const startGap = 240;
 
             lanes.forEach((lane, laneIdx) => {
                 lane.hubRadius = hubRadius;
@@ -8477,8 +8482,10 @@
             const isMobile = window.innerWidth < 768;
             const laneSpacing = isMobile ? 460 : 400;
             const hubRadius = isMobile ? 76 : 60;
-            const stepSpacing = 420;
-            const startGap = 300;
+            // Same tightened spacing as buildMultiverseLanes' own copy of these constants (see its
+            // comment) - kept in sync since both share the identical hub+horizontal-chain layout.
+            const stepSpacing = 340;
+            const startGap = 240;
 
             lanes.forEach((lane, laneIdx) => {
                 lane.hubRadius = hubRadius;

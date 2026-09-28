@@ -63,32 +63,22 @@
                               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"></textarea>
                 </div>
 
-                <!-- Collapsed by default - most contacts need no organizing decision at all, they
-                     just land in the auto-created default Contacts bucket (see
-                     get_or_create_default_contact_bucket in app.py, called before `realms` is even
-                     queried in new_person_form - so there's always at least that one bucket to
-                     pre-select here, same guarantee the New Event form's picker relies on). The
-                     <select> stays in the DOM either way so its value still submits when left
-                     collapsed - only the wrapper's visibility toggles. -->
+                <!-- No Realm/Bucket picker - Universe + Tags only everywhere now, same as tasks
+                     (see the tag backfill from Realm names). This person lands in the auto-
+                     created default Contacts bucket (get_or_create_default_contact_bucket,
+                     called before this page even renders) via the hidden bucket_id below;
+                     "Organize" is just an optional free-text Tag, collapsed by default exactly
+                     like a task's own optional Tag field. -->
+                <input type="hidden" name="bucket_id" value="{{ default_bucket_id }}">
                 <div>
                     <button type="button" onclick="togglePersonOrganize()" id="person-organize-toggle"
                             class="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors">
                         📁 Organize this (optional) ›
                     </button>
                     <div id="person-organize-body" class="hidden mt-2">
-                        <select name="bucket_id" required
-                                class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
-                            {% for universe_id, realm_group in realms|groupby('universe_id') %}
-                                {% set universe = universe_by_id.get(universe_id) %}
-                                <optgroup label="{{ universe.icon if universe else '' }} {{ universe.name if universe else 'Universe' }}">
-                                    {% for realm in realm_group %}
-                                        {% for bucket in buckets_by_realm.get(realm.id, []) %}
-                                            <option value="{{ bucket.id }}" {{ 'selected' if bucket.id == default_bucket_id else '' }}>{{ realm.icon }} {{ realm.name }} / {{ bucket.name }}</option>
-                                        {% endfor %}
-                                    {% endfor %}
-                                </optgroup>
-                            {% endfor %}
-                        </select>
+                        <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Tag (optional)</label>
+                        <input type="text" name="tags" placeholder="e.g. Family, Customer, College"
+                               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
                     </div>
                 </div>
 

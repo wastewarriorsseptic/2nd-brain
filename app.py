@@ -3512,15 +3512,11 @@ def people_page(request: Request, universe_id: Optional[int] = None, new: Option
 
 @app.get("/people/new", response_class=HTMLResponse)
 def new_person_form(request: Request, back_url: Optional[str] = None):
-    """Standalone page (not a modal) for the global "New Contact" quick-create tile on the
-    dashboard - reachable from any Universe, mirroring how /events/new already works regardless
-    of which Universe is currently active. A modal was deliberately avoided here: the existing
-    in-Universe "+ New Person" modal only ever renders realms/buckets belonging to whichever
-    Universe happens to be on screen (its <select> is server-rendered straight from that
-    Universe's own `realms`), so opening it from a Task or Event Universe would show the wrong
-    Realm tree entirely, or worse, let a Person land in a non-Contact bucket. A full page load
-    sidesteps that: get_or_create_default_contact_bucket guarantees a valid Contact bucket to
-    pre-select no matter what was active before, exactly like new_event_form does for Events."""
+    """Standalone page (not a modal) for the global "New Contact" quick-create tile - reachable
+    from anywhere, mirroring how /events/new already works regardless of which Universe is
+    currently active. get_or_create_default_contact_bucket guarantees a valid Contact bucket to
+    land this person in no matter what was active before, exactly like new_event_form does for
+    Events - no Realm/Bucket picker needed (Universe + Tags only, like everywhere else now)."""
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user:
@@ -3528,30 +3524,11 @@ def new_person_form(request: Request, back_url: Optional[str] = None):
 
         default_bucket = get_or_create_default_contact_bucket(session, user.id)
 
-        contact_universes = session.exec(
-            select(Universe).where(Universe.user_id == user.id, Universe.kind == "contact").order_by(Universe.sort_order)
-        ).all()
-        universe_ids = [u.id for u in contact_universes]
-        realms = session.exec(
-            select(Realm).where(Realm.user_id == user.id, Realm.universe_id.in_(universe_ids)).order_by(Realm.sort_order)
-        ).all() if universe_ids else []
-        realm_ids = [r.id for r in realms]
-        buckets = session.exec(
-            select(Bucket).where(Bucket.realm_id.in_(realm_ids)).order_by(Bucket.sort_order)
-        ).all() if realm_ids else []
-        buckets_by_realm = {}
-        for b in buckets:
-            buckets_by_realm.setdefault(b.realm_id, []).append(b)
-        universe_by_id = {u.id: u for u in contact_universes}
-
         return templates.TemplateResponse(
             request=request,
             name="person_form.html",
             context={
                 "user": user,
-                "realms": realms,
-                "buckets_by_realm": buckets_by_realm,
-                "universe_by_id": universe_by_id,
                 "default_bucket_id": default_bucket.id,
                 # People's own standalone page - not "/", which used to be this close button's
                 # only fallback and would've dropped the user back into Space View instead of
