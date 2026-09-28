@@ -9628,8 +9628,10 @@
                     // all live in the HUD card above instead - see the draw loop's own early return).
                     // Reserving screen room for it in the sweep would just leave a dead gap where the
                     // next actual task could otherwise sit - so it doesn't take a turn in the sweep at
-                    // all, and the task after it starts right from the hub's own edge.
-                    if (lane._selectedTask === t && (lane._fw || 0) > 0.05) {
+                    // all, and the task after it starts right from the hub's own edge. Same mvHudUp
+                    // gate as the draw loop's own check - once the card is actually dismissed, this
+                    // task goes back to taking a normal turn in the sweep like any other.
+                    if (lane._selectedTask === t && (lane._fw || 0) > 0.05 && mvHudUp) {
                         return prevEdge;
                     }
                     const sweepTk = t._tk || laneTk;
@@ -9761,8 +9763,14 @@
 
                     // The selected task's dot, date, and title all live in the HUD card above instead
                     // - none of it is needed a second time here. Snipped before any of it draws,
-                    // rather than drawing the dot/date and hiding just the title afterward.
-                    if (lane._selectedTask === task && (lane._fw || 0) > 0.05) {
+                    // rather than drawing the dot/date and hiding just the title afterward. Gated on
+                    // mvHudUp (the card actually being visibly up), not just "is the selected task" -
+                    // found directly: hideHudCard()'s own X button only hides the DOM card, it doesn't
+                    // clear lane._selectedTask (by design - see stepMultiverseFocus's own comment,
+                    // dismissing is meant to be temporary "until the selection changes"). Without this
+                    // check the row dot stayed hidden forever after tapping X, with no card either -
+                    // a real dead gap in the timeline where a task used to be, not just a dismissed card.
+                    if (lane._selectedTask === task && (lane._fw || 0) > 0.05 && mvHudUp) {
                         task._labelRect = null;
                         task._dotX = null;
                         task._hidden = true;
