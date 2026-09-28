@@ -492,7 +492,8 @@
          launcher cluster (which stays bottom-right). Notes was reported directly as wanting it
          there rather than folded into the cluster's own tangent-circle choreography; Events joined
          it the same way once Event-kind Universes were pulled out of the Multiverse picker grid
-         entirely (see events_universe_href) - this is now their only way back in. -->
+         entirely - now a plain link to the standalone /events page (see events.html), same as
+         Notes/Calendar/People's own launcher icons. -->
     <!-- 2x2 stack (Notes/Calendar above, People/Events below) rather than a single row - reported
          directly, wanting this left-side cluster to line up vertically with the right-side
          devil-chat/+/multiverse-timeline cluster instead of stretching out sideways. -->
@@ -512,7 +513,7 @@
                class="w-14 h-14 rounded-full bg-emerald-500 hover:bg-emerald-400 border border-emerald-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
                 👥
             </a>
-            <a href="{{ events_universe_href }}" id="events-quick-btn" title="Events" onclick="suppressMultiverseTimelineRestoreOnce()"
+            <a href="/events" id="events-quick-btn" title="Events"
                class="w-14 h-14 rounded-full bg-fuchsia-500 hover:bg-fuchsia-400 border border-fuchsia-300/40 shadow-2xl flex items-center justify-center text-2xl transition">
                 🎉
             </a>
@@ -1168,210 +1169,6 @@
         <!-- Canvas Viewport -->
         <canvas id="space-canvas" class="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"></canvas>
 
-        {% if is_event_universe %}
-        <!-- Event Universe Space View: reported directly that this should "behave differently"
-             from the normal Task-universe realm/bucket/task orbit ring - "more about having the
-             card info for an event floating in space". event-universe-cards-wrap (populated by
-             renderEventUniverseCards, called from initSpaceCanvas) holds one floating card per
-             event plus a permanent "+ New Event" tile, so the fun creator stays reachable "at all
-             times" rather than only before the first event exists. That tile opens the modal
-             below - the exact same fun mini-form the old always-rendered version had, just now
-             opened on demand instead of parked center-screen forever once there's real content to
-             look at. Sits above the canvas but below the top/bottom HUD bars (no z-index of its
-             own - an absolute box with z-index:auto here paints above the plain canvas behind it
-             in DOM order, while the bars keep their own explicit z-10/z-20 above it). -->
-        <div id="event-universe-cards-wrap" class="absolute inset-x-0 top-[21%] bottom-[14%] overflow-y-auto pointer-events-none px-4 md:px-10"></div>
-
-        <div id="event-quick-create-modal" class="hidden absolute inset-0 z-30 flex items-center justify-center px-4 py-8 overflow-y-auto" style="background: rgba(2, 6, 23, 0.55);" onclick="if (event.target === this) closeEventQuickCreateModal();">
-            <form action="/events/quick" method="POST" id="event-quick-create-form"
-                  class="relative w-full max-w-sm my-auto bg-slate-900/95 border border-indigo-500/40 rounded-3xl p-6 shadow-2xl backdrop-blur-md overflow-hidden">
-                <input type="hidden" name="universe_id" value="{{ active_universe.id if active_universe else '' }}">
-
-                <button type="button" onclick="closeEventQuickCreateModal()" aria-label="Close"
-                        class="absolute top-3 right-3 w-7 h-7 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition-colors">✕</button>
-
-                <!-- Same tiny twinkling-star primitive as the Multiverse picker's own starfield
-                     (.multiverse-picker-star / multiverse-picker-star-twinkle) - just a handful,
-                     purely decorative, echoing the "outer space and twinkly" look asked for
-                     elsewhere in Events. -->
-                <div class="multiverse-picker-star" style="top:8%; left:10%; width:3px; height:3px; background:#a5b4fc; animation-duration:3.2s; --star-min-o:0.2; --star-max-o:0.85;"></div>
-                <div class="multiverse-picker-star" style="top:14%; right:12%; width:2px; height:2px; background:#fcd34d; animation-duration:2.4s; animation-delay:0.6s; --star-min-o:0.15; --star-max-o:0.7;"></div>
-                <div class="multiverse-picker-star" style="bottom:20%; left:16%; width:2.5px; height:2.5px; background:#7dd3fc; animation-duration:4s; animation-delay:1.1s; --star-min-o:0.15; --star-max-o:0.65;"></div>
-                <div class="multiverse-picker-star" style="bottom:12%; right:20%; width:2px; height:2px; background:#fda4af; animation-duration:3.6s; animation-delay:0.3s; --star-min-o:0.15; --star-max-o:0.6;"></div>
-
-                <div class="text-center mb-4">
-                    <div class="text-4xl mb-2">🎉✨</div>
-                    <h2 class="text-lg font-extrabold text-white tracking-tight">New Event</h2>
-                    <p class="text-slate-400 text-xs mt-1.5 leading-relaxed">A sticky invite guests can RSVP to, add straight to their calendar, or just get a heads up - your call.</p>
-                </div>
-
-                <div class="space-y-2.5">
-                    <input type="text" name="title" id="event-quick-title-input" required placeholder="e.g. Sarah's Birthday Dinner"
-                           class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
-
-                    <!-- Optional Tag - blank still lands in the auto-provisioned General/Events
-                         bucket exactly as before (a true one-off event needs zero decisions here),
-                         but filling it in groups this event the same way Space View now organizes
-                         the whole floating deck (see renderEventUniverseCards) - reported directly
-                         that Events should "follow the same rules like notes and tasks" (Universe +
-                         Tag, no Realm/Bucket picker). -->
-                    <input type="text" name="tag" id="event-quick-tag-input" placeholder="Tag (optional, e.g. Family, Work)"
-                           class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
-
-                    <!-- Reported directly as too cluttered - the raw mm/dd/yyyy segments and the
-                         truncated "Time (optiona..." select ate most of the row just showing
-                         emptiness. Both fields are still the real native inputs (so the OS/browser
-                         date and time pickers still do the actual picking), just made invisible and
-                         layered over an icon button that shows 📅/🕐 until something's chosen, then
-                         swaps to the compact chosen value - see setupEventQuickDateTimeDisplay. The
-                         emoji field (a plain always-🎉 text input with no visible purpose of its own)
-                         was dropped entirely per direct feedback - the route still defaults to 🎉
-                         server-side with nothing submitted for it, so date/time now split the row
-                         evenly 50/50 instead of squeezing in a third box. -->
-                    <div class="flex items-center gap-2">
-                        <div class="relative flex-1 h-11">
-                            <!-- A native date input only auto-opens its calendar on a click that
-                               lands on its own small built-in icon glyph - stretching it invisibly
-                               over this whole button means most clicks just silently focus it
-                               instead (reported directly - "the date doesn't drop down to
-                               select"). Forced open/closed via showPicker()/blur() instead - see
-                               the toggle in setupEventQuickDateTimeDisplay - which sidesteps that
-                               click-region guesswork entirely. -->
-                            <input type="date" name="due_date" id="event-quick-due-date-input" required
-                                   class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
-                            <div id="event-quick-due-date-display"
-                                 class="absolute inset-0 pointer-events-none bg-slate-950/80 border border-slate-700 rounded-xl flex items-center justify-center text-sm text-white">📅</div>
-                        </div>
-                        <div class="relative flex-1 h-11">
-                            <select name="due_time" id="event-quick-due-time-select"
-                                   class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"></select>
-                            <div id="event-quick-due-time-display"
-                                 class="absolute inset-0 pointer-events-none bg-slate-950/80 border border-slate-700 rounded-xl flex items-center justify-center text-sm text-white">🕐</div>
-                        </div>
-                    </div>
-
-                    <div class="relative">
-                        <input type="text" name="location" id="event-quick-location-input" autocomplete="off"
-                               placeholder="Where? Start typing an address or place…"
-                               class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-ellipsis">
-                        {% if not google_places_enabled %}
-                        <div id="event-quick-location-suggestions" class="hidden absolute z-20 left-0 right-0 mt-1 bg-slate-950 border border-slate-700 rounded-xl shadow-2xl overflow-hidden"></div>
-                        {% endif %}
-                    </div>
-
-                    <input type="text" name="guest_emails" id="event-quick-guest-emails" placeholder="Invite by email (optional, comma-separated)"
-                           class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
-
-                    <label class="flex items-center gap-2.5 cursor-pointer pt-0.5">
-                        <input type="checkbox" name="requires_rsvp" value="true" checked
-                               class="w-4 h-4 rounded border-slate-600 bg-slate-950 text-indigo-500 focus:ring-indigo-500">
-                        <span class="text-xs text-slate-300">Ask guests to RSVP <span class="text-slate-500">(off = just a heads up, e.g. an appointment)</span></span>
-                    </label>
-
-                    <label class="flex items-center gap-2.5 cursor-pointer pt-0.5">
-                        <input type="checkbox" name="is_private" value="true" id="event-quick-is-private"
-                               class="w-4 h-4 rounded border-slate-600 bg-slate-950 text-indigo-500 focus:ring-indigo-500">
-                        <span class="text-xs text-slate-300">🔒 Private <span class="text-slate-500">(only the people I invite can open it)</span></span>
-                    </label>
-
-                    <label class="flex items-center gap-2.5 cursor-pointer pt-0.5">
-                        <input type="checkbox" name="is_draft" value="true" id="event-quick-is-draft"
-                               class="w-4 h-4 rounded border-slate-600 bg-slate-950 text-indigo-500 focus:ring-indigo-500">
-                        <span class="text-xs text-slate-300">📝 Save as draft <span class="text-slate-500">(don't send yet)</span></span>
-                    </label>
-                </div>
-
-                <button type="submit" id="event-quick-submit-btn"
-                        class="mt-4 w-full py-3 bg-gradient-to-r from-indigo-600 to-fuchsia-600 hover:from-indigo-500 hover:to-fuchsia-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-indigo-600/30 transition-all">
-                    ✨ Create &amp; Get Invite Link
-                </button>
-
-                <a href="/events/new" class="block mt-2.5 text-center text-[11px] font-semibold text-slate-500 hover:text-indigo-300 transition-colors">
-                    Need more options (organizing, reminders)? Use the full form ›
-                </a>
-            </form>
-        </div>
-        {% if google_places_enabled %}
-        <script>
-            // Progressive enhancement only - event-quick-location-input above is a plain, fully
-            // working text field with no autocomplete of its own; this just helps fill it in with
-            // a clean address when a Google Maps API key is configured (see GOOGLE_PLACES_ENABLED
-            // in app.py). Own callback name (not initGooglePlacesAutocomplete) since /events/new's
-            // own copy of this same script is a completely separate page load, but keeping them
-            // distinct here avoids any risk of a name collision with this page's many other globals.
-            // Binding still works even while the modal starts out hidden - Places' Autocomplete
-            // attaches to the input element itself, not to whatever is currently visible.
-            function initEventQuickLocationAutocomplete() {
-                const input = document.getElementById('event-quick-location-input');
-                if (!input || !window.google || !window.google.maps || !window.google.maps.places) return;
-                new google.maps.places.Autocomplete(input, { fields: ['formatted_address', 'name'] });
-            }
-        </script>
-        <script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=places&callback=initEventQuickLocationAutocomplete" async defer></script>
-        {% else %}
-        <script>
-            // No Google Maps key configured - free fallback via /api/places/search (OpenStreetMap
-            // Nominatim, proxied server-side - see that route's own docstring). Self-contained
-            // (its own escape helper, not this page's later-defined escapeHtml) since this script
-            // tag runs near the top of <body>, well before that one - a global defined later is
-            // fine to call from an event handler that only fires after the whole page has loaded,
-            // but not worth relying on when a two-line local copy removes the ordering risk
-            // entirely. Debounced so typing doesn't fire a request per keystroke.
-            (function setupEventQuickFreeLocationAutocomplete() {
-                const input = document.getElementById('event-quick-location-input');
-                const box = document.getElementById('event-quick-location-suggestions');
-                if (!input || !box) return;
-                let debounceTimer = null;
-                let activeController = null;
-
-                function hideSuggestions() {
-                    box.classList.add('hidden');
-                    box.innerHTML = '';
-                }
-                function escapeHtmlLocal(str) {
-                    const div = document.createElement('div');
-                    div.innerText = str == null ? '' : String(str);
-                    return div.innerHTML;
-                }
-
-                input.addEventListener('input', () => {
-                    clearTimeout(debounceTimer);
-                    const query = input.value.trim();
-                    if (query.length < 3) { hideSuggestions(); return; }
-                    debounceTimer = setTimeout(async () => {
-                        if (activeController) activeController.abort();
-                        activeController = new AbortController();
-                        try {
-                            const res = await fetch(`/api/places/search?q=${encodeURIComponent(query)}`, { signal: activeController.signal });
-                            const data = await res.json();
-                            const results = (data && data.results) || [];
-                            if (!results.length) { hideSuggestions(); return; }
-                            box.innerHTML = results.map(r =>
-                                `<button type="button" class="block w-full text-left px-3.5 py-2.5 text-sm text-slate-200 hover:bg-slate-800 transition-colors border-b border-slate-800 last:border-b-0">${escapeHtmlLocal(r.description)}</button>`
-                            ).join('');
-                            box.classList.remove('hidden');
-                            Array.from(box.children).forEach((btn, i) => {
-                                btn.addEventListener('click', () => {
-                                    input.value = results[i].description;
-                                    hideSuggestions();
-                                });
-                            });
-                        } catch (e) {
-                            // Aborted or network hiccup - leave whatever's on screen, not fatal.
-                        }
-                    }, 350);
-                });
-
-                input.addEventListener('blur', () => {
-                    // Slight delay so a click on a suggestion registers before the box
-                    // disappears - blur fires before click otherwise.
-                    setTimeout(hideSuggestions, 150);
-                });
-            })();
-        </script>
-        {% endif %}
-        {% endif %}
-
         <!-- Streamlined Top Floating Space Bar -->
         <div class="relative z-10 pt-10 md:pt-4 px-3 md:px-6 flex flex-col gap-2 pointer-events-none">
             <div class="flex items-center w-full">
@@ -1586,7 +1383,7 @@
                             data-id="{{ u.id }}" title="Share Universe"
                             class="universe-card-action hidden absolute -bottom-1 -right-1 z-10 w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-indigo-400 hover:border-indigo-400/50 text-xs flex items-center justify-center transition">👥</button>
                     {% endif %}
-                    <a href="{{ '/people?universe_id=' ~ u.id if u.kind == 'contact' else '/?universe_id=' ~ u.id }}" onclick="return selectUniverseFromPicker(event, {{ u.id }}, {{ u.kind|tojson }});" class="universe-card-link flex flex-col items-center gap-2 w-full">
+                    <a href="{{ '/people?universe_id=' ~ u.id if u.kind == 'contact' else ('/events?universe_id=' ~ u.id if u.kind == 'event' else '/?universe_id=' ~ u.id) }}" onclick="return selectUniverseFromPicker(event, {{ u.id }}, {{ u.kind|tojson }});" class="universe-card-link flex flex-col items-center gap-2 w-full">
                         <div class="relative w-20 h-20">
                             {% if pending_for_u and seconds_remaining is not none %}
                             <!-- Green 24h countdown ring around the whole circle (see
@@ -2853,24 +2650,7 @@
     <script>
         const isContactUniverse = {{ 'true' if is_contact_universe else 'false' }};
         const isEventUniverse = {{ 'true' if is_event_universe else 'false' }};
-        // Plain server-built list (see event_universe_cards in dashboard()), NOT scraped from
-        // Timeline card DOM attributes the way the realm/bucket/task ring builds its own data -
-        // Space View's Event-universe layout (renderEventUniverseCards) is a completely separate,
-        // non-canvas rendering path with no reason to depend on that Task-universe-specific
-        // machinery. Already sorted soonest-first.
-        const eventUniverseCards = {{ (event_universe_cards|default([]))|tojson }};
         const activeUniverseId = {{ active_universe.id if active_universe else 'null' }};
-        // Every Event-kind Universe this user owns - Event Universes are deliberately excluded
-        // from the Multiverse picker grid entirely (see events_universe_href's own docstring), and
-        // the single standalone "🎉 Events" launcher button only ever points at the FIRST one - so
-        // with more than one (e.g. a dedicated "Dispatch" Universe alongside a personal "Events"
-        // one), the others had no way to be reached from the UI at all. Reported directly. Drives
-        // the Universe switcher in renderEventUniverseCards's header row.
-        const eventUniversesData = [
-            {% for u in universes %}{% if u.kind == 'event' %}
-            { id: {{ u.id }}, name: {{ u.name|tojson }}, icon: {{ (u.icon or '🎉')|tojson }} },
-            {% endif %}{% endfor %}
-        ];
         // Space View's own core hub (see renderSpaceFrame) draws this instead of a hardcoded 😈 -
         // the devil is TaskMonster's own mascot/brand, not a stand-in for whatever Universe you're
         // actually looking at, and showing it regardless of Universe read as not making sense once
@@ -4629,11 +4409,7 @@
             // can cover that corner too, so they hide alongside the main launcher rather than
             // being left sitting on top of the same Save/Cancel buttons.
             const notesEventsWrapper = document.getElementById('notes-events-wrapper');
-            // event-quick-create-modal joined this list - reported directly, a screenshot showing
-            // its own Private/Draft checkboxes and Create button sitting behind the launcher circles
-            // on mobile (that modal's z-30 is BELOW the launcher wrapper's z-[70], so it was never
-            // just a spacing issue - the launcher was actually rendering on top of it the whole time).
-            const bigTaskModals = ['add-item-modal', 'edit-item-modal', 'event-quick-create-modal']
+            const bigTaskModals = ['add-item-modal', 'edit-item-modal']
                 .map(id => document.getElementById(id))
                 .filter(Boolean);
             if (!launcherWrapper || !bigTaskModals.length) return;
@@ -5214,6 +4990,9 @@
                 // own standalone page now (see people_page in app.py), no chat_nav needed since
                 // that page has no camera-focus concept to speak of.
                 url = '/people?universe_id=' + place.id;
+            } else if (place.kind === 'universe' && place.universe_kind === 'event') {
+                // Same story for Events - their own standalone page now (see events.html).
+                url = '/events?universe_id=' + place.id;
             } else if (place.kind === 'universe') {
                 url = '/?universe_id=' + place.id + '&chat_nav=1';
             } else if (place.kind === 'realm') {
@@ -5774,47 +5553,6 @@
             if (currentValue) select.value = currentValue;
         }
         populateTimeSelect(document.getElementById('add-item-due-time-select'));
-        populateTimeSelect(document.getElementById('event-quick-due-time-select'));
-
-        // Keeps the icon-only date/time buttons on the New Event quick-create modal in sync with
-        // their real (invisible, layered-on-top) native inputs - 📅/🕐 until something's actually
-        // chosen, then the compact picked value, so the row never shows raw empty mm/dd/yyyy
-        // segments or a truncated "Time (optiona..." select.
-        (function setupEventQuickDateTimeDisplay() {
-            const dateInput = document.getElementById('event-quick-due-date-input');
-            const dateDisplay = document.getElementById('event-quick-due-date-display');
-            if (dateInput && dateDisplay) {
-                dateInput.addEventListener('change', () => {
-                    const d = dateInput.value ? parseYMDLocal(dateInput.value) : null;
-                    dateDisplay.textContent = d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '📅';
-                });
-                // Tapping the icon again while the calendar is already open used to just
-                // silently re-issue showPicker() (a no-op while it's already showing) instead of
-                // closing it - reported directly. There's no standard "is the native picker
-                // currently open" signal to check, so a plain flag tracks it - flipped on click,
-                // and also cleared on blur/change so picking a date or clicking away doesn't
-                // desync it (leaving the NEXT tap needing two clicks to reopen).
-                let datePickerOpen = false;
-                dateInput.addEventListener('click', () => {
-                    if (datePickerOpen) {
-                        dateInput.blur();
-                        datePickerOpen = false;
-                    } else if (dateInput.showPicker) {
-                        dateInput.showPicker();
-                        datePickerOpen = true;
-                    }
-                });
-                dateInput.addEventListener('blur', () => { datePickerOpen = false; });
-                dateInput.addEventListener('change', () => { datePickerOpen = false; });
-            }
-            const timeSelect = document.getElementById('event-quick-due-time-select');
-            const timeDisplay = document.getElementById('event-quick-due-time-display');
-            if (timeSelect && timeDisplay) {
-                timeSelect.addEventListener('change', () => {
-                    timeDisplay.textContent = timeSelect.value ? timeSelect.options[timeSelect.selectedIndex].textContent : '🕐';
-                });
-            }
-        })();
 
         // Mirrors send_daily_snapshot_emails()'s categorization exactly (overdue / due today / due
         // tomorrow / completed yesterday), but computed client-side from the same data-* attributes
@@ -6636,6 +6374,13 @@
                 window.location.href = '/people?universe_id=' + universeId;
                 return false;
             }
+            // Same story for Events - their own standalone page now (see events.html), not the
+            // Multiverse Timeline they'd otherwise land on with nothing to actually show there.
+            if (kind === 'event') {
+                event.preventDefault();
+                window.location.href = '/events?universe_id=' + universeId;
+                return false;
+            }
             event.preventDefault();
             openMultiverseTimeline();
             const idx = multiverseLanes.findIndex(l => String(l.id) === String(universeId));
@@ -6902,29 +6647,14 @@
             // that live outside it (Notes/Events/Calendar, the devil/home/+ cluster) show through.
             document.documentElement.classList.remove('preload-space-view');
 
-            // Event Universes skip the whole realm/bucket/task orbit ring below entirely - reported
-            // directly that Space View here should "behave differently", "more about having the
-            // card info for an event floating in space" rather than the same ring every other
-            // Universe kind uses. spaceRealms stays a plain empty array (every canvas click/render
-            // path below already no-ops safely on that), the camera just rests on the starfield +
-            // hub with no realm ring to frame, and renderEventUniverseCards builds the actual
-            // content as an HTML overlay instead of canvas nodes.
+            // Events moved out of Space View entirely onto their own standalone page (see
+            // events.html) - every real entry point (the launcher, the Multiverse picker, AI chat
+            // navigation) already points there directly, so this only ever catches a stale
+            // bookmark/URL still pointing at an Event Universe's old Space View. Redirect rather
+            // than fall through to the normal realm/bucket/task ring below, which an Event
+            // Universe was never actually structured for.
             if (isEventUniverse) {
-                spaceRealms = [];
-                setupSpaceEvents();
-                setupHudDraggable();
-                restoreOrRecenterSpace();
-                // No swoop-in here either - same reasoning the old quick-start card needed this
-                // for: a static HTML overlay (the floating cards + the core hub) sits on screen
-                // from frame 1, so the backdrop underneath should already be still and centered,
-                // not visibly flying in from a corner.
-                cameraOffset = { ...targetCameraOffset };
-                cameraZoom = targetCameraZoom;
-                renderEventUniverseCards();
-                if (!spaceRenderLoopRunning) {
-                    spaceRenderLoopRunning = true;
-                    requestAnimationFrame(renderSpaceFrame);
-                }
+                window.location.href = '/events' + (activeUniverseId ? ('?universe_id=' + activeUniverseId) : '');
                 return;
             }
 
@@ -7262,184 +6992,6 @@
             }
         }
 
-        function openEventQuickCreateModal() {
-            const modal = document.getElementById('event-quick-create-modal');
-            if (!modal) return;
-            modal.classList.remove('hidden');
-            // Pre-pin to whichever Tag filter is currently active (see
-            // renderEventUniverseCards/eventCardsTagFilter) - tapping "+ New Event" while looking
-            // at one Tag's section should default there instead of always starting blank, same as
-            // creating a Task from inside an already-selected Realm used to.
-            const tagInput = document.getElementById('event-quick-tag-input');
-            if (tagInput) {
-                tagInput.value = eventCardsTagFilter || '';
-            }
-            const titleInput = document.getElementById('event-quick-title-input');
-            if (titleInput) setTimeout(() => titleInput.focus(), 50);
-        }
-
-        function closeEventQuickCreateModal() {
-            const modal = document.getElementById('event-quick-create-modal');
-            if (modal) modal.classList.add('hidden');
-        }
-
-        // Submit button reflects what actually happens - "Save as Draft" doesn't send or
-        // schedule anything (see is_draft in create_event_quick), so labeling it "Create & Get
-        // Invite Link" while it's checked would be misleading about whether guests are about to
-        // be emailed.
-        (function setupEventQuickDraftToggle() {
-            const draftCheckbox = document.getElementById('event-quick-is-draft');
-            const submitBtn = document.getElementById('event-quick-submit-btn');
-            if (draftCheckbox && submitBtn) {
-                draftCheckbox.addEventListener('change', () => {
-                    submitBtn.innerHTML = draftCheckbox.checked ? '📝 Save as Draft' : '✨ Create &amp; Get Invite Link';
-                });
-            }
-        })();
-
-        // Same "private with no one invited yet" guard as the full /events/new form - a Private
-        // event (see the 🔒 checkbox above) is only ever viewable via a specific guest's own
-        // personal link, so creating one with nobody invited means nobody, not even the creator
-        // on the invite link itself, could ever open it.
-        (function setupEventQuickPrivateGuard() {
-            const form = document.getElementById('event-quick-create-form');
-            const isPrivateCheckbox = document.getElementById('event-quick-is-private');
-            const guestEmailsField = document.getElementById('event-quick-guest-emails');
-            if (!form || !isPrivateCheckbox || !guestEmailsField) return;
-            form.addEventListener('submit', (e) => {
-                if (isPrivateCheckbox.checked && !guestEmailsField.value.trim()) {
-                    if (!confirm("This is set to Private with no one invited yet - nobody (not even you, on the invite link itself) will be able to open it until you add at least one guest email. Create it anyway?")) {
-                        e.preventDefault();
-                    }
-                }
-            });
-        })();
-
-        // Same accent palette as Space View's own distant-star field (SPACE_STAR_PALETTE) - each
-        // card picks one for its border glow, purely decorative, keeping this floating deck's
-        // color language consistent with the rest of the "outer space" theme rather than
-        // introducing a separate scheme just for these cards.
-        const EVENT_CARD_GLOWS = ['#6366f1', '#8b5cf6', '#0ea5e9', '#f43f5e', '#f59e0b'];
-
-        // Which Universe/Realm/Bucket is isolated right now (null = show everything) - set by the
-        // dropdowns built in renderEventUniverseCards's header row. Deliberately plain JS
-        // variables, not the URL/localStorage - this is a transient view of an in-memory canvas
-        // overlay, not a distinct page state worth remembering across visits. Universe defaults to
-        // null ("✨ All Universes") - reported directly, wanting that to be the default view rather
-        // than always narrowed to whichever Universe happened to be active on page load.
-        let eventCardsUniverseFilter = null;
-        // Replaces the old Realm/Bucket filters (see the Universe+Tag cleanup) - a plain string
-        // match against each card's own tag, or null for "every tag".
-        let eventCardsTagFilter = null;
-        // Past events default to hidden - reported directly, wanting the main timeline to open
-        // on what's coming up rather than leading with what's already happened. A "Past Events"
-        // pill (only shown once there IS a past event to reveal) toggles the column back on.
-        let eventCardsShowPast = false;
-
-        function toggleEventCardsShowPast() {
-            eventCardsShowPast = !eventCardsShowPast;
-            renderEventUniverseCards();
-        }
-
-        function setEventCardsUniverseFilter(universeKey) {
-            eventCardsUniverseFilter = universeKey;
-            eventCardsTagFilter = null;
-            renderEventUniverseCards();
-        }
-
-        function setEventCardsTagFilter(tagKey) {
-            eventCardsTagFilter = tagKey;
-            renderEventUniverseCards();
-        }
-
-        // Builds one floating card for a single event - a compact variant of the old flat-deck
-        // card. No date line anymore: the column this card sits IN (see renderEventUniverseCards)
-        // already says what day it is, so repeating the full date on every card was redundant once
-        // cards stack inside a day instead of a Realm section. Time-of-day stays, since same-day
-        // cards in the same column still need to tell apart.
-        function buildEventUniverseCard(ev, glowIdx) {
-            const glow = EVENT_CARD_GLOWS[glowIdx % EVENT_CARD_GLOWS.length];
-            const shareToken = encodeURIComponent(ev.shareToken);
-            // Always a <div> wrapper, never a top-level <a> - reported directly there was no way
-            // to edit an event (draft or already-sent) from Space View at all, so every card needs
-            // its own actions row below the content, and a <button>/<form> nested inside an <a> is
-            // invalid HTML/unreliable to click.
-            const card = document.createElement('div');
-            // A draft's own due date passing doesn't mean much - it was never actually sent or
-            // confirmed, so "past" isn't really a meaningful state for it the way it is for a live
-            // event. Exempting drafts from the past dimming here is what actually fixes a draft
-            // "looking dead" for one sitting on an already-passed date - the grayscale filter was
-            // washing out the amber border/glow above regardless of how colorful they were.
-            // Drafts used to get a flat, colorless slate border/background and no glow at all -
-            // reported directly, twice, as reading "dead" next to a live event's own colored glow.
-            // A real warm wash now, not just a tinted border: the background itself carries an
-            // amber gradient, the glow is as strong as a live card's own, and it gets the same
-            // hover lift too - a draft should feel like an event waiting to happen, not a disabled
-            // one. Still dashed (a real, useful "not sent yet" signal) and still exempt from the
-            // past-day grayscale below (a draft's own due date passing doesn't mean much - it was
-            // never actually sent or confirmed).
-            card.className = 'pointer-events-auto w-full rounded-2xl border backdrop-blur-md flex flex-col items-center text-center gap-1 py-3 px-2.5 shadow-xl'
-                + (ev.isDraft ? ' bg-gradient-to-b from-amber-500/15 to-slate-900/90' : ' bg-slate-900/90')
-                + (ev.isPast && !ev.isDraft ? ' opacity-50 grayscale' : '');
-            card.style.borderColor = ev.isDraft ? '#f59e0bcc' : (glow + '66');
-            card.style.boxShadow = ev.isDraft ? '0 0 20px #f59e0b40' : `0 0 14px ${glow}22`;
-            card.style.borderStyle = ev.isDraft ? 'dashed' : 'solid';
-
-            const rsvpBadge = ev.isDraft
-                ? '<span class="text-[10px] font-bold text-amber-300">📝 Draft</span>'
-                : (ev.requiresRsvp
-                    ? `<span class="text-[10px] font-bold text-emerald-300">${ev.acceptedCount}/${ev.invitedCount || ev.acceptedCount} going</span>`
-                    : (ev.invitedCount ? '<span class="text-[10px] font-bold text-slate-400">Sent</span>' : ''));
-
-            // A draft's own content block goes straight to Edit (the primary thing to do with
-            // an unsent draft); a live event's goes to the public invite page, same as before.
-            const content = document.createElement('a');
-            content.href = ev.isDraft ? `/events/${shareToken}/edit` : `/events/${shareToken}`;
-            content.className = 'flex flex-col items-center gap-1 w-full transition-transform hover:scale-105';
-            // Only shown once there's actually more than one Event Universe to tell apart - with
-            // "All Universes" now the default view (see eventCardsUniverseFilter), cards from
-            // different Universes land mixed together on one timeline, so each needs its own
-            // small label to say which Universe it's actually in.
-            const universeBadge = (eventUniversesData.length > 1 && ev.universeName)
-                ? `<span class="text-[9px] font-semibold text-slate-500">${escapeHtml(ev.universeIcon || '🎉')} ${escapeHtml(ev.universeName)}</span>`
-                : '';
-            content.innerHTML = `
-                <span class="text-2xl">${escapeHtml(ev.emoji)}</span>
-                ${universeBadge}
-                ${ev.isPrivate ? '<span class="text-[9px] font-bold text-slate-500">🔒 Private</span>' : ''}
-                <span class="text-xs font-bold text-white leading-snug line-clamp-2">${escapeHtml(ev.title)}</span>
-                <span class="text-[10px] font-semibold" style="color: ${ev.isDraft ? '#fbbf24' : glow}">${escapeHtml(ev.dueTimeFormatted || 'All day')}</span>
-                ${ev.location ? `<span class="text-[9px] text-slate-500 truncate max-w-full">📍 ${escapeHtml(ev.location)}</span>` : ''}
-                ${rsvpBadge}
-            `;
-            card.appendChild(content);
-
-            const actions = document.createElement('div');
-            actions.className = 'flex items-center gap-1.5 mt-1.5 w-full';
-            const editLink = document.createElement('a');
-            editLink.href = `/events/${shareToken}/edit`;
-            editLink.className = 'flex-1 text-center text-[10px] font-bold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg py-1.5 transition-colors';
-            editLink.textContent = '✏️ Edit';
-            actions.appendChild(editLink);
-
-            if (ev.isDraft) {
-                const sendForm = document.createElement('form');
-                sendForm.method = 'POST';
-                sendForm.action = `/events/${shareToken}/send`;
-                sendForm.className = 'flex-1';
-                sendForm.onsubmit = () => confirm(`Send this invite to everyone on the guest list now? This can't be undone.`);
-                const sendBtn = document.createElement('button');
-                sendBtn.type = 'submit';
-                sendBtn.className = 'w-full text-[10px] font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg py-1.5 transition-colors';
-                sendBtn.textContent = '📤 Send';
-                sendForm.appendChild(sendBtn);
-                actions.appendChild(sendForm);
-            }
-            card.appendChild(actions);
-
-            return card;
-        }
-
         // "YYYY-MM-DD" -> a local-midnight Date, matching getRelativeDateLabel's own parsing -
         // new Date("YYYY-MM-DD") parses as UTC midnight, which can land on the wrong calendar day
         // once compared against a local "today" in a negative UTC-offset timezone.
@@ -7447,244 +6999,6 @@
             const parts = (str || '').split('-');
             if (parts.length !== 3) return null;
             return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-        }
-        function formatYMDLocal(date) {
-            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-        }
-
-        // Space View's own layout for an Event Universe: no realm/bucket/task orbit ring at all
-        // (see the isEventUniverse branch in initSpaceCanvas) - instead, a Left-to-Right timeline,
-        // one column per calendar day from today out to the furthest scheduled event (capped, with
-        // any outlier past that folded into a trailing "Later" column), whether or not that day has
-        // anything in it - reported directly: grouping by Realm alone gave no visual sense of WHEN
-        // things are, and the ask was specifically to see that "whether there is [an event] there
-        // or not". A day with nothing shows as a thin marker; a busy day's cards stack up and the
-        // column grows taller, so density reads as a skyline across the timeline. Any already-past
-        // event (still useful to keep reachable, e.g. an old draft) collapses into one "Past" column
-        // at the far left instead of one column per past day, since the future is what this view is
-        // actually about. The Realm filter chip row (only shown once there's more than one Realm to
-        // choose between) now filters WHICH cards populate the columns rather than switching
-        // sections - same "All" + per-Realm-icon-chip pattern the standalone Notes page uses.
-        // Tapping a card jumps straight to its shareable invite page - full editing still happens
-        // through the normal Timeline (Card View), this is meant to be the fun, visual, at-a-glance
-        // surface, not a second editor.
-        // A fixed "month and a half" forward window, always shown regardless of where any actual
-        // events fall - reported directly. The first version's horizon shrank to fit the furthest
-        // real event (or a bare two-week fallback with none at all), so two events both due today
-        // rendered a timeline that was just a single Today column and nothing else. Any event
-        // beyond this window still isn't lost - it folds into the trailing "Later" column.
-        const EVENT_TIMELINE_HORIZON_DAYS = 45;
-
-        function renderEventUniverseCards() {
-            const wrap = document.getElementById('event-universe-cards-wrap');
-            if (!wrap) return;
-            wrap.innerHTML = '';
-
-            const inner = document.createElement('div');
-            inner.className = 'h-full flex flex-col';
-
-            // Tag options built straight from eventUniverseCards' own tag field (no server-side
-            // structure to walk, unlike the old Realm/Bucket dropdowns - a tag is just a string on
-            // the event itself), scoped to whichever Universe is currently selected. An empty/blank
-            // tag doesn't get its own "Untagged" entry - most events have no tag at all, and that's
-            // exactly what "All Tags" already shows.
-            const relevantCardsForTags = eventUniverseCards.filter((ev) =>
-                eventCardsUniverseFilter === null || String(ev.universeId) === eventCardsUniverseFilter
-            );
-            const tagList = Array.from(new Set(
-                relevantCardsForTags.map((ev) => (ev.tag || '').trim()).filter((t) => t.length > 0)
-            )).sort((a, b) => a.localeCompare(b));
-
-            const headerRow = document.createElement('div');
-            headerRow.className = 'shrink-0 flex items-end gap-2 pointer-events-none mb-3 flex-wrap';
-
-            const addTile = document.createElement('button');
-            addTile.type = 'button';
-            addTile.onclick = openEventQuickCreateModal;
-            addTile.className = 'pointer-events-auto shrink-0 flex items-center gap-1.5 rounded-full border-2 border-dashed border-indigo-400/50 bg-indigo-500/10 hover:bg-indigo-500/20 hover:border-indigo-400/80 text-indigo-200 text-xs font-bold px-3 py-1.5 transition-colors mb-0.5';
-            addTile.innerHTML = '<span>✨</span><span>New Event</span>';
-            headerRow.appendChild(addTile);
-
-            // Wraps a <select> with its own small uppercase label above it (Universe/Tag) -
-            // reported directly, wanting it always clear which dropdown is which rather than
-            // unlabeled selects. Always shown once there's more than one option, both for
-            // discoverability (this is literally how you find out what tags exist) and
-            // consistency, rather than popping in only once there's something to switch between.
-            function buildLabeledSelect(labelText) {
-                const wrap = document.createElement('div');
-                wrap.className = 'pointer-events-auto flex flex-col gap-0.5';
-                const label = document.createElement('label');
-                label.className = 'text-[9px] font-bold text-slate-500 uppercase tracking-wide px-0.5';
-                label.textContent = labelText;
-                wrap.appendChild(label);
-                const select = document.createElement('select');
-                select.className = 'bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500';
-                wrap.appendChild(select);
-                headerRow.appendChild(wrap);
-                return select;
-            }
-
-            // "✨ All Universes" (the default - eventCardsUniverseFilter starts null) shows every
-            // Event Universe's cards combined on one timeline, same "All X" pattern as the Tag
-            // dropdown right below - reported directly, wanting that same behavior here too.
-            // This also is what actually FIXES a second Event Universe (e.g. a dedicated
-            // "Dispatch" alongside a personal "Events") being reachable at all - previously the
-            // standalone "🎉 Events" launcher only ever landed on the first one by sort_order, and
-            // there was no way to see the other's events without a full page switch. Purely a
-            // client-side filter now (no navigation) - eventUniverseCards already spans every
-            // Universe at once (see the dashboard route).
-            if (eventUniversesData.length > 0) {
-                const universeSelect = buildLabeledSelect('Universe');
-                const allOpt = document.createElement('option');
-                allOpt.value = '';
-                allOpt.textContent = '✨ All Universes';
-                if (eventCardsUniverseFilter === null) allOpt.selected = true;
-                universeSelect.appendChild(allOpt);
-                eventUniversesData.forEach((u) => {
-                    const opt = document.createElement('option');
-                    opt.value = u.id;
-                    opt.textContent = `${u.icon} ${u.name}`;
-                    if (eventCardsUniverseFilter === String(u.id)) opt.selected = true;
-                    universeSelect.appendChild(opt);
-                });
-                universeSelect.onchange = () => setEventCardsUniverseFilter(universeSelect.value || null);
-            }
-
-            if (tagList.length > 0) {
-                const tagSelect = buildLabeledSelect('Tag');
-                const allOpt = document.createElement('option');
-                allOpt.value = '';
-                allOpt.textContent = 'All Tags';
-                if (eventCardsTagFilter === null) allOpt.selected = true;
-                tagSelect.appendChild(allOpt);
-                tagList.forEach((tag) => {
-                    const opt = document.createElement('option');
-                    opt.value = tag;
-                    opt.textContent = tag;
-                    if (eventCardsTagFilter === tag) opt.selected = true;
-                    tagSelect.appendChild(opt);
-                });
-                tagSelect.onchange = () => setEventCardsTagFilter(tagSelect.value || null);
-            }
-            inner.appendChild(headerRow);
-
-            const visibleCards = eventUniverseCards.filter((ev) => {
-                if (eventCardsUniverseFilter !== null && String(ev.universeId) !== eventCardsUniverseFilter) return false;
-                if (eventCardsTagFilter !== null && (ev.tag || '').trim() !== eventCardsTagFilter) return false;
-                return true;
-            });
-
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const capDate = new Date(today);
-            capDate.setDate(capDate.getDate() + EVENT_TIMELINE_HORIZON_DAYS);
-
-            // Bucketed by CALENDAR DAY (the date part of dueDate), not by ev.isPast - isPast is a
-            // full timestamp comparison against right-now, so an event at 1am today would already
-            // read as "past" by that measure and get pulled out of the Today column entirely even
-            // though it's still very much today's event. isPast is still exactly what should drive
-            // each card's own grayscale/opacity styling (see buildEventUniverseCard) - just not
-            // which day-bucket it lands in.
-            const pastCards = [];
-            const futureCards = [];
-            visibleCards.forEach((ev) => {
-                const d = parseYMDLocal(ev.dueDate);
-                if (d && d < today) {
-                    pastCards.push(ev);
-                    return;
-                }
-                futureCards.push(ev);
-            });
-            pastCards.sort((a, b) => (a.dueDate < b.dueDate ? 1 : -1));
-
-            if (pastCards.length > 0) {
-                const pastPill = document.createElement('button');
-                pastPill.type = 'button';
-                pastPill.onclick = toggleEventCardsShowPast;
-                pastPill.className = 'pointer-events-auto shrink-0 flex items-center gap-1.5 rounded-full border text-xs font-bold px-3 py-1.5 transition-colors mb-0.5 ' +
-                    (eventCardsShowPast
-                        ? 'border-slate-500 bg-slate-700 text-white'
-                        : 'border-slate-700 bg-slate-800/60 hover:bg-slate-700/60 text-slate-300');
-                pastPill.innerHTML = `<span>🕓</span><span>${eventCardsShowPast ? 'Hide Past' : 'Past Events'} (${pastCards.length})</span>`;
-                headerRow.appendChild(pastPill);
-            }
-
-            const horizonDate = capDate;
-            const overflowCards = futureCards.filter(ev => {
-                const d = parseYMDLocal(ev.dueDate);
-                return d && d > capDate;
-            });
-
-            const timelineRow = document.createElement('div');
-            timelineRow.className = 'flex-1 min-h-0 overflow-x-auto overflow-y-auto pointer-events-auto';
-            const columnsWrap = document.createElement('div');
-            // Left-to-right day COLUMNS on desktop (md+); on mobile there's no room for 60+
-            // side-scrolling columns, so the same one-slot-per-day data instead stacks into day
-            // ROWS read top-to-bottom - reported directly ("everything would have to stack down but
-            // do so with spaces inbetween where dates would be filled"). Each row still gets a
-            // divider even when empty, so the vertical stack keeps the same "you can see the gaps
-            // between events" feel the horizontal version has, just rotated 90 degrees.
-            columnsWrap.className = 'flex flex-col md:flex-row md:items-start gap-0 md:gap-2.5 pb-4 px-1';
-
-            let glowIdx = 0;
-            const buildColumn = (label, sublabel, cards, opts) => {
-                opts = opts || {};
-                const col = document.createElement('div');
-                col.className = 'w-full md:w-28 lg:w-32 md:shrink-0 flex flex-row md:flex-col items-start md:items-center gap-3 md:gap-0 py-2.5 md:py-0 border-b border-slate-800/50 md:border-b-0 last:border-b-0 min-w-0';
-
-                const header = document.createElement('div');
-                header.className = 'w-16 md:w-full shrink-0 text-right md:text-center md:mb-2 pointer-events-none';
-                header.innerHTML = `
-                    <div class="text-[11px] font-bold ${opts.headerColorClass || 'text-white'}">${escapeHtml(label)}</div>
-                    ${sublabel ? `<div class="text-[9px] text-slate-300">${escapeHtml(sublabel)}</div>` : ''}
-                `;
-                col.appendChild(header);
-
-                if (cards.length === 0) {
-                    const emptyMarker = document.createElement('div');
-                    emptyMarker.className = 'flex-1 md:flex-none md:w-full flex items-center md:flex-col pointer-events-none md:pt-2';
-                    emptyMarker.innerHTML = `<span class="w-1.5 h-1.5 rounded-full ${opts.emptyDotClass || 'bg-slate-700'}"></span>`;
-                    col.appendChild(emptyMarker);
-                    columnsWrap.appendChild(col);
-                    return;
-                }
-
-                const stack = document.createElement('div');
-                stack.className = 'flex-1 md:flex-none min-w-0 flex flex-col gap-2 md:w-full';
-                cards.forEach((ev) => {
-                    stack.appendChild(buildEventUniverseCard(ev, glowIdx));
-                    glowIdx++;
-                });
-                col.appendChild(stack);
-                columnsWrap.appendChild(col);
-            };
-
-            if (eventCardsShowPast && pastCards.length > 0) {
-                buildColumn('Past', `${pastCards.length}`, pastCards, { headerColorClass: 'text-slate-300', emptyDotClass: 'bg-slate-800' });
-            }
-
-            // Today gets the special-cased label; every column after it shows the full weekday
-            // name (Monday, Tuesday, ...) instead of "Tomorrow"/an abbreviation - reported directly
-            // wanting each day spelled out plainly, not just Today/Tomorrow then a guessing game.
-            const cursor = new Date(today);
-            while (cursor <= horizonDate) {
-                const cursorStr = formatYMDLocal(cursor);
-                const dayCards = futureCards.filter(ev => ev.dueDate === cursorStr);
-                const isToday = cursorStr === formatYMDLocal(today);
-                const dateLabel = cursor.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                const label = isToday ? 'Today' : cursor.toLocaleDateString('en-US', { weekday: 'long' });
-                buildColumn(label, dateLabel, dayCards, { headerColorClass: isToday ? 'text-emerald-300' : 'text-white' });
-                cursor.setDate(cursor.getDate() + 1);
-            }
-
-            if (overflowCards.length > 0) {
-                overflowCards.sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1));
-                buildColumn('Later', `${overflowCards.length}`, overflowCards, { headerColorClass: 'text-indigo-300' });
-            }
-
-            timelineRow.appendChild(columnsWrap);
-            inner.appendChild(timelineRow);
-            wrap.appendChild(inner);
         }
 
         // Creating a task or bucket submits a normal form and reloads the page. Without this, that
@@ -8516,15 +7830,6 @@
             mvTimelineUrl.searchParams.set('mv_timeline', '1');
             history.replaceState({}, '', mvTimelineUrl.pathname + mvTimelineUrl.search);
 
-            // Reported directly as "ghost graphics": opening this from inside an Event Universe's
-            // own Space View (see event-universe-cards-wrap in initSpaceCanvas) left that floating
-            // card deck's DOM untouched underneath - nothing else ever clears it except
-            // renderEventUniverseCards itself, which only runs again for an event Universe, so the
-            // stale cards kept floating on top of the cross-Universe lanes drawn below them.
-            if (isEventUniverse) {
-                const eventCardsWrap = document.getElementById('event-universe-cards-wrap');
-                if (eventCardsWrap) eventCardsWrap.innerHTML = '';
-            }
 
             if (!isSpaceViewActive) {
                 isSpaceViewActive = true;

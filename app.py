@@ -1510,23 +1510,6 @@ def get_or_create_default_task_bucket_in_universe(session: Session, user_id: int
 
     return bucket
 
-def get_events_universe_href(session: Session, user_id: int) -> str:
-    """Where the standalone "🎉 Events" launcher button (paired next to 📝 Notes - see
-    events_universe_href in dashboard()/notes_page()) actually goes. Event-kind Universes are
-    excluded from the Multiverse picker grid entirely now (reported directly - "pull the events
-    section out of the universe home"), so this is their only way back in. Deliberately does NOT
-    eagerly provision one via get_or_create_default_event_bucket (that would silently create an
-    empty Events Universe just from loading the dashboard, before anyone's actually made an event) -
-    a user with no Event Universe yet instead goes straight to /events/new, which auto-provisions
-    the default one on demand exactly the same way every other Events entry point already does. A
-    user with more than one (e.g. separate Event Universes for different purposes) lands on
-    whichever sorts first - a second one is still reachable via its own Realm-Timeline links,
-    events, or the mini-map, just not from this one shortcut."""
-    event_universe = session.exec(
-        select(Universe).where(Universe.user_id == user_id, Universe.kind == "event").order_by(Universe.sort_order)
-    ).first()
-    return f"/?universe_id={event_universe.id}" if event_universe else "/events/new"
-
 def backfill_important_dates_universes():
     """One-time-per-user migration companion to get_or_create_important_dates_universe - brand-new
     signups already get this Universe/Realm via find_or_create_user_and_log_in's starter set, but
@@ -2482,92 +2465,6 @@ def dashboard(
                     "is_draft": e.is_draft,
                 }
 
-        # Space View's own event-universe layout (see renderEventUniverseCards in index.html) is a
-        # floating deck of HTML cards, not the canvas realm/bucket/task ring every other Universe
-        # kind uses - reported directly that events should "behave differently" there, "more about
-        # having the card info for an event floating in space". Built here as a flat, plain-dict
-        # list (not scraped from Timeline card DOM attributes the way the ring does for tasks) so
-        # it can go straight through |tojson, same pattern as multiverseTasksData - the ring's own
-        # DOM-scraping approach is Task-Universe-specific machinery this view has no reason to
-        # depend on. Already sorted soonest-first; only ever built for an Event-kind Universe.
-        #
-        # Spans EVERY Event-kind Universe the user owns, not just the active one - reported
-        # directly, wanting an "All Universes" option in the dropdown (same pattern as the
-        # existing "All Realms"/"All Buckets" ones there) that's also the default. This is its own
-        # independent query rather than reusing `items`/`realms`/`buckets` above, which stay
-        # scoped to just active_universe for the rest of the page (sidebar, Card View) - the
-        # events deck is the one surface meant to span every Event Universe at once.
-        event_universe_cards = []
-        if is_event_universe:
-            event_universes_owned = [u for u in universes if u.kind == "event" and u.user_id == user.id]
-            event_universe_ids = [u.id for u in event_universes_owned]
-            event_universe_by_id = {u.id: u for u in event_universes_owned}
-
-            all_event_realms = session.exec(select(Realm).where(Realm.universe_id.in_(event_universe_ids))).all() if event_universe_ids else []
-            all_event_realm_ids = [r.id for r in all_event_realms]
-            all_event_buckets = session.exec(select(Bucket).where(Bucket.realm_id.in_(all_event_realm_ids))).all() if all_event_realm_ids else []
-            realm_by_id_for_events = {r.id: r for r in all_event_realms}
-            # Only ever used to resolve each event's Universe (bucket -> realm -> universe) below -
-            # Realm/Bucket themselves haven't been exposed in the events UI since the Universe+Tag
-            # cleanup, so nothing here needs a bucket_by_id/realm_by_bucket_id lookup of its own.
-            universe_by_bucket_id = {
-                b.id: event_universe_by_id.get(realm_by_id_for_events[b.realm_id].universe_id)
-                for b in all_event_buckets if b.realm_id in realm_by_id_for_events
-            }
-
-            all_event_bucket_ids = [b.id for b in all_event_buckets]
-            all_event_items = session.exec(
-                select(Item).where(Item.bucket_id.in_(all_event_bucket_ids), Item.is_event == True)
-            ).all() if all_event_bucket_ids else []
-
-            events_by_item_id_all = {}
-            event_item_ids_all = [it.id for it in all_event_items]
-            if event_item_ids_all:
-                event_rows_all = session.exec(select(Event).where(Event.item_id.in_(event_item_ids_all))).all()
-                event_ids_all = [e.id for e in event_rows_all]
-                guest_rows_all = session.exec(select(EventGuest).where(EventGuest.event_id.in_(event_ids_all))).all() if event_ids_all else []
-                guests_by_event_id_all = {}
-                for g in guest_rows_all:
-                    guests_by_event_id_all.setdefault(g.event_id, []).append(g)
-                for e in event_rows_all:
-                    event_guests = guests_by_event_id_all.get(e.id, [])
-                    events_by_item_id_all[e.item_id] = {
-                        "emoji": e.emoji,
-                        "share_token": e.share_token,
-                        "requires_rsvp": e.requires_rsvp,
-                        "accepted_count": sum(1 for g in event_guests if g.status == "accepted"),
-                        "invited_count": len(event_guests),
-                        "location": e.location,
-                        "is_private": e.is_private,
-                        "is_draft": e.is_draft,
-                    }
-
-            for it in sorted(all_event_items, key=lambda it: it.due_date):
-                info = events_by_item_id_all.get(it.id)
-                if not info:
-                    continue
-                universe = universe_by_bucket_id.get(it.bucket_id)
-                event_universe_cards.append({
-                    "itemId": it.id,
-                    "title": it.title,
-                    "emoji": info["emoji"],
-                    "dueDate": it.due_date.strftime("%Y-%m-%d"),
-                    "dueDateFormatted": it.due_date.strftime("%b %d, %Y"),
-                    "dueTimeFormatted": it.due_date.strftime("%I:%M %p").lstrip("0") if it.due_date.strftime("%H:%M") != "09:00" else "",
-                    "shareToken": info["share_token"],
-                    "requiresRsvp": info["requires_rsvp"],
-                    "acceptedCount": info["accepted_count"],
-                    "invitedCount": info["invited_count"],
-                    "location": info["location"] or "",
-                    "isPrivate": info["is_private"],
-                    "isDraft": info["is_draft"],
-                    "isPast": it.due_date < datetime.utcnow(),
-                    "tag": it.tag or "",
-                    "universeId": universe.id if universe else None,
-                    "universeName": universe.name if universe else None,
-                    "universeIcon": (universe.icon or "🎉") if universe else None,
-                })
-
         # Full tree of every Universe/Realm/Bucket the user OWNS (not shared-with-them realms -
         # moving something is an ownership-level action), used client-side to drive the "move to
         # a different Universe/Realm/Bucket" pickers on Edit Task/Person/Realm/Bucket. Built here
@@ -2677,8 +2574,6 @@ def dashboard(
                 "is_contact_universe": is_contact_universe,
                 "is_event_universe": is_event_universe,
                 "events_by_item_id": events_by_item_id,
-                "event_universe_cards": event_universe_cards,
-                "events_universe_href": get_events_universe_href(session, user.id),
                 "google_places_enabled": GOOGLE_PLACES_ENABLED,
                 "google_maps_api_key": GOOGLE_MAPS_API_KEY,
                 "selected_realm_id": realm_id,
@@ -3471,7 +3366,6 @@ def people_page(request: Request, universe_id: Optional[int] = None, new: Option
                 "universe_by_id": universe_by_id,
                 "selected_universe_id": universe_id,
                 "selected_universe": selected_universe,
-                "events_universe_href": get_events_universe_href(session, user.id),
                 "gemini_enabled": GEMINI_ENABLED,
                 # Set only right after creating a brand-new, necessarily-empty Contact Universe -
                 # lets the template emphasize the "add from phone" CTA instead of the plain
@@ -4580,8 +4474,145 @@ def places_search(request: Request, q: str = ""):
 
     return JSONResponse({"results": results})
 
+@app.get("/events", response_class=HTMLResponse)
+def events_page(request: Request, universe_id: Optional[int] = None, tag: Optional[str] = None):
+    """Standalone page for browsing Events (event-kind Universes) - mirrors people_page's own
+    structure (a Universe-scope strip at the top, "All" vs one specific Universe), replacing
+    Space View's old floating-card deck entirely (reported directly, wanting Events to match
+    Notes/Calendar/People's own look instead of a dark canvas overlay with Universe/Tag
+    dropdowns). Events are still task-bearing Items under the hood (bucket_id, is_event=True) -
+    this page just reads them through the same Universe+Tag lens every other page in the app now
+    uses, same as the create/edit form and the (now-removed) Space View deck before it."""
+    with Session(engine) as session:
+        user = get_current_user(request, session)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
+
+        universes = session.exec(
+            select(Universe).where(Universe.user_id == user.id, Universe.kind == "event").order_by(Universe.sort_order)
+        ).all()
+        universe_by_id = {u.id: u for u in universes}
+        universe_ids = [u.id for u in universes]
+
+        selected_universe = universe_by_id.get(universe_id) if universe_id else None
+        if universe_id and not selected_universe:
+            # Not one of this user's own Event Universes (wrong id or someone else's) - fall back
+            # to "All" rather than leaking another user's data.
+            universe_id = None
+
+        scoped_universe_ids = [universe_id] if universe_id else universe_ids
+
+        events_list = []
+        if scoped_universe_ids:
+            realms = session.exec(select(Realm).where(Realm.universe_id.in_(scoped_universe_ids))).all()
+            realm_ids = [r.id for r in realms]
+            buckets = session.exec(select(Bucket).where(Bucket.realm_id.in_(realm_ids))).all() if realm_ids else []
+            realm_by_id = {r.id: r for r in realms}
+            # Only ever used to resolve each event's own Universe (bucket -> realm -> universe) -
+            # Realm/Bucket themselves aren't exposed anywhere in this page.
+            universe_by_bucket_id = {
+                b.id: universe_by_id.get(realm_by_id[b.realm_id].universe_id)
+                for b in buckets if b.realm_id in realm_by_id
+            }
+            bucket_ids = [b.id for b in buckets]
+            items = session.exec(
+                select(Item).where(Item.bucket_id.in_(bucket_ids), Item.is_event == True)
+            ).all() if bucket_ids else []
+
+            item_ids = [it.id for it in items]
+            events_by_item_id = {}
+            if item_ids:
+                event_rows = session.exec(select(Event).where(Event.item_id.in_(item_ids))).all()
+                event_ids = [e.id for e in event_rows]
+                guest_rows = session.exec(select(EventGuest).where(EventGuest.event_id.in_(event_ids))).all() if event_ids else []
+                guests_by_event_id = {}
+                for g in guest_rows:
+                    guests_by_event_id.setdefault(g.event_id, []).append(g)
+                for e in event_rows:
+                    event_guests = guests_by_event_id.get(e.id, [])
+                    events_by_item_id[e.item_id] = {
+                        "emoji": e.emoji,
+                        "share_token": e.share_token,
+                        "requires_rsvp": e.requires_rsvp,
+                        "accepted_count": sum(1 for g in event_guests if g.status == "accepted"),
+                        "invited_count": len(event_guests),
+                        "location": e.location,
+                        "is_private": e.is_private,
+                        "is_draft": e.is_draft,
+                    }
+
+            for it in items:
+                info = events_by_item_id.get(it.id)
+                if not info:
+                    continue
+                if tag and (it.tag or "") != tag:
+                    continue
+                u = universe_by_bucket_id.get(it.bucket_id)
+                events_list.append({
+                    "item_id": it.id,
+                    "title": it.title,
+                    "emoji": info["emoji"],
+                    "due_date": it.due_date,
+                    "due_date_formatted": it.due_date.strftime("%b %d, %Y"),
+                    "due_time_formatted": it.due_date.strftime("%I:%M %p").lstrip("0") if it.due_date.strftime("%H:%M") != "09:00" else "",
+                    "share_token": info["share_token"],
+                    "requires_rsvp": info["requires_rsvp"],
+                    "accepted_count": info["accepted_count"],
+                    "invited_count": info["invited_count"],
+                    "location": info["location"] or "",
+                    "is_private": info["is_private"],
+                    "is_draft": info["is_draft"],
+                    "tag": it.tag or "",
+                    "universe_id": u.id if u else None,
+                    "universe_name": u.name if u else "",
+                    "universe_icon": (u.icon if u else "") or "🎉",
+                })
+
+        events_list.sort(key=lambda e: e["due_date"])
+        all_tags = sorted({e["tag"] for e in events_list if e["tag"]})
+
+        user_today = get_user_today_date(user.timezone or "UTC")
+        # A draft's own due date passing doesn't mean much - it was never actually sent or
+        # confirmed - so it never counts as "past" here, same as the old Space View deck.
+        is_past = lambda e: e["due_date"].date() < user_today and not e["is_draft"]
+        past_events = [e for e in events_list if is_past(e)]
+        upcoming_events = [e for e in events_list if not is_past(e)]
+
+        # Grouped by calendar day, skipping empty days entirely - simpler than the old Space View
+        # deck's fixed-horizon day columns (with empty placeholders for every day in between),
+        # matching how Notes/Calendar already just show what's actually there.
+        days = []
+        current_day = None
+        for e in upcoming_events:
+            d = e["due_date"].date()
+            if d != current_day:
+                days.append({
+                    "date": d,
+                    "label": "Today" if d == user_today else d.strftime("%A"),
+                    "sublabel": d.strftime("%b %d, %Y"),
+                    "events": [],
+                })
+                current_day = d
+            days[-1]["events"].append(e)
+
+        return templates.TemplateResponse(
+            request=request,
+            name="events.html",
+            context={
+                "user": user,
+                "universes": universes,
+                "universe_by_id": universe_by_id,
+                "selected_universe_id": universe_id,
+                "selected_universe": selected_universe,
+                "days": days,
+                "past_events": list(reversed(past_events)),
+                "all_tags": all_tags,
+                "selected_tag": tag,
+            }
+        )
+
 @app.get("/events/new", response_class=HTMLResponse)
-def new_event_form(request: Request):
+def new_event_form(request: Request, back_url: Optional[str] = None):
     with Session(engine) as session:
         user = get_current_user(request, session)
         if not user:
@@ -4613,6 +4644,7 @@ def new_event_form(request: Request):
                 "default_universe_id": default_universe.id,
                 "google_places_enabled": GOOGLE_PLACES_ENABLED,
                 "google_maps_api_key": GOOGLE_MAPS_API_KEY,
+                "back_url": back_url,
             }
         )
 
@@ -5782,13 +5814,14 @@ def _event_back_url(session: Session, item: "Item") -> str:
     """"← Back to TaskMonster" on the invite/edit pages used to always land on "/" - the user's
     default active Universe, NOT wherever the event itself actually lives - reported directly
     ("it needs to take me back to the Event area"). Resolves the event's own bucket -> realm ->
-    Universe and points there instead; falls back to plain "/" if that chain is ever broken
+    Universe and points at that Universe's own standalone /events page (see events_page) instead
+    of the old Space View path - falls back to plain "/events" if that chain is ever broken
     (shouldn't happen, but this is only ever a "where do I land" nicety, not worth a 500 over)."""
     bucket = session.get(Bucket, item.bucket_id)
     realm = session.get(Realm, bucket.realm_id) if bucket else None
     if realm and realm.universe_id:
-        return f"/?universe_id={realm.universe_id}"
-    return "/"
+        return f"/events?universe_id={realm.universe_id}"
+    return "/events"
 
 # Registered BEFORE the generic /events/{share_token} route below - FastAPI/Starlette matches
 # routes in registration order, and {share_token} greedily matches any string with no '/' in it,
@@ -6191,7 +6224,6 @@ def notes_page(request: Request, universe_id: Optional[int] = None, overdue: Opt
                 "universe_by_id": universe_by_id,
                 "selected_universe_id": universe_id,
                 "selected_universe": selected_universe,
-                "events_universe_href": get_events_universe_href(session, user.id),
                 "gemini_enabled": GEMINI_ENABLED,
                 "tag_suggestions": tag_suggestions,
                 "overdue_only": overdue_only,
@@ -6584,7 +6616,6 @@ def calendar_page(request: Request, universe_id: Optional[int] = None, year: Opt
                 "universes": universes,
                 "selected_universe_id": universe_id,
                 "selected_universe": selected_universe,
-                "events_universe_href": get_events_universe_href(session, user.id),
                 "weeks": weeks,
                 "month_label": date(view_year, view_month, 1).strftime("%B %Y"),
                 "view_year": view_year,
