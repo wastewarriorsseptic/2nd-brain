@@ -525,18 +525,5 @@
         </div>
     </div>
 
-    <!-- Top-right floating Profile button - same as index.html's own (settings/account, sign out,
-         privacy policy, account deletion). Notes/Calendar don't carry this yet; added here because
-         it was asked for specifically on this page. -->
-    <div id="profile-floating-btn-wrapper" class="fixed right-[16px] z-[70]" style="top: max(1rem, calc(env(safe-area-inset-top) + 0.5rem));">
-        <a href="/settings/account" id="profile-floating-btn" title="Profile"
-           class="w-11 h-11 rounded-full bg-slate-800/90 hover:bg-slate-700 border border-indigo-500/40 backdrop-blur-md shadow-xl flex items-center justify-center text-xl transition overflow-hidden">
-            {% if user.profile_photo %}
-            <img src="/profile-photo" alt="" class="w-full h-full object-cover">
-            {% else %}
-            👤
-            {% endif %}
-        </a>
-    </div>
 </body>
 </html>

@@ -131,8 +131,17 @@
             </div>
             {% endif %}
 
-            {% if days %}
-            <div class="flex-1 min-h-0 space-y-5">
+            <!-- flex-1 + overflow-y-auto + pb-32 matches Calendar's own day-content wrapper exactly
+                 (see calendar.html's day/week/month bodies) - the pb-32 is what keeps the white
+                 card's own background filling down to the bottom of the screen behind the floating
+                 launcher cluster, rather than the card visibly stopping short of it. The empty
+                 state below deliberately does NOT also center itself in that leftover space (no
+                 flex-1/justify-center on it) - same reasoning Calendar's own "Nothing due" block
+                 uses a plain top-aligned py-14 instead: the surrounding flex-1 wrapper is what
+                 already fills the card down to size, so double-centering would just push the
+                 message and its "+ Create one" link further down for no reason. -->
+            <div class="flex-1 overflow-y-auto space-y-5 pb-32">
+                {% if days %}
                 {% for day in days %}
                 <div>
                     <div class="flex items-baseline gap-2 mb-2">
@@ -146,15 +155,15 @@
                     </div>
                 </div>
                 {% endfor %}
+                {% else %}
+                <div class="flex flex-col items-center justify-center text-center gap-2 py-14">
+                    <span class="text-4xl">🎉</span>
+                    <p class="text-slate-400 text-sm">No upcoming events{{ ' tagged "' ~ selected_tag ~ '"' if selected_tag else '' }}.</p>
+                    <a href="/events/new?back_url=/events{{ ('?universe_id=' ~ selected_universe_id) if selected_universe_id else '' }}"
+                       class="text-indigo-600 hover:text-indigo-500 text-sm font-semibold">+ Create one</a>
+                </div>
+                {% endif %}
             </div>
-            {% else %}
-            <div class="flex-1 flex flex-col items-center justify-center text-center py-16">
-                <span class="text-4xl mb-3">🎉</span>
-                <p class="text-slate-500 text-sm">No upcoming events{{ ' tagged "' ~ selected_tag ~ '"' if selected_tag else '' }}.</p>
-                <a href="/events/new?back_url=/events{{ ('?universe_id=' ~ selected_universe_id) if selected_universe_id else '' }}"
-                   class="mt-3 text-indigo-600 hover:text-indigo-500 text-sm font-semibold">+ Create one</a>
-            </div>
-            {% endif %}
         </div>
     </div>
 
@@ -231,18 +240,6 @@
                 🎉
             </div>
         </div>
-    </div>
-
-    <!-- Top-right floating Profile button - same as People's own. -->
-    <div id="profile-floating-btn-wrapper" class="fixed right-[16px] z-[70]" style="top: max(1rem, calc(env(safe-area-inset-top) + 0.5rem));">
-        <a href="/settings/account" id="profile-floating-btn" title="Profile"
-           class="w-11 h-11 rounded-full bg-slate-800/90 hover:bg-slate-700 border border-indigo-500/40 backdrop-blur-md shadow-xl flex items-center justify-center text-xl transition overflow-hidden">
-            {% if user.profile_photo %}
-            <img src="/profile-photo" alt="" class="w-full h-full object-cover">
-            {% else %}
-            👤
-            {% endif %}
-        </a>
     </div>
 
     <script>
