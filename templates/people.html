@@ -61,7 +61,7 @@
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
     <div id="people-space-stars" class="fixed inset-0 pointer-events-none overflow-hidden"></div>
-    <div class="relative z-10 max-w-2xl mx-auto p-4 md:p-6 pr-10">
+    <div class="relative z-10 max-w-5xl mx-auto p-4 md:p-6">
         <!-- Universe-scope strip - same look/behavior as Notes' own #notes-universe-strip, just
              scoped to People (contact-kind) Universes instead of Task ones. Each circle here is a
              separate "batch" of contacts (e.g. Family, Customers) - tapping one filters the list
@@ -90,7 +90,7 @@
             </a>
         </div>
 
-        <div class="bg-white rounded-3xl p-5 md:p-6 flex flex-col shadow-2xl" style="min-height: calc(100vh - 230px);">
+        <div class="relative bg-white rounded-3xl p-5 md:p-6 flex flex-col shadow-2xl" style="min-height: calc(100vh - 230px);">
             <div class="flex items-center justify-between gap-2 mb-4 shrink-0">
                 <h2 class="text-lg font-extrabold text-slate-900 flex items-center gap-2">
                     {% if selected_universe %}{{ selected_universe.icon or '👥' }} {{ selected_universe.name }}{% else %}👥 All{% endif %}
@@ -125,7 +125,7 @@
                 </button>
             </div>
 
-            <div class="flex-1 min-h-0 overflow-y-auto -mx-1 px-1" id="people-list-scroll">
+            <div class="flex-1 min-h-0 overflow-y-auto -mx-1 px-1 pr-6 pb-32" id="people-list-scroll">
                 {% for group in people_by_letter %}
                 <div id="people-letter-{{ group.letter }}" class="scroll-mt-2">
                     <h3 class="sticky top-0 bg-white/95 backdrop-blur-sm text-slate-400 text-xs font-extrabold uppercase tracking-wide py-1.5 z-10">{{ group.letter }}</h3>
@@ -223,16 +223,21 @@
                 </div>
                 {% endif %}
             </div>
-        </div>
-    </div>
 
-    <!-- A-Z scrubber - iOS Contacts-style. Letters with no contacts render dimmed rather than
-         omitted, so the strip's full A-Z shape stays stable and recognizable regardless of scope. -->
-    <div id="people-az-scrubber" class="fixed right-1 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-[1px] py-2">
-        {% set present_letters = people_by_letter|map(attribute='letter')|list %}
-        {% for letter in ['#','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'] %}
-        <span data-letter="{{ letter }}" class="text-[9px] font-bold leading-none px-1 {{ 'text-indigo-300' if letter in present_letters else 'text-slate-700' }}">{{ letter }}</span>
-        {% endfor %}
+            <!-- A-Z scrubber - iOS Contacts-style. Letters with no contacts render dimmed rather
+                 than omitted, so the strip's full A-Z shape stays stable and recognizable
+                 regardless of scope. absolute within the card itself (not fixed to the viewport)
+                 - the card used to be capped at max-w-2xl with the whole page's right edge
+                 reserved for a viewport-fixed scrubber outside it, which left this page narrower
+                 than Notes/Calendar's own max-w-5xl for no reason once the scrubber lives inside
+                 the card's own bounds instead. -->
+            <div id="people-az-scrubber" class="absolute right-1 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-[1px] py-2">
+                {% set present_letters = people_by_letter|map(attribute='letter')|list %}
+                {% for letter in ['#','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'] %}
+                <span data-letter="{{ letter }}" class="text-[9px] font-bold leading-none px-1 {{ 'text-indigo-300' if letter in present_letters else 'text-slate-700' }}">{{ letter }}</span>
+                {% endfor %}
+            </div>
+        </div>
     </div>
 
     <!-- Edit Person modal - simplified from index.html's own version: a plain Universe select
