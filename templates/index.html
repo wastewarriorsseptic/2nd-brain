@@ -10361,7 +10361,15 @@
 
         function zoomSpace(factor) {
             const oldZoom = targetCameraZoom;
-            const newZoom = Math.min(Math.max(0.2, oldZoom * factor), 2.5);
+            // 0.12 floor, not the previous 0.2 - the per-Universe Realm Timeline's own default
+            // zoom (zoomValRT, ~0.22 on mobile) already started almost AT the old 0.2 floor, so
+            // pinching outward from it had almost no real room to go (0.22 -> 0.2, a ~9% change)
+            // before hitting the clamp. Reported directly: "when on a universe its a very tight
+            // view... one outward pinch [should] zoom out a bit to show more tasks on a universe
+            // line". 0.12 matches the "fit to content" zoom floor already used elsewhere
+            // (recenterSpace's own fit-zoom clamp), so this isn't a new, untested bound - it's
+            // already proven to render sensibly this zoomed out.
+            const newZoom = Math.min(Math.max(0.12, oldZoom * factor), 2.5);
             if (oldZoom === newZoom) return;
 
             const centerX = window.innerWidth / 2;
@@ -11502,7 +11510,9 @@
                 }
                 const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
                 const oldZoom = targetCameraZoom;
-                const newZoom = Math.min(Math.max(0.2, oldZoom * zoomFactor), 2.5);
+                // Same 0.12 floor as zoomSpace() (used by pinch) - kept in sync so trackpad/mouse
+                // wheel zoom-out has the same real headroom pinch gained.
+                const newZoom = Math.min(Math.max(0.12, oldZoom * zoomFactor), 2.5);
                 if (oldZoom === newZoom) return;
 
                 const mouseX = e.clientX;
