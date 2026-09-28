@@ -2456,9 +2456,12 @@ def dashboard(
         # are built client-side by reading THIS page's card attributes rather than a second
         # server round trip. Queried once across every Universe (not just the active one) since
         # it's cheap and a handful of ints, rather than re-deriving it per code path below.
-        noted_item_ids = set(session.exec(
-            select(Note.source_item_id).where(Note.user_id == user.id, Note.source_item_id.is_not(None))
-        ).all())
+        # Goes through the same resolve_favorited_items Notes' own checklist uses (not a plain
+        # Note.source_item_id query) so a favorited RECURRING task's star shows up here on
+        # whichever occurrence is currently "live" too - without this, the star would stay stuck
+        # on an old, already-completed occurrence until the next time /notes happened to be
+        # opened and did the rollover itself.
+        noted_item_ids = {it.id for (_n, it) in resolve_favorited_items(session, user, today_date)}
 
         # Event-only extras (emoji/share link/RSVP counts) for whichever of the items above are
         # actually Events (item.is_event) - the Timeline card for one of these shows this instead
@@ -6045,6 +6048,72 @@ def send_draft_event(request: Request, share_token: str):
 
 # --- Notes (Apple-Notes-style, deliberately undated) ---
 
+def resolve_favorited_items(session: Session, user: "User", user_today) -> list[tuple["Note", "Item"]]:
+    """Every starred Note (Note.source_item_id set - see toggle_note_from_task), paired with
+    whichever Item is currently the "live" target of that star. For a plain (non-recurring)
+    favorite that's always the same Item the star was put on. For a RECURRING favorite, once
+    that Item is completed and it's past the same day-boundary grace period Notes' own checklist
+    already gives a completed task ("stays through the rest of the day it was checked off"), the
+    star automatically rolls forward onto the next not-yet-completed Item sharing its
+    recurring_group_id - persisted back onto the Note row right here, so every other reader (the
+    dashboard's own starred-icon lookup, Notes' own checklist, both call this) sees the same
+    resolved target without redoing this walk or drifting out of sync with each other.
+
+    Before this, favoriting a recurring bill only ever pinned that one dated occurrence - once it
+    was paid and dropped off Notes, the favorite was gone for good; next month's occurrence never
+    inherited it. Reported directly, wanting a favorited recurring task to keep showing up in
+    Notes indefinitely, the way "favorite this bill" implies.
+
+    A Note whose Item was deleted independently, or whose recurring series has simply run out of
+    future occurrences (past its generation horizon), resolves to nothing and is omitted - same
+    "drops off, harmless leftover Note row" contract notes_page already documented.
+    """
+    starred_notes = session.exec(
+        select(Note).where(Note.user_id == user.id, Note.source_item_id.is_not(None))
+    ).all()
+    if not starred_notes:
+        return []
+
+    item_ids = [n.source_item_id for n in starred_notes]
+    item_by_id = {it.id: it for it in session.exec(select(Item).where(Item.id.in_(item_ids))).all()}
+
+    resolved: list[tuple[Note, Item]] = []
+    dirty = False
+    for n in starred_notes:
+        it = item_by_id.get(n.source_item_id)
+        if not it:
+            continue
+        if it.is_completed:
+            completed_today = False
+            if it.completed_at:
+                dt = it.completed_at
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                try:
+                    completed_today = dt.astimezone(ZoneInfo(user.timezone or "UTC")).date() == user_today
+                except Exception:
+                    completed_today = dt.date() == user_today
+            if not completed_today:
+                if it.recurring_group_id:
+                    nxt = session.exec(
+                        select(Item)
+                        .where(Item.recurring_group_id == it.recurring_group_id, Item.is_completed == False)
+                        .order_by(Item.due_date)
+                    ).first()
+                    if not nxt:
+                        continue
+                    n.source_item_id = nxt.id
+                    session.add(n)
+                    dirty = True
+                    it = nxt
+                else:
+                    continue
+        resolved.append((n, it))
+
+    if dirty:
+        session.commit()
+    return resolved
+
 @app.get("/notes", response_class=HTMLResponse)
 def notes_page(request: Request, universe_id: Optional[int] = None, overdue: Optional[int] = None):
     """Reported directly - Notes was reworked from a freeform, Apple-Notes-style list into a pure
@@ -6068,57 +6137,35 @@ def notes_page(request: Request, universe_id: Optional[int] = None, overdue: Opt
         ).all()
         universe_by_id = {u.id: u for u in universes}
 
-        starred_query = select(Note).where(Note.user_id == user.id, Note.source_item_id.is_not(None))
-        if universe_id:
-            starred_query = starred_query.where(Note.universe_id == universe_id)
-        starred_notes = session.exec(starred_query).all()
-
         # A completed task stays in the checklist through the rest of the day it was checked off,
         # then drops off starting the next day - same "Completed Yesterday" day-boundary the Daily
         # Digest already uses (see build_task_universe_context/the digest loop above), just applied
         # here as "still today" instead of "was yesterday". Reported directly, choosing midnight
-        # over a rolling few-hours timer for consistency with that existing behavior.
+        # over a rolling few-hours timer for consistency with that existing behavior. Also the
+        # cutoff resolve_favorited_items uses to decide when a completed recurring favorite has
+        # earned its rollover onto the next occurrence.
         user_today = get_user_today_date(user.timezone or "UTC")
 
+        favorited = resolve_favorited_items(session, user, user_today)
+        if universe_id:
+            favorited = [(n, it) for (n, it) in favorited if it.universe_id == universe_id]
+
         checklist = []
-        source_item_ids = [n.source_item_id for n in starred_notes]
-        if source_item_ids:
-            linked_items = session.exec(select(Item).where(Item.id.in_(source_item_ids))).all()
-            item_by_id = {it.id: it for it in linked_items}
-            bucket_ids = [it.bucket_id for it in linked_items]
+        if favorited:
+            bucket_ids = [it.bucket_id for (n, it) in favorited]
             bucket_by_id = {b.id: b for b in session.exec(select(Bucket).where(Bucket.id.in_(bucket_ids))).all()} if bucket_ids else {}
             realm_ids = [b.realm_id for b in bucket_by_id.values()]
             realm_by_id = {r.id: r for r in session.exec(select(Realm).where(Realm.id.in_(realm_ids))).all()} if realm_ids else {}
-            for n in starred_notes:
-                it = item_by_id.get(n.source_item_id)
-                b = bucket_by_id.get(it.bucket_id) if it else None
+            for n, it in favorited:
+                b = bucket_by_id.get(it.bucket_id)
                 r = realm_by_id.get(b.realm_id) if b else None
-                # A starred task whose Item was deleted independently simply drops off the
+                # A starred task whose bucket was deleted independently simply drops off the
                 # checklist entirely now (no orphan row to show without a task to read from) -
                 # the Note row itself is harmless leftover data, cleaned up the next time anyone
                 # stars/un-stars that same item_id again (toggle_note_from_task's own lookup would
                 # just never find it, so a fresh star creates a new row rather than colliding).
-                if not it or not b:
+                if not b:
                     continue
-                if it.is_completed:
-                    # Same naive-UTC-then-convert-to-the-user's-own-timezone approach the digest
-                    # uses - completed_at is stored naive (assumed UTC), so it has to be localized
-                    # before comparing its calendar date against "today" in wherever the user
-                    # actually is. Missing completed_at (only possible on rows completed before that
-                    # column existed) is treated as "not today" - there's no way to know when it
-                    # actually happened, and the whole point here is not letting stale completed
-                    # rows pile up.
-                    completed_today = False
-                    if it.completed_at:
-                        dt = it.completed_at
-                        if dt.tzinfo is None:
-                            dt = dt.replace(tzinfo=timezone.utc)
-                        try:
-                            completed_today = dt.astimezone(ZoneInfo(user.timezone or "UTC")).date() == user_today
-                        except Exception:
-                            completed_today = dt.date() == user_today
-                    if not completed_today:
-                        continue
                 u = universe_by_id.get(r.universe_id) if r else None
                 checklist.append({
                     "note_id": n.id,
