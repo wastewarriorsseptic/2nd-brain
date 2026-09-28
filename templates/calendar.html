@@ -14,6 +14,13 @@
          the identical toggle pattern. -->
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <style>
+        /* Without this, real iOS Safari/WKWebView auto-inflates small text in narrow columns for
+           readability (WebKit's text-size-adjust heuristic) - a behavior desktop browser testing
+           never reproduces, which is exactly why the Day/Week/Month/Overdue pill row below measured
+           fine in every local check yet wrapped and overlapped its own rounded corner on a real
+           phone. Every pixel-fitted pill/strip on this page assumes text renders at its authored
+           size, so this reset needs to be global, not just scoped to that one row. */
+        html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
         /* Same floating launcher cluster as index.html/notes.html - see notes.html's own head
            comment for why this is a static, page-local copy rather than shared code: no AI chat
            panel to toggle here, just plain links back into the main app. */
@@ -97,7 +104,7 @@
              extra. -->
         <div id="cal-universe-strip" class="flex items-start gap-3 overflow-x-auto pb-1 mb-4 -mx-1 px-1"
              style="padding-top: calc(env(safe-area-inset-top, 0px) + 0.375rem);">
-            <a href="/calendar" class="shrink-0 flex flex-col items-center gap-1 w-14">
+            <a href="/calendar?view={{ view }}&year={{ view_year }}&month={{ view_month }}&day={{ view_day }}" class="shrink-0 flex flex-col items-center gap-1 w-14">
                 <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if not selected_universe_id else 'border-slate-700 bg-slate-900 hover:border-indigo-500/60' }}">
                     ✨
                 </div>
@@ -105,7 +112,7 @@
             </a>
             <div id="cal-universe-picker" class="flex items-start gap-3">
                 {% for u in universes %}
-                <a href="/calendar?universe_id={{ u.id }}" class="cal-universe-card shrink-0 flex flex-col items-center gap-1 w-14" data-universe-id="{{ u.id }}">
+                <a href="/calendar?view={{ view }}&year={{ view_year }}&month={{ view_month }}&day={{ view_day }}&universe_id={{ u.id }}" class="cal-universe-card shrink-0 flex flex-col items-center gap-1 w-14" data-universe-id="{{ u.id }}">
                     <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 transition {{ 'border-indigo-400 bg-indigo-500/20 shadow-lg shadow-indigo-600/30' if selected_universe_id == u.id else 'border-slate-700 bg-slate-900 hover:border-indigo-500/60' }}">
                         {{ u.icon or '😈' }}
                     </div>
@@ -142,23 +149,31 @@
                  default view (see calendar_page in app.py). Each link carries the OTHER views' own
                  current position (view_year/month/day) so switching back and forth never loses
                  your place. -->
-            <div class="flex items-center gap-1 mb-3 shrink-0 bg-slate-100 rounded-full p-1 w-fit">
+            <!-- overflow-x-auto is a safety net, not the normal case: these 4 pills fit on one
+                 line at every phone width this app supports. It only kicks in if something (an
+                 extreme accessibility text-size setting, a very large overdue count) still makes
+                 the row too wide even after the text-size-adjust reset above - scrolls cleanly
+                 instead of wrapping text mid-pill and colliding with the container's own rounded
+                 corner, which is what shipped before. whitespace-nowrap on each pill is the other
+                 half of that: text-xs "Overdue (N)" wrapping onto its own second line inside a
+                 fixed-height rounded-full pill is what actually produced the visual overlap. -->
+            <div class="flex items-center gap-1 mb-3 shrink-0 bg-slate-100 rounded-full p-1 w-fit max-w-full overflow-x-auto">
                 <a href="/calendar?view=day&year={{ view_year }}&month={{ view_month }}&day={{ view_day }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
-                   class="px-3.5 py-1.5 rounded-full text-xs font-bold transition {{ 'bg-white text-indigo-600 shadow' if view == 'day' else 'text-slate-500 hover:text-slate-700' }}">
+                   class="px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition {{ 'bg-white text-indigo-600 shadow' if view == 'day' else 'text-slate-500 hover:text-slate-700' }}">
                     Day
                 </a>
                 <a href="/calendar?view=week&year={{ view_year }}&month={{ view_month }}&day={{ view_day }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
-                   class="px-3.5 py-1.5 rounded-full text-xs font-bold transition {{ 'bg-white text-indigo-600 shadow' if view == 'week' else 'text-slate-500 hover:text-slate-700' }}">
+                   class="px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition {{ 'bg-white text-indigo-600 shadow' if view == 'week' else 'text-slate-500 hover:text-slate-700' }}">
                     Week
                 </a>
                 <a href="/calendar?view=month&year={{ view_year }}&month={{ view_month }}{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
-                   class="px-3.5 py-1.5 rounded-full text-xs font-bold transition {{ 'bg-white text-indigo-600 shadow' if view == 'month' else 'text-slate-500 hover:text-slate-700' }}">
+                   class="px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition {{ 'bg-white text-indigo-600 shadow' if view == 'month' else 'text-slate-500 hover:text-slate-700' }}">
                     Month
                 </a>
                 <!-- Not date-scoped like the three above - reported directly, wanting one place to
                      see everything overdue instead of hunting for it a day/week/month at a time. -->
                 <a href="/calendar?view=overdue{{ '&universe_id=' ~ selected_universe_id if selected_universe_id else '' }}"
-                   class="px-3.5 py-1.5 rounded-full text-xs font-bold transition {{ 'bg-white text-rose-600 shadow' if view == 'overdue' else 'text-slate-500 hover:text-slate-700' }}">
+                   class="px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition {{ 'bg-white text-rose-600 shadow' if view == 'overdue' else 'text-slate-500 hover:text-slate-700' }}">
                     Overdue{% if overdue_tasks %} ({{ overdue_tasks | length }}){% endif %}
                 </a>
             </div>
