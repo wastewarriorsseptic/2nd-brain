@@ -62,6 +62,7 @@ gemini_client = None
 if GEMINI_ENABLED:
     from google import genai as _genai
     from google.genai import types as genai_types
+    from google.genai import errors as genai_errors
     gemini_client = _genai.Client(api_key=GEMINI_API_KEY)
 else:
     print("AI chat disabled: missing GEMINI_API_KEY.", flush=True)
@@ -6916,6 +6917,32 @@ _ai_chat_request_log: dict = {}
 AI_CHAT_RATE_LIMIT = 20  # requests per rolling hour per user
 AI_CHAT_MAX_HISTORY_TURNS = 20
 
+AI_CHAT_GEMINI_MAX_ATTEMPTS = 3
+AI_CHAT_GEMINI_RETRY_BASE_DELAY = 0.75  # seconds; doubles each retry
+
+def _gemini_generate_with_retry(contents, config):
+    """Wraps gemini_client.models.generate_content with a few short retries for TRANSIENT
+    failures only - Gemini's own 5xx (overloaded/unavailable) and 429 (rate-limited) responses are
+    common under Google's shared infra load and typically clear within a second or two, so a quick
+    retry here beats surfacing "temporarily unavailable" to the user for something that would have
+    worked on the very next try (reported directly - the same message sent moments apart
+    intermittently failed then succeeded with no code change in between). Anything else (bad
+    request, auth, a genuinely malformed call) is raised immediately - retrying those would just
+    fail the same way three times instead of once."""
+    last_error = None
+    for attempt in range(AI_CHAT_GEMINI_MAX_ATTEMPTS):
+        try:
+            return gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=config)
+        except genai_errors.ServerError as e:
+            last_error = e
+        except genai_errors.ClientError as e:
+            if getattr(e, "code", None) != 429:
+                raise
+            last_error = e
+        if attempt < AI_CHAT_GEMINI_MAX_ATTEMPTS - 1:
+            time.sleep(AI_CHAT_GEMINI_RETRY_BASE_DELAY * (2 ** attempt))
+    raise last_error
+
 def _ai_chat_rate_limited(user_id: int) -> bool:
     now = time.time()
     recent = [t for t in _ai_chat_request_log.get(user_id, []) if now - t < 3600]
@@ -7787,7 +7814,7 @@ def ai_chat(request: Request, payload: dict = Body(...)):
 
         try:
             for _ in range(AI_CHAT_MAX_TOOL_CALLS):
-                response = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=config)
+                response = _gemini_generate_with_retry(contents, config)
                 _ai_chat_log_usage(session, user, response)
                 candidate = response.candidates[0]
                 # Gemini can return MULTIPLE function_call parts in a single response (parallel
