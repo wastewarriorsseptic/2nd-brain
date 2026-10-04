@@ -13,7 +13,7 @@ import bcrypt
 import iap
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from urllib.parse import quote, urlparse
-from datetime import datetime, timedelta, timezone, date
+from datetime import datetime, timedelta, timezone, date, time as dt_time
 from calendar import monthrange
 from typing import Optional, List
 from zoneinfo import ZoneInfo  # Built-in IANA timezone support
@@ -6400,6 +6400,18 @@ def delete_note(request: Request, note_id: int):
 
     return RedirectResponse(url="/notes", status_code=303)
 
+def _same_day_task_sort_key(due_date: datetime, title: str):
+    """Ordering for tasks that share a due DATE, reported directly: a task with an explicit due
+    TIME sorts first (earliest time first); a task with no time set at all sorts after every timed
+    one, alphabetically by title. A due_date of exactly 9:00 AM is the app's own internal sentinel
+    for "no time was set" (see the same check building each task's `due_time` display string below)
+    - indistinguishable from someone genuinely picking 9:00 AM, so it's treated as untimed here
+    too, same as everywhere else that reads it."""
+    has_explicit_time = due_date.strftime("%H:%M") != "09:00"
+    if has_explicit_time:
+        return (0, due_date.time(), "")
+    return (1, dt_time.min, (title or "").strip().lower())
+
 @app.get("/calendar", response_class=HTMLResponse)
 def calendar_page(request: Request, universe_id: Optional[int] = None, year: Optional[int] = None, month: Optional[int] = None, view: str = "day", day: Optional[int] = None):
     """Three views (Day/Week/Month) of every due-dated task, browsed by Universe via the same
@@ -6491,7 +6503,13 @@ def calendar_page(request: Request, universe_id: Optional[int] = None, year: Opt
                         "bucket_name": b.name if b else "",
                         "universe_icon": (u.icon if u else "") or "😈",
                         "universe_name": u.name if u else "",
+                        "_sort_dt": it.due_date,
                     })
+                # Each day's own tasks re-sorted (timed tasks first by time, then untimed
+                # alphabetically) - see _same_day_task_sort_key. The SQL query above only orders
+                # across the whole month, which doesn't express this same-day tiebreak.
+                for day_list in tasks_by_day.values():
+                    day_list.sort(key=lambda t: _same_day_task_sort_key(t.pop("_sort_dt"), t["title"]))
 
         # Sunday-first grid (matches the Daily Digest / rest of the app's own date formatting,
         # which is US-conventioned throughout) - leading/trailing blanks pad the first and last
@@ -6552,7 +6570,12 @@ def calendar_page(request: Request, universe_id: Optional[int] = None, year: Opt
                     "realm_id": b.realm_id if b else None,
                     "bucket_id": it.bucket_id,
                     "universe_icon": (u.icon if u else "") or "😈",
+                    "_sort_dt": it.due_date,
                 })
+            # Same per-day reordering as Month's own tasks_by_day above - timed tasks first by
+            # time, untimed tasks after, alphabetically.
+            for day_list in week_tasks_by_date.values():
+                day_list.sort(key=lambda t: _same_day_task_sort_key(t.pop("_sort_dt"), t["title"]))
         week_days = []
         for i in range(7):
             d = week_start + timedelta(days=i)
@@ -6607,7 +6630,12 @@ def calendar_page(request: Request, universe_id: Optional[int] = None, year: Opt
                     "bucket_name": b.name if b else "",
                     "universe_icon": (u.icon if u else "") or "😈",
                     "universe_name": u.name if u else "",
+                    "_sort_dt": it.due_date,
                 })
+            # Oldest overdue DATE still comes first (unchanged) - but tasks overdue from the same
+            # date now get the same timed-then-alphabetical tiebreak as Month/Week/Day, instead of
+            # whatever order the DB happened to return them in.
+            overdue_tasks.sort(key=lambda t: (t["_sort_dt"].date(), _same_day_task_sort_key(t.pop("_sort_dt"), t["title"])))
 
         return templates.TemplateResponse(
             request=request,
