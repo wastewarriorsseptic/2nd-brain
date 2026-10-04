@@ -6783,6 +6783,12 @@ instead. Never invent an id - it must come from the tree below.
 Resolve relative dates ("tomorrow", "next Friday") against the "today"/"timezone" given in the \
 context. Always output due_date as YYYY-MM-DD.
 
+When the user mentions a specific time of day for a task ("at 3pm", "8:30am", "by noon"), pass it \
+as due_time in 24-hour HH:MM (e.g. "15:00" for 3pm, "08:30" for 8:30am, "12:00" for noon) on \
+create_task or update_task. Omit due_time entirely when no time was mentioned - don't invent one. \
+Never claim in your reply that a task was set for a specific time unless you actually passed that \
+exact time as due_time in this same turn's tool call.
+
 When the user describes a task repeating ("every Monday", "monthly", "every other week", "the \
 last day of every month", "once a year"), call create_task with the matching recurrence_type \
 (due_date is still the FIRST occurrence). "Every X days/weeks/months/years" or "every other ___" \
@@ -6824,6 +6830,7 @@ if GEMINI_ENABLED:
                 "title": {"type": "STRING"},
                 "universe_id": {"type": "INTEGER", "description": "Must be one of the universe ids given in context."},
                 "due_date": {"type": "STRING", "description": "YYYY-MM-DD. The first occurrence's date if this is recurring."},
+                "due_time": {"type": "STRING", "description": "24-hour HH:MM, e.g. \"15:00\" for 3pm. Only set this when the user actually gave a specific time - omit it entirely otherwise, never invent one."},
                 "notes": {"type": "STRING"},
                 "tag": {"type": "STRING", "description": "Optional free-form label for this task, e.g. \"Personal Bills\" - only set this when the user actually gave one, never invent it."},
                 "recurrence_type": {
@@ -6860,6 +6867,7 @@ if GEMINI_ENABLED:
                 "task_id": {"type": "INTEGER", "description": "The id of the task to update - from list_tasks results or last_referenced_task in context."},
                 "title": {"type": "STRING"},
                 "due_date": {"type": "STRING", "description": "YYYY-MM-DD"},
+                "due_time": {"type": "STRING", "description": "24-hour HH:MM, e.g. \"15:00\" for 3pm. Changes just the time of day, independent of due_date - pass this alone to retime a task without moving its date. Pass an empty string to clear a previously-set time back to none. Only set this when the user actually gave a specific time - never invent one."},
                 "notes": {"type": "STRING"},
                 "universe_id": {"type": "INTEGER", "description": "Moves the task to this Universe - from context. Only include this when the user actually asked to move/relocate the task somewhere else."},
                 "tag": {"type": "STRING", "description": "Optional free-form label for this task, e.g. \"Personal Bills\". Pass an empty string to clear it."},
@@ -7072,11 +7080,23 @@ def _ai_execute_create_task(session: Session, user: "User", args: dict) -> dict:
         return {"error": "That universe isn't a task universe."}
     bucket_id = get_or_create_default_task_bucket_in_universe(session, user.id, universe).id
 
+    # 9:00 AM is this app's own sentinel for "no time set" throughout (see due_time display
+    # everywhere it's read back) - stays the default here when due_time is omitted or doesn't
+    # parse, exactly like create_item's own form route handles a blank due_time input.
+    hour, minute = 9, 0
+    due_time_str = (args.get("due_time") or "").strip()
+    if due_time_str:
+        try:
+            parsed_time = datetime.strptime(due_time_str, "%H:%M")
+            hour, minute = parsed_time.hour, parsed_time.minute
+        except ValueError:
+            pass
+
     try:
-        due_date = datetime.strptime(due_date_str, "%Y-%m-%d").replace(hour=9, minute=0, second=0)
+        due_date = datetime.strptime(due_date_str, "%Y-%m-%d").replace(hour=hour, minute=minute, second=0)
     except ValueError:
         due_date = get_user_today_date(user.timezone or "UTC")
-        due_date = datetime(due_date.year, due_date.month, due_date.day, 9, 0, 0)
+        due_date = datetime(due_date.year, due_date.month, due_date.day, hour, minute, 0)
 
     recurrence_type = args.get("recurrence_type") or "none"
     if recurrence_type not in ("none", "daily", "weekly", "monthly", "yearly"):
@@ -7181,6 +7201,13 @@ def _ai_execute_create_task(session: Session, user: "User", args: dict) -> dict:
     new_item = first_created_item
     bucket = session.get(Bucket, bucket_id)
 
+    # Grounds the model's own confirmation reply in what was actually stored - reported directly,
+    # the model was confidently stating a specific time back to the user when none had actually
+    # been set (due_time had no way to reach storage at all before this). Blank (not "9:00 AM")
+    # when no real time was given, matching the same 9:00-is-the-no-time-sentinel convention
+    # _same_day_task_sort_key and every due_time display elsewhere already use.
+    due_time_formatted = new_item.due_date.strftime("%I:%M %p").lstrip("0") if (hour, minute) != (9, 0) else ""
+
     return {
         "id": new_item.id,
         "title": new_item.title,
@@ -7189,6 +7216,7 @@ def _ai_execute_create_task(session: Session, user: "User", args: dict) -> dict:
         "universe_icon": universe.icon,
         "due_date": new_item.due_date.strftime("%Y-%m-%d"),
         "due_date_formatted": new_item.due_date.strftime("%b %d, %Y"),
+        "due_time": due_time_formatted,
         "recurrence_type": recurrence_type,
         "occurrence_count": len(target_dates),
     }
@@ -7206,13 +7234,35 @@ def _ai_execute_update_task(session: Session, user: "User", args: dict) -> dict:
 
     if "title" in args and (args.get("title") or "").strip():
         item.title = args["title"].strip()
+
+    new_date = None
     if "due_date" in args and args.get("due_date"):
         try:
-            item.due_date = datetime.strptime(args["due_date"], "%Y-%m-%d").replace(
-                hour=item.due_date.hour, minute=item.due_date.minute, second=0
-            )
+            new_date = datetime.strptime(args["due_date"], "%Y-%m-%d").date()
         except ValueError:
             return {"error": "That due date wasn't in a recognizable format."}
+
+    # due_time is independent of due_date - "move it to Friday" (date only, keeps the existing
+    # time) and "make that 3pm instead" (time only, keeps the existing date) both need to work,
+    # same as the form's own Edit Task fields let you change just one. An empty string explicitly
+    # clears a previously-set time back to the app's own 9:00-AM "no time" sentinel, same as
+    # clearing the tag field above does for tag.
+    new_hour, new_minute = item.due_date.hour, item.due_date.minute
+    if "due_time" in args:
+        due_time_str = (args.get("due_time") or "").strip()
+        if due_time_str:
+            try:
+                parsed_time = datetime.strptime(due_time_str, "%H:%M")
+                new_hour, new_minute = parsed_time.hour, parsed_time.minute
+            except ValueError:
+                return {"error": "That due time wasn't in a recognizable format."}
+        else:
+            new_hour, new_minute = 9, 0
+
+    if new_date is not None or "due_time" in args:
+        base_date = new_date or item.due_date.date()
+        item.due_date = datetime(base_date.year, base_date.month, base_date.day, new_hour, new_minute, 0)
+
     if "notes" in args:
         item.description = args.get("notes") or None
     if "tag" in args:
@@ -7250,6 +7300,7 @@ def _ai_execute_update_task(session: Session, user: "User", args: dict) -> dict:
         "universe_icon": universe.icon if universe else "😈",
         "due_date": item.due_date.strftime("%Y-%m-%d"),
         "due_date_formatted": item.due_date.strftime("%b %d, %Y"),
+        "due_time": item.due_date.strftime("%I:%M %p").lstrip("0") if (item.due_date.hour, item.due_date.minute) != (9, 0) else "",
     }
 
 def _ai_execute_favorite_task(session: Session, user: "User", args: dict) -> dict:
