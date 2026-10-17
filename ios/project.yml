@@ -35,12 +35,28 @@ targets:
         # purely JS/CSS, no permission needed for that part), but no audio is ever transcribed.
         # Reported directly: "the microphone circle... isn't actually working and listening".
         NSSpeechRecognitionUsageDescription: "TaskMonster uses on-device speech recognition to turn your voice into task text when you tap the mic in AI chat."
+        NSContactsUsageDescription: "TaskMonster can import contacts you pick from your iPhone into a People list, and keep them updated if you edit them in Contacts."
+        # Lets AuthManager's ASWebAuthenticationSession hand a completed Google/Apple sign-in back
+        # to this app - see AuthManager.swift's own doc comment for the full flow. xcodegen
+        # regenerates TaskMonster/Info.plist from this properties block (not the other way
+        # around) - a key added only to that file directly, not here, is silently dropped on the
+        # next `xcodegen generate`.
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - taskmonster
         UIUserInterfaceStyle: Dark
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.usetaskmonster.ios
-        MARKETING_VERSION: "1.1.0"
-        CURRENT_PROJECT_VERSION: "11"
+        # Keep these in sync with whatever was actually last archived/submitted (check
+        # project.pbxproj directly, or App Store Connect, if unsure) - this file drifted stale for
+        # a long stretch (stuck at 1.1.0 build 11 while the real .xcodeproj had moved on to 1.1.2
+        # build 14 via direct hand-edits for several App Store submissions), and running
+        # `xcodegen generate` against a stale value here silently reverts the real project's
+        # version/build number back down. Bump both here AND verify project.pbxproj matches
+        # whenever you cut a new build, not just one or the other.
+        MARKETING_VERSION: "1.1.2"
+        CURRENT_PROJECT_VERSION: "15"
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "5.0"
         DEVELOPMENT_TEAM: XD34CA7MJU

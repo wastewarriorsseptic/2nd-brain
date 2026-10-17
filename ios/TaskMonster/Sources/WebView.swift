@@ -232,6 +232,13 @@ struct WebView: UIViewRepresentable {
         // on the login screen. Matching any *.google.com / *.apple.com host (not just the one
         // subdomain each provider's sign-in NORMALLY uses) covers those extra verification steps
         // too, without opening this up to unrelated sites.
+        //
+        // UPDATE: the actual sign-in flow no longer reaches this WKWebView at all - see
+        // decidePolicyFor's own check further down, which hands any /login or /login/apple
+        // navigation to AuthManager's ASWebAuthenticationSession before it ever loads here. Kept
+        // around regardless (Google/Apple hosts stay allowlisted) for any other stray google.com/
+        // apple.com link that isn't one of the content exceptions just below - no longer load-
+        // bearing for sign-in itself, just a harmless leftover safety net for that narrower case.
         private let inAppHosts: Set<String> = [
             "usetaskmonster.app",
             "google.com",
@@ -282,6 +289,20 @@ struct WebView: UIViewRepresentable {
                 decisionHandler(.allow)
                 return
             }
+
+            // Google/Apple sign-in - reported directly as a black screen with no way forward.
+            // Both providers can block OAuth attempts from this app's own embedded WKWebView
+            // entirely, so any navigation to our own /login or /login/apple gets handed to
+            // AuthManager's ASWebAuthenticationSession instead of loading here - see that file's
+            // own doc comment for the full handoff back into this WKWebView once sign-in
+            // completes.
+            if host == "usetaskmonster.app", url.path == "/login" || url.path == "/login/apple" {
+                let provider = url.path == "/login/apple" ? "apple" : "google"
+                AuthManager.shared.startSignIn(provider: provider, in: webView)
+                decisionHandler(.cancel)
+                return
+            }
+
             let isInApp = inAppHosts.contains(where: { host == $0 || host.hasSuffix(".\($0)") })
                 && !contentSubdomainExceptions.contains(host)
             guard isInApp else {

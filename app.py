@@ -130,6 +130,7 @@ if not SECRET_KEY:
 _auth_token_serializer = URLSafeTimedSerializer(SECRET_KEY)
 EMAIL_VERIFY_SALT = "email-verify-v1"
 PASSWORD_RESET_SALT = "password-reset-v1"
+NATIVE_LOGIN_SALT = "native-login-v1"
 
 def _password_reset_fingerprint(user: "User") -> str:
     """A short marker derived from whatever the user's password_hash was AT THE MOMENT a reset
@@ -1912,13 +1913,29 @@ def _email_is_verified(user_info) -> bool:
     return str(user_info.get('email_verified')).lower() == 'true'
 
 @app.get("/login")
-async def login(request: Request):
+async def login(request: Request, native: Optional[int] = None):
+    # native=1 - set by the iOS app's AuthManager when it opens this URL inside its own
+    # ASWebAuthenticationSession instead of the app's main WKWebView (see that file's own
+    # docstring for why: Google actively blocks OAuth sign-in from a generic embedded WebView).
+    # Stashed on the session so auth_callback below knows to hand the result back to the native
+    # app instead of redirecting to "/" the way a plain web sign-in does.
+    if native:
+        request.session['oauth_native'] = True
     redirect_uri = request.url_for("auth_callback")
     return await oauth.google.authorize_redirect(
-        request, 
-        redirect_uri, 
+        request,
+        redirect_uri,
         prompt="select_account"
     )
+
+def _native_login_handoff_redirect(request: Request) -> RedirectResponse:
+    """Hands a just-completed native (ASWebAuthenticationSession) sign-in back to the iOS app's own
+    WKWebView - see /auth/native-login's docstring for the full round trip this is one step of.
+    find_or_create_user_and_log_in already set request.session['user_id'] moments before this is
+    called, so that's the user this token is minted for."""
+    user_id = request.session.get('user_id')
+    token = _auth_token_serializer.dumps(user_id, salt=NATIVE_LOGIN_SALT)
+    return RedirectResponse(url=f"taskmonster://auth/callback?token={quote(token)}", status_code=303)
 
 @app.get("/auth/callback")
 async def auth_callback(request: Request):
@@ -1934,8 +1951,37 @@ async def auth_callback(request: Request):
     name = user_info.get('name', email.split('@')[0])
     find_or_create_user_and_log_in(request, email, name, mark_verified=True)
 
+    if request.session.pop('oauth_native', False):
+        return _native_login_handoff_redirect(request)
+
     post_login_redirect = request.session.pop('post_login_redirect', None)
     return RedirectResponse(url=post_login_redirect or "/", status_code=303)
+
+@app.get("/auth/native-login")
+def auth_native_login(request: Request, token: str):
+    """Completes the iOS app's native Google/Apple sign-in - the last step of the handoff that
+    starts with AuthManager.swift opening /login or /login/apple (with native=1) inside an
+    ASWebAuthenticationSession rather than the app's own WKWebView. That session has its own
+    separate cookie jar from the WKWebView's, so finishing the OAuth dance there sets a session
+    cookie only ASWebAuthenticationSession's own jar ever sees - this endpoint is what actually
+    logs the WKWebView itself in, loaded there directly by AuthManager right after it receives
+    the token via the app's own "taskmonster://" callback scheme. Deliberately not single-use
+    (unlike password reset's fingerprint trick below) - this token only ever exists for the few
+    seconds between that callback firing and the app loading this URL immediately after, delivered
+    through iOS's own in-process session callback rather than a generally interceptable link, so a
+    short expiry alone is proportionate here."""
+    try:
+        user_id = _auth_token_serializer.loads(token, salt=NATIVE_LOGIN_SALT, max_age=120)
+    except (SignatureExpired, BadSignature):
+        return RedirectResponse(url="/?login_error=1", status_code=303)
+
+    with Session(engine) as session:
+        user = session.get(User, user_id)
+        if not user:
+            return RedirectResponse(url="/?login_error=1", status_code=303)
+
+    request.session['user_id'] = user_id
+    return RedirectResponse(url="/", status_code=303)
 
 def _hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
@@ -2186,9 +2232,12 @@ def reset_password_submit(request: Request, token: str, password: str = Form(...
     return RedirectResponse(url="/?password_reset=1", status_code=303)
 
 @app.get("/login/apple")
-async def login_apple(request: Request):
+async def login_apple(request: Request, native: Optional[int] = None):
     if not APPLE_SIGNIN_ENABLED:
         return RedirectResponse(url="/")
+    # Same native=1 handoff flag as /login's own - see its comment.
+    if native:
+        request.session['oauth_native'] = True
     # Hardcoded rather than request.url_for(...): Render terminates HTTPS at its edge and
     # forwards plain HTTP internally, so without proxy-header trust configured, url_for()
     # would build "http://usetaskmonster.app/..." here - which doesn't match the "https://"
@@ -2239,6 +2288,9 @@ async def auth_callback_apple(request: Request):
         name = email.split('@')[0]
 
     find_or_create_user_and_log_in(request, email, name, mark_verified=True)
+
+    if request.session.pop('oauth_native', False):
+        return _native_login_handoff_redirect(request)
 
     post_login_redirect = request.session.pop('post_login_redirect', None)
     return RedirectResponse(url=post_login_redirect or "/", status_code=303)
