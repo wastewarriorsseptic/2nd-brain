@@ -2700,7 +2700,16 @@
             if (universeSelect) {
                 const taskUniverses = universesOfKind('task');
                 populateSelectFromList(universeSelect, taskUniverses, 'icon', '(No Task Universes)');
-                const preferred = (!isContactUniverse && !isEventUniverse && activeUniverseId) ? activeUniverseId : (taskUniverses[0] ? taskUniverses[0].id : '');
+                let preferred = (!isContactUniverse && !isEventUniverse && activeUniverseId) ? activeUniverseId : (taskUniverses[0] ? taskUniverses[0].id : '');
+                // Inside the Multiverse Timeline, "the Universe I'm in" is whichever lane is
+                // focused right now, not the page's server-resolved activeUniverseId (which says
+                // nothing about which lane was scrolled to) - so a new task defaults to that lane.
+                if (isMultiverseStackedView && !isRealmTimelineView) {
+                    const focusedLane = multiverseLanes[mvFocusTarget];
+                    if (focusedLane && !focusedLane.isUniverseNode && taskUniverses.some(u => String(u.id) === String(focusedLane.id))) {
+                        preferred = focusedLane.id;
+                    }
+                }
                 universeSelect.value = preferred;
             }
 
@@ -4927,7 +4936,7 @@
                 } else if (touchedTask) {
                     // A created/updated task in an EXISTING bucket - nothing server-rendered needs
                     // to change, so a silent in-place data refresh is enough (no visible navigation).
-                    silentlyRefreshTaskData();
+                    silentlyRefreshTaskData(data.task_created);
                 }
             } catch (e) {
                 thinkingBubble.remove();
@@ -5025,7 +5034,7 @@
         // - a real page load, just an invisible one - then pull the freshly-rendered data straight
         // out of its own live JS variables (no fragile regex-scraping of embedded JSON-in-<script>
         // text) and splice it into the current page in place.
-        function silentlyRefreshTaskData() {
+        function silentlyRefreshTaskData(createdTask) {
             try {
                 const iframe = document.createElement('iframe');
                 iframe.setAttribute('aria-hidden', 'true');
@@ -5044,16 +5053,32 @@
                         const win = iframe.contentWindow;
                         const doc = win.document;
 
+                        // realmsData/allUniversesData/multiverseTasksData are top-level `let`/`const`
+                        // declarations, which - unlike `var` or a function declaration - are NOT
+                        // properties of `window`. Reading them as win.multiverseTasksData was always
+                        // undefined, so this refresh silently did nothing for the data (only the
+                        // timeline-list DOM copy below ever worked) and a task created from chat
+                        // needed a manual page refresh before it showed up in Space View / the
+                        // Multiverse Timeline - reported directly. eval() inside the iframe's own
+                        // global scope can see those lexical bindings; the JSON round trip keeps us
+                        // from holding live objects from a window that's about to be torn down.
+                        const readFresh = (name) => {
+                            try { return JSON.parse(JSON.stringify(win.eval(name))); } catch (e) { return undefined; }
+                        };
+                        const freshRealms = readFresh('realmsData');
+                        const freshUniverses = readFresh('allUniversesData');
+                        const freshTasks = readFresh('multiverseTasksData');
+
                         // allUniversesData/multiverseTasksData are `const` - mutate in place rather
                         // than reassigning. realmsData is `let`, so a plain reassignment is fine.
-                        if (Array.isArray(win.realmsData)) realmsData = win.realmsData;
-                        if (Array.isArray(win.allUniversesData)) {
+                        if (Array.isArray(freshRealms)) realmsData = freshRealms;
+                        if (Array.isArray(freshUniverses)) {
                             allUniversesData.length = 0;
-                            allUniversesData.push(...win.allUniversesData);
+                            allUniversesData.push(...freshUniverses);
                         }
-                        if (Array.isArray(win.multiverseTasksData)) {
+                        if (Array.isArray(freshTasks)) {
                             multiverseTasksData.length = 0;
-                            multiverseTasksData.push(...win.multiverseTasksData);
+                            multiverseTasksData.push(...freshTasks);
                         }
 
                         const freshList = doc.getElementById('timeline-list');
@@ -5073,28 +5098,67 @@
                             const savedZoom = targetCameraZoom;
                             const savedOffset = { ...targetCameraOffset };
                             const wasMultiverseStacked = isMultiverseStackedView;
-                            const savedRealmId = activeSelectedRealm ? activeSelectedRealm.id : null;
-                            const savedBucketId = activeSelectedBucket ? activeSelectedBucket.id : null;
 
-                            initSpaceCanvas();
+                            if (wasMultiverseStacked && !isRealmTimelineView) {
+                                // Rebuild just the lanes from the fresh data and put the user right
+                                // back on the Universe lane (and scroll spot) they were already on -
+                                // re-running openMultiverseTimeline() here instead would always
+                                // snap focus back to "All Tasks". If the task that was just created
+                                // lives in the lane they're looking at, slide to it so it's
+                                // actually visible rather than sitting off-screen.
+                                const prevLane = multiverseLanes[mvFocusTarget];
+                                const prevLaneId = prevLane ? prevLane.id : null;
+                                const prevScroll = prevLane ? (prevLane._scrollIdxTarget || 0) : 0;
+                                if (mvHudOwned) mvReleaseHud(true);
+                                multiverseLanes = buildMultiverseLanes();
+                                mvInitFocus();
+                                if (prevLaneId !== null) {
+                                    const idx = multiverseLanes.findIndex(l => String(l.id) === String(prevLaneId));
+                                    if (idx >= 0) {
+                                        mvFocusF = idx;
+                                        mvFocusTarget = idx;
+                                        multiverseLanes.forEach((l, i) => {
+                                            const rng = mvScrollRange(l);
+                                            const s = i === idx ? mvClamp(prevScroll, rng.min, rng.max) : 0;
+                                            l._scrollIdxTarget = s;
+                                            l._scroll = s;
+                                        });
+                                        const lane = multiverseLanes[idx];
+                                        const created = createdTask && lane && lane.tasks
+                                            && lane.tasks.find(t => String(t.id) === String(createdTask.id));
+                                        if (created) {
+                                            const rng = mvScrollRange(lane);
+                                            lane._scrollIdxTarget = mvClamp(mvTaskL(created), rng.min, rng.max);
+                                            lane._scroll = lane._scrollIdxTarget;
+                                        }
+                                        mvApplyLayout();
+                                    }
+                                }
+                                updateDailyDigestVisibility();
+                                targetCameraZoom = savedZoom;
+                                targetCameraOffset = savedOffset;
+                            } else {
+                                const savedRealmId = activeSelectedRealm ? activeSelectedRealm.id : null;
+                                const savedBucketId = activeSelectedBucket ? activeSelectedBucket.id : null;
 
-                            if (wasMultiverseStacked) {
-                                openMultiverseTimeline();
-                            } else if (savedRealmId) {
-                                const realm = spaceRealms.find(r => String(r.id) === String(savedRealmId));
-                                if (realm) {
-                                    activeSelectedRealm = realm;
-                                    if (savedBucketId) {
-                                        const bucket = realm.buckets.find(b => String(b.id) === String(savedBucketId));
-                                        if (bucket) {
-                                            activeSelectedBucket = bucket;
-                                            renderBucketTaskSwipeDock(bucket, { focusFirst: false });
+                                initSpaceCanvas();
+
+                                if (savedRealmId) {
+                                    const realm = spaceRealms.find(r => String(r.id) === String(savedRealmId));
+                                    if (realm) {
+                                        activeSelectedRealm = realm;
+                                        if (savedBucketId) {
+                                            const bucket = realm.buckets.find(b => String(b.id) === String(savedBucketId));
+                                            if (bucket) {
+                                                activeSelectedBucket = bucket;
+                                                renderBucketTaskSwipeDock(bucket, { focusFirst: false });
+                                            }
                                         }
                                     }
                                 }
+                                targetCameraZoom = savedZoom;
+                                targetCameraOffset = savedOffset;
                             }
-                            targetCameraZoom = savedZoom;
-                            targetCameraOffset = savedOffset;
                         }
                     } catch (e) {}
                     cleanup();
@@ -6063,6 +6127,16 @@
                 // to the general area" instead of actually focusing the task).
                 if (focusItem || (!isMultiverseStackedView && !isRealmTimelineView)) {
                     navigateToDigestItem(currentSelectedRealmId, currentSelectedBucketId, gotoItemId);
+                } else if (isMultiverseStackedView && !isRealmTimelineView && gotoItemId) {
+                    // Staying in the Multiverse Timeline is right (see above), but a fresh load
+                    // always opens it focused on "All Tasks" - so a date added while looking at one
+                    // Universe's lane landed back on the wrong lane, with the new task nowhere in
+                    // sight until scrolled to by hand (reported directly). Focus the lane the new
+                    // task actually lives in and slide to it - still inside the same timeline view.
+                    const createdTask = multiverseTasksData.find(t => String(t.id) === String(gotoItemId));
+                    if (createdTask && createdTask.universeId) {
+                        navigateToDigestItemFlat(createdTask.universeId, gotoItemId);
+                    }
                 }
             } else {
                 // No realm_id/bucket_id resolved a legacy destination above - the flat-model path
